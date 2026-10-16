@@ -10,6 +10,9 @@ import { FirstRunSetup } from "./components/FirstRunSetup";
 import { FunnelsView } from "./components/FunnelsView";
 import { QuickCreateMenu } from "./components/QuickCreateMenu";
 import { UserSwitcher } from "./components/UserSwitcher";
+import { LicenseGate } from "./license/LicenseGate";
+import { LockScreen } from "./components/LockScreen";
+import { SettingsView } from "./settings/SettingsView";
 import { SessionProvider, useSession } from "./session";
 
 // Menu principal (spec 01, seção 1).
@@ -27,7 +30,6 @@ const PHASE_BY_TAB: Record<string, string> = {
   contatos: "Fase 5 — Contatos e Organizações",
   organizacoes: "Fase 5 — Contatos e Organizações",
   relatorios: "Fase 10 — Relatórios",
-  configuracoes: "Fases 3, 6 e 8 — usuários, tags, campos personalizados, backup",
 };
 
 const TYPE_BY_OPTION: Partial<Record<QuickCreateOption["id"], PipelineType>> = { negocio: "comercial", ticket: "operacional", projeto: "projeto" };
@@ -36,9 +38,16 @@ const SELECTED_KEY = "conectcrm-selected-pipeline";
 
 export function App() {
   return (
-    <SessionProvider setup={(done) => <FirstRunSetup onDone={done} />}>
-      <Main />
-    </SessionProvider>
+    <LicenseGate>
+      <SessionProvider
+        setup={(done) => <FirstRunSetup onDone={done} />}
+        locked={(user, s) => (
+          <LockScreen user={user} users={s.users} onUnlock={(id) => void s.unlock(id)} onSwitch={(id) => void s.switchUser(id)} />
+        )}
+      >
+        <Main />
+      </SessionProvider>
+    </LicenseGate>
   );
 }
 
@@ -126,7 +135,9 @@ function Main() {
       {error && (
         <div className="mb-4 rounded-xl border border-error-200 bg-error-50 px-4 py-3 text-theme-sm text-error-700">Não foi possível abrir o banco local: {error}</div>
       )}
-      {tab === "funis" ? (
+      {tab === "configuracoes" ? (
+        <SettingsView />
+      ) : tab === "funis" ? (
         <FunnelsView
           pipelines={pipelines}
           selected={selected}

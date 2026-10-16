@@ -44,8 +44,10 @@ chrome.runtime.onMessage.addListener((msg: RpcRequest, _sender, sendResponse: (r
     .then(({ db, workspaceId }) => {
       const handler = (methods as Record<string, (...a: unknown[]) => unknown>)[msg.method];
       if (!handler) throw new Error(`Operação desconhecida: ${msg.method}`);
-      sendResponse({ ok: true, result: handler(db, { workspaceId, userId: msg.userId }, msg.params) });
+      // Algumas operações são assíncronas (ex.: hash do PIN).
+      return Promise.resolve(handler(db, { workspaceId, userId: msg.userId }, msg.params));
     })
+    .then((result) => sendResponse({ ok: true, result }))
     .catch((err: unknown) => sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) }));
   return true;
 });

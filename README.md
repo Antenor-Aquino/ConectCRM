@@ -38,3 +38,13 @@ Carregar no Chrome: `chrome://extensions` → **Modo do desenvolvedor** →
 
 Durante o desenvolvimento, `npm run dev` recompila a cada alteração (depois
 clique em ↻ na extensão em `chrome://extensions`).
+
+### Licença
+
+O CRM valida a licença por instalação no mesmo servidor do wa-pipedrive
+(`extpipe.claudiacrm.com.br`). Para testar sem licença, gere um build de
+teste — **nunca publique este build**:
+
+```bash
+VITE_LICENSE_BYPASS=1 npm run build
+```

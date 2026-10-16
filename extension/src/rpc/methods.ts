@@ -10,12 +10,21 @@ import * as products from "../db/products";
 import * as stages from "../db/stages";
 import { rowHistory, type DataTable, type DbContext } from "../db/repo";
 import { many, one, type DatabaseSync } from "../db/sql";
+import { hashPin, verifyPin } from "../lib/pin";
+import { ValidationError } from "../lib/validate";
 import * as tags from "../db/tags";
 import * as users from "../db/users";
 
 type Handler = (db: DatabaseSync, ctx: DbContext, params: never) => unknown;
 type Id = { id: string };
 const viewer = (db: DatabaseSync, ctx: DbContext) => users.getViewer(db, ctx.userId);
+
+/** Cadastro de usuários e equipes: só administrador (spec Fase 3). */
+function assertAdmin(db: DatabaseSync, ctx: DbContext): void {
+  if (viewer(db, ctx)?.role !== "admin") throw new ValidationError("Apenas administradores podem alterar usuários e equipes.");
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export const methods = {
   "system.info": (db: DatabaseSync, ctx: DbContext) => ({
@@ -30,14 +39,45 @@ export const methods = {
 
   // Usuários e equipes
   "users.list": (db: DatabaseSync, _c: DbContext, p: { includeInactive?: boolean } = {}) => users.listUsers(db, p),
-  "users.create": (db: DatabaseSync, ctx: DbContext, p: users.UserInput) => users.createUser(db, ctx, p),
-  "users.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Parameters<typeof users.updateUser>[3] }) => users.updateUser(db, ctx, p.id, p.patch),
+  "users.create": (db: DatabaseSync, ctx: DbContext, p: users.UserInput) => {
+    // O primeiro usuário (administrador) é criado sem ninguém logado.
+    if (users.listUsers(db, { includeInactive: true }).length > 0) assertAdmin(db, ctx);
+    return users.createUser(db, ctx, p);
+  },
+  "users.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Parameters<typeof users.updateUser>[3] }) => {
+    const v = viewer(db, ctx);
+    const selfBasic = v?.id === p.id && p.patch.role === undefined && p.patch.active === undefined;
+    if (!selfBasic) assertAdmin(db, ctx);
+    users.updateUser(db, ctx, p.id, p.patch);
+  },
+  /** Define (ou remove, com pin null) o PIN: o próprio usuário ou um administrador. */
+  "users.setPin": async (db: DatabaseSync, ctx: DbContext, p: Id & { pin: string | null }) => {
+    if (viewer(db, ctx)?.id !== p.id) assertAdmin(db, ctx);
+    const hash = p.pin === null ? null : await hashPin(p.pin);
+    users.setUserPinHash(db, ctx, p.id, hash);
+  },
+  "users.verifyPin": async (db: DatabaseSync, _c: DbContext, p: Id & { pin: string }) => {
+    const ok = await verifyPin(p.pin, users.getUserPinHash(db, p.id));
+    if (!ok) await sleep(600); // freia tentativas em sequência
+    return ok;
+  },
   "teams.list": (db: DatabaseSync) => users.listTeams(db),
-  "teams.create": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof users.createTeam>[2]) => users.createTeam(db, ctx, p),
-  "teams.rename": (db: DatabaseSync, ctx: DbContext, p: Id & { name: string }) => users.renameTeam(db, ctx, p.id, p.name),
-  "teams.setMembers": (db: DatabaseSync, ctx: DbContext, p: Id & { members: { userId: string; isLeader?: boolean }[] }) =>
-    users.setTeamMembers(db, ctx, p.id, p.members),
-  "teams.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => users.deleteTeam(db, ctx, p.id),
+  "teams.create": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof users.createTeam>[2]) => {
+    assertAdmin(db, ctx);
+    return users.createTeam(db, ctx, p);
+  },
+  "teams.rename": (db: DatabaseSync, ctx: DbContext, p: Id & { name: string }) => {
+    assertAdmin(db, ctx);
+    users.renameTeam(db, ctx, p.id, p.name);
+  },
+  "teams.setMembers": (db: DatabaseSync, ctx: DbContext, p: Id & { members: { userId: string; isLeader?: boolean }[] }) => {
+    assertAdmin(db, ctx);
+    users.setTeamMembers(db, ctx, p.id, p.members);
+  },
+  "teams.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    assertAdmin(db, ctx);
+    users.deleteTeam(db, ctx, p.id);
+  },
 
   // Funis
   "pipelines.list": (db: DatabaseSync, _c: DbContext, p: { includeArchived?: boolean } = {}) => pipelines.listPipelines(db, p),
@@ -156,4 +196,4 @@ export const methods = {
 export type Methods = typeof methods;
 export type MethodName = keyof Methods;
 export type MethodParams<M extends MethodName> = Parameters<Methods[M]>[2];
-export type MethodResult<M extends MethodName> = ReturnType<Methods[M]>;
+export type MethodResult<M extends MethodName> = Awaited<ReturnType<Methods[M]>>;

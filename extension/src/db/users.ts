@@ -15,6 +15,8 @@ export interface User {
   role: Role;
   color: string | null;
   active: number;
+  /** 1 se o usuário tem PIN definido (o hash nunca sai do banco). */
+  has_pin: number;
   version: number;
 }
 
@@ -29,7 +31,7 @@ export function userLabel(user: Pick<User, "id" | "name" | "role">, currentUserI
   return `${user.name} (${user.id === currentUserId ? "Você" : ROLE_LABEL[user.role]})`;
 }
 
-const USER_COLS = "id, name, email, role, color, active, version";
+const USER_COLS = "id, name, email, role, color, active, (pin_hash IS NOT NULL) AS has_pin, version";
 
 export function listUsers(db: DatabaseSync, opts: { includeInactive?: boolean } = {}): User[] {
   return many<User>(
@@ -178,4 +180,16 @@ export function teammateIds(db: DatabaseSync, userId: string): string[] {
   const ids = new Set(rows.map((r) => r.user_id));
   ids.add(userId);
   return [...ids];
+}
+
+// ---------- PIN ----------
+// O hash é calculado fora (lib/pin.ts, assíncrono); aqui só grava/lê.
+
+export function setUserPinHash(db: DatabaseSync, ctx: DbContext, id: string, pinHash: string | null): void {
+  if (!getUser(db, id)) throw new ValidationError("Usuário não encontrado.");
+  updateRow(db, ctx, "app_user", id, { pin_hash: pinHash });
+}
+
+export function getUserPinHash(db: DatabaseSync, id: string): string | null {
+  return one<{ pin_hash: string | null }>(db, "SELECT pin_hash FROM app_user WHERE id = ? AND deleted_at IS NULL", id)?.pin_hash ?? null;
 }
