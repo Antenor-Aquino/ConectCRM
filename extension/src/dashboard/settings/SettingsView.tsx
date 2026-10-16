@@ -1,22 +1,27 @@
 // Configurações: menu lateral com as seções. As que chegam em outras fases
 // aparecem desabilitadas, com a fase indicada.
 import { useEffect, useState } from "react";
-import { Database, KeyRound, ListChecks, Package, SlidersHorizontal, Tags, Users, UsersRound } from "lucide-react";
+import { Ban, Database, KeyRound, ListChecks, Package, SlidersHorizontal, Tags, Users, UsersRound } from "lucide-react";
 import { TaPanel, cn } from "@tailadmin";
 import { planLabel } from "../../lib/license";
 import { useLicense } from "../license/LicenseGate";
+import { CustomFieldsSettings } from "./CustomFieldsSettings";
+import { LossReasonsSettings } from "./LossReasonsSettings";
+import { ProductsSettings } from "./ProductsSettings";
+import { TagsSettings } from "./TagsSettings";
 import { TeamsSettings } from "./TeamsSettings";
 import { UsersSettings } from "./UsersSettings";
 
-type Section = "usuarios" | "equipes" | "licenca";
+type Section = "usuarios" | "equipes" | "licenca" | "tags" | "campos" | "produtos" | "motivos";
 
 const SECTIONS: { id: Section | null; label: string; icon: React.ReactNode; phase?: string }[] = [
   { id: "usuarios", label: "Usuários", icon: <Users size={16} /> },
   { id: "equipes", label: "Equipes", icon: <UsersRound size={16} /> },
   { id: "licenca", label: "Licença", icon: <KeyRound size={16} /> },
-  { id: null, label: "Tags", icon: <Tags size={16} />, phase: "Fase 6" },
-  { id: null, label: "Campos personalizados", icon: <SlidersHorizontal size={16} />, phase: "Fase 6" },
-  { id: null, label: "Produtos e serviços", icon: <Package size={16} />, phase: "Fase 6" },
+  { id: "tags", label: "Tags", icon: <Tags size={16} /> },
+  { id: "campos", label: "Campos personalizados", icon: <SlidersHorizontal size={16} /> },
+  { id: "produtos", label: "Produtos e serviços", icon: <Package size={16} /> },
+  { id: "motivos", label: "Motivos de perda", icon: <Ban size={16} /> },
   { id: null, label: "Tipos de tarefa", icon: <ListChecks size={16} />, phase: "Fase 7" },
   { id: null, label: "Backup", icon: <Database size={16} />, phase: "Fase 8" },
 ];
@@ -49,6 +54,10 @@ export function SettingsView() {
         {section === "usuarios" && <UsersSettings />}
         {section === "equipes" && <TeamsSettings />}
         {section === "licenca" && <LicensePanel />}
+        {section === "tags" && <TagsSettings />}
+        {section === "campos" && <CustomFieldsSettings />}
+        {section === "produtos" && <ProductsSettings />}
+        {section === "motivos" && <LossReasonsSettings />}
       </div>
     </div>
   );

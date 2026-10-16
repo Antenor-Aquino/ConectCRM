@@ -27,6 +27,14 @@ function assertAdmin(db: DatabaseSync, ctx: DbContext): void {
   if (viewer(db, ctx)?.role !== "admin") throw new ValidationError("Apenas administradores podem alterar usuários e equipes.");
 }
 
+/** Configurações gerais: campos e tags só administrador; produtos e motivos também gestor. */
+function assertRole(db: DatabaseSync, ctx: DbContext, roles: users.Role[], what: string): void {
+  const v = viewer(db, ctx);
+  if (v && !roles.includes(v.role)) throw new ValidationError(`Sem permissão para alterar ${what}.`);
+}
+const ADMIN: users.Role[] = ["admin"];
+const MANAGERS: users.Role[] = ["admin", "gestor"];
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export const methods = {
@@ -125,9 +133,12 @@ export const methods = {
     deals.deleteCard(db, ctx, p.id);
   },
   "lossReasons.list": (db: DatabaseSync, _c: DbContext, p: { includeInactive?: boolean } = {}) => deals.listLossReasons(db, p),
+  // Criar motivo fica liberado: o vendedor cria direto ao marcar "Perdido".
   "lossReasons.create": (db: DatabaseSync, ctx: DbContext, p: { name: string }) => deals.createLossReason(db, ctx, p.name),
-  "lossReasons.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: { name?: string; active?: boolean } }) =>
-    deals.updateLossReason(db, ctx, p.id, p.patch),
+  "lossReasons.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: { name?: string; active?: boolean } }) => {
+    assertRole(db, ctx, MANAGERS, "motivos de perda");
+    return deals.updateLossReason(db, ctx, p.id, p.patch);
+  },
 
   // Contatos e organizações
   "persons.list": (db: DatabaseSync, ctx: DbContext, p: Omit<NonNullable<Parameters<typeof contacts.listPersons>[1]>, "viewer"> = {}) =>
@@ -184,27 +195,66 @@ export const methods = {
   // Tags
   "tags.list": (db: DatabaseSync, _c: DbContext, p: { entity: tags.TagEntity; includeInactive?: boolean }) => tags.listTags(db, p.entity, p),
   "tags.create": (db: DatabaseSync, ctx: DbContext, p: { entity: tags.TagEntity; name: string; color?: string }) => tags.createTag(db, ctx, p),
-  "tags.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: { name?: string; color?: string; active?: boolean } }) =>
-    tags.updateTag(db, ctx, p.id, p.patch),
-  "tags.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => tags.deleteTag(db, ctx, p.id),
+  "tags.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: { name?: string; color?: string; active?: boolean } }) => {
+    assertRole(db, ctx, ADMIN, "tags");
+    return tags.updateTag(db, ctx, p.id, p.patch);
+  },
+  "tags.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    assertRole(db, ctx, ADMIN, "tags");
+    return tags.deleteTag(db, ctx, p.id);
+  },
 
   // Campos personalizados
   "customFields.list": (db: DatabaseSync, _c: DbContext, p: { entity: cf.CustomFieldEntity; pipelineId?: string; includeInactive?: boolean }) =>
     cf.listCustomFields(db, p.entity, p),
-  "customFields.create": (db: DatabaseSync, ctx: DbContext, p: cf.CustomFieldInput) => cf.createCustomField(db, ctx, p),
-  "customFields.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Parameters<typeof cf.updateCustomField>[3] }) =>
-    cf.updateCustomField(db, ctx, p.id, p.patch),
-  "customFields.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => cf.deleteCustomField(db, ctx, p.id),
+  "customFields.create": (db: DatabaseSync, ctx: DbContext, p: cf.CustomFieldInput) => {
+    assertRole(db, ctx, ADMIN, "campos personalizados");
+    return cf.createCustomField(db, ctx, p);
+  },
+  "customFields.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Parameters<typeof cf.updateCustomField>[3] }) => {
+    assertRole(db, ctx, ADMIN, "campos personalizados");
+    return cf.updateCustomField(db, ctx, p.id, p.patch);
+  },
+  "customFields.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    assertRole(db, ctx, ADMIN, "campos personalizados");
+    return cf.deleteCustomField(db, ctx, p.id);
+  },
+
+  "customFields.usage": (db: DatabaseSync, _c: DbContext, p: Id) => cf.customFieldUsage(db, p.id),
+  "customFields.reorder": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => {
+    assertRole(db, ctx, ADMIN, "campos personalizados");
+    cf.reorderCustomFields(db, ctx, p.ids);
+  },
+  "tags.usage": (db: DatabaseSync, _c: DbContext, p: { entity: tags.TagEntity }) => tags.tagUsage(db, p.entity),
+  "products.usage": (db: DatabaseSync) => products.productUsage(db),
 
   // Produtos e serviços
   "products.list": (db: DatabaseSync, _c: DbContext, p: Parameters<typeof products.listProducts>[1] = {}) => products.listProducts(db, p),
-  "products.create": (db: DatabaseSync, ctx: DbContext, p: products.ProductInput) => products.createProduct(db, ctx, p),
-  "products.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Partial<products.ProductInput> }) => products.updateProduct(db, ctx, p.id, p.patch),
-  "products.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => products.deleteProduct(db, ctx, p.id),
+  "products.create": (db: DatabaseSync, ctx: DbContext, p: products.ProductInput) => {
+    assertRole(db, ctx, MANAGERS, "produtos");
+    return products.createProduct(db, ctx, p);
+  },
+  "products.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Partial<products.ProductInput> }) => {
+    assertRole(db, ctx, MANAGERS, "produtos");
+    return products.updateProduct(db, ctx, p.id, p.patch);
+  },
+  "products.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    assertRole(db, ctx, MANAGERS, "produtos");
+    return products.deleteProduct(db, ctx, p.id);
+  },
   "productCategories.list": (db: DatabaseSync) => products.listProductCategories(db),
-  "productCategories.create": (db: DatabaseSync, ctx: DbContext, p: { name: string }) => products.createProductCategory(db, ctx, p.name),
-  "productCategories.rename": (db: DatabaseSync, ctx: DbContext, p: Id & { name: string }) => products.renameProductCategory(db, ctx, p.id, p.name),
-  "productCategories.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => products.deleteProductCategory(db, ctx, p.id),
+  "productCategories.create": (db: DatabaseSync, ctx: DbContext, p: { name: string }) => {
+    assertRole(db, ctx, MANAGERS, "produtos");
+    return products.createProductCategory(db, ctx, p.name);
+  },
+  "productCategories.rename": (db: DatabaseSync, ctx: DbContext, p: Id & { name: string }) => {
+    assertRole(db, ctx, MANAGERS, "produtos");
+    return products.renameProductCategory(db, ctx, p.id, p.name);
+  },
+  "productCategories.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    assertRole(db, ctx, MANAGERS, "produtos");
+    return products.deleteProductCategory(db, ctx, p.id);
+  },
 } satisfies Record<string, Handler>;
 
 export type Methods = typeof methods;

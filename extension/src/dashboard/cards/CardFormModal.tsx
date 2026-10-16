@@ -10,7 +10,7 @@ import { CARD_TEXT } from "../../lib/cardTypes";
 import { formatCents, fromDateInput } from "../../lib/format";
 import { useSession } from "../session";
 import { Combobox, type ComboItem } from "../ui/Combobox";
-import { CustomFieldsForm } from "../ui/CustomFieldsForm";
+import { CustomFieldsForm, isProminent } from "../ui/CustomFieldsForm";
 import { ErrorText, Field, SectionLabel } from "../ui/form";
 import { MoneyInput } from "../ui/MoneyInput";
 import { SlaPicker } from "../ui/SlaPicker";
@@ -91,10 +91,7 @@ export function CardFormModal({
       setStages(list);
       setStageId(request.stageId && list.some((s) => s.id === request.stageId) ? request.stageId : (list[0]?.id ?? null));
     });
-    void call("customFields.list", { entity: text.kind, pipelineId }).then((list) => {
-      setFields(list);
-      if (list.some((f) => !f.hidden && (f.required || f.always_show))) setShowMore(true);
-    });
+    void call("customFields.list", { entity: text.kind, pipelineId }).then(setFields);
   }, [request, pipelineId, text.kind]);
 
   // Ao escolher o contato, sugere a organização principal dele (spec 04).
@@ -237,6 +234,10 @@ export function CardFormModal({
         />
       </div>
 
+      {/* "Sempre mostrar" e obrigatórios ficam fora de "Mais detalhes" (spec 01, P2). */}
+      {fields.some((f) => !f.hidden && isProminent(f)) && (
+        <CustomFieldsForm fields={fields.filter(isProminent)} values={customValues} onChange={setCustomValues} />
+      )}
       {showMore ? (
         <>
           <SectionLabel>Mais detalhes</SectionLabel>
@@ -246,7 +247,7 @@ export function CardFormModal({
           <Field label="Tags">
             <TagPicker entity={text.kind} value={tagIds} onChange={setTagIds} />
           </Field>
-          <CustomFieldsForm fields={fields} values={customValues} onChange={setCustomValues} />
+          <CustomFieldsForm fields={fields.filter((f) => !isProminent(f))} values={customValues} onChange={setCustomValues} />
         </>
       ) : (
         <button type="button" className="mt-2 flex items-center gap-1.5 text-theme-sm font-medium text-brand-600 hover:underline" onClick={() => setShowMore(true)}>

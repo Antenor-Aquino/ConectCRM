@@ -104,3 +104,14 @@ export function setEntityTags(db: DatabaseSync, ctx: DbContext, entity: TagEntit
     for (const tagId of wanted) insertRow(db, ctx, "entity_tag", { tag_id: tagId, entity_type: entity, entity_id: entityId });
   });
 }
+
+/** Quantos registros usam cada tag da entidade. */
+export function tagUsage(db: DatabaseSync, entity: TagEntity): Record<string, number> {
+  const rows = many<{ tag_id: string; n: number }>(
+    db,
+    `SELECT et.tag_id, COUNT(*) AS n FROM entity_tag et JOIN tag t ON t.id = et.tag_id
+     WHERE t.entity = ? AND et.deleted_at IS NULL GROUP BY et.tag_id`,
+    entity,
+  );
+  return Object.fromEntries(rows.map((r) => [r.tag_id, r.n]));
+}

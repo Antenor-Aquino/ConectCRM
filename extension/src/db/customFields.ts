@@ -384,3 +384,13 @@ export function setCustomValues(
     }
   });
 }
+
+/** Quantos registros têm valor neste campo (aviso antes de excluir). */
+export function customFieldUsage(db: DatabaseSync, id: string): number {
+  return one<{ n: number }>(db, "SELECT COUNT(*) AS n FROM custom_field_value WHERE field_id = ? AND deleted_at IS NULL AND value IS NOT NULL", id)?.n ?? 0;
+}
+
+/** Reordena os campos de uma entidade na ordem recebida. */
+export function reorderCustomFields(db: DatabaseSync, ctx: DbContext, ids: string[]): void {
+  withTransaction(db, () => ids.forEach((id, i) => updateRow(db, ctx, "custom_field", id, { position: i })));
+}

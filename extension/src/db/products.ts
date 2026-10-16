@@ -120,3 +120,12 @@ export function deleteProductCategory(db: DatabaseSync, ctx: DbContext, id: stri
   }
   softDelete(db, ctx, "product_category", id);
 }
+
+/** Quantos itens de negócio usam cada produto. */
+export function productUsage(db: DatabaseSync): Record<string, number> {
+  const rows = many<{ product_id: string; n: number }>(
+    db,
+    "SELECT product_id, COUNT(*) AS n FROM deal_item WHERE product_id IS NOT NULL AND deleted_at IS NULL GROUP BY product_id",
+  );
+  return Object.fromEntries(rows.map((r) => [r.product_id, r.n]));
+}

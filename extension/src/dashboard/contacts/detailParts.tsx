@@ -32,11 +32,20 @@ export function InfoRow({ label, children }: { label: string; children: ReactNod
   );
 }
 
+function RefName({ kind, id }: { kind: "person" | "organization"; id: string }) {
+  const [name, setName] = useState("");
+  useEffect(() => {
+    const load = kind === "person" ? call("persons.get", { id }) : call("organizations.get", { id });
+    void load.then((r) => setName(r?.name ?? ""));
+  }, [kind, id]);
+  return <>{name}</>;
+}
+
 export function CustomValuesView({ fields, values }: { fields: CustomField[]; values: Record<string, CustomValue> }) {
   const { users } = useSession();
   const shown = fields.filter((f) => !f.hidden && (values[f.id] !== undefined || f.always_show));
   if (shown.length === 0) return null;
-  const text = (f: CustomField, v: CustomValue | undefined): string => {
+  const text = (f: CustomField, v: CustomValue | undefined): ReactNode => {
     if (v === undefined || v === null) return "";
     switch (f.field_type) {
       case "money":
@@ -53,6 +62,9 @@ export function CustomValuesView({ fields, values }: { fields: CustomField[]; va
         return (v as string[]).map((id) => f.options.find((o) => o.id === id)?.label).filter(Boolean).join(", ");
       case "user":
         return users.find((u) => u.id === v)?.name ?? "";
+      case "person":
+      case "organization":
+        return <RefName kind={f.field_type} id={String(v)} />;
       default:
         return String(v);
     }

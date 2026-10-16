@@ -1,7 +1,11 @@
 // Renderiza os campos personalizados de uma entidade conforme o tipo
 // (spec 01, seção 9). Campos "Esconder" não aparecem; "Sempre mostrar" e
 // "Obrigatório" ficam fora da seção recolhida "Mais detalhes".
+import { useEffect, useState } from "react";
 import { TaInput, TaSelect, TaTextarea } from "@tailadmin";
+import { call } from "../../rpc/client";
+import { searchOrganizations, searchPersons } from "../cards/searchers";
+import { Combobox, type ComboItem } from "./Combobox";
 import type { CustomField, CustomValue } from "../../db/customFields";
 import { Field } from "./form";
 import { MoneyInput } from "./MoneyInput";
@@ -15,6 +19,28 @@ function toLocalInput(iso: string): string {
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Campo que aponta para um contato ou organização (guarda o id). */
+function RefInput({ kind, value, onChange }: { kind: "person" | "organization"; value: string | null; onChange: (id: string | null) => void }) {
+  const [item, setItem] = useState<ComboItem | null>(null);
+  useEffect(() => {
+    if (!value) return setItem(null);
+    if (item?.id === value) return;
+    const load = kind === "person" ? call("persons.get", { id: value }) : call("organizations.get", { id: value });
+    void load.then((r) => setItem(r ? { id: r.id, label: r.name } : null));
+  }, [value, kind]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <Combobox
+      value={item}
+      onChange={(i) => {
+        setItem(i);
+        onChange(i?.id ?? null);
+      }}
+      search={kind === "person" ? searchPersons : searchOrganizations}
+      placeholder={kind === "person" ? "Buscar contato" : "Buscar organização"}
+    />
+  );
 }
 
 function FieldInput({ field, value, onChange }: { field: CustomField; value: CustomValue | undefined; onChange: (v: CustomValue) => void }) {
@@ -78,8 +104,11 @@ function FieldInput({ field, value, onChange }: { field: CustomField; value: Cus
       return <TaInput type="email" value={str} onChange={(e) => onChange(e.target.value)} />;
     case "url":
       return <TaInput type="url" value={str} onChange={(e) => onChange(e.target.value)} />;
+    case "person":
+    case "organization":
+      return <RefInput kind={field.field_type} value={str || null} onChange={onChange} />;
     default:
-      // text, phone, person, organization (os dois últimos ganham busca na Fase 5)
+      // text, phone
       return <TaInput value={str} onChange={(e) => onChange(e.target.value)} />;
   }
 }
