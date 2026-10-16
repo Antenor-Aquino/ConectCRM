@@ -1,6 +1,6 @@
 # ConectCRM — Planejamento de implementação (v4)
 
-> Status: **Fases 0 e 1 concluídas** (branches `fase-0-fundacao` e `fase-1-dados`). Próximo: Fases 2 e 4 (Kanban com cartões).
+> Status: **Fases 0, 1, 2 e 4 concluídas** (branches `fase-0-fundacao`, `fase-1-dados`, `fase-2-4-kanban`). Próximo: Fase 3 (usuários, equipes, PIN e licença).
 > v4: v1 individual (sem sincronização) com cadastro de equipes/usuários; estrutura pronta para sincronizar no futuro; "Fluxo geral" confirmado.
 
 ## 1. Visão

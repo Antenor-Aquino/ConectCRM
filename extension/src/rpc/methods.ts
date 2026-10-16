@@ -7,6 +7,7 @@ import * as deals from "../db/deals";
 import * as notes from "../db/notes";
 import * as pipelines from "../db/pipelines";
 import * as products from "../db/products";
+import * as stages from "../db/stages";
 import { rowHistory, type DataTable, type DbContext } from "../db/repo";
 import { many, one, type DatabaseSync } from "../db/sql";
 import * as tags from "../db/tags";
@@ -22,7 +23,10 @@ export const methods = {
     migrations: many<{ name: string }>(db, "SELECT name FROM _migrations ORDER BY name").map((r) => r.name),
     pendingSync: one<{ n: number }>(db, "SELECT COUNT(*) AS n FROM change_log WHERE synced_at IS NULL")?.n ?? 0,
   }),
-  "history.get": (db: DatabaseSync, _ctx: DbContext, p: { table: DataTable; id: string }) => rowHistory(db, p.table, p.id),
+  "history.get": (db: DatabaseSync, ctx: DbContext, p: { table: DataTable; id: string }) => {
+    if (p.table === "deal") deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    return rowHistory(db, p.table, p.id);
+  },
 
   // Usuários e equipes
   "users.list": (db: DatabaseSync, _c: DbContext, p: { includeInactive?: boolean } = {}) => users.listUsers(db, p),
@@ -43,17 +47,40 @@ export const methods = {
     pipelines.updatePipeline(db, ctx, p.id, p.patch),
   "pipelines.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => pipelines.deletePipeline(db, ctx, p.id),
   "stages.list": (db: DatabaseSync, _c: DbContext, p: { pipelineId: string }) => pipelines.listStages(db, p.pipelineId),
+  "stages.save": (db: DatabaseSync, ctx: DbContext, p: { pipelineId: string; stages: stages.StageDraft[]; moveTo?: Record<string, string> }) =>
+    stages.saveStages(db, ctx, p.pipelineId, p.stages, p.moveTo),
 
   // Cartões (negócio / ticket / etapa de projeto)
   "board.get": (db: DatabaseSync, ctx: DbContext, p: { pipelineId: string } & Omit<NonNullable<Parameters<typeof deals.getBoard>[2]>, "viewer">) =>
     deals.getBoard(db, p.pipelineId, { ...p, viewer: viewer(db, ctx) }),
-  "cards.get": (db: DatabaseSync, _c: DbContext, p: Id) => deals.getCard(db, p.id),
-  "cards.create": (db: DatabaseSync, ctx: DbContext, p: deals.CardInput) => deals.createCard(db, ctx, p),
-  "cards.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Parameters<typeof deals.updateCard>[3] }) => deals.updateCard(db, ctx, p.id, p.patch),
-  "cards.move": (db: DatabaseSync, ctx: DbContext, p: Id & { stageId: string; beforeId?: string | null }) => deals.moveCard(db, ctx, p.id, p),
-  "cards.setStatus": (db: DatabaseSync, ctx: DbContext, p: Id & Parameters<typeof deals.setCardStatus>[3]) => deals.setCardStatus(db, ctx, p.id, p),
-  "cards.setItems": (db: DatabaseSync, ctx: DbContext, p: Id & { items: deals.DealItemInput[] }) => deals.setDealItems(db, ctx, p.id, p.items),
-  "cards.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => deals.deleteCard(db, ctx, p.id),
+  "cards.get": (db: DatabaseSync, ctx: DbContext, p: Id) => deals.getCard(db, p.id, viewer(db, ctx)) ?? null,
+  "cards.create": (db: DatabaseSync, ctx: DbContext, p: deals.CardInput) => {
+    const v = viewer(db, ctx);
+    deals.assertCanAssign(db, v, p.ownerId === undefined ? ctx.userId : p.ownerId);
+    return deals.createCard(db, ctx, p);
+  },
+  "cards.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Parameters<typeof deals.updateCard>[3] }) => {
+    const v = viewer(db, ctx);
+    deals.assertCardAccess(db, v, p.id);
+    if (p.patch.ownerId !== undefined) deals.assertCanAssign(db, v, p.patch.ownerId);
+    deals.updateCard(db, ctx, p.id, p.patch);
+  },
+  "cards.move": (db: DatabaseSync, ctx: DbContext, p: Id & { stageId: string; beforeId?: string | null }) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    deals.moveCard(db, ctx, p.id, p);
+  },
+  "cards.setStatus": (db: DatabaseSync, ctx: DbContext, p: Id & Parameters<typeof deals.setCardStatus>[3]) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    deals.setCardStatus(db, ctx, p.id, p);
+  },
+  "cards.setItems": (db: DatabaseSync, ctx: DbContext, p: Id & { items: deals.DealItemInput[] }) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    deals.setDealItems(db, ctx, p.id, p.items);
+  },
+  "cards.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    deals.deleteCard(db, ctx, p.id);
+  },
   "lossReasons.list": (db: DatabaseSync, _c: DbContext, p: { includeInactive?: boolean } = {}) => deals.listLossReasons(db, p),
   "lossReasons.create": (db: DatabaseSync, ctx: DbContext, p: { name: string }) => deals.createLossReason(db, ctx, p.name),
   "lossReasons.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: { name?: string; active?: boolean } }) =>

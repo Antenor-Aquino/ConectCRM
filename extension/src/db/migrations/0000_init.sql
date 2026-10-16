@@ -136,8 +136,6 @@ CREATE TABLE person (
   avatar_id         TEXT,
   owner_id          TEXT REFERENCES app_user(id),
   is_private        INTEGER NOT NULL DEFAULT 0,
-  google_sync       INTEGER NOT NULL DEFAULT 0,
-  google_contact_id TEXT,
   created_at        TEXT NOT NULL,
   created_by        TEXT,
   updated_at        TEXT NOT NULL,

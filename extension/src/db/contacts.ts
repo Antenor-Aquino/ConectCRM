@@ -87,7 +87,6 @@ export interface PersonInput {
   notes?: string | null;
   ownerId?: string | null;
   isPrivate?: boolean;
-  googleSync?: boolean;
   organizationIds?: string[];
   tagIds?: string[];
   customValues?: Record<string, CustomValue>;
@@ -103,7 +102,6 @@ export interface Person {
   avatar_id: string | null;
   owner_id: string | null;
   is_private: number;
-  google_sync: number;
   created_by: string | null;
   version: number;
 }
@@ -127,7 +125,7 @@ function personVisibility(viewer: Viewer | null | undefined, alias = "p"): { sql
   };
 }
 
-const PERSON_COLS = "p.id, p.name, p.email, p.phone, p.phone_country, p.notes, p.avatar_id, p.owner_id, p.is_private, p.google_sync, p.created_by, p.version";
+const PERSON_COLS = "p.id, p.name, p.email, p.phone, p.phone_country, p.notes, p.avatar_id, p.owner_id, p.is_private, p.created_by, p.version";
 
 function personData(db: DatabaseSync, input: Partial<PersonInput>, full: boolean): Record<string, SqlValue> {
   const data: Record<string, SqlValue> = {};
@@ -141,7 +139,6 @@ function personData(db: DatabaseSync, input: Partial<PersonInput>, full: boolean
   if (full || input.notes !== undefined) data.notes = optionalText(input.notes);
   if (full || input.ownerId !== undefined) data.owner_id = checkOwner(db, input.ownerId);
   if (full || input.isPrivate !== undefined) data.is_private = input.isPrivate ? 1 : 0;
-  if (full || input.googleSync !== undefined) data.google_sync = input.googleSync ? 1 : 0;
   return data;
 }
 

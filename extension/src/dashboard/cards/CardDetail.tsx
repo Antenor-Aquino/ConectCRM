@@ -1,0 +1,492 @@
+// Detalhe do cartão (Fase 4): dados editáveis, etapas, ganho/perdido,
+// notas, tarefas e histórico de alterações.
+import { useCallback, useEffect, useState } from "react";
+import { CheckCircle2, Circle, Pin, PlusCircle, RotateCcw, Trash2, Trophy, X, XCircle } from "lucide-react";
+import { TaBadge, TaButton, TaInput, TaTextarea, cn } from "@tailadmin";
+import { call } from "../../rpc/client";
+import type { ActivityListItem } from "../../db/activities";
+import type { CustomField, CustomValue } from "../../db/customFields";
+import type { CardDetail as CardData } from "../../db/deals";
+import type { Note } from "../../db/notes";
+import type { Pipeline, Stage } from "../../db/pipelines";
+import { CARD_TEXT } from "../../lib/cardTypes";
+import { formatCents, formatDateTime, fromDateInput, toDateInput } from "../../lib/format";
+import { useSession } from "../session";
+import { Combobox, type ComboItem } from "../ui/Combobox";
+import { CustomFieldsForm } from "../ui/CustomFieldsForm";
+import { ErrorText, Field, SectionLabel } from "../ui/form";
+import { MoneyInput } from "../ui/MoneyInput";
+import { SlaPicker } from "../ui/SlaPicker";
+import { stageColor } from "../ui/StageSelect";
+import { TagPicker } from "../ui/TagPicker";
+import { UserSelect } from "../ui/UserSelect";
+import { ItemsEditor, type ItemDraft } from "./ItemsEditor";
+import { LostModal } from "./LostModal";
+import { createOrganizationQuick, createPersonQuick, searchOrganizations, searchPersons } from "./searchers";
+
+const FIELD_LABEL: Record<string, string> = {
+  title: "Título",
+  description: "Descrição",
+  value_cents: "Valor",
+  sla_at: "SLA",
+  start_at: "Início",
+  due_at: "Prazo",
+  person_id: "Contato",
+  organization_id: "Organização",
+  owner_id: "Responsável",
+  status: "Status",
+  stage_id: "Etapa",
+  loss_reason_id: "Motivo da perda",
+  loss_note: "Observação da perda",
+  expected_close_at: "Previsão de fechamento",
+};
+
+const STATUS_BADGE = { open: null, won: { color: "green", label: "Ganho" }, lost: { color: "red", label: "Perdido" } } as const;
+
+type Tab = "notas" | "tarefas" | "historico";
+
+export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: string; pipeline: Pipeline; onClose: () => void; onChanged: () => void }) {
+  const { users, user } = useSession();
+  const text = CARD_TEXT[pipeline.type];
+  const [card, setCard] = useState<CardData | null>(null);
+  const [stages, setStages] = useState<Stage[]>([]);
+  const [fields, setFields] = useState<CustomField[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("notas");
+  const [itemsOpen, setItemsOpen] = useState(false);
+  const [lostOpen, setLostOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+
+  const load = useCallback(async () => {
+    const c = await call("cards.get", { id: cardId });
+    if (!c) {
+      setError("Cartão não encontrado ou sem permissão de acesso.");
+      return;
+    }
+    setCard(c);
+    setTitle(c.title);
+    setDescription(c.description ?? "");
+  }, [cardId]);
+
+  useEffect(() => {
+    void load();
+    void call("stages.list", { pipelineId: pipeline.id }).then(setStages);
+    void call("customFields.list", { entity: text.kind, pipelineId: pipeline.id }).then(setFields);
+  }, [load, pipeline.id, text.kind]);
+
+  const run = async (fn: () => Promise<unknown>) => {
+    setError(null);
+    try {
+      await fn();
+      await load();
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const update = (patch: Record<string, unknown>) => run(() => call("cards.update", { id: cardId, patch }));
+
+  if (!card) {
+    return (
+      <Shell onClose={onClose}>
+        <ErrorText>{error}</ErrorText>
+      </Shell>
+    );
+  }
+
+  const status = STATUS_BADGE[card.status];
+  const person: ComboItem | null = card.person_id ? { id: card.person_id, label: card.person_name ?? "" } : null;
+  const org: ComboItem | null = card.organization_id ? { id: card.organization_id, label: card.organization_name ?? "" } : null;
+  const items: ItemDraft[] = card.items.map((i) => ({
+    id: i.id,
+    productId: i.product_id,
+    description: i.description,
+    quantity: i.quantity,
+    unitPriceCents: i.unit_price_cents,
+    discountCents: i.discount_cents,
+    recurrence: i.recurrence,
+  }));
+
+  return (
+    <Shell onClose={onClose}>
+      {/* Cabeçalho */}
+      <div className="flex items-start gap-3 pr-8">
+        <input
+          className="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-theme-xl font-semibold text-gray-800 hover:border-gray-200 focus:border-brand-300 focus:outline-none dark:text-white/90"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onBlur={() => title !== card.title && void update({ title })}
+        />
+        {status && <TaBadge color={status.color} label={status.label} />}
+      </div>
+      <p className="mb-4 px-1 text-theme-xs text-gray-500">
+        {pipeline.name} · criado em {formatDateTime(card.created_at)}
+      </p>
+
+      {/* Etapas: clicar move o cartão */}
+      <div className="mb-4 flex overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
+        {stages.map((s, i) => {
+          const reached = stages.findIndex((x) => x.id === card.stage_id) >= i;
+          return (
+            <button
+              key={s.id}
+              type="button"
+              title={`Mover para ${s.name}`}
+              onClick={() => s.id !== card.stage_id && void run(() => call("cards.move", { id: cardId, stageId: s.id }))}
+              className={cn(
+                "flex-1 truncate border-r border-white/40 px-2 py-1.5 text-theme-xs font-medium last:border-r-0",
+                reached ? "text-white" : "bg-gray-50 text-gray-500 hover:bg-gray-100 dark:bg-white/5",
+              )}
+              style={reached ? { background: stageColor(s.color) } : undefined}
+            >
+              {s.name}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        {card.status === "open" ? (
+          <>
+            <TaButton
+              className="!bg-success-600 !text-white !ring-0 hover:!bg-success-700"
+              startIcon={<Trophy size={15} />}
+              onClick={() => void run(() => call("cards.setStatus", { id: cardId, status: "won" }))}
+            >
+              Ganho
+            </TaButton>
+            <TaButton variant="danger" startIcon={<XCircle size={15} />} onClick={() => setLostOpen(true)}>
+              Perdido
+            </TaButton>
+          </>
+        ) : (
+          <TaButton startIcon={<RotateCcw size={15} />} onClick={() => void run(() => call("cards.setStatus", { id: cardId, status: "open" }))}>
+            Reabrir
+          </TaButton>
+        )}
+        <TaButton
+          variant="ghost"
+          className="ml-auto"
+          startIcon={<Trash2 size={15} />}
+          onClick={() => {
+            if (confirm(`Excluir este ${text.noun}?`)) void run(() => call("cards.delete", { id: cardId })).then(onClose);
+          }}
+        >
+          Excluir
+        </TaButton>
+      </div>
+      {card.status === "lost" && (card.loss_note || card.loss_reason_id) && (
+        <p className="mb-4 rounded-lg bg-error-50 px-3 py-2 text-theme-sm text-error-700">Perdido{card.loss_note ? `: ${card.loss_note}` : ""}</p>
+      )}
+      <ErrorText>{error}</ErrorText>
+
+      <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
+        {/* Dados */}
+        <div>
+          {pipeline.type === "comercial" && (
+            <>
+              <SectionLabel className="mt-0">Valor</SectionLabel>
+              <div className="flex items-center gap-3">
+                <div className="w-1/2">
+                  {card.value_from_items ? (
+                    <div className="flex h-10 items-center rounded-lg bg-gray-50 px-3.5 text-theme-sm dark:bg-white/5">{formatCents(card.value_cents)}</div>
+                  ) : (
+                    <MoneyInput value={card.value_cents} onChange={(c) => c !== card.value_cents && void update({ valueCents: c })} />
+                  )}
+                </div>
+                <button type="button" className="flex items-center gap-1.5 text-theme-sm font-medium text-brand-600 hover:underline" onClick={() => setItemsOpen(true)}>
+                  <PlusCircle size={16} />
+                  {card.items.length ? `${card.items.length} produto(s)` : "Adicionar produtos"}
+                </button>
+              </div>
+            </>
+          )}
+          {pipeline.type !== "comercial" && (
+            <Field label="Descrição">
+              <TaTextarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} onBlur={() => description !== (card.description ?? "") && void update({ description })} />
+            </Field>
+          )}
+          {pipeline.type === "operacional" && (
+            <Field label="SLA">
+              <SlaPicker value={card.sla_at} onChange={(v) => void update({ slaAt: v })} />
+            </Field>
+          )}
+          {pipeline.type === "projeto" && (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Início">
+                <TaInput type="date" value={toDateInput(card.start_at)} onChange={(e) => void update({ startAt: fromDateInput(e.target.value) })} />
+              </Field>
+              <Field label="Prazo">
+                <TaInput type="date" value={toDateInput(card.due_at)} onChange={(e) => void update({ dueAt: fromDateInput(e.target.value) })} />
+              </Field>
+            </div>
+          )}
+
+          <SectionLabel>Relacionamento</SectionLabel>
+          <Field label="Contato">
+            <Combobox value={person} onChange={(i) => void update({ personId: i?.id ?? null })} search={searchPersons} placeholder="Buscar por nome, telefone ou e-mail" onCreate={createPersonQuick} createLabel="Criar contato" />
+          </Field>
+          <Field label="Organização">
+            <Combobox
+              value={org}
+              onChange={(i) => void update({ organizationId: i?.id ?? null })}
+              search={searchOrganizations}
+              placeholder="Buscar organização"
+              onCreate={createOrganizationQuick}
+              createLabel="Criar organização"
+              dashed={<><PlusCircle size={15} /> Vincular ou criar organização</>}
+            />
+          </Field>
+
+          <SectionLabel>Mais detalhes</SectionLabel>
+          <Field label="Responsável">
+            <UserSelect value={card.owner_id} onChange={(id) => void update({ ownerId: id })} />
+          </Field>
+          <Field label="Tags">
+            <TagPicker entity={text.kind} value={card.tags.map((t) => t.id)} onChange={(ids) => void update({ tagIds: ids })} />
+          </Field>
+          <CustomFieldsForm
+            fields={fields}
+            values={card.customValues}
+            onChange={(values: Record<string, CustomValue>) => {
+              setCard({ ...card, customValues: values });
+            }}
+          />
+          {fields.some((f) => !f.hidden) && (
+            <TaButton size="sm" onClick={() => void update({ customValues: card.customValues })}>
+              Salvar campos personalizados
+            </TaButton>
+          )}
+        </div>
+
+        {/* Atividade */}
+        <div>
+          <div className="mb-3 flex gap-1 rounded-lg bg-gray-100 p-1 dark:bg-white/5">
+            {(
+              [
+                ["notas", "Notas"],
+                ["tarefas", "Tarefas"],
+                ["historico", "Histórico"],
+              ] as [Tab, string][]
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setTab(id)}
+                className={cn(
+                  "flex-1 rounded-md py-1.5 text-theme-sm font-medium",
+                  tab === id ? "bg-white text-brand-600 shadow-theme-xs dark:bg-gray-900" : "text-gray-600 dark:text-gray-400",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {tab === "notas" && <NotesTab cardId={cardId} onChanged={onChanged} />}
+          {tab === "tarefas" && <TasksTab cardId={cardId} onChanged={onChanged} />}
+          {tab === "historico" && (
+            <HistoryTab
+              cardId={cardId}
+              stageHistory={card.stageHistory}
+              userName={(id) => users.find((u) => u.id === id)?.name ?? (id === user.id ? user.name : "Sistema")}
+            />
+          )}
+        </div>
+      </div>
+
+      <ItemsEditor
+        open={itemsOpen}
+        items={items}
+        onClose={() => setItemsOpen(false)}
+        onSave={(list) => {
+          setItemsOpen(false);
+          void run(() => call("cards.setItems", { id: cardId, items: list }));
+        }}
+      />
+      <LostModal
+        cardId={lostOpen ? cardId : null}
+        onClose={() => setLostOpen(false)}
+        onDone={() => {
+          setLostOpen(false);
+          void load();
+          onChanged();
+        }}
+      />
+    </Shell>
+  );
+}
+
+function Shell({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[9999] flex justify-end">
+      <div className="fixed inset-0 bg-gray-900/40" onClick={onClose} aria-hidden />
+      <div className="relative h-full w-full max-w-[980px] overflow-y-auto bg-white p-6 shadow-theme-xl dark:bg-gray-900">
+        <button type="button" onClick={onClose} title="Fechar" className="absolute right-5 top-5 flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-white/5">
+          <X size={18} />
+        </button>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function NotesTab({ cardId, onChanged }: { cardId: string; onChanged: () => void }) {
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [body, setBody] = useState("");
+  const load = useCallback(() => call("notes.list", { entityType: "deal", entityId: cardId }).then(setNotes), [cardId]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  const after = async () => {
+    await load();
+    onChanged();
+  };
+  return (
+    <div>
+      <TaTextarea rows={3} className="bg-warning-25 border-warning-200" placeholder="Escreva uma nota…" value={body} onChange={(e) => setBody(e.target.value)} />
+      <div className="mt-2 flex justify-end">
+        <TaButton
+          variant="primary"
+          disabled={!body.trim()}
+          onClick={async () => {
+            await call("notes.add", { entityType: "deal", entityId: cardId, body });
+            setBody("");
+            await after();
+          }}
+        >
+          Salvar nota
+        </TaButton>
+      </div>
+      <ul className="mt-3 space-y-2">
+        {notes.map((n) => (
+          <li key={n.id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-800">
+            <p className="whitespace-pre-wrap text-theme-sm text-gray-800 dark:text-white/90">{n.body}</p>
+            <div className="mt-2 flex items-center gap-3 text-theme-xs text-gray-400">
+              <span>{formatDateTime(n.created_at)}</span>
+              <button type="button" className={cn("ml-auto hover:text-brand-600", n.pinned && "text-brand-600")} title={n.pinned ? "Desafixar" : "Fixar"} onClick={async () => {
+                await call("notes.update", { id: n.id, patch: { pinned: !n.pinned } });
+                await after();
+              }}>
+                <Pin size={14} />
+              </button>
+              <button type="button" className="hover:text-error-600" title="Excluir" onClick={async () => {
+                if (!confirm("Excluir esta nota?")) return;
+                await call("notes.delete", { id: n.id });
+                await after();
+              }}>
+                <Trash2 size={14} />
+              </button>
+            </div>
+          </li>
+        ))}
+        {notes.length === 0 && <p className="text-theme-sm text-gray-400">Nenhuma nota.</p>}
+      </ul>
+    </div>
+  );
+}
+
+function TasksTab({ cardId, onChanged }: { cardId: string; onChanged: () => void }) {
+  const [tasks, setTasks] = useState<ActivityListItem[]>([]);
+  const [title, setTitle] = useState("");
+  const [due, setDue] = useState("");
+  const load = useCallback(() => call("activities.list", { dealId: cardId }).then(setTasks), [cardId]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  const after = async () => {
+    await load();
+    onChanged();
+  };
+  const now = Date.now();
+  return (
+    <div>
+      <div className="flex gap-2">
+        <TaInput placeholder="Nova tarefa" value={title} onChange={(e) => setTitle(e.target.value)} />
+        <TaInput type="datetime-local" className="w-52 shrink-0" value={due} onChange={(e) => setDue(e.target.value)} />
+        <TaButton
+          variant="primary"
+          disabled={!title.trim()}
+          onClick={async () => {
+            await call("activities.create", { title, dealId: cardId, dueAt: due ? new Date(due).toISOString() : undefined });
+            setTitle("");
+            setDue("");
+            await after();
+          }}
+        >
+          Adicionar
+        </TaButton>
+      </div>
+      <p className="mt-1 text-theme-xs text-gray-400">O cadastro completo de tarefas (tipo, duração, lembrete) chega na Fase 7.</p>
+      <ul className="mt-3 divide-y divide-gray-100 dark:divide-gray-800">
+        {tasks.map((t) => {
+          const overdue = !t.done && new Date(t.due_at).getTime() < now;
+          return (
+            <li key={t.id} className="flex items-center gap-3 py-2">
+              <button type="button" title={t.done ? "Reabrir" : "Concluir"} onClick={async () => {
+                await call("activities.setDone", { id: t.id, done: !t.done });
+                await after();
+              }} className={t.done ? "text-success-600" : "text-gray-400 hover:text-success-600"}>
+                {t.done ? <CheckCircle2 size={18} /> : <Circle size={18} />}
+              </button>
+              <div className="min-w-0 flex-1">
+                <p className={cn("truncate text-theme-sm", t.done ? "text-gray-400 line-through" : "text-gray-800 dark:text-white/90")}>{t.title}</p>
+                <p className={cn("text-theme-xs", overdue ? "text-error-600" : "text-gray-400")}>
+                  {t.type_name} · {formatDateTime(t.due_at)}
+                  {t.owner_name && ` · ${t.owner_name}`}
+                </p>
+              </div>
+            </li>
+          );
+        })}
+        {tasks.length === 0 && <p className="py-2 text-theme-sm text-gray-400">Nenhuma tarefa.</p>}
+      </ul>
+    </div>
+  );
+}
+
+function HistoryTab({
+  cardId,
+  stageHistory,
+  userName,
+}: {
+  cardId: string;
+  stageHistory: CardData["stageHistory"];
+  userName: (id: string | null) => string;
+}) {
+  const [log, setLog] = useState<{ op: string; changes: string; user_id: string | null; at: string }[]>([]);
+  useEffect(() => {
+    void call("history.get", { table: "deal", id: cardId }).then((l) => setLog([...l].reverse()));
+  }, [cardId, stageHistory.length]);
+  return (
+    <div>
+      <SectionLabel className="mt-0">Etapas</SectionLabel>
+      <ul className="mb-4 space-y-1 text-theme-sm">
+        {stageHistory.map((h, i) => (
+          <li key={i} className="flex justify-between text-gray-700 dark:text-gray-300">
+            <span>{h.stage_name}</span>
+            <span className="text-theme-xs text-gray-400">
+              {formatDateTime(h.entered_at)}
+              {h.left_at ? ` → ${formatDateTime(h.left_at)}` : " (atual)"}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <SectionLabel>Alterações</SectionLabel>
+      <ul className="space-y-2">
+        {log.map((l, i) => {
+          const fields = Object.keys(JSON.parse(l.changes) as Record<string, unknown>)
+            .map((f) => FIELD_LABEL[f])
+            .filter(Boolean);
+          const what = l.op === "insert" ? "Criou" : l.op === "delete" ? "Excluiu" : l.op === "restore" ? "Restaurou" : `Alterou ${fields.join(", ") || "dados"}`;
+          return (
+            <li key={i} className="text-theme-sm text-gray-700 dark:text-gray-300">
+              <span className="font-medium">{userName(l.user_id)}</span> · {what}
+              <span className="block text-theme-xs text-gray-400">{formatDateTime(l.at)}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}

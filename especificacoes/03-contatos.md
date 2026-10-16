@@ -14,7 +14,6 @@ Modal com rolagem interna, botão ✕ no topo, **Salvar** fixo no rodapé.
 | | **Celular** | Seletor de país com bandeira (padrão 🇧🇷 **+55**), máscara do país; gravado normalizado (`+5511999998888`) para casar com o WhatsApp |
 | ORGANIZAÇÕES | **Vincular organização** | Área tracejada "Vincule a empresa em que esse contato trabalha"; busca ou cria organização; permite **mais de uma**; a primeira vinculada vira a **principal** (ver spec 04) |
 | NOTAS | Notas | Área de texto em destaque amarelo — "Escreva algo sobre esse contato..." |
-| CONFIGURAÇÕES | **Sincronizar com o Google** (?) | Liga a sincronização deste contato com a conta Google do usuário (ver C1) |
 | | **Contato privado** (?) | Visível apenas para o responsável/criador (e administradores) |
 | MAIS DETALHES | Responsável, Tags | Responsável com tipo ("Antenor (vendedor)"); tags da entidade **Contato** |
 | CAMPOS PERSONALIZADOS (n) | Campos da entidade **Contato** | Grade de **duas colunas**; o título mostra a quantidade. Ex.: Empresa, Cargo, Valor Power, Site/Instagram, Origem do Lead, Turma aluno, Filho(a) 1, Filho(a) 2 |
@@ -38,9 +37,6 @@ Modal com rolagem interna, botão ✕ no topo, **Salvar** fixo no rodapé.
 
 ## 4. Decisões e pendências
 
-- C1: o toggle substitui o "Kinbox Agenda" e sincroniza com o Google. A
-  resposta foi "Google Agenda"; como a sincronização é do **contato**, o
-  destino técnico é o **Google Contatos** (People API), que é a agenda de
-  contatos da conta Google e do celular Android. *Confirmar.*
+- C1: **sem sincronização com o Google** (decisão do cliente); o toggle do sistema de referência não entra.
 - C2: responsável e tags entram em "Mais detalhes".
 - C3: um e-mail e um celular por contato na v1 (mais canais depois).

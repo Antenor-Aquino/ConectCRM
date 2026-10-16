@@ -148,6 +148,39 @@ function columnEdgePosition(db: DatabaseSync, stageId: string, edge: "top" | "bo
   return edge === "top" ? r.p - 1 : r.p + 1;
 }
 
+// ---------- Permissão por tipo de usuário ----------
+// Administrador vê tudo; gestor vê os cartões da(s) sua(s) equipe(s);
+// vendedor vê só os seus. Cartões sem responsável ficam visíveis a todos.
+
+export function cardScope(db: DatabaseSync, viewer: Viewer | null | undefined, alias = "d"): { sql: string; params: SqlValue[] } {
+  if (!viewer || viewer.role === "admin") return { sql: "", params: [] };
+  const ids = viewer.role === "gestor" ? teammateIds(db, viewer.id) : [viewer.id];
+  return {
+    sql: ` AND (${alias}.owner_id IS NULL OR ${alias}.owner_id IN (${ids.map(() => "?").join(", ")}))`,
+    params: ids,
+  };
+}
+
+export function canAccessCard(db: DatabaseSync, viewer: Viewer | null | undefined, id: string): boolean {
+  const scope = cardScope(db, viewer);
+  return !!one(db, `SELECT 1 FROM deal d WHERE d.id = ? AND d.deleted_at IS NULL${scope.sql}`, id, ...scope.params);
+}
+
+export function assertCardAccess(db: DatabaseSync, viewer: Viewer | null | undefined, id: string): void {
+  if (!canAccessCard(db, viewer, id)) throw new ValidationError("Cartão não encontrado ou sem permissão de acesso.");
+}
+
+/** Vendedor só atribui a si mesmo; gestor, a alguém da equipe. */
+export function assertCanAssign(db: DatabaseSync, viewer: Viewer | null | undefined, ownerId: string | null | undefined): void {
+  if (!viewer || viewer.role === "admin" || !ownerId) return;
+  const allowed = viewer.role === "gestor" ? teammateIds(db, viewer.id) : [viewer.id];
+  if (!allowed.includes(ownerId)) {
+    throw new ValidationError(
+      viewer.role === "vendedor" ? "Vendedor só pode atribuir cartões a si mesmo." : "Gestor só pode atribuir cartões a pessoas da sua equipe.",
+    );
+  }
+}
+
 export function createCard(db: DatabaseSync, ctx: DbContext, input: CardInput): string {
   return withTransaction(db, () => {
     const pipeline = pipelineOf(db, input.pipelineId);
@@ -353,9 +386,9 @@ export function setDealItems(db: DatabaseSync, ctx: DbContext, dealId: string, i
 
 // ---------- Leitura ----------
 
-export function getCard(db: DatabaseSync, id: string): CardDetail | undefined {
+export function getCard(db: DatabaseSync, id: string, viewer?: Viewer | null): CardDetail | undefined {
   const card = getCardRow(db, id);
-  if (!card) return undefined;
+  if (!card || !canAccessCard(db, viewer, id)) return undefined;
   const names = one<{ person_name: string | null; organization_name: string | null }>(
     db,
     `SELECT (SELECT name FROM person WHERE id = ?) AS person_name, (SELECT name FROM organization WHERE id = ?) AS organization_name`,
@@ -453,6 +486,7 @@ export function getBoard(
     where.push("(d.title LIKE ? OR p.name LIKE ? OR o.name LIKE ?)");
     params.push(q, q, q);
   }
+  const scope = cardScope(db, opts.viewer);
   const cards = many<BoardCard & { stage_id: string }>(
     db,
     `SELECT d.id, d.stage_id, d.title, d.value_cents, d.status, d.person_id, p.name AS person_name, o.name AS organization_name,
@@ -465,9 +499,10 @@ export function getBoard(
      LEFT JOIN person p ON p.id = d.person_id
      LEFT JOIN organization o ON o.id = d.organization_id
      LEFT JOIN app_user u ON u.id = d.owner_id
-     WHERE ${where.join(" AND ")}
+     WHERE ${where.join(" AND ")}${scope.sql}
      ORDER BY ${SORT_SQL[opts.sort ?? "recent"]}, d.position`,
     ...params,
+    ...scope.params,
   );
   const stages = many<{ id: string; name: string; color: string | null }>(
     db,
