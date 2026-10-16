@@ -235,7 +235,7 @@ personalizados, tarefas, backup e WhatsApp).
 - `especificacoes/01-funis-kanban.md` — tipos de funil, botão "+", formulários de negócio e ticket, SLA, responsável, tags, campos personalizados.
 - `especificacoes/02-tarefas.md` — modal de tarefa, tipos, quando/duração/lembrete.
 - `especificacoes/03-contatos.md` — modal de contato, canais, organizações, campos personalizados.
-- Organizações — aguardando tela.
+- `especificacoes/04-organizacoes.md` — modal de organização, CNPJ, CEP, contatos vinculados.
 
 ## 11. Dúvidas
 

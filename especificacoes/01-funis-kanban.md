@@ -2,7 +2,7 @@
 
 > Status: **em detalhamento**. Telas de referência enviadas: Novo ticket,
 > Nova negociação, seletor de SLA, Criar campo personalizado.
-> Aguardando: tela de cadastro de **Organização**
+> Todas as telas de cadastro recebidas (specs 02, 03 e 04).
 > antes de iniciar o código.
 
 ## 1. Menu principal
@@ -174,4 +174,4 @@ Em **Configurações → Funis** (e pelo menu ⋯ do quadro):
   (tags de contato ≠ tags de negócio)?
 - **P5 — Tipo do funil:** pode ser alterado depois de criado? (Proposta: não,
   pois muda os campos dos itens.)
-- **P6 — Tela pendente:** Organização (Tarefa e Contato recebidas — specs 02 e 03).
+- **P6:** — (todas as telas recebidas).

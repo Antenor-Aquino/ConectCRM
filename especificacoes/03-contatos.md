@@ -12,7 +12,7 @@ Modal com rolagem interna, botão ✕ no topo, **Salvar** fixo no rodapé.
 | — | **Nome** | Obrigatório. Placeholder "Nome do contato" |
 | CANAIS | **E-mail** | Validação de formato. Placeholder "nome@empresa.com.br" |
 | | **Celular** | Seletor de país com bandeira (padrão 🇧🇷 **+55**), máscara do país; gravado normalizado (`+5511999998888`) para casar com o WhatsApp |
-| ORGANIZAÇÕES | **Vincular organização** | Área tracejada "Vincule a empresa em que esse contato trabalha"; busca ou cria organização; permite **mais de uma** |
+| ORGANIZAÇÕES | **Vincular organização** | Área tracejada "Vincule a empresa em que esse contato trabalha"; busca ou cria organização; permite **mais de uma**; a primeira vinculada vira a **principal** (ver spec 04) |
 | NOTAS | Notas | Área de texto em destaque amarelo — "Escreva algo sobre esse contato..." |
 | CONFIGURAÇÕES | **Vincular ao Kinbox Agenda** (?) | Ver pendência C1 |
 | | **Contato privado** (?) | Visível apenas para o responsável/criador (e administradores) |
