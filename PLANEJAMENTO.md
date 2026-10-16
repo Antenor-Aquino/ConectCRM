@@ -232,6 +232,7 @@ personalizados, tarefas, backup e WhatsApp).
 
 ## 10. Especificações por módulo
 
+- `especificacoes/00-design.md` — padrão visual: o mesmo da gestão financeira (TailAdmin, fonte Inter, paleta, componentes).
 - `especificacoes/01-funis-kanban.md` — tipos de funil, botão "+", formulários de negócio e ticket, SLA, responsável, tags, campos personalizados.
 - `especificacoes/02-tarefas.md` — modal de tarefa, tipos, quando/duração/lembrete.
 - `especificacoes/03-contatos.md` — modal de contato, canais, organizações, campos personalizados.
