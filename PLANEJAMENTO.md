@@ -1,7 +1,7 @@
-# ConectCRM — Planejamento de implementação (v2)
+# ConectCRM — Planejamento de implementação (v3)
 
 > Status: **aguardando aprovação**. Nenhum código escrito.
-> v2 incorpora o mockup da tela inicial e as respostas às decisões em aberto.
+> v3: licença por instalação, indicadores dos cartões adiados e proposta de sincronização entre computadores.
 
 ## 1. Visão
 
@@ -21,7 +21,8 @@ gravando no CRM local em vez de Pipedrive/HubSpot (que deixam de existir).
 | Extensão | **Nova** extensão (novo ID, nova chave `.pem`, novo OAuth Client do Google/Microsoft). O wa-pipedrive publicado não é alterado. |
 | Usuários | Equipes e vários usuários/vendedores, associáveis a negócios. |
 | Pipedrive/HubSpot | Removidos. Todo o código de API deles vira chamadas ao CRM local. |
-| Licença | Mesma lógica e backend do wa-pipedrive (`extpipe.claudiacrm.com.br`: trial, planos, checkout, upgrade, cancelamento, device ID). |
+| Licença | Mesma lógica e backend do wa-pipedrive (`extpipe.claudiacrm.com.br`: trial, planos, checkout, upgrade, cancelamento, device ID). **Por instalação**: vários usuários cadastrados num mesmo computador usam uma licença. |
+| Indicadores dos cartões | A definir mais à frente. A v1 mostra o básico (título, valor, contato, responsável); os indicadores entram depois. |
 | Campos personalizados | Entram na estrutura desde o início. |
 | Produtos e serviços | Entram na estrutura desde o início. |
 | WhatsApp | Mesmo fluxo atual (popup), apontando para o CRM local. |
@@ -51,9 +52,8 @@ gravando no CRM local em vez de Pipedrive/HubSpot (que deixam de existir).
 **Cartão do negócio**
 - Título (link para o detalhe) e **valor**.
 - Contato com avatar de iniciais.
-- Rodapé com indicadores: **notas/comentários**, **checklist de tarefas `concluídas/total`** (riscado quando 100%), **contador de comentários**, **alerta vermelho** (tarefa atrasada / sem próxima atividade).
-- **Avatar do responsável** no canto.
-- **Destaque em vermelho com "✕" no canto** = negócio perdido (ou atrasado — ver dúvida 2).
+- **Avatar do responsável**.
+- Indicadores do rodapé e destaques visuais (ex.: cartão vermelho com "✕", balão vermelho): **a definir mais à frente**.
 
 ## 4. Arquitetura
 
@@ -85,12 +85,42 @@ Recomendação para a v1:
 - Permissões simples por papel (ex.: vendedor vê só os próprios negócios; gestor vê a equipe).
 
 **Limite importante:** com dados locais, todos os usuários compartilham o
-banco **do mesmo navegador/computador**. Se cada vendedor usar o seu próprio
-computador e precisar ver os mesmos negócios, será necessária uma
-**sincronização por servidor** (pode usar o mesmo backend da licença). Proposta:
-estruturar o banco desde já para isso (ids UUID, `updated_at`, `updated_by`,
-exclusão lógica, log de alterações) e deixar a sincronização como fase
-própria (Fase 11), sem bloquear o MVP.
+banco **do mesmo navegador/computador**. Para vendedores em computadores
+diferentes, ver seção 5.1.
+
+### 5.1 Sincronização entre computadores (proposta)
+
+Modelo **local-first**: cada instalação continua com o banco completo no
+próprio computador (funciona offline, rápido, com backup diário), e um
+servidor só troca as **alterações** entre os computadores da mesma empresa.
+
+1. **Espaço da empresa**: o admin cria a empresa no servidor e convida os
+   usuários; cada instalação (com sua licença) entra nesse espaço.
+2. **Registro de alterações**: toda gravação local (criar, editar, mover
+   etapa, excluir) também vai para uma fila local com id, data/hora,
+   usuário e campos alterados.
+3. **Envio**: a cada poucos segundos (e ao voltar a ter internet), a extensão
+   envia a fila ao servidor.
+4. **Recebimento**: a extensão pede ao servidor "tudo que mudou desde a
+   última vez" e aplica no banco local; o Kanban atualiza na tela.
+5. **Conflitos**: decididos **por campo** — se duas pessoas mudam campos
+   diferentes do mesmo negócio, as duas alterações valem; no mesmo campo,
+   vale a mais recente e a anterior fica no histórico. Exclusões são lógicas
+   (podem ser desfeitas).
+6. **Permissões no servidor**: o vendedor recebe só o que pode ver (seus
+   negócios / sua equipe); o gestor recebe a equipe; o admin, tudo.
+7. **Anexos** (arquivos, mídias do WhatsApp) sobem separados e são baixados
+   sob demanda.
+
+Implicações:
+- Os dados passam a ficar **também no servidor** → política de privacidade e
+  LGPD, custo de hospedagem e armazenamento.
+- Backend: o mesmo servidor da licença (`extpipe`) ganharia a API de
+  sincronização, **ou** um serviço pronto (ex.: Supabase/Postgres), que
+  acelera a construção.
+- O banco já nasce preparado (UUID, `updated_at`, `updated_by`, exclusão
+  lógica, `audit_log`), então ligar a sincronização depois não exige refazer
+  as telas.
 
 ## 6. Modelo de dados
 
@@ -183,7 +213,6 @@ personalizados, tarefas, backup e WhatsApp).
 
 ## 10. Dúvidas para aprovação
 
-1. **"Fluxo geral"** no mockup: é a visão "todos os responsáveis" (com opção "Meu fluxo" / "Minha equipe") ou um período/consolidado de todos os funis?
-2. **Cartão vermelho com "✕"**: significa negócio **perdido** ou **atrasado**? O ícone vermelho de balão (cartão "Mieza") indica o quê — mensagem não lida, tarefa vencida?
-3. **Equipe em computadores diferentes**: os vendedores vão compartilhar o mesmo computador, ou cada um no seu (o que exige a sincronização da seção 5)?
-4. **Licença**: por instalação (como hoje) ou por usuário cadastrado?
+1. **"Fluxo geral"**: proposta — seletor de visão por responsável: *Fluxo geral* (todos), *Meu fluxo*, *Minha equipe*. Confirma?
+2. **Equipes em computadores diferentes**: a sincronização (seção 5.1) entra na primeira versão ou depois?
+3. Se entrar: **servidor próprio** (`extpipe`) ou **serviço pronto** (ex.: Supabase)?
