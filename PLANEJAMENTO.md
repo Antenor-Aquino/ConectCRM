@@ -34,7 +34,7 @@ gravando no CRM local em vez de Pipedrive/HubSpot (que deixam de existir).
 
 **Barra superior (fixa)**
 - Busca global `Ctrl+K` (negócios, pessoas, empresas, tarefas).
-- Menu: **Funis · Tarefas · Clientes · Relatórios** + botão **"+"** (criação rápida: negócio, pessoa, empresa, tarefa).
+- Menu: **Funis · Tarefas · Contatos · Organizações · Relatórios** + botão **"+"** (cadastro rápido — regras em `especificacoes/01-funis-kanban.md`).
 - **Configurações**, **sino** (central de notificações: backups, tarefas vencendo, avisos de licença) e **calendário** (agenda do dia / próximas tarefas).
 
 **Coluna esquerda — lista de funis**
@@ -157,7 +157,7 @@ Regras aplicadas a **todas** as tabelas de dados:
 - `deal_items` (produto/serviço, quantidade, preço unitário, desconto, total, recorrência) — o valor do negócio pode ser manual ou a soma dos itens
 - `deal_stage_history` (entrada/saída em cada etapa → conversão e tempo por etapa)
 
-**Clientes**
+**Contatos e Organizações**
 - `persons` (nome, telefones, e-mails, cargo, empresa, responsável)
 - `organizations` (razão social, fantasia, CNPJ + dados da Receita, endereço, responsável)
 - `person_organizations`
@@ -217,7 +217,7 @@ Fonte em `referencia/wa-pipedrive/` (será portado para TypeScript modular).
 | **2. Estrutura e tela inicial** | Barra superior, busca `Ctrl+K`, botão "+", lista de funis, quadro Kanban (somente visual), tema claro/escuro |
 | **3. Usuários, equipes e licença** | Cadastros, seleção de usuário + PIN, papéis, tela de licença |
 | **4. Funis e Kanban** | Cadastro de funis/etapas, arrastar-e-soltar, cartão completo, filtros, ordenação, ganho/perdido, detalhe do negócio (timeline, notas, comentários, checklist, anexos, histórico) |
-| **5. Clientes** | Pessoas e empresas, CNPJ, anti-duplicação, mesclar, importação/exportação Excel/CSV |
+| **5. Contatos e Organizações** | Pessoas e empresas, CNPJ, anti-duplicação, mesclar, importação/exportação Excel/CSV |
 | **6. Produtos, serviços e campos personalizados** | Catálogo, itens no negócio, editor de campos personalizados, uso em formulários/filtros/listas |
 | **7. Tarefas e agenda** | Lista e calendário, tipos, lembretes, Google Agenda/Outlook |
 | **8. Backup e segurança** | Backup diário, restauração, ambiente de teste |
@@ -230,7 +230,11 @@ Fonte em `referencia/wa-pipedrive/` (será portado para TypeScript modular).
 **MVP = Fases 0 a 9** (CRM com equipe, Kanban, clientes, produtos, campos
 personalizados, tarefas, backup e WhatsApp).
 
-## 10. Dúvidas
+## 10. Especificações por módulo
+
+- `especificacoes/01-funis-kanban.md` — tipos de funil, botão "+", formulários de negócio e ticket, SLA, responsável, tags, campos personalizados.
+
+## 11. Dúvidas
 
 Nenhuma pendente para iniciar. Ficam para depois: indicadores dos cartões
 e o backend da sincronização (servidor próprio `extpipe` ou serviço pronto).
