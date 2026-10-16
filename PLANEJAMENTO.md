@@ -1,6 +1,6 @@
 # ConectCRM — Planejamento de implementação (v4)
 
-> Status: **Fases 0 a 4 concluídas** (branches `fase-0-fundacao` → `fase-1-dados` → `fase-2-4-kanban` → `fase-3-usuarios-licenca`). Próximo: Fase 5 (Contatos e Organizações).
+> Status: **Fases 0 a 5 concluídas** (branches em sequência até `fase-5-contatos-organizacoes`). Próximo: Fase 6 (produtos, serviços e campos personalizados).
 > v4: v1 individual (sem sincronização) com cadastro de equipes/usuários; estrutura pronta para sincronizar no futuro; "Fluxo geral" confirmado.
 
 ## 1. Visão
@@ -26,6 +26,8 @@ gravando no CRM local em vez de Pipedrive/HubSpot (que deixam de existir).
 | Sincronização | **Futura.** O modelo de dados já nasce preparado (seção 5.1). |
 | Visões do Kanban | *Fluxo geral* (todos), *Meu fluxo*, *Minha equipe*. |
 | Indicadores dos cartões | A definir mais à frente. A v1 mostra o básico (título, valor, contato, responsável); os indicadores entram depois. |
+| Licença ConectCRM × wa-pipedrive | **Separadas.** A extensão envia `produto: "conectcrm"` em todas as chamadas; o servidor (`extpipe`) precisa passar a validar o produto para que chaves de um não ativem o outro. |
+| Preços e checkout | Os mesmos do wa-pipedrive (R$ 17,65/mês; R$ 180,00/ano). |
 | Campos personalizados | Entram na estrutura desde o início. |
 | Produtos e serviços | Entram na estrutura desde o início. |
 | WhatsApp | Mesmo fluxo atual (popup), apontando para o CRM local. |

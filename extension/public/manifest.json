@@ -25,6 +25,10 @@
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
   "host_permissions": [
-    "https://extpipe.claudiacrm.com.br/*"
+    "https://extpipe.claudiacrm.com.br/*",
+    "https://brasilapi.com.br/*",
+    "https://minhareceita.org/*",
+    "https://www.receitaws.com.br/*",
+    "https://viacep.com.br/*"
   ]
 }

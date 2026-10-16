@@ -13,6 +13,12 @@ import { UserSwitcher } from "./components/UserSwitcher";
 import { LicenseGate } from "./license/LicenseGate";
 import { LockScreen } from "./components/LockScreen";
 import { SettingsView } from "./settings/SettingsView";
+import { OrganizationDetail } from "./contacts/OrganizationDetail";
+import { OrganizationFormModal } from "./contacts/OrganizationFormModal";
+import { OrganizationsView } from "./contacts/OrganizationsView";
+import { PersonDetail } from "./contacts/PersonDetail";
+import { PersonFormModal } from "./contacts/PersonFormModal";
+import { PersonsView } from "./contacts/PersonsView";
 import { SessionProvider, useSession } from "./session";
 
 // Menu principal (spec 01, seção 1).
@@ -27,8 +33,6 @@ const NAV: TopNavItem[] = [
 
 const PHASE_BY_TAB: Record<string, string> = {
   tarefas: "Fase 7 — Tarefas e agenda",
-  contatos: "Fase 5 — Contatos e Organizações",
-  organizacoes: "Fase 5 — Contatos e Organizações",
   relatorios: "Fase 10 — Relatórios",
 };
 
@@ -68,6 +72,21 @@ function Main() {
   const [openCardId, setOpenCardId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [comingSoon, setComingSoon] = useState<string | null>(null);
+  const [personOpen, setPersonOpen] = useState<string | null>(null);
+  const [orgOpen, setOrgOpen] = useState<string | null>(null);
+  const [newPerson, setNewPerson] = useState(false);
+  const [newOrg, setNewOrg] = useState(false);
+  const [contactsKey, setContactsKey] = useState(0);
+  const contactsChanged = () => setContactsKey((k) => k + 1);
+
+  /** Abre um negócio/ticket/etapa a partir de uma ficha de contato ou organização. */
+  const openCardFrom = (pipelineId: string, cardId: string) => {
+    setPersonOpen(null);
+    setOrgOpen(null);
+    setTab("funis");
+    select(pipelineId);
+    setOpenCardId(cardId);
+  };
 
   const reload = useCallback(async () => {
     try {
@@ -98,6 +117,8 @@ function Main() {
 
   // Botão "+": cartão do tipo escolhido, já no funil aberto se o tipo combinar (spec 01, seção 3).
   const onQuickCreate = (option: QuickCreateOption) => {
+    if (option.id === "contato") return setNewPerson(true);
+    if (option.id === "organizacao") return setNewOrg(true);
     const type = TYPE_BY_OPTION[option.id];
     if (!type) {
       setComingSoon(`Cadastro de ${option.label.toLowerCase()}`);
@@ -137,6 +158,10 @@ function Main() {
       )}
       {tab === "configuracoes" ? (
         <SettingsView />
+      ) : tab === "contatos" ? (
+        <PersonsView refreshKey={contactsKey} onOpen={setPersonOpen} onNew={() => setNewPerson(true)} />
+      ) : tab === "organizacoes" ? (
+        <OrganizationsView refreshKey={contactsKey} onOpen={setOrgOpen} onNew={() => setNewOrg(true)} />
       ) : tab === "funis" ? (
         <FunnelsView
           pipelines={pipelines}
@@ -166,6 +191,58 @@ function Main() {
         }}
       />
       <ComingSoonModal feature={comingSoon} onClose={() => setComingSoon(null)} />
+      {newPerson && (
+        <PersonFormModal
+          personId={null}
+          onClose={() => setNewPerson(false)}
+          onOpenExisting={(id) => {
+            setNewPerson(false);
+            setPersonOpen(id);
+          }}
+          onSaved={(id) => {
+            setNewPerson(false);
+            contactsChanged();
+            setPersonOpen(id);
+          }}
+        />
+      )}
+      {newOrg && (
+        <OrganizationFormModal
+          organizationId={null}
+          onClose={() => setNewOrg(false)}
+          onSaved={(id) => {
+            setNewOrg(false);
+            contactsChanged();
+            setOrgOpen(id);
+          }}
+        />
+      )}
+      {personOpen && (
+        <PersonDetail
+          key={personOpen}
+          personId={personOpen}
+          onClose={() => setPersonOpen(null)}
+          onChanged={contactsChanged}
+          onOpenOrganization={(id) => {
+            setPersonOpen(null);
+            setOrgOpen(id);
+          }}
+          onOpenCard={openCardFrom}
+        />
+      )}
+      {orgOpen && (
+        <OrganizationDetail
+          key={orgOpen}
+          organizationId={orgOpen}
+          onClose={() => setOrgOpen(null)}
+          onChanged={contactsChanged}
+          onOpenPerson={(id) => {
+            setOrgOpen(null);
+            setPersonOpen(id);
+          }}
+          onOpenCard={openCardFrom}
+        />
+      )}
     </AppLayout>
   );
 }

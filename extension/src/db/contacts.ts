@@ -87,6 +87,8 @@ export interface PersonInput {
   notes?: string | null;
   ownerId?: string | null;
   isPrivate?: boolean;
+  /** Foto (id em attachment; ver attachments.saveImage). */
+  avatarId?: string | null;
   organizationIds?: string[];
   tagIds?: string[];
   customValues?: Record<string, CustomValue>;
@@ -114,6 +116,7 @@ export interface PersonDetail extends Person {
 
 export interface PersonListItem extends Person {
   primary_organization_name: string | null;
+  owner_name: string | null;
 }
 
 /** Contato privado só aparece para o responsável, quem criou e administradores (spec 03). */
@@ -139,6 +142,7 @@ function personData(db: DatabaseSync, input: Partial<PersonInput>, full: boolean
   if (full || input.notes !== undefined) data.notes = optionalText(input.notes);
   if (full || input.ownerId !== undefined) data.owner_id = checkOwner(db, input.ownerId);
   if (full || input.isPrivate !== undefined) data.is_private = input.isPrivate ? 1 : 0;
+  if (input.avatarId !== undefined) data.avatar_id = input.avatarId;
   return data;
 }
 
@@ -194,40 +198,59 @@ function like(search: string): string {
   return `%${search.trim().replace(/[%_]/g, (c) => `\\${c}`)}%`;
 }
 
-/** Busca por nome, e-mail ou telefone (mesma busca do campo "Contato" dos formulários). */
-export function listPersons(
-  db: DatabaseSync,
-  opts: { search?: string; ownerId?: string; organizationId?: string; limit?: number; offset?: number; viewer?: Viewer | null } = {},
-): PersonListItem[] {
+export interface PersonFilter {
+  search?: string;
+  ownerId?: string;
+  organizationId?: string;
+  tagIds?: string[];
+  viewer?: Viewer | null;
+}
+
+function personWhere(f: PersonFilter): { sql: string; params: SqlValue[] } {
   const where: string[] = ["p.deleted_at IS NULL"];
   const params: SqlValue[] = [];
-  if (opts.search?.trim()) {
-    const digits = opts.search.replace(/\D/g, "");
+  if (f.search?.trim()) {
+    const digits = f.search.replace(/\D/g, "");
     where.push(`(p.name LIKE ? ESCAPE '\\' OR p.email LIKE ? ESCAPE '\\'${digits.length >= 3 ? " OR p.phone LIKE ?" : ""})`);
-    params.push(like(opts.search), like(opts.search));
+    params.push(like(f.search), like(f.search));
     if (digits.length >= 3) params.push(`%${digits}%`);
   }
-  if (opts.ownerId) {
+  if (f.ownerId) {
     where.push("p.owner_id = ?");
-    params.push(opts.ownerId);
+    params.push(f.ownerId);
   }
-  if (opts.organizationId) {
+  if (f.organizationId) {
     where.push("EXISTS (SELECT 1 FROM person_organization x WHERE x.person_id = p.id AND x.organization_id = ? AND x.deleted_at IS NULL)");
-    params.push(opts.organizationId);
+    params.push(f.organizationId);
   }
-  const vis = personVisibility(opts.viewer);
+  if (f.tagIds?.length) {
+    where.push(`EXISTS (SELECT 1 FROM entity_tag et WHERE et.entity_id = p.id AND et.deleted_at IS NULL AND et.tag_id IN (${f.tagIds.map(() => "?").join(", ")}))`);
+    params.push(...f.tagIds);
+  }
+  const vis = personVisibility(f.viewer);
+  return { sql: where.join(" AND ") + vis.sql, params: [...params, ...vis.params] };
+}
+
+/** Busca por nome, e-mail ou telefone (mesma busca do campo "Contato" dos formulários). */
+export function listPersons(db: DatabaseSync, opts: PersonFilter & { limit?: number; offset?: number } = {}): PersonListItem[] {
+  const w = personWhere(opts);
   return many<PersonListItem>(
     db,
     `SELECT ${PERSON_COLS},
        (SELECT o.name FROM person_organization po JOIN organization o ON o.id = po.organization_id AND o.deleted_at IS NULL
-        WHERE po.person_id = p.id AND po.is_primary = 1 AND po.deleted_at IS NULL) AS primary_organization_name
-     FROM person p WHERE ${where.join(" AND ")}${vis.sql}
+        WHERE po.person_id = p.id AND po.is_primary = 1 AND po.deleted_at IS NULL) AS primary_organization_name,
+       (SELECT u.name FROM app_user u WHERE u.id = p.owner_id) AS owner_name
+     FROM person p WHERE ${w.sql}
      ORDER BY p.name COLLATE NOCASE LIMIT ? OFFSET ?`,
-    ...params,
-    ...vis.params,
+    ...w.params,
     opts.limit ?? 50,
     opts.offset ?? 0,
   );
+}
+
+export function countPersons(db: DatabaseSync, f: PersonFilter = {}): number {
+  const w = personWhere(f);
+  return one<{ n: number }>(db, `SELECT COUNT(*) AS n FROM person p WHERE ${w.sql}`, ...w.params)?.n ?? 0;
 }
 
 /** Contatos com o mesmo e-mail ou celular - aviso de duplicidade (spec 03, seção 2). */
@@ -294,6 +317,8 @@ export interface OrganizationInput {
   country?: string | null;
   description?: string | null;
   cnpjData?: unknown;
+  /** Logo (id em attachment). */
+  logoId?: string | null;
   personIds?: string[];
   tagIds?: string[];
   customValues?: Record<string, CustomValue>;
@@ -365,6 +390,7 @@ function organizationData(db: DatabaseSync, input: Partial<OrganizationInput>, f
     data.phone_country = data.phone ? country : null;
   }
   if (full || input.ownerId !== undefined) data.owner_id = checkOwner(db, input.ownerId);
+  if (input.logoId !== undefined) data.logo_id = input.logoId;
   if (input.cnpjData !== undefined) data.cnpj_data = input.cnpjData === null ? null : JSON.stringify(input.cnpjData);
   if (full && data.country === null) data.country = "Brasil";
   return data;
@@ -418,33 +444,64 @@ export function getOrganization(db: DatabaseSync, id: string, viewer?: Viewer | 
   };
 }
 
-export function listOrganizations(
-  db: DatabaseSync,
-  opts: { search?: string; segment?: string; ownerId?: string; limit?: number; offset?: number } = {},
-): Organization[] {
-  const where: string[] = ["deleted_at IS NULL"];
+export interface OrganizationFilter {
+  search?: string;
+  segment?: string;
+  city?: string;
+  state?: string;
+  ownerId?: string;
+  tagIds?: string[];
+}
+
+export interface OrganizationListItem extends Organization {
+  persons_count: number;
+  owner_name: string | null;
+}
+
+function organizationWhere(f: OrganizationFilter): { sql: string; params: SqlValue[] } {
+  const where: string[] = ["o.deleted_at IS NULL"];
   const params: SqlValue[] = [];
-  if (opts.search?.trim()) {
-    const digits = opts.search.replace(/\D/g, "");
-    where.push(`(name LIKE ? ESCAPE '\\' OR legal_name LIKE ? ESCAPE '\\'${digits.length >= 3 ? " OR cnpj LIKE ?" : ""})`);
-    params.push(like(opts.search), like(opts.search));
+  if (f.search?.trim()) {
+    const digits = f.search.replace(/\D/g, "");
+    where.push(`(o.name LIKE ? ESCAPE '\\' OR o.legal_name LIKE ? ESCAPE '\\'${digits.length >= 3 ? " OR o.cnpj LIKE ?" : ""})`);
+    params.push(like(f.search), like(f.search));
     if (digits.length >= 3) params.push(`%${digits}%`);
   }
-  if (opts.segment) {
-    where.push("segment = ? COLLATE NOCASE");
-    params.push(opts.segment);
+  for (const [key, col] of [["segment", "segment"], ["city", "city"], ["state", "state"]] as const) {
+    if (f[key]) {
+      where.push(`o.${col} = ? COLLATE NOCASE`);
+      params.push(f[key]!);
+    }
   }
-  if (opts.ownerId) {
-    where.push("owner_id = ?");
-    params.push(opts.ownerId);
+  if (f.ownerId) {
+    where.push("o.owner_id = ?");
+    params.push(f.ownerId);
   }
-  return many<Organization>(
+  if (f.tagIds?.length) {
+    where.push(`EXISTS (SELECT 1 FROM entity_tag et WHERE et.entity_id = o.id AND et.deleted_at IS NULL AND et.tag_id IN (${f.tagIds.map(() => "?").join(", ")}))`);
+    params.push(...f.tagIds);
+  }
+  return { sql: where.join(" AND "), params };
+}
+
+export function listOrganizations(db: DatabaseSync, opts: OrganizationFilter & { limit?: number; offset?: number } = {}): OrganizationListItem[] {
+  const w = organizationWhere(opts);
+  return many<OrganizationListItem>(
     db,
-    `SELECT ${ORG_COLS} FROM organization WHERE ${where.join(" AND ")} ORDER BY name COLLATE NOCASE LIMIT ? OFFSET ?`,
-    ...params,
+    `SELECT ${ORG_COLS.split(", ").map((c) => `o.${c}`).join(", ")},
+       (SELECT COUNT(*) FROM person_organization po JOIN person p ON p.id = po.person_id AND p.deleted_at IS NULL
+        WHERE po.organization_id = o.id AND po.deleted_at IS NULL) AS persons_count,
+       (SELECT u.name FROM app_user u WHERE u.id = o.owner_id) AS owner_name
+     FROM organization o WHERE ${w.sql} ORDER BY o.name COLLATE NOCASE LIMIT ? OFFSET ?`,
+    ...w.params,
     opts.limit ?? 50,
     opts.offset ?? 0,
   );
+}
+
+export function countOrganizations(db: DatabaseSync, f: OrganizationFilter = {}): number {
+  const w = organizationWhere(f);
+  return one<{ n: number }>(db, `SELECT COUNT(*) AS n FROM organization o WHERE ${w.sql}`, ...w.params)?.n ?? 0;
 }
 
 export function findOrganizationByCnpj(db: DatabaseSync, cnpj: string): { id: string; name: string } | undefined {

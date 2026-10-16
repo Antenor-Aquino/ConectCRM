@@ -1,6 +1,9 @@
 // Operações expostas pelo documento offscreen (dono do banco) às telas.
 // Cada entrada recebe (db, ctx, params) e devolve dados serializáveis.
 import * as activities from "../db/activities";
+import * as attachments from "../db/attachments";
+import * as importer from "../db/importer";
+import * as merge from "../db/merge";
 import * as contacts from "../db/contacts";
 import * as cf from "../db/customFields";
 import * as deals from "../db/deals";
@@ -145,6 +148,17 @@ export const methods = {
   "organizations.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => contacts.deleteOrganization(db, ctx, p.id),
   "organizations.findByCnpj": (db: DatabaseSync, _c: DbContext, p: { cnpj: string }) => contacts.findOrganizationByCnpj(db, p.cnpj) ?? null,
   "organizations.segments": (db: DatabaseSync) => contacts.listSegments(db),
+
+  "persons.count": (db: DatabaseSync, ctx: DbContext, p: Omit<contacts.PersonFilter, "viewer"> = {}) =>
+    contacts.countPersons(db, { ...p, viewer: viewer(db, ctx) }),
+  "persons.merge": (db: DatabaseSync, ctx: DbContext, p: { keepId: string; removeId: string }) => merge.mergePersons(db, ctx, p.keepId, p.removeId),
+  "persons.import": (db: DatabaseSync, ctx: DbContext, p: { rows: importer.PersonImportRow[] }) => importer.importPersons(db, ctx, p.rows),
+  "organizations.count": (db: DatabaseSync, _c: DbContext, p: contacts.OrganizationFilter = {}) => contacts.countOrganizations(db, p),
+  "organizations.merge": (db: DatabaseSync, ctx: DbContext, p: { keepId: string; removeId: string }) => merge.mergeOrganizations(db, ctx, p.keepId, p.removeId),
+  "organizations.import": (db: DatabaseSync, ctx: DbContext, p: { rows: importer.OrganizationImportRow[] }) => importer.importOrganizations(db, ctx, p.rows),
+  "cards.forEntity": (db: DatabaseSync, ctx: DbContext, p: { personId?: string; organizationId?: string }) => deals.listCardsForEntity(db, p, viewer(db, ctx)),
+  "attachments.saveImage": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof attachments.saveImage>[2]) => attachments.saveImage(db, ctx, p),
+  "attachments.dataUrls": (db: DatabaseSync, _c: DbContext, p: { ids: string[] }) => attachments.getDataUrls(db, p.ids),
 
   // Tarefas
   "activityTypes.list": (db: DatabaseSync, _c: DbContext, p: { includeInactive?: boolean } = {}) => activities.listActivityTypes(db, p),

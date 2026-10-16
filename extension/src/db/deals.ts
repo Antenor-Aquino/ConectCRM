@@ -534,3 +534,24 @@ export function updateLossReason(db: DatabaseSync, ctx: DbContext, id: string, p
   if (patch.active !== undefined) data.active = patch.active ? 1 : 0;
   updateRow(db, ctx, "loss_reason", id, data);
 }
+
+/** Negócios/tickets/etapas ligados a um contato ou organização (ficha), respeitando a permissão. */
+export function listCardsForEntity(
+  db: DatabaseSync,
+  f: { personId?: string; organizationId?: string },
+  viewer?: Viewer | null,
+): { id: string; title: string; kind: DealKind; status: DealStatus; value_cents: number; pipeline_id: string; pipeline_name: string; stage_name: string; updated_at: string }[] {
+  const col = f.personId ? "d.person_id" : "d.organization_id";
+  const id = f.personId ?? f.organizationId;
+  if (!id) return [];
+  const scope = cardScope(db, viewer);
+  return many(
+    db,
+    `SELECT d.id, d.title, d.kind, d.status, d.value_cents, d.pipeline_id, p.name AS pipeline_name, s.name AS stage_name, d.updated_at
+     FROM deal d JOIN pipeline p ON p.id = d.pipeline_id JOIN stage s ON s.id = d.stage_id
+     WHERE ${col} = ? AND d.deleted_at IS NULL${scope.sql}
+     ORDER BY d.status = 'open' DESC, d.updated_at DESC`,
+    id,
+    ...scope.params,
+  );
+}

@@ -1,13 +1,12 @@
 // Detalhe do cartão (Fase 4): dados editáveis, etapas, ganho/perdido,
 // notas, tarefas e histórico de alterações.
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, Circle, Pin, PlusCircle, RotateCcw, Trash2, Trophy, X, XCircle } from "lucide-react";
+import { CheckCircle2, Circle, PlusCircle, RotateCcw, Trash2, Trophy, X, XCircle } from "lucide-react";
 import { TaBadge, TaButton, TaInput, TaTextarea, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { ActivityListItem } from "../../db/activities";
 import type { CustomField, CustomValue } from "../../db/customFields";
 import type { CardDetail as CardData } from "../../db/deals";
-import type { Note } from "../../db/notes";
 import type { Pipeline, Stage } from "../../db/pipelines";
 import { CARD_TEXT } from "../../lib/cardTypes";
 import { formatCents, formatDateTime, fromDateInput, toDateInput } from "../../lib/format";
@@ -20,6 +19,7 @@ import { SlaPicker } from "../ui/SlaPicker";
 import { stageColor } from "../ui/StageSelect";
 import { TagPicker } from "../ui/TagPicker";
 import { UserSelect } from "../ui/UserSelect";
+import { NotesPanel } from "../ui/NotesPanel";
 import { ItemsEditor, type ItemDraft } from "./ItemsEditor";
 import { LostModal } from "./LostModal";
 import { createOrganizationQuick, createPersonQuick, searchOrganizations, searchPersons } from "./searchers";
@@ -283,7 +283,7 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
               </button>
             ))}
           </div>
-          {tab === "notas" && <NotesTab cardId={cardId} onChanged={onChanged} />}
+          {tab === "notas" && <NotesPanel entityType="deal" entityId={cardId} onChanged={onChanged} />}
           {tab === "tarefas" && <TasksTab cardId={cardId} onChanged={onChanged} />}
           {tab === "historico" && (
             <HistoryTab
@@ -327,61 +327,6 @@ function Shell({ children, onClose }: { children: React.ReactNode; onClose: () =
         </button>
         {children}
       </div>
-    </div>
-  );
-}
-
-function NotesTab({ cardId, onChanged }: { cardId: string; onChanged: () => void }) {
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [body, setBody] = useState("");
-  const load = useCallback(() => call("notes.list", { entityType: "deal", entityId: cardId }).then(setNotes), [cardId]);
-  useEffect(() => {
-    void load();
-  }, [load]);
-  const after = async () => {
-    await load();
-    onChanged();
-  };
-  return (
-    <div>
-      <TaTextarea rows={3} className="bg-warning-25 border-warning-200" placeholder="Escreva uma nota…" value={body} onChange={(e) => setBody(e.target.value)} />
-      <div className="mt-2 flex justify-end">
-        <TaButton
-          variant="primary"
-          disabled={!body.trim()}
-          onClick={async () => {
-            await call("notes.add", { entityType: "deal", entityId: cardId, body });
-            setBody("");
-            await after();
-          }}
-        >
-          Salvar nota
-        </TaButton>
-      </div>
-      <ul className="mt-3 space-y-2">
-        {notes.map((n) => (
-          <li key={n.id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-800">
-            <p className="whitespace-pre-wrap text-theme-sm text-gray-800 dark:text-white/90">{n.body}</p>
-            <div className="mt-2 flex items-center gap-3 text-theme-xs text-gray-400">
-              <span>{formatDateTime(n.created_at)}</span>
-              <button type="button" className={cn("ml-auto hover:text-brand-600", n.pinned && "text-brand-600")} title={n.pinned ? "Desafixar" : "Fixar"} onClick={async () => {
-                await call("notes.update", { id: n.id, patch: { pinned: !n.pinned } });
-                await after();
-              }}>
-                <Pin size={14} />
-              </button>
-              <button type="button" className="hover:text-error-600" title="Excluir" onClick={async () => {
-                if (!confirm("Excluir esta nota?")) return;
-                await call("notes.delete", { id: n.id });
-                await after();
-              }}>
-                <Trash2 size={14} />
-              </button>
-            </div>
-          </li>
-        ))}
-        {notes.length === 0 && <p className="text-theme-sm text-gray-400">Nenhuma nota.</p>}
-      </ul>
     </div>
   );
 }
