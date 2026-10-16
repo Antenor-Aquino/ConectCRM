@@ -1,7 +1,7 @@
-# ConectCRM — Planejamento de implementação (v3)
+# ConectCRM — Planejamento de implementação (v4)
 
-> Status: **aguardando aprovação**. Nenhum código escrito.
-> v3: licença por instalação, indicadores dos cartões adiados e proposta de sincronização entre computadores.
+> Status: **plano fechado, aguardando aprovação final para iniciar a Fase 0**. Nenhum código escrito.
+> v4: v1 individual (sem sincronização) com cadastro de equipes/usuários; estrutura pronta para sincronizar no futuro; "Fluxo geral" confirmado.
 
 ## 1. Visão
 
@@ -22,6 +22,9 @@ gravando no CRM local em vez de Pipedrive/HubSpot (que deixam de existir).
 | Usuários | Equipes e vários usuários/vendedores, associáveis a negócios. |
 | Pipedrive/HubSpot | Removidos. Todo o código de API deles vira chamadas ao CRM local. |
 | Licença | Mesma lógica e backend do wa-pipedrive (`extpipe.claudiacrm.com.br`: trial, planos, checkout, upgrade, cancelamento, device ID). **Por instalação**: vários usuários cadastrados num mesmo computador usam uma licença. |
+| Uso na v1 | **Individual**: um banco por computador, sem sincronização. Usuários, equipes e vendedores são cadastrados para atribuição e controle (ex.: gestor acompanhando a equipe no próprio computador). |
+| Sincronização | **Futura.** O modelo de dados já nasce preparado (seção 5.1). |
+| Visões do Kanban | *Fluxo geral* (todos), *Meu fluxo*, *Minha equipe*. |
 | Indicadores dos cartões | A definir mais à frente. A v1 mostra o básico (título, valor, contato, responsável); os indicadores entram depois. |
 | Campos personalizados | Entram na estrutura desde o início. |
 | Produtos e serviços | Entram na estrutura desde o início. |
@@ -42,7 +45,7 @@ gravando no CRM local em vez de Pipedrive/HubSpot (que deixam de existir).
 **Cabeçalho do quadro**
 - Nome do funil, ícone de **indicadores do funil** (mini-relatório), menu **⋯** (editar funil/etapas, duplicar, arquivar, exportar).
 - Pesquisa dentro do funil, **Filtrar** (responsável, equipe, etiqueta, status, valor, datas, campos personalizados).
-- **Fluxo geral** (seletor de visão — ver dúvida 1 na seção 10) e ordenação **Mais recentes** (recentes, valor, data prevista, próxima tarefa, nome).
+- **Fluxo geral**: seletor de visão — *Fluxo geral* (todos), *Meu fluxo*, *Minha equipe* e ordenação **Mais recentes** (recentes, valor, data prevista, próxima tarefa, nome).
 
 **Colunas (etapas)**
 - Bolinha colorida, nome, **quantidade** e **soma de valores** da etapa.
@@ -88,7 +91,7 @@ Recomendação para a v1:
 banco **do mesmo navegador/computador**. Para vendedores em computadores
 diferentes, ver seção 5.1.
 
-### 5.1 Sincronização entre computadores (proposta)
+### 5.1 Sincronização entre computadores (futura — não entra na v1)
 
 Modelo **local-first**: cada instalação continua com o banco completo no
 próprio computador (funciona offline, rápido, com backup diário), e um
@@ -118,9 +121,24 @@ Implicações:
 - Backend: o mesmo servidor da licença (`extpipe`) ganharia a API de
   sincronização, **ou** um serviço pronto (ex.: Supabase/Postgres), que
   acelera a construção.
-- O banco já nasce preparado (UUID, `updated_at`, `updated_by`, exclusão
-  lógica, `audit_log`), então ligar a sincronização depois não exige refazer
-  as telas.
+- O banco já nasce preparado, então ligar a sincronização depois não exige
+  refazer as telas.
+
+### 5.2 Preparação para sincronização (entra na v1)
+
+Regras aplicadas a **todas** as tabelas de dados:
+- `id` em UUID gerado no cliente (nunca autoincremento).
+- `created_at`, `created_by`, `updated_at`, `updated_by`.
+- `deleted_at` (exclusão lógica, nada é apagado de fato).
+- `version` (contador por registro, para detectar conflitos).
+- `workspace_id` (empresa; na v1 existe um só, criado na instalação).
+- Tabela `change_log` (entidade, id, campos alterados, valores antigo/novo,
+  usuário, data/hora, `synced_at` vazio na v1) — alimenta também a timeline
+  e o histórico do negócio.
+- Valores de campos personalizados e itens de negócio em tabelas próprias
+  (sincronizáveis linha a linha, sem JSON gigante num campo).
+- Toda gravação passa por uma única camada (`db/*`), que é onde a fila de
+  sincronização será ligada no futuro.
 
 ## 6. Modelo de dados
 
@@ -205,14 +223,14 @@ Fonte em `referencia/wa-pipedrive/` (será portado para TypeScript modular).
 | **8. Backup e segurança** | Backup diário, restauração, ambiente de teste |
 | **9. WhatsApp** | Popup sobre o WhatsApp Web gravando no CRM local |
 | **10. Relatórios** | Conversão do funil, previsão (valor × probabilidade), ganhos/perdidos por período/motivo/responsável/equipe, tempo por etapa, produtos vendidos, atividades por usuário; exportar Excel |
-| **11. Integrações e sincronização** | ZapSign, Asaas, copiloto IA; sincronização entre computadores (se aprovada) |
-| **12. Publicação** | Política de privacidade, verificação OAuth, Chrome Web Store |
+| **11. Integrações** | ZapSign, Asaas, copiloto IA |
+| **12. Sincronização** (futura) | Servidor, espaço da empresa, convites, envio/recebimento de alterações, permissões no servidor |
+| **13. Publicação** | Política de privacidade, verificação OAuth, Chrome Web Store |
 
 **MVP = Fases 0 a 9** (CRM com equipe, Kanban, clientes, produtos, campos
 personalizados, tarefas, backup e WhatsApp).
 
-## 10. Dúvidas para aprovação
+## 10. Dúvidas
 
-1. **"Fluxo geral"**: proposta — seletor de visão por responsável: *Fluxo geral* (todos), *Meu fluxo*, *Minha equipe*. Confirma?
-2. **Equipes em computadores diferentes**: a sincronização (seção 5.1) entra na primeira versão ou depois?
-3. Se entrar: **servidor próprio** (`extpipe`) ou **serviço pronto** (ex.: Supabase)?
+Nenhuma pendente para iniciar. Ficam para depois: indicadores dos cartões
+e o backend da sincronização (servidor próprio `extpipe` ou serviço pronto).
