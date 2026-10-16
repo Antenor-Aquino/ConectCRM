@@ -19,6 +19,7 @@ Modal com rolagem interna, botão ✕ no topo, **Salvar** fixo no rodapé.
 | | **E-mail** | Placeholder "contato@empresa.com.br" |
 | ENDEREÇO | CEP, Logradouro, Número, Complemento, Bairro, Cidade, Estado, País | **CEP** com máscara; ao completar, busca o endereço (BrasilAPI CEP) e preenche logradouro, bairro, cidade e estado. País padrão: Brasil |
 | DESCRIÇÃO | Descrição | "Contexto e informações relevantes sobre a empresa" |
+| MAIS DETALHES | Tags, Campos personalizados | Tags da entidade **Organização** e campos personalizados (o responsável já fica na seção Empresa) |
 | CONTATOS | **Buscar contato para vincular** | Busca e vincula um ou mais contatos. Dica: *"Se for a primeira organização do contato, o vínculo vira o principal."* |
 
 ## 2. Regras
@@ -42,8 +43,6 @@ Modal com rolagem interna, botão ✕ no topo, **Salvar** fixo no rodapé.
   histórico de alterações.
 - Mesclar organizações duplicadas.
 
-## 4. Pendências
+## 4. Decisões
 
-- **O1:** a organização tem **tags** e **campos personalizados** no
-  formulário? (O mockup não mostra.) Proposta: sim, numa seção final
-  "Mais detalhes", como no contato.
+- O1: tags e campos personalizados em "Mais detalhes".

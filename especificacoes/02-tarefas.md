@@ -19,6 +19,7 @@ Modal largo em **duas colunas**, botão ✕ no canto.
 | **Tipo** | Lista com ícone e busca (com botão de limpar). Padrão: **Tarefa** |
 | **Responsável** | Avatar + nome. O usuário atual aparece como **"Antenor (Você)"**; os demais com o tipo: "Maria (vendedor)". Padrão: o usuário atual |
 | **Quando** | Texto por extenso: **"16 de outubro às 18:25"**. Padrão: agora. Abre o painel da seção 2 |
+| **Vinculado a** (opcional) | Busca um **negócio, ticket ou etapa de projeto**. Pode ficar vazio (tarefa avulsa). Com vínculo, a tarefa herda contato e organização do cartão |
 
 **Rodapé:** **Salvar** (principal) · **Cancelar**.
 
@@ -48,7 +49,7 @@ E-mail**.
 
 - Criada a partir de um negócio/ticket, contato ou organização: já nasce
   vinculada a ele (e herda contato/organização do negócio).
-- Criada pelo botão "+": ver pendência T1.
+- Criada pelo botão "+" ou pelo menu Tarefas: campo **Vinculado a** opcional.
 - No cartão do Kanban, as tarefas do item alimentam o contador de
   concluídas/total (indicadores definidos mais à frente).
 
@@ -60,11 +61,7 @@ E-mail**.
 - Visão em calendário (dia/semana/mês).
 - Base: painel de atividades do wa-pipedrive.
 
-## 6. Pendências
+## 6. Decisões
 
-- **T1:** a tarefa criada pelo "+" precisa de um campo para vincular a
-  negócio/ticket/contato/organização? (O modal enviado não mostra esse
-  campo.) Proposta: um campo "Vinculado a" com busca, abaixo de "Quando".
-- **T2:** o seletor de data do **SLA** (colunas de hora/minuto, botões
-  Agora/OK) é diferente do "Quando" da tarefa. Manter os dois como nos
-  mockups ou padronizar num só?
+- T1: campo "Vinculado a" opcional (negócio, ticket ou projeto).
+- T2: seletor do SLA e seletor da tarefa coexistem, cada um como no mockup.

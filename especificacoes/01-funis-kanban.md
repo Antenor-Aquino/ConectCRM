@@ -21,13 +21,14 @@ item no Kanban, o formulário de cadastro e os campos próprios.
 |---|---|---|
 | **Comercial** | Negócio (negociação) | Valor (R$) e produtos/serviços |
 | **Operacional** | Ticket | Descrição e SLA (data + hora) |
-| **Projeto** | *a definir (ver pendência P1)* | *a definir* |
+| **Projeto** | **Etapa de projeto** (cartão) | Descrição, data de início e prazo |
 
 Campos comuns aos três: título/nome, funil, etapa, contato, organização,
 responsável, tags, campos personalizados.
 
 Modelo de dados: uma única tabela de itens do Kanban (`deals`), com o tipo
-herdado do funil e colunas específicas (`value`, `description`, `sla_at`)
+herdado do funil e colunas específicas (`value`, `description`, `sla_at`,
+`start_at`, `due_at`)
 preenchidas conforme o tipo. Assim o Kanban, filtros, histórico, tarefas e
 relatórios funcionam igual para todos os tipos.
 
@@ -43,7 +44,7 @@ se existir pelo menos um funil ativo daquele tipo**.
 | Organização | sempre |
 | Negócio | existe funil **Comercial** |
 | Ticket | existe funil **Operacional** |
-| *Item de projeto* (ver P1) | existe funil **Projeto** |
+| Etapa (cartão de projeto) | existe funil **Projeto** |
 
 Exemplos:
 - Só funis comerciais → Tarefa, Contato, Organização, Negócio.
@@ -95,6 +96,23 @@ no ticket aparece recolhida. Proposta: **mesmo comportamento nos dois** —
 recolhida por padrão, abrindo automaticamente se houver campo personalizado
 obrigatório ou marcado como "Sempre mostrar".
 
+## 5.1 Formulário "Nova etapa" (funil Projeto)
+
+Sem mockup próprio; segue o padrão dos outros dois:
+
+| Seção | Campo | Regra |
+|---|---|---|
+| — | **Título** * | |
+| PROJETO | Descrição | Texto longo |
+| | Início / Prazo | Datas (seletor da tarefa) |
+| FUNIL DE PROJETO | Funil | Lista **somente funis de Projeto** |
+| | **Etapa** * | Coluna do funil, com bolinha de cor |
+| RELACIONAMENTO | Contato / Organização | Igual à negociação |
+| MAIS DETALHES | Responsável, Tags, Campos personalizados | Recolhido por padrão |
+
+Obs.: no menu "+" e no formulário, o cartão de projeto se chama
+**"Etapa"**; a coluna do quadro continua sendo a "etapa do funil".
+
 ## 6. Seletor de SLA (data e hora)
 
 - Campo com ícone de calendário; ao clicar abre um painel com:
@@ -106,13 +124,15 @@ obrigatório ou marcado como "Sempre mostrar".
     escolher a data).
 - Exibição no campo: `dd/mm/aaaa hh:mm`, fuso local.
 - Também é possível digitar a data/hora direto no campo.
-- O mesmo componente será usado em tarefas e demais campos de data/hora.
+- **Decisão:** o SLA usa este seletor; tarefas usam o seletor próprio
+  (spec 02). Os dois coexistem.
 
 ## 7. Responsável
 
 - Lista de **usuários do sistema e vendedores** (cadastros da Fase 3).
 - Sempre exibe o tipo ao lado do nome: **"Antenor (vendedor)"**,
-  "Maria (gestor)", "João (administrador)".
+  "Maria (gestor)", "João (administrador)". Tipos: **Administrador, Gestor,
+  Vendedor**.
 - Padrão: o usuário atual.
 - Usuários inativos não aparecem para novos registros (mas continuam nos
   registros antigos).
@@ -121,8 +141,8 @@ obrigatório ou marcado como "Sempre mostrar".
 
 Novo cadastro em **Configurações → Tags**:
 - Nome, cor, ativo.
-- Usadas nos formulários de negócio, ticket, item de projeto e
-  (provavelmente) contato, organização e tarefa — ver pendência P4.
+- **Separadas por entidade**: cada tag pertence a uma entidade (Contato,
+  Organização, Negócio, Ticket, Projeto) e só aparece nos formulários dela.
 - No formulário: campo de múltipla seleção com busca, mostrando as tags
   como "chips" coloridos; opção de criar tag nova direto no campo (só para
   administradores — a confirmar).
@@ -138,10 +158,10 @@ Novo cadastro em **Configurações → Campos personalizados** (lista + modal
 | Nome do campo | Obrigatório |
 | Descrição | Texto de ajuda exibido no formulário |
 | Tipo de campo | Texto (padrão), texto longo, número, moeda, data, data e hora, sim/não, lista, lista múltipla, telefone, e-mail, URL, usuário, contato, organização. Tipos "lista" abrem o cadastro de opções |
-| Entidade | Contato (padrão), Organização, Negócio, Ticket, Item de projeto, Tarefa, Produto |
+| Entidade | Contato (padrão), Organização, Negócio, Ticket, Projeto, Tarefa, Produto |
 | Chave reservada | Placeholder `{{chave}}` — gerada automaticamente a partir do nome (ex.: "Data de nascimento" → `{{data_de_nascimento}}`), editável, **única**. Usada no chat/WhatsApp para ser substituída pelo valor do campo |
-| Sempre mostrar | Ver pendência P2 |
-| Esconder | Ver pendência P2 |
+| Sempre mostrar | O campo aparece fora do "Mais detalhes" e fica visível no detalhe mesmo vazio |
+| Esconder | Não aparece nas telas; continua em relatórios, importação/exportação e na chave do chat |
 | Obrigatório | Impede salvar sem preencher |
 
 Proposta adicional: restringir o campo a **funis específicos** (ex.: campo
@@ -161,17 +181,8 @@ Em **Configurações → Funis** (e pelo menu ⋯ do quadro):
 
 ## 11. Pendências
 
-- **P1 — Funil Projeto:** "Nova Etapa" no menu "+" significa criar uma
-  **nova etapa (coluna)** no funil de projeto, ou criar um **item de projeto**
-  (o cartão)? Haverá tela de cadastro para esse tipo?
-- **P2 — "Sempre mostrar" e "Esconder":** proposta —
-  *Sempre mostrar* = o campo aparece fora do "Mais detalhes" e fica visível no
-  detalhe mesmo vazio; *Esconder* = o campo não aparece nas telas (só em
-  importação/exportação, relatórios e chave do chat). Confirma?
-- **P3 — Tipos de usuário:** a lista é Administrador, Gestor, Vendedor? Há
-  outros (ex.: Atendente/Suporte para tickets)?
-- **P4 — Tags:** únicas para todo o sistema, ou separadas por entidade
-  (tags de contato ≠ tags de negócio)?
-- **P5 — Tipo do funil:** pode ser alterado depois de criado? (Proposta: não,
-  pois muda os campos dos itens.)
-- **P6:** — (todas as telas recebidas).
+Respondidas: P1 (cartão "Etapa" no funil Projeto), P2 (proposta aceita),
+P3 (Administrador, Gestor, Vendedor), P4 (tags por entidade).
+
+- **P5 — Tipo do funil:** adotado que **não pode ser alterado** depois de
+  criado (muda os campos dos cartões). Reabrir se necessário.
