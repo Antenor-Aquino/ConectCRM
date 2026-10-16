@@ -48,3 +48,20 @@ teste — **nunca publique este build**:
 ```bash
 VITE_LICENSE_BYPASS=1 npm run build
 ```
+
+### Agenda (Google Agenda e Outlook)
+
+A extensão nova tem um ID próprio, diferente do wa-pipedrive, então:
+
+1. **ID fixo da extensão:** gere uma chave (`.pem`) ao empacotar pela
+   primeira vez em `chrome://extensions` e coloque a chave pública no campo
+   `key` do `manifest.json` (mesmo procedimento do wa-pipedrive, ver
+   `referencia/wa-pipedrive/LEIA-ME-OAuth-Google.md`). Nunca versione o `.pem`.
+2. **Google:** no Google Cloud, crie um OAuth Client do tipo "Extensão do
+   Chrome" com esse ID e substitua `COLE_AQUI_O_CLIENT_ID_DO_GOOGLE...` em
+   `extension/public/manifest.json` (`oauth2.client_id`).
+3. **Outlook:** no app do Microsoft Entra usado pelo wa-pipedrive, adicione o
+   redirect `https://<ID-da-extensão>.chromiumapp.org/microsoft`.
+
+Sem isso, o restante do CRM funciona; só a criação de eventos na agenda
+mostra o aviso de configuração.

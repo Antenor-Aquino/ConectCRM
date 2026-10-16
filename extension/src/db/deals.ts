@@ -555,3 +555,20 @@ export function listCardsForEntity(
     ...scope.params,
   );
 }
+
+/** Busca de cartões para "Vinculado a" das tarefas (respeita a permissão). */
+export function searchCards(db: DatabaseSync, text: string, viewer?: Viewer | null, limit = 10): { id: string; title: string; kind: DealKind; pipeline_name: string; person_name: string | null }[] {
+  const scope = cardScope(db, viewer);
+  const q = `%${text.trim()}%`;
+  return many(
+    db,
+    `SELECT d.id, d.title, d.kind, p.name AS pipeline_name, pe.name AS person_name
+     FROM deal d JOIN pipeline p ON p.id = d.pipeline_id LEFT JOIN person pe ON pe.id = d.person_id
+     WHERE d.deleted_at IS NULL AND (d.title LIKE ? OR pe.name LIKE ?)${scope.sql}
+     ORDER BY d.status = 'open' DESC, d.updated_at DESC LIMIT ?`,
+    q,
+    q,
+    ...scope.params,
+    limit,
+  );
+}

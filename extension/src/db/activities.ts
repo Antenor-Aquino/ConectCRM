@@ -6,7 +6,7 @@ import { getCustomValues, setCustomValues, type CustomValue } from "./customFiel
 import { getCardRow } from "./deals";
 import { getRow, insertRow, softDelete, updateRow, type DbContext } from "./repo";
 import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
-import { getUser } from "./users";
+import { getUser, teammateIds, type Viewer } from "./users";
 
 export interface ActivityType {
   id: string;
@@ -96,6 +96,10 @@ export interface Activity {
   organization_id: string | null;
   external_provider: string | null;
   external_event_id: string | null;
+  meeting_url: string | null;
+  /** JSON com os e-mails convidados. */
+  guests: string | null;
+  reminder_sent_at: string | null;
   version: number;
 }
 
@@ -185,6 +189,10 @@ export function updateActivity(db: DatabaseSync, ctx: DbContext, id: string, pat
     if (patch.title !== undefined) data.title = requireText(patch.title, "Informe o nome da tarefa.");
     if (patch.description !== undefined) data.description = optionalText(patch.description);
     if (patch.dueAt !== undefined) data.due_at = normalizeIsoDate(patch.dueAt, "Quando") ?? current.due_at;
+    // Mudou a data ou o lembrete: o lembrete volta a valer.
+    if ((data.due_at !== undefined && data.due_at !== current.due_at) || (patch.reminderMin !== undefined && patch.reminderMin !== current.reminder_min)) {
+      data.reminder_sent_at = null;
+    }
     if (patch.durationMin !== undefined) data.duration_min = minutes(patch.durationMin, "Duração", false);
     if (patch.reminderMin !== undefined) data.reminder_min = minutes(patch.reminderMin, "Lembrete", true);
     if (patch.ownerId !== undefined) {
@@ -219,17 +227,31 @@ export interface ActivityFilter {
   dealId?: string;
   personId?: string;
   organizationId?: string;
+  /** Texto no título ou descrição. */
+  search?: string;
+  /** Permissão por tipo de usuário (mesma regra dos cartões). */
+  viewer?: Viewer | null;
   limit?: number;
   offset?: number;
 }
 
-export function listActivities(db: DatabaseSync, f: ActivityFilter = {}): ActivityListItem[] {
+/** Administrador vê todas; gestor, as da equipe; vendedor, as suas. Sem responsável: todos. */
+export function activityScope(db: DatabaseSync, viewer: Viewer | null | undefined): { sql: string; params: SqlValue[] } {
+  if (!viewer || viewer.role === "admin") return { sql: "", params: [] };
+  const ids = viewer.role === "gestor" ? teammateIds(db, viewer.id) : [viewer.id];
+  return { sql: `(a.owner_id IS NULL OR a.owner_id IN (${ids.map(() => "?").join(", ")}))`, params: ids };
+}
+
+function activityWhere(db: DatabaseSync, f: ActivityFilter): { sql: string; params: SqlValue[] } {
   const where = ["a.deleted_at IS NULL"];
   const params: SqlValue[] = [];
   const add = (sql: string, ...p: SqlValue[]) => {
     where.push(sql);
     params.push(...p);
   };
+  const scope = activityScope(db, f.viewer);
+  if (scope.sql) add(scope.sql, ...scope.params);
+  if (f.search?.trim()) add("(a.title LIKE ? OR a.description LIKE ?)", `%${f.search.trim()}%`, `%${f.search.trim()}%`);
   if (f.from) add("a.due_at >= ?", new Date(f.from).toISOString());
   if (f.to) add("a.due_at < ?", new Date(f.to).toISOString());
   if (f.done !== undefined) add("a.done = ?", f.done ? 1 : 0);
@@ -239,6 +261,11 @@ export function listActivities(db: DatabaseSync, f: ActivityFilter = {}): Activi
   if (f.dealId) add("a.deal_id = ?", f.dealId);
   if (f.personId) add("a.person_id = ?", f.personId);
   if (f.organizationId) add("a.organization_id = ?", f.organizationId);
+  return { sql: where.join(" AND "), params };
+}
+
+export function listActivities(db: DatabaseSync, f: ActivityFilter = {}): ActivityListItem[] {
+  const { sql, params } = activityWhere(db, f);
   return many<ActivityListItem>(
     db,
     `SELECT a.*, t.name AS type_name, t.icon AS type_icon, d.title AS deal_title, d.kind AS deal_kind,
@@ -249,10 +276,58 @@ export function listActivities(db: DatabaseSync, f: ActivityFilter = {}): Activi
      LEFT JOIN person p ON p.id = a.person_id
      LEFT JOIN organization o ON o.id = a.organization_id
      LEFT JOIN app_user u ON u.id = a.owner_id
-     WHERE ${where.join(" AND ")}
+     WHERE ${sql}
      ORDER BY a.done, a.due_at LIMIT ? OFFSET ?`,
     ...params,
     f.limit ?? 200,
     f.offset ?? 0,
   );
+}
+
+/** Contadores dos cartões de alerta da tela de Tarefas (pendentes). */
+export function activityCounters(db: DatabaseSync, f: Omit<ActivityFilter, "from" | "to" | "done" | "overdue"> = {}, now = new Date()) {
+  const { sql, params } = activityWhere(db, { ...f, done: false });
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startTomorrow = new Date(startToday.getTime() + 86400_000);
+  const in7 = new Date(startToday.getTime() + 8 * 86400_000);
+  const count = (extra: string, ...p: SqlValue[]) =>
+    one<{ n: number }>(db, `SELECT COUNT(*) AS n FROM activity a WHERE ${sql} AND ${extra}`, ...params, ...p)?.n ?? 0;
+  return {
+    overdue: count("a.due_at < ?", now.toISOString()),
+    today: count("a.due_at >= ? AND a.due_at < ?", startToday.toISOString(), startTomorrow.toISOString()),
+    next7: count("a.due_at >= ? AND a.due_at < ?", startTomorrow.toISOString(), in7.toISOString()),
+  };
+}
+
+/** Lembretes a disparar agora para o usuário desta instalação (ou tarefas sem responsável).
+ * Ignora tarefas vencidas há mais de 1 dia (não notifica o passado ao abrir o Chrome). */
+export function dueReminders(db: DatabaseSync, userId: string | null, now = new Date()): Activity[] {
+  const rows = many<Activity>(
+    db,
+    `SELECT * FROM activity WHERE deleted_at IS NULL AND done = 0 AND reminder_min IS NOT NULL AND reminder_sent_at IS NULL
+       AND due_at > ? AND (owner_id IS NULL OR owner_id = ?)`,
+    new Date(now.getTime() - 86400_000).toISOString(),
+    userId,
+  );
+  return rows.filter((a) => new Date(a.due_at).getTime() - (a.reminder_min ?? 0) * 60_000 <= now.getTime());
+}
+
+export function markReminded(db: DatabaseSync, ctx: DbContext, ids: string[]): void {
+  const at = nowIso();
+  withTransaction(db, () => ids.forEach((id) => updateRow(db, ctx, "activity", id, { reminder_sent_at: at })));
+}
+
+/** Evento criado no Google Agenda / Outlook para esta tarefa. */
+export function setActivityExternalEvent(
+  db: DatabaseSync,
+  ctx: DbContext,
+  id: string,
+  ev: { provider: "google" | "microsoft"; eventId: string; meetingUrl?: string | null; guests?: string[] },
+): void {
+  updateRow(db, ctx, "activity", id, {
+    external_provider: ev.provider,
+    external_event_id: ev.eventId,
+    meeting_url: ev.meetingUrl ?? null,
+    guests: ev.guests?.length ? JSON.stringify(ev.guests) : null,
+  });
 }

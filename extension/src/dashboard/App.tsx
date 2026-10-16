@@ -19,6 +19,8 @@ import { OrganizationsView } from "./contacts/OrganizationsView";
 import { PersonDetail } from "./contacts/PersonDetail";
 import { PersonFormModal } from "./contacts/PersonFormModal";
 import { PersonsView } from "./contacts/PersonsView";
+import { TaskModal } from "./tasks/TaskModal";
+import { TasksView } from "./tasks/TasksView";
 import { SessionProvider, useSession } from "./session";
 
 // Menu principal (spec 01, seção 1).
@@ -32,7 +34,6 @@ const NAV: TopNavItem[] = [
 ];
 
 const PHASE_BY_TAB: Record<string, string> = {
-  tarefas: "Fase 7 — Tarefas e agenda",
   relatorios: "Fase 10 — Relatórios",
 };
 
@@ -77,6 +78,14 @@ function Main() {
   const [newPerson, setNewPerson] = useState(false);
   const [newOrg, setNewOrg] = useState(false);
   const [contactsKey, setContactsKey] = useState(0);
+  const [newTask, setNewTask] = useState(false);
+  const [tasksKey, setTasksKey] = useState(0);
+  const [tasksMode, setTasksMode] = useState<"lista" | "calendario">("lista");
+  // Clique na notificação de lembrete: ?tarefa=<id> abre a tarefa.
+  const [taskFromUrl, setTaskFromUrl] = useState<string | null>(() => new URLSearchParams(location.search).get("tarefa"));
+  useEffect(() => {
+    if (taskFromUrl) setTab("tarefas");
+  }, [taskFromUrl]);
   const contactsChanged = () => setContactsKey((k) => k + 1);
 
   /** Abre um negócio/ticket/etapa a partir de uma ficha de contato ou organização. */
@@ -117,6 +126,7 @@ function Main() {
 
   // Botão "+": cartão do tipo escolhido, já no funil aberto se o tipo combinar (spec 01, seção 3).
   const onQuickCreate = (option: QuickCreateOption) => {
+    if (option.id === "tarefa") return setNewTask(true);
     if (option.id === "contato") return setNewPerson(true);
     if (option.id === "organizacao") return setNewOrg(true);
     const type = TYPE_BY_OPTION[option.id];
@@ -144,7 +154,15 @@ function Main() {
               <button type="button" className={iconButton} title="Notificações" onClick={() => setComingSoon("Central de notificações")}>
                 <Bell size={18} />
               </button>
-              <button type="button" className={iconButton} title="Agenda" onClick={() => setComingSoon("Agenda")}>
+              <button
+                type="button"
+                className={iconButton}
+                title="Agenda"
+                onClick={() => {
+                  setTasksMode("calendario");
+                  setTab("tarefas");
+                }}
+              >
                 <CalendarDays size={18} />
               </button>
               <UserSwitcher />
@@ -158,6 +176,16 @@ function Main() {
       )}
       {tab === "configuracoes" ? (
         <SettingsView />
+      ) : tab === "tarefas" ? (
+        <TasksView
+          refreshKey={tasksKey}
+          initialMode={tasksMode}
+          openTaskId={taskFromUrl}
+          onOpenTaskConsumed={() => {
+            setTaskFromUrl(null);
+            history.replaceState(null, "", location.pathname);
+          }}
+        />
       ) : tab === "contatos" ? (
         <PersonsView refreshKey={contactsKey} onOpen={setPersonOpen} onNew={() => setNewPerson(true)} />
       ) : tab === "organizacoes" ? (
@@ -191,6 +219,17 @@ function Main() {
         }}
       />
       <ComingSoonModal feature={comingSoon} onClose={() => setComingSoon(null)} />
+      {newTask && (
+        <TaskModal
+          request={{}}
+          onClose={() => setNewTask(false)}
+          onSaved={() => {
+            setNewTask(false);
+            setTasksKey((k) => k + 1);
+            setRefreshKey((k) => k + 1);
+          }}
+        />
+      )}
       {newPerson && (
         <PersonFormModal
           personId={null}

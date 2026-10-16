@@ -20,6 +20,8 @@ import { stageColor } from "../ui/StageSelect";
 import { TagPicker } from "../ui/TagPicker";
 import { UserSelect } from "../ui/UserSelect";
 import { NotesPanel } from "../ui/NotesPanel";
+import { TaskModal, type TaskRequest } from "../tasks/TaskModal";
+import { ActivityIcon } from "../../lib/activityIcons";
 import { ItemsEditor, type ItemDraft } from "./ItemsEditor";
 import { LostModal } from "./LostModal";
 import { createOrganizationQuick, createPersonQuick, searchOrganizations, searchPersons } from "./searchers";
@@ -333,8 +335,7 @@ function Shell({ children, onClose }: { children: React.ReactNode; onClose: () =
 
 function TasksTab({ cardId, onChanged }: { cardId: string; onChanged: () => void }) {
   const [tasks, setTasks] = useState<ActivityListItem[]>([]);
-  const [title, setTitle] = useState("");
-  const [due, setDue] = useState("");
+  const [modal, setModal] = useState<TaskRequest | null>(null);
   const load = useCallback(() => call("activities.list", { dealId: cardId }).then(setTasks), [cardId]);
   useEffect(() => {
     void load();
@@ -346,23 +347,9 @@ function TasksTab({ cardId, onChanged }: { cardId: string; onChanged: () => void
   const now = Date.now();
   return (
     <div>
-      <div className="flex gap-2">
-        <TaInput placeholder="Nova tarefa" value={title} onChange={(e) => setTitle(e.target.value)} />
-        <TaInput type="datetime-local" className="w-52 shrink-0" value={due} onChange={(e) => setDue(e.target.value)} />
-        <TaButton
-          variant="primary"
-          disabled={!title.trim()}
-          onClick={async () => {
-            await call("activities.create", { title, dealId: cardId, dueAt: due ? new Date(due).toISOString() : undefined });
-            setTitle("");
-            setDue("");
-            await after();
-          }}
-        >
-          Adicionar
-        </TaButton>
-      </div>
-      <p className="mt-1 text-theme-xs text-gray-400">O cadastro completo de tarefas (tipo, duração, lembrete) chega na Fase 7.</p>
+      <TaButton variant="primary" startIcon={<PlusCircle size={15} />} onClick={() => setModal({ dealId: cardId })}>
+        Nova tarefa
+      </TaButton>
       <ul className="mt-3 divide-y divide-gray-100 dark:divide-gray-800">
         {tasks.map((t) => {
           const overdue = !t.done && new Date(t.due_at).getTime() < now;
@@ -374,18 +361,29 @@ function TasksTab({ cardId, onChanged }: { cardId: string; onChanged: () => void
               }} className={t.done ? "text-success-600" : "text-gray-400 hover:text-success-600"}>
                 {t.done ? <CheckCircle2 size={18} /> : <Circle size={18} />}
               </button>
-              <div className="min-w-0 flex-1">
+              <span className="text-brand-500"><ActivityIcon name={t.type_icon} /></span>
+              <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setModal({ id: t.id })}>
                 <p className={cn("truncate text-theme-sm", t.done ? "text-gray-400 line-through" : "text-gray-800 dark:text-white/90")}>{t.title}</p>
                 <p className={cn("text-theme-xs", overdue ? "text-error-600" : "text-gray-400")}>
                   {t.type_name} · {formatDateTime(t.due_at)}
                   {t.owner_name && ` · ${t.owner_name}`}
                 </p>
-              </div>
+              </button>
             </li>
           );
         })}
         {tasks.length === 0 && <p className="py-2 text-theme-sm text-gray-400">Nenhuma tarefa.</p>}
       </ul>
+      {modal && (
+        <TaskModal
+          request={modal}
+          onClose={() => setModal(null)}
+          onSaved={async () => {
+            setModal(null);
+            await after();
+          }}
+        />
+      )}
     </div>
   );
 }

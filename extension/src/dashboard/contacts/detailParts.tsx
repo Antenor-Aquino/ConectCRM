@@ -1,13 +1,14 @@
 // Partes comuns das fichas de contato e organização.
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { CheckCircle2, Circle, X } from "lucide-react";
-import { TaBadge, cn } from "@tailadmin";
+import { CheckCircle2, Circle, Plus, X } from "lucide-react";
+import { TaBadge, TaButton, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { ActivityListItem } from "../../db/activities";
 import type { CustomField, CustomValue } from "../../db/customFields";
 import type { DataTable } from "../../db/repo";
 import { formatCents, formatDateTime } from "../../lib/format";
 import { useSession } from "../session";
+import { TaskModal, type TaskRequest } from "../tasks/TaskModal";
 
 export function DrawerShell({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   return (
@@ -116,37 +117,53 @@ function loadCards(filter: { personId?: string; organizationId?: string }) {
 
 export function RelatedTasks({ filter }: { filter: { personId?: string; organizationId?: string } }) {
   const [tasks, setTasks] = useState<ActivityListItem[]>([]);
+  const [modal, setModal] = useState<TaskRequest | null>(null);
   const key = filter.personId ?? filter.organizationId;
   const load = useCallback(() => call("activities.list", filter).then(setTasks), [key]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     void load();
   }, [load]);
-  if (tasks.length === 0) return <p className="text-theme-sm text-gray-400">Nenhuma tarefa.</p>;
   const now = Date.now();
   return (
-    <ul className="divide-y divide-gray-100 dark:divide-gray-800">
-      {tasks.map((t) => (
-        <li key={t.id} className="flex items-center gap-3 py-2">
-          <button
-            type="button"
-            className={t.done ? "text-success-600" : "text-gray-400 hover:text-success-600"}
-            onClick={async () => {
-              await call("activities.setDone", { id: t.id, done: !t.done });
-              await load();
-            }}
-          >
-            {t.done ? <CheckCircle2 size={18} /> : <Circle size={18} />}
-          </button>
-          <div className="min-w-0 flex-1">
-            <p className={cn("truncate text-theme-sm", t.done ? "text-gray-400 line-through" : "text-gray-800 dark:text-white/90")}>{t.title}</p>
-            <p className={cn("text-theme-xs", !t.done && new Date(t.due_at).getTime() < now ? "text-error-600" : "text-gray-400")}>
-              {t.type_name} · {formatDateTime(t.due_at)}
-              {t.deal_title && ` · ${t.deal_title}`}
-            </p>
-          </div>
-        </li>
-      ))}
-    </ul>
+    <div>
+      <TaButton variant="primary" startIcon={<Plus size={15} />} onClick={() => setModal({ ...filter })}>
+        Nova tarefa
+      </TaButton>
+      {tasks.length === 0 && <p className="mt-3 text-theme-sm text-gray-400">Nenhuma tarefa.</p>}
+      <ul className="mt-2 divide-y divide-gray-100 dark:divide-gray-800">
+        {tasks.map((t) => (
+          <li key={t.id} className="flex items-center gap-3 py-2">
+            <button
+              type="button"
+              className={t.done ? "text-success-600" : "text-gray-400 hover:text-success-600"}
+              onClick={async () => {
+                await call("activities.setDone", { id: t.id, done: !t.done });
+                await load();
+              }}
+            >
+              {t.done ? <CheckCircle2 size={18} /> : <Circle size={18} />}
+            </button>
+            <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setModal({ id: t.id })}>
+              <p className={cn("truncate text-theme-sm", t.done ? "text-gray-400 line-through" : "text-gray-800 dark:text-white/90")}>{t.title}</p>
+              <p className={cn("text-theme-xs", !t.done && new Date(t.due_at).getTime() < now ? "text-error-600" : "text-gray-400")}>
+                {t.type_name} · {formatDateTime(t.due_at)}
+                {t.deal_title && ` · ${t.deal_title}`}
+              </p>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {modal && (
+        <TaskModal
+          request={modal}
+          onClose={() => setModal(null)}
+          onSaved={async () => {
+            setModal(null);
+            await load();
+          }}
+        />
+      )}
+    </div>
   );
 }
 

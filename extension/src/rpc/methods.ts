@@ -35,6 +35,13 @@ function assertRole(db: DatabaseSync, ctx: DbContext, roles: users.Role[], what:
 const ADMIN: users.Role[] = ["admin"];
 const MANAGERS: users.Role[] = ["admin", "gestor"];
 
+/** Tarefa fora do escopo do usuário (vendedor: só as suas; gestor: equipe). */
+function assertActivityAccess(db: DatabaseSync, ctx: DbContext, id: string): void {
+  const scope = activities.activityScope(db, viewer(db, ctx));
+  const ok = one(db, `SELECT 1 FROM activity a WHERE a.id = ? AND a.deleted_at IS NULL${scope.sql ? ` AND ${scope.sql}` : ""}`, id, ...scope.params);
+  if (!ok) throw new ValidationError("Tarefa não encontrada ou sem permissão de acesso.");
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export const methods = {
@@ -173,17 +180,40 @@ export const methods = {
 
   // Tarefas
   "activityTypes.list": (db: DatabaseSync, _c: DbContext, p: { includeInactive?: boolean } = {}) => activities.listActivityTypes(db, p),
-  "activityTypes.create": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof activities.createActivityType>[2]) =>
-    activities.createActivityType(db, ctx, p),
-  "activityTypes.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Parameters<typeof activities.updateActivityType>[3] }) =>
-    activities.updateActivityType(db, ctx, p.id, p.patch),
-  "activities.list": (db: DatabaseSync, _c: DbContext, p: activities.ActivityFilter = {}) => activities.listActivities(db, p),
+  "activityTypes.create": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof activities.createActivityType>[2]) => {
+    assertRole(db, ctx, MANAGERS, "tipos de tarefa");
+    return activities.createActivityType(db, ctx, p);
+  },
+  "activityTypes.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Parameters<typeof activities.updateActivityType>[3] }) => {
+    assertRole(db, ctx, MANAGERS, "tipos de tarefa");
+    return activities.updateActivityType(db, ctx, p.id, p.patch);
+  },
+  "activities.list": (db: DatabaseSync, ctx: DbContext, p: Omit<activities.ActivityFilter, "viewer"> = {}) =>
+    activities.listActivities(db, { ...p, viewer: viewer(db, ctx) }),
+  "activities.counters": (db: DatabaseSync, ctx: DbContext, p: Omit<activities.ActivityFilter, "viewer" | "from" | "to" | "done" | "overdue"> = {}) =>
+    activities.activityCounters(db, { ...p, viewer: viewer(db, ctx) }),
+  /** Usado pelo service worker (lembretes). */
+  "activities.dueReminders": (db: DatabaseSync, ctx: DbContext) => activities.dueReminders(db, ctx.userId),
+  "activities.markReminded": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => activities.markReminded(db, ctx, p.ids),
+  "activities.setExternalEvent": (db: DatabaseSync, ctx: DbContext, p: Id & Parameters<typeof activities.setActivityExternalEvent>[3]) => {
+    assertActivityAccess(db, ctx, p.id);
+    activities.setActivityExternalEvent(db, ctx, p.id, p);
+  },
+  "cards.search": (db: DatabaseSync, ctx: DbContext, p: { search: string }) => deals.searchCards(db, p.search, viewer(db, ctx)),
   "activities.get": (db: DatabaseSync, _c: DbContext, p: Id) => activities.getActivity(db, p.id),
   "activities.create": (db: DatabaseSync, ctx: DbContext, p: activities.ActivityInput) => activities.createActivity(db, ctx, p),
-  "activities.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Partial<activities.ActivityInput> }) =>
-    activities.updateActivity(db, ctx, p.id, p.patch),
-  "activities.setDone": (db: DatabaseSync, ctx: DbContext, p: Id & { done: boolean }) => activities.setActivityDone(db, ctx, p.id, p.done),
-  "activities.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => activities.deleteActivity(db, ctx, p.id),
+  "activities.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Partial<activities.ActivityInput> }) => {
+    assertActivityAccess(db, ctx, p.id);
+    activities.updateActivity(db, ctx, p.id, p.patch);
+  },
+  "activities.setDone": (db: DatabaseSync, ctx: DbContext, p: Id & { done: boolean }) => {
+    assertActivityAccess(db, ctx, p.id);
+    activities.setActivityDone(db, ctx, p.id, p.done);
+  },
+  "activities.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    assertActivityAccess(db, ctx, p.id);
+    activities.deleteActivity(db, ctx, p.id);
+  },
 
   // Notas
   "notes.list": (db: DatabaseSync, _c: DbContext, p: { entityType: notes.NoteEntity; entityId: string }) => notes.listNotes(db, p.entityType, p.entityId),

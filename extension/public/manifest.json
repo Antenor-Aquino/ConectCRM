@@ -14,7 +14,10 @@
   "permissions": [
     "storage",
     "unlimitedStorage",
-    "offscreen"
+    "offscreen",
+    "alarms",
+    "notifications",
+    "identity"
   ],
   "icons": {
     "16": "icons/icon16.png",
@@ -29,6 +32,17 @@
     "https://brasilapi.com.br/*",
     "https://minhareceita.org/*",
     "https://www.receitaws.com.br/*",
-    "https://viacep.com.br/*"
-  ]
+    "https://viacep.com.br/*",
+    "https://www.googleapis.com/*",
+    "https://graph.microsoft.com/*",
+    "https://login.microsoftonline.com/*"
+  ],
+  "oauth2": {
+    "client_id": "COLE_AQUI_O_CLIENT_ID_DO_GOOGLE.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/calendar.events",
+      "https://www.googleapis.com/auth/calendar.readonly",
+      "https://www.googleapis.com/auth/userinfo.email"
+    ]
+  }
 }

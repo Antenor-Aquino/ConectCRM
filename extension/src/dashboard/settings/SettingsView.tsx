@@ -5,6 +5,7 @@ import { Ban, Database, KeyRound, ListChecks, Package, SlidersHorizontal, Tags, 
 import { TaPanel, cn } from "@tailadmin";
 import { planLabel } from "../../lib/license";
 import { useLicense } from "../license/LicenseGate";
+import { ActivityTypesSettings } from "./ActivityTypesSettings";
 import { CustomFieldsSettings } from "./CustomFieldsSettings";
 import { LossReasonsSettings } from "./LossReasonsSettings";
 import { ProductsSettings } from "./ProductsSettings";
@@ -12,7 +13,7 @@ import { TagsSettings } from "./TagsSettings";
 import { TeamsSettings } from "./TeamsSettings";
 import { UsersSettings } from "./UsersSettings";
 
-type Section = "usuarios" | "equipes" | "licenca" | "tags" | "campos" | "produtos" | "motivos";
+type Section = "usuarios" | "equipes" | "licenca" | "tags" | "campos" | "produtos" | "motivos" | "tipos";
 
 const SECTIONS: { id: Section | null; label: string; icon: React.ReactNode; phase?: string }[] = [
   { id: "usuarios", label: "Usuários", icon: <Users size={16} /> },
@@ -22,7 +23,7 @@ const SECTIONS: { id: Section | null; label: string; icon: React.ReactNode; phas
   { id: "campos", label: "Campos personalizados", icon: <SlidersHorizontal size={16} /> },
   { id: "produtos", label: "Produtos e serviços", icon: <Package size={16} /> },
   { id: "motivos", label: "Motivos de perda", icon: <Ban size={16} /> },
-  { id: null, label: "Tipos de tarefa", icon: <ListChecks size={16} />, phase: "Fase 7" },
+  { id: "tipos", label: "Tipos de tarefa", icon: <ListChecks size={16} /> },
   { id: null, label: "Backup", icon: <Database size={16} />, phase: "Fase 8" },
 ];
 
@@ -58,6 +59,7 @@ export function SettingsView() {
         {section === "campos" && <CustomFieldsSettings />}
         {section === "produtos" && <ProductsSettings />}
         {section === "motivos" && <LossReasonsSettings />}
+        {section === "tipos" && <ActivityTypesSettings />}
       </div>
     </div>
   );

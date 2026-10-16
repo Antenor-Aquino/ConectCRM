@@ -1,6 +1,6 @@
 # ConectCRM — Planejamento de implementação (v4)
 
-> Status: **Fases 0 a 6 concluídas** (branches em sequência até `fase-6-produtos-campos`). Próximo: Fase 7 (tarefas e agenda).
+> Status: **Fases 0 a 7 concluídas** (branches em sequência até `fase-7-tarefas-agenda`). Próximo: Fase 8 (backup e segurança).
 > v4: v1 individual (sem sincronização) com cadastro de equipes/usuários; estrutura pronta para sincronizar no futuro; "Fluxo geral" confirmado.
 
 ## 1. Visão

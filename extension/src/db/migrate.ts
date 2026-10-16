@@ -1,7 +1,11 @@
 import type { DatabaseSync } from "./sql";
 import migration0000 from "./migrations/0000_init.sql?raw";
+import migration0001 from "./migrations/0001_activity_meeting_reminder.sql?raw";
 
-export const MIGRATIONS: { name: string; sql: string }[] = [{ name: "0000_init.sql", sql: migration0000 }];
+export const MIGRATIONS: { name: string; sql: string }[] = [
+  { name: "0000_init.sql", sql: migration0000 },
+  { name: "0001_activity_meeting_reminder.sql", sql: migration0001 },
+];
 
 /** Aplica as migrations pendentes; devolve quantas rodaram. */
 export function runMigrations(db: DatabaseSync): number {
