@@ -1,6 +1,6 @@
 # ConectCRM — Planejamento de implementação (v4)
 
-> Status: **Fase 0 concluída** (branch `fase-0-fundacao`). Esquema completo do banco (Fase 1) já criado; faltam os módulos por entidade.
+> Status: **Fases 0 e 1 concluídas** (branches `fase-0-fundacao` e `fase-1-dados`). Próximo: Fases 2 e 4 (Kanban com cartões).
 > v4: v1 individual (sem sincronização) com cadastro de equipes/usuários; estrutura pronta para sincronizar no futuro; "Fluxo geral" confirmado.
 
 ## 1. Visão
