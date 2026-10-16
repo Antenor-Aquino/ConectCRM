@@ -1,115 +1,189 @@
-# ConectCRM — Planejamento de implementação
+# ConectCRM — Planejamento de implementação (v2)
 
-> Status: **planejamento** (nenhum código escrito ainda). Aguardando a sugestão
-> de tela inicial e o detalhamento das funcionalidades para fechar o escopo.
+> Status: **aguardando aprovação**. Nenhum código escrito.
+> v2 incorpora o mockup da tela inicial e as respostas às decisões em aberto.
 
 ## 1. Visão
 
-CRM completo rodando **100% local como extensão do Chrome** (Manifest V3):
-funis de venda, Kanban de etapas, tarefas/atividades, cadastro de pessoas e
-empresas, relatórios — sem servidor próprio para os dados. Backup diário
-automático em pasta escolhida pelo usuário, na mesma lógica da extensão
-`gestao-financeira-extensao`.
+CRM completo rodando **localmente como extensão do Chrome** (Manifest V3):
+funis/projetos, Kanban de etapas, tarefas, clientes (pessoas e empresas),
+produtos e serviços, campos personalizados, equipes e relatórios. Sem servidor
+para os dados; backup diário automático em pasta local (mesma lógica da
+`gestao-financeira-extensao`).
 
-O `wa-pipedrive` (que já usa o nome "ConectCRM" no manifest) hoje é um
-"conector" WhatsApp Web → Pipedrive/HubSpot. O novo ConectCRM passa a ser o
-**próprio CRM**: tudo que hoje é gravado via API do Pipedrive/HubSpot passa a
-ser gravado no banco local.
+A integração com o WhatsApp Web funciona **como hoje no wa-pipedrive**, mas
+gravando no CRM local em vez de Pipedrive/HubSpot (que deixam de existir).
 
-## 2. Arquitetura (herdada da gestao-financeira-extensao)
+## 2. Decisões confirmadas
 
-| Camada | Decisão | Origem |
-|---|---|---|
-| Build | Vite + React 19 + TypeScript, `base: "./"`, múltiplas entradas (popup, dashboard, background) | `extension/vite.config.ts` |
-| UI | Tailwind 4 + pacote `shared/tailadmin` (Card, Button, Modal, Badge, AppLayout, TopNavBar, tema claro/escuro), ícones lucide-react, fonte Inter | `shared/tailadmin` |
-| Banco | SQLite em WASM (`sql.js`), snapshot persistido no IndexedDB, migrations `.sql` versionadas | `extension/src/db/client.ts`, `idb.ts`, `sql.ts` |
-| Ambientes | Produção / Teste (com dados demo) | `lib/environment.ts`, `lib/seedDemoData.ts` |
-| Backup | File System Access API: handle da pasta salvo no IndexedDB; checagem ao abrir o dashboard; `diario_*.sqlite` / `Semanal_*.sqlite` com data **local**; modal de reautorização quando a permissão cai; notificação de sucesso/erro; restauração manual | `lib/autoBackup.ts`, `lib/backupFolder.ts`, `AutoBackupPermissionModal.tsx` |
-| Segurança | PIN de bloqueio + código de recuperação | `lib/appLock.ts`, `LockScreen.tsx` |
-| Notificações | Central de notificações (sino) | `lib/notifications.ts`, `NotificationBell.tsx` |
-| Exportação | Excel (`xlsx`) | `lib/exportExcel.ts` |
-| Testes | Vitest com banco em memória | `tests/` |
+| Tema | Decisão |
+|---|---|
+| Extensão | **Nova** extensão (novo ID, nova chave `.pem`, novo OAuth Client do Google/Microsoft). O wa-pipedrive publicado não é alterado. |
+| Usuários | Equipes e vários usuários/vendedores, associáveis a negócios. |
+| Pipedrive/HubSpot | Removidos. Todo o código de API deles vira chamadas ao CRM local. |
+| Licença | Mesma lógica e backend do wa-pipedrive (`extpipe.claudiacrm.com.br`: trial, planos, checkout, upgrade, cancelamento, device ID). |
+| Campos personalizados | Entram na estrutura desde o início. |
+| Produtos e serviços | Entram na estrutura desde o início. |
+| WhatsApp | Mesmo fluxo atual (popup), apontando para o CRM local. |
 
-Telas: **dashboard em aba própria** (CRM completo) + **popup/side panel**
-leve para ações rápidas (especialmente dentro do WhatsApp Web).
+## 3. Tela inicial (a partir do mockup)
 
-## 3. O que reaproveitar do wa-pipedrive
+**Barra superior (fixa)**
+- Busca global `Ctrl+K` (negócios, pessoas, empresas, tarefas).
+- Menu: **Funis · Tarefas · Clientes · Relatórios** + botão **"+"** (criação rápida: negócio, pessoa, empresa, tarefa).
+- **Configurações**, **sino** (central de notificações: backups, tarefas vencendo, avisos de licença) e **calendário** (agenda do dia / próximas tarefas).
 
-Fonte copiado em `referencia/wa-pipedrive/` (somente referência; será portado
-para módulos TypeScript, não usado como está — o `popup.js` tem ~5.100 linhas
-em JS puro).
+**Coluna esquerda — lista de funis**
+- Funis com ícone (ex.: Suporte, PowerCubus, Matrículas 2024, Olimpíadas, Vendas); selecionado em destaque.
+- Funis são genéricos (vendas, suporte, matrículas, projetos) — não só vendas.
+- Recolhível pelo ícone ☰ do cabeçalho do quadro.
 
-| Recurso | Onde está (popup.js / outros) | Destino no ConectCRM |
-|---|---|---|
-| Captura de conversa e mídias do WhatsApp Web | `content.js`, `pageBlobHook`, `mergeDownloadsIntoMedia`, `background.js` (cache de downloads) | Módulo "WhatsApp": grava mensagens como nota/atividade no deal local |
-| Recorte de tela (clips) | `background.js` (`startClip`, `cropDataUrl`), `loadClips` | Anexos de deal/nota |
-| Roteador de IA (Gemini, OpenAI, Claude, DeepSeek) + tradução de erros | `aiGenerate`, `callGemini`, `callOpenAILike`, `callClaude` | `lib/ai/` (unificar com o da financeira) |
-| Resumo de conversa / imagens por IA, transcrição de áudio | `summarizeWithGemini`, `summarizeImagesWithGemini`, `transcribeAudioWithAI` | Notas inteligentes |
-| Consulta CNPJ (BrasilAPI, minhareceita, ReceitaWS, merge de fontes) | bloco "Consulta de CNPJ" | Cadastro de Empresas (preenchimento automático) |
-| Autocomplete anti-duplicação Pessoa/Organização | `setupAutocomplete` | Formulários de cadastro e de novo deal |
-| Painel de atividades (filtro por período, atrasadas, concluir) | bloco "Painel de atividades do CRM" | Módulo Tarefas |
-| Agendamento Google Agenda / Outlook (OAuth, horários livres, Meet/Teams, convidados) | `gAuth`, `microsoftAuth`, `getScheduleBusyRanges`, `computeFreeSlots`, `createProviderEvent` | Tarefas do tipo reunião → evento na agenda |
-| ZapSign (assinatura eletrônica) | bloco "ZapSign" | Aba do deal "Documentos" |
-| Asaas (cobranças avulsas e recorrentes) | bloco Asaas | Aba do deal "Cobranças" |
-| Licença / trial / checkout / upgrade / cancelamento (`extpipe.claudiacrm.com.br`) + device ID | início do `popup.js` | Mantido (a confirmar) |
-| Ícones, logo, fonte, política de privacidade, guia OAuth | `icons/`, `fonts/`, `Ajustes/` | Reaproveitados |
+**Cabeçalho do quadro**
+- Nome do funil, ícone de **indicadores do funil** (mini-relatório), menu **⋯** (editar funil/etapas, duplicar, arquivar, exportar).
+- Pesquisa dentro do funil, **Filtrar** (responsável, equipe, etiqueta, status, valor, datas, campos personalizados).
+- **Fluxo geral** (seletor de visão — ver dúvida 1 na seção 10) e ordenação **Mais recentes** (recentes, valor, data prevista, próxima tarefa, nome).
 
-Integrações com Pipedrive/HubSpot: deixam de ser destino principal. Proposta:
-manter apenas um **importador** (migrar deals, pessoas, empresas e atividades
-de quem já usa Pipedrive/HubSpot).
+**Colunas (etapas)**
+- Bolinha colorida, nome, **quantidade** e **soma de valores** da etapa.
+- Etapa vazia mostra a área tracejada **"+"** para criar negócio direto nela.
+- Rolagem horizontal; arrastar-e-soltar entre etapas e para reordenar.
 
-## 4. Modelo de dados (rascunho)
+**Cartão do negócio**
+- Título (link para o detalhe) e **valor**.
+- Contato com avatar de iniciais.
+- Rodapé com indicadores: **notas/comentários**, **checklist de tarefas `concluídas/total`** (riscado quando 100%), **contador de comentários**, **alerta vermelho** (tarefa atrasada / sem próxima atividade).
+- **Avatar do responsável** no canto.
+- **Destaque em vermelho com "✕" no canto** = negócio perdido (ou atrasado — ver dúvida 2).
 
-- `pipelines` (funis) · `stages` (etapas: ordem, probabilidade, cor, dias para "estagnado")
-- `deals` (negócios: título, valor, moeda, funil, etapa, pessoa, empresa, responsável, status aberto/ganho/perdido, motivo de perda, data prevista, origem, etiquetas)
-- `deal_stage_history` (entrada/saída de cada etapa — base dos relatórios de conversão e tempo por etapa)
-- `persons` (pessoas) · `organizations` (empresas, com dados de CNPJ) · `person_organization`
-- `activities` (tarefas: tipo, assunto, data/hora, duração, concluída, vínculo com deal/pessoa/empresa, id do evento na agenda)
-- `activity_types` · `notes` · `attachments` (blobs no IndexedDB/SQLite) · `tags`
-- `custom_fields` + valores (campos personalizados por entidade) — a confirmar
-- `whatsapp_captures` (mensagens capturadas vinculadas a deal/pessoa)
-- `loss_reasons`, `products` / `deal_products` — a confirmar
-- `settings`, `audit_log` (histórico/timeline de alterações)
+## 4. Arquitetura
 
-## 5. Fases de implementação
+Herdada da `gestao-financeira-extensao`:
 
-| Fase | Entrega | Principais itens |
-|---|---|---|
-| **0. Fundação** | Repositório e build | Monorepo no padrão da financeira (`extension/`, `shared/tailadmin`, `tests/`), manifest MV3, ícones, CI de typecheck/testes |
-| **1. Dados** | Banco local | Migrations iniciais, camada `db/*` por entidade, testes Vitest, seed de demonstração |
-| **2. Shell + Tela inicial** | Navegação | Layout (sidebar/topbar), tela inicial conforme mockup enviado, busca global, tema claro/escuro |
-| **3. Cadastros** | Pessoas e Empresas | Listas com filtros/colunas configuráveis, ficha com timeline, CNPJ automático, anti-duplicação, mesclar registros, importação CSV/Excel |
-| **4. Funis + Kanban** | Negócios | Configuração de funis/etapas, Kanban com arrastar-e-soltar, cartões com valor/atraso/próxima atividade, visão lista, ganho/perdido, detalhe do deal (notas, atividades, anexos, histórico) |
-| **5. Tarefas / Agenda** | Atividades | Lista e calendário, filtros por período, atrasadas, lembretes (`chrome.alarms` + notificações), integração Google Agenda/Outlook |
-| **6. Backup e segurança** | Confiabilidade | Backup diário/semanal, restauração, exportação, ambiente de teste, PIN de bloqueio |
-| **7. WhatsApp** | Captura | Ação no WhatsApp Web: identificar contato pelo telefone, criar/abrir deal, salvar conversa/mídias/resumo IA como nota |
-| **8. Relatórios** | Análise | Funil de conversão, previsão (valor × probabilidade), ganhos/perdidos por período e motivo, tempo médio por etapa, atividades por tipo, exportar Excel |
-| **9. Integrações extras** | Valor agregado | ZapSign, Asaas, copiloto IA, importador Pipedrive/HubSpot |
-| **10. Publicação** | Distribuição | Licenciamento, política de privacidade, Chrome Web Store |
+| Camada | Decisão |
+|---|---|
+| Build | Vite + React 19 + TypeScript, `base: "./"`, entradas: dashboard, popup, background, content script, offscreen |
+| UI | Tailwind 4 + `shared/tailadmin` (Card, Button, Modal, Badge, layout, tema claro/escuro), lucide-react, fonte Inter |
+| Kanban | `@dnd-kit` para arrastar-e-soltar (acessível, com teclado) |
+| Banco | SQLite WASM (`sql.js`), snapshot no IndexedDB, migrations `.sql` versionadas |
+| Backup | File System Access API, conforme seção 7 |
+| Testes | Vitest com banco em memória |
 
-Fases 0–6 formam o **MVP** (CRM utilizável com backup). 7–10 em seguida,
-ordem ajustável conforme prioridade.
+**Ponto novo — banco com um único "dono".** Na financeira o banco vive na aba
+do dashboard. Aqui o popup do WhatsApp também lê e grava; se dashboard e
+popup carregassem cada um seu snapshot, um sobrescreveria o outro. Proposta:
+o banco roda num **documento offscreen** da extensão; dashboard, popup e
+background falam com ele por mensagens (camada `db/*` com a mesma interface,
+só muda o transporte). Isso também permite lembretes de tarefas via
+`chrome.alarms` com o dashboard fechado.
 
-## 6. Decisões em aberto
+## 5. Usuários e equipes — como funciona sendo local
 
-1. **ID da extensão / Web Store**: o ConectCRM novo substitui o wa-pipedrive
-   publicado (mesmo ID, mesma chave `.pem`, mesmo OAuth client do Google) ou
-   será uma extensão separada?
-2. **Usuário único ou equipe?** Local implica um usuário por navegador.
-   Precisa de "responsável" por deal / vários vendedores / sincronizar entre
-   computadores?
-3. **Pipedrive/HubSpot**: manter só importador, ou também sincronização?
-4. **Licenciamento**: reaproveitar o backend `extpipe.claudiacrm.com.br`
-   (trial, planos, checkout)?
-5. **Campos personalizados e produtos** entram no MVP?
-6. **Onde fica o CRM no WhatsApp**: popup (como hoje) ou side panel fixo ao
-   lado do WhatsApp Web?
-7. **Repositório**: criar `Antenor-Aquino/ConectCRM` no GitHub (vazio) para
-   versionar este projeto.
+Recomendação para a v1:
+- **Usuários** e **equipes** são cadastros no banco (nome, e-mail, avatar/cor, equipe, papel: admin / gestor / vendedor, ativo).
+- Ao abrir, o sistema identifica o **usuário atual** (seleção + PIN, reaproveitando o bloqueio por PIN da financeira).
+- Negócios, tarefas, pessoas e empresas têm **responsável** e **participantes**; filtros "Meus" / "Minha equipe" / "Todos".
+- Permissões simples por papel (ex.: vendedor vê só os próprios negócios; gestor vê a equipe).
 
-## 7. Próximos passos
+**Limite importante:** com dados locais, todos os usuários compartilham o
+banco **do mesmo navegador/computador**. Se cada vendedor usar o seu próprio
+computador e precisar ver os mesmos negócios, será necessária uma
+**sincronização por servidor** (pode usar o mesmo backend da licença). Proposta:
+estruturar o banco desde já para isso (ids UUID, `updated_at`, `updated_by`,
+exclusão lógica, log de alterações) e deixar a sincronização como fase
+própria (Fase 11), sem bloquear o MVP.
 
-1. Receber o mockup da tela inicial.
-2. Detalhar funcionalidades módulo a módulo (começando por Funis/Kanban e Cadastros).
-3. Fechar as decisões da seção 6 e congelar o modelo de dados.
-4. Iniciar a Fase 0.
+## 6. Modelo de dados
+
+**Organização e acesso**
+- `users`, `teams`, `team_members`, `roles` (permissões por papel)
+- `license_state` (local, espelho da licença)
+
+**Funis**
+- `pipelines` (nome, ícone, cor, tipo, ordem, arquivado, equipes com acesso)
+- `stages` (funil, nome, cor, ordem, probabilidade %, dias para "estagnado")
+- `loss_reasons`
+
+**Negócios**
+- `deals` (título, valor, moeda, funil, etapa, posição no Kanban, pessoa, empresa, responsável, status aberto/ganho/perdido, motivo de perda, data prevista, data de ganho/perda, origem)
+- `deal_participants` (usuários e pessoas adicionais)
+- `deal_items` (produto/serviço, quantidade, preço unitário, desconto, total, recorrência) — o valor do negócio pode ser manual ou a soma dos itens
+- `deal_stage_history` (entrada/saída em cada etapa → conversão e tempo por etapa)
+
+**Clientes**
+- `persons` (nome, telefones, e-mails, cargo, empresa, responsável)
+- `organizations` (razão social, fantasia, CNPJ + dados da Receita, endereço, responsável)
+- `person_organizations`
+
+**Tarefas e interações**
+- `activity_types` (ligação, reunião, e-mail, WhatsApp, tarefa… configuráveis)
+- `activities` (tipo, assunto, descrição, data/hora, duração, responsável, concluída, vínculos com negócio/pessoa/empresa, id do evento no Google/Outlook)
+- `checklist_items` (checklist do negócio — o `0/1` do cartão)
+- `notes` e `comments` (com menção a usuários)
+- `attachments` (arquivos, recortes de tela, mídias do WhatsApp)
+- `whatsapp_captures` (mensagens capturadas, vinculadas a negócio/pessoa)
+
+**Produtos e serviços**
+- `product_categories`
+- `products` (código, nome, tipo produto/serviço, unidade, preço, custo, recorrência avulsa/mensal/anual, ativo)
+
+**Campos personalizados**
+- `custom_fields` (entidade: negócio/pessoa/empresa/produto/tarefa; tipo: texto, texto longo, número, moeda, data, sim/não, lista, lista múltipla, usuário, pessoa, empresa, telefone, e-mail, URL; opções; obrigatório; ordem; restrito a funil(is) específicos)
+- `custom_field_values` (entidade, registro, campo, valor)
+- Campos personalizados aparecem nos formulários, no detalhe, nos filtros, nas colunas das listas, na importação/exportação e nos relatórios.
+
+**Diversos**
+- `tags` + vínculos, `saved_filters` (visões salvas), `settings`, `audit_log` (timeline e base para a futura sincronização)
+
+## 7. Backup (igual à financeira)
+
+- Pasta escolhida pelo usuário (handle salvo no IndexedDB).
+- Checagem na primeira abertura do dia; arquivo `diario_conectcrm-backup-auto-<data local>.sqlite` (opção semanal).
+- Data sempre no **fuso local** (mesma correção já feita na financeira).
+- Se a permissão da pasta cair: modal pedindo reautorização com o backup rodando logo em seguida.
+- Notificação de sucesso/erro, exportação manual, **restauração** de backup e ambiente de **Teste** com dados de demonstração.
+
+## 8. Reaproveitamento do wa-pipedrive
+
+Fonte em `referencia/wa-pipedrive/` (será portado para TypeScript modular).
+
+| Recurso | Destino |
+|---|---|
+| Captura de conversa e mídias do WhatsApp (`content.js`, blob hook, downloads) | Popup → localizar pessoa pelo telefone → negócio → salvar nota/atividade/anexos |
+| Recorte de tela (`background.js`) | Anexos |
+| Roteador de IA (Gemini, OpenAI, Claude, DeepSeek), resumo, transcrição de áudio | `lib/ai/` compartilhado |
+| Consulta CNPJ (BrasilAPI, minhareceita, ReceitaWS) | Cadastro de empresa e "novo negócio a partir de CNPJ" |
+| Autocomplete anti-duplicação | Formulários de pessoa/empresa/negócio |
+| Painel de atividades (períodos, atrasadas, concluir) | Módulo Tarefas e popup |
+| Agendamento Google Agenda / Outlook (horários livres, Meet/Teams, convidados) | Tarefas do tipo reunião |
+| ZapSign | Aba "Documentos" do negócio |
+| Asaas (cobranças avulsas/recorrentes) | Aba "Cobranças" do negócio, usando os itens (produtos/serviços) |
+| Licença (trial, checkout, upgrade, cancelamento) | Mesmo fluxo |
+| Ícones, fonte, política de privacidade, guia OAuth | Adaptados ao novo ID |
+
+## 9. Fases
+
+| Fase | Entrega |
+|---|---|
+| **0. Fundação** | Repositório, build, manifest da nova extensão, ícones, offscreen com banco, testes rodando |
+| **1. Dados** | Migrations de todo o modelo da seção 6, camada `db/*`, testes, dados de demonstração |
+| **2. Estrutura e tela inicial** | Barra superior, busca `Ctrl+K`, botão "+", lista de funis, quadro Kanban (somente visual), tema claro/escuro |
+| **3. Usuários, equipes e licença** | Cadastros, seleção de usuário + PIN, papéis, tela de licença |
+| **4. Funis e Kanban** | Cadastro de funis/etapas, arrastar-e-soltar, cartão completo, filtros, ordenação, ganho/perdido, detalhe do negócio (timeline, notas, comentários, checklist, anexos, histórico) |
+| **5. Clientes** | Pessoas e empresas, CNPJ, anti-duplicação, mesclar, importação/exportação Excel/CSV |
+| **6. Produtos, serviços e campos personalizados** | Catálogo, itens no negócio, editor de campos personalizados, uso em formulários/filtros/listas |
+| **7. Tarefas e agenda** | Lista e calendário, tipos, lembretes, Google Agenda/Outlook |
+| **8. Backup e segurança** | Backup diário, restauração, ambiente de teste |
+| **9. WhatsApp** | Popup sobre o WhatsApp Web gravando no CRM local |
+| **10. Relatórios** | Conversão do funil, previsão (valor × probabilidade), ganhos/perdidos por período/motivo/responsável/equipe, tempo por etapa, produtos vendidos, atividades por usuário; exportar Excel |
+| **11. Integrações e sincronização** | ZapSign, Asaas, copiloto IA; sincronização entre computadores (se aprovada) |
+| **12. Publicação** | Política de privacidade, verificação OAuth, Chrome Web Store |
+
+**MVP = Fases 0 a 9** (CRM com equipe, Kanban, clientes, produtos, campos
+personalizados, tarefas, backup e WhatsApp).
+
+## 10. Dúvidas para aprovação
+
+1. **"Fluxo geral"** no mockup: é a visão "todos os responsáveis" (com opção "Meu fluxo" / "Minha equipe") ou um período/consolidado de todos os funis?
+2. **Cartão vermelho com "✕"**: significa negócio **perdido** ou **atrasado**? O ícone vermelho de balão (cartão "Mieza") indica o quê — mensagem não lida, tarefa vencida?
+3. **Equipe em computadores diferentes**: os vendedores vão compartilhar o mesmo computador, ou cada um no seu (o que exige a sincronização da seção 5)?
+4. **Licença**: por instalação (como hoje) ou por usuário cadastrado?
