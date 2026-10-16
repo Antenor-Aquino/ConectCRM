@@ -19,6 +19,7 @@ import { SlaPicker } from "../ui/SlaPicker";
 import { stageColor } from "../ui/StageSelect";
 import { TagPicker } from "../ui/TagPicker";
 import { UserSelect } from "../ui/UserSelect";
+import { AttachmentsPanel } from "../ui/AttachmentsPanel";
 import { NotesPanel } from "../ui/NotesPanel";
 import { TaskModal, type TaskRequest } from "../tasks/TaskModal";
 import { ActivityIcon } from "../../lib/activityIcons";
@@ -45,7 +46,7 @@ const FIELD_LABEL: Record<string, string> = {
 
 const STATUS_BADGE = { open: null, won: { color: "green", label: "Ganho" }, lost: { color: "red", label: "Perdido" } } as const;
 
-type Tab = "notas" | "tarefas" | "historico";
+type Tab = "notas" | "tarefas" | "anexos" | "historico";
 
 export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: string; pipeline: Pipeline; onClose: () => void; onChanged: () => void }) {
   const { users, user } = useSession();
@@ -269,6 +270,7 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
               [
                 ["notas", "Notas"],
                 ["tarefas", "Tarefas"],
+                ["anexos", "Anexos"],
                 ["historico", "Histórico"],
               ] as [Tab, string][]
             ).map(([id, label]) => (
@@ -287,6 +289,7 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
           </div>
           {tab === "notas" && <NotesPanel entityType="deal" entityId={cardId} onChanged={onChanged} />}
           {tab === "tarefas" && <TasksTab cardId={cardId} onChanged={onChanged} />}
+          {tab === "anexos" && <AttachmentsPanel dealId={cardId} />}
           {tab === "historico" && (
             <HistoryTab
               cardId={cardId}

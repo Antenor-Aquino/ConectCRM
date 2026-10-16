@@ -42,6 +42,13 @@ function assertActivityAccess(db: DatabaseSync, ctx: DbContext, id: string): voi
   if (!ok) throw new ValidationError("Tarefa não encontrada ou sem permissão de acesso.");
 }
 
+/** Anexo de cartão: segue a permissão do cartão. */
+function assertAttachmentAccess(db: DatabaseSync, ctx: DbContext, id: string): void {
+  const owner = attachments.attachmentOwner(db, id);
+  if (!owner) throw new ValidationError("Anexo não encontrado.");
+  if (owner.entity_type === "deal" && owner.entity_id) deals.assertCardAccess(db, viewer(db, ctx), owner.entity_id);
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export const methods = {
@@ -177,6 +184,23 @@ export const methods = {
   "cards.forEntity": (db: DatabaseSync, ctx: DbContext, p: { personId?: string; organizationId?: string }) => deals.listCardsForEntity(db, p, viewer(db, ctx)),
   "attachments.saveImage": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof attachments.saveImage>[2]) => attachments.saveImage(db, ctx, p),
   "attachments.dataUrls": (db: DatabaseSync, _c: DbContext, p: { ids: string[] }) => attachments.getDataUrls(db, p.ids),
+  "attachments.list": (db: DatabaseSync, ctx: DbContext, p: { entityType: "deal"; entityId: string }) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.entityId);
+    return attachments.listAttachments(db, p.entityType, p.entityId);
+  },
+  "attachments.add": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof attachments.addFile>[2]) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.entityId);
+    return attachments.addFile(db, ctx, p);
+  },
+  "attachments.get": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    assertAttachmentAccess(db, ctx, p.id);
+    return attachments.getDataUrls(db, [p.id])[p.id] ?? null;
+  },
+  "attachments.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    assertAttachmentAccess(db, ctx, p.id);
+    attachments.deleteAttachment(db, ctx, p.id);
+  },
+  "persons.findByPhone": (db: DatabaseSync, ctx: DbContext, p: { phone: string }) => contacts.findPersonsByPhone(db, p.phone, viewer(db, ctx)),
 
   // Tarefas
   "activityTypes.list": (db: DatabaseSync, _c: DbContext, p: { includeInactive?: boolean } = {}) => activities.listActivityTypes(db, p),

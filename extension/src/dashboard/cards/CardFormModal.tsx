@@ -24,6 +24,10 @@ export interface CardFormRequest {
   type: PipelineType;
   pipelineId?: string;
   stageId?: string;
+  /** Pré-preenchimento (popup do WhatsApp: contato da conversa aberta). */
+  person?: ComboItem | null;
+  title?: string;
+  origin?: string;
 }
 
 export function CardFormModal({
@@ -67,7 +71,7 @@ export function CardFormModal({
   // Reinicia ao abrir.
   useEffect(() => {
     if (!request) return;
-    setTitle("");
+    setTitle(request.title ?? "");
     setDescription("");
     setValueCents(0);
     setItems([]);
@@ -76,6 +80,7 @@ export function CardFormModal({
     setDueDate("");
     setPerson(null);
     setOrg(null);
+    if (request.person) void pickPerson(request.person);
     setOwnerId(user.id);
     setTagIds([]);
     setCustomValues({});
@@ -123,6 +128,7 @@ export function CardFormModal({
         ownerId,
         tagIds,
         customValues,
+        origin: request?.origin,
       });
       onCreated(id, pipelineId, open);
     } catch (e) {

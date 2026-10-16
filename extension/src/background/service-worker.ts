@@ -2,6 +2,7 @@
 // dispara os lembretes de tarefas (notificação do Chrome, mesmo com o CRM fechado).
 import type { Activity } from "../db/activities";
 import { addNotification } from "../lib/notifications";
+import { runClip, type ClipStartMessage } from "./clip";
 import { OFFSCREEN_PATH, type EnsureOffscreenMessage, type RpcRequest, type RpcResponse } from "../rpc/protocol";
 
 let creating: Promise<void> | null = null;
@@ -32,6 +33,13 @@ chrome.runtime.onMessage.addListener((msg: EnsureOffscreenMessage, _sender, send
   ensureOffscreen()
     .then(() => sendResponse({ ok: true }))
     .catch((err: unknown) => sendResponse({ ok: false, error: String(err) }));
+  return true;
+});
+
+// Recorte de tela pedido pelo popup do WhatsApp.
+chrome.runtime.onMessage.addListener((msg: ClipStartMessage, _sender, sendResponse) => {
+  if (msg?.target !== "background" || msg.kind !== "clip-start") return false;
+  void runClip().then(sendResponse);
   return true;
 });
 

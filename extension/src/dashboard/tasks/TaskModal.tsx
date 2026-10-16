@@ -26,6 +26,8 @@ export interface TaskRequest {
   dealId?: string;
   personId?: string;
   organizationId?: string;
+  /** Já abre como reunião (popup do WhatsApp → "Agendar reunião"). */
+  meeting?: boolean;
 }
 
 async function searchCards(text: string): Promise<ComboItem[]> {
@@ -149,7 +151,16 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
   useEffect(() => {
     void call("activityTypes.list", {}).then((list) => {
       setTypes(list);
-      setTypeId((cur) => cur || (list.find((t) => t.name === "Tarefa") ?? list[0])?.id || "");
+      const preferred = request.meeting ? list.find((t) => t.is_meeting) : list.find((t) => t.name === "Tarefa");
+      setTypeId((cur) => cur || (preferred ?? list[0])?.id || "");
+      if (request.meeting && !request.id) {
+        setDuration(60);
+        setWhen(() => {
+          const d = new Date();
+          d.setHours(d.getHours() + 1, 0, 0, 0);
+          return d;
+        });
+      }
     });
     void call("customFields.list", { entity: "activity" }).then(setFields);
     if (request.dealId) {

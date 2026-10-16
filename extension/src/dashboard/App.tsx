@@ -93,6 +93,12 @@ function Main() {
     if (taskFromUrl) setTab("tarefas");
   }, [taskFromUrl]);
   const contactsChanged = () => setContactsKey((k) => k + 1);
+  // Popup do WhatsApp → "Abrir no CRM": ?negocio=<id> abre o cartão no funil dele.
+  useEffect(() => {
+    const id = new URLSearchParams(location.search).get("negocio");
+    if (!id) return;
+    void call("cards.get", { id }).then((c) => c && openCardFrom(c.pipeline_id, c.id));
+  }, []);
 
   // Ambiente (Produção/Teste) e backup automático ao abrir o CRM (só em Produção).
   const [env, setEnv] = useState<DbEnv | null>(null);

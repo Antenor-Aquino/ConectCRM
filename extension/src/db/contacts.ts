@@ -231,6 +231,23 @@ function personWhere(f: PersonFilter): { sql: string; params: SqlValue[] } {
   return { sql: where.join(" AND ") + vis.sql, params: [...params, ...vis.params] };
 }
 
+/** Chaves de comparação de um telefone. No Brasil o WhatsApp às vezes traz o
+ * celular sem o 9º dígito (ou com), então comparamos DDD + últimos 8 dígitos. */
+export function phoneMatchKey(phone: string | null | undefined): string | null {
+  const d = String(phone ?? "").replace(/\D/g, "");
+  if (d.length < 8) return null;
+  if (d.startsWith("55") && (d.length === 12 || d.length === 13)) return `55${d.slice(2, 4)}${d.slice(-8)}`;
+  return d;
+}
+
+/** Contatos com o telefone da conversa aberta no WhatsApp (popup). */
+export function findPersonsByPhone(db: DatabaseSync, phone: string, viewer?: Viewer | null): PersonListItem[] {
+  const key = phoneMatchKey(phone);
+  if (!key) return [];
+  const last8 = key.slice(-8);
+  return listPersons(db, { search: last8, viewer, limit: 200 }).filter((p) => phoneMatchKey(p.phone) === key);
+}
+
 /** Busca por nome, e-mail ou telefone (mesma busca do campo "Contato" dos formulários). */
 export function listPersons(db: DatabaseSync, opts: PersonFilter & { limit?: number; offset?: number } = {}): PersonListItem[] {
   const w = personWhere(opts);
