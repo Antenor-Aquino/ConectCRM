@@ -1,6 +1,7 @@
 // Service worker: cria o documento offscreen (dono do banco) sob demanda e
 // dispara os lembretes de tarefas (notificação do Chrome, mesmo com o CRM fechado).
 import type { Activity } from "../db/activities";
+import { addNotification } from "../lib/notifications";
 import { OFFSCREEN_PATH, type EnsureOffscreenMessage, type RpcRequest, type RpcResponse } from "../rpc/protocol";
 
 let creating: Promise<void> | null = null;
@@ -75,6 +76,7 @@ async function checkReminders(): Promise<void> {
       priority: 2,
       requireInteraction: true,
     });
+    await addNotification({ kind: "info", title: `Lembrete: ${a.title}`, message: `Tarefa às ${when}${a.meeting_url ? " · reunião online" : ""}` });
   }
   await rpc("activities.markReminded", { ids: due.map((a) => a.id) }, userId);
 }

@@ -65,3 +65,11 @@ A extensão nova tem um ID próprio, diferente do wa-pipedrive, então:
 
 Sem isso, o restante do CRM funciona; só a criação de eventos na agenda
 mostra o aviso de configuração.
+
+### Backup e ambiente de teste
+
+Em **Configurações → Backup e ambiente**, escolha a pasta e ative o backup
+automático (diário ou semanal). O Chrome pede a autorização da pasta de novo
+sempre que é reiniciado; o CRM mostra um aviso e o backup roda no mesmo clique.
+A chave **Produção / Teste** no topo abre um banco separado com dados de
+exemplo.

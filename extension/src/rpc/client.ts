@@ -44,3 +44,8 @@ export async function call<M extends MethodName>(method: M, ...args: MethodParam
 }
 
 export class RpcError extends Error {}
+
+/** Operações do próprio offscreen: ambiente, exportar, restaurar. */
+export async function systemCall<T>(method: "system.env" | "system.export" | "system.switchEnv" | "system.resetDemo" | "system.restore", params: Record<string, unknown> = {}): Promise<T> {
+  return (call as unknown as (m: string, p: unknown) => Promise<T>)(method, params);
+}

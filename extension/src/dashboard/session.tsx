@@ -6,7 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { call, setCurrentUser } from "../rpc/client";
 import { userLabel, type User } from "../db/users";
 
-const CURRENT_KEY = "conectcrm-current-user";
+export const CURRENT_KEY = "conectcrm-current-user";
 const UNLOCKED_KEY = "conectcrm-unlocked-user";
 
 interface Session {
@@ -57,6 +57,8 @@ export function SessionProvider({
     setUsers(list);
     const stored = (await chrome.storage.local.get(CURRENT_KEY))[CURRENT_KEY] as string | undefined;
     const current = list.find((u) => u.id === stored) ?? list.find((u) => u.role === "admin") ?? list[0];
+    // Usuário guardado não existe neste banco (troca de ambiente, restauração): fixa o novo.
+    if (current && current.id !== stored) await chrome.storage.local.set({ [CURRENT_KEY]: current.id });
     setCurrentUser(current?.id ?? null);
     setUserId(current?.id ?? null);
     setUnlockedId((await sessionGet(UNLOCKED_KEY)) ?? null);

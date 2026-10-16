@@ -5,7 +5,9 @@ import { Ban, Database, KeyRound, ListChecks, Package, SlidersHorizontal, Tags, 
 import { TaPanel, cn } from "@tailadmin";
 import { planLabel } from "../../lib/license";
 import { useLicense } from "../license/LicenseGate";
+import type { DbEnv } from "../../lib/environment";
 import { ActivityTypesSettings } from "./ActivityTypesSettings";
+import { BackupSettings } from "./BackupSettings";
 import { CustomFieldsSettings } from "./CustomFieldsSettings";
 import { LossReasonsSettings } from "./LossReasonsSettings";
 import { ProductsSettings } from "./ProductsSettings";
@@ -13,7 +15,7 @@ import { TagsSettings } from "./TagsSettings";
 import { TeamsSettings } from "./TeamsSettings";
 import { UsersSettings } from "./UsersSettings";
 
-type Section = "usuarios" | "equipes" | "licenca" | "tags" | "campos" | "produtos" | "motivos" | "tipos";
+type Section = "usuarios" | "equipes" | "licenca" | "tags" | "campos" | "produtos" | "motivos" | "tipos" | "backup";
 
 const SECTIONS: { id: Section | null; label: string; icon: React.ReactNode; phase?: string }[] = [
   { id: "usuarios", label: "Usuários", icon: <Users size={16} /> },
@@ -24,10 +26,10 @@ const SECTIONS: { id: Section | null; label: string; icon: React.ReactNode; phas
   { id: "produtos", label: "Produtos e serviços", icon: <Package size={16} /> },
   { id: "motivos", label: "Motivos de perda", icon: <Ban size={16} /> },
   { id: "tipos", label: "Tipos de tarefa", icon: <ListChecks size={16} /> },
-  { id: null, label: "Backup", icon: <Database size={16} />, phase: "Fase 8" },
+  { id: "backup", label: "Backup e ambiente", icon: <Database size={16} /> },
 ];
 
-export function SettingsView() {
+export function SettingsView({ env }: { env: DbEnv }) {
   const [section, setSection] = useState<Section>("usuarios");
   return (
     <div className="flex gap-5">
@@ -60,6 +62,11 @@ export function SettingsView() {
         {section === "produtos" && <ProductsSettings />}
         {section === "motivos" && <LossReasonsSettings />}
         {section === "tipos" && <ActivityTypesSettings />}
+        {section === "backup" && (
+          <div className="space-y-5">
+            <BackupSettings env={env} />
+          </div>
+        )}
       </div>
     </div>
   );

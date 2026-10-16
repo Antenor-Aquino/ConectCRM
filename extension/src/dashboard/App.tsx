@@ -1,17 +1,23 @@
 import { useCallback, useEffect, useState } from "react";
-import { Bell, Building2, CalendarDays, CircleCheck, Filter, LineChart, Settings, User, Workflow } from "lucide-react";
+import { Building2, CalendarDays, CircleCheck, Filter, LineChart, Settings, User, Workflow } from "lucide-react";
 import { AppLayout, TaPanel, TopNavBar, type TopNavItem } from "@tailadmin";
-import { call } from "../rpc/client";
+import { call, systemCall } from "../rpc/client";
+import { checkAutoBackup, type AutoBackupCheck } from "../lib/autoBackup";
+import type { DbEnv } from "../lib/environment";
 import type { Pipeline, PipelineType } from "../db/pipelines";
 import type { QuickCreateOption } from "../lib/quickCreate";
 import { CardFormModal, type CardFormRequest } from "./cards/CardFormModal";
+import { AutoBackupPermissionModal } from "./components/AutoBackupPermissionModal";
 import { ComingSoonModal } from "./components/ComingSoonModal";
+import { EnvironmentSwitch } from "./components/EnvironmentSwitch";
+import { NotificationBell } from "./components/NotificationBell";
 import { FirstRunSetup } from "./components/FirstRunSetup";
 import { FunnelsView } from "./components/FunnelsView";
 import { QuickCreateMenu } from "./components/QuickCreateMenu";
 import { UserSwitcher } from "./components/UserSwitcher";
 import { LicenseGate } from "./license/LicenseGate";
 import { LockScreen } from "./components/LockScreen";
+import { exportDatabase } from "./settings/BackupSettings";
 import { SettingsView } from "./settings/SettingsView";
 import { OrganizationDetail } from "./contacts/OrganizationDetail";
 import { OrganizationFormModal } from "./contacts/OrganizationFormModal";
@@ -88,6 +94,19 @@ function Main() {
   }, [taskFromUrl]);
   const contactsChanged = () => setContactsKey((k) => k + 1);
 
+  // Ambiente (Produção/Teste) e backup automático ao abrir o CRM (só em Produção).
+  const [env, setEnv] = useState<DbEnv | null>(null);
+  const [backupPending, setBackupPending] = useState<Extract<AutoBackupCheck, { status: "needs-permission" }> | null>(null);
+  useEffect(() => {
+    void systemCall<DbEnv>("system.env").then((e) => {
+      setEnv(e);
+      if (e !== "production") return;
+      void checkAutoBackup(exportDatabase).then((r) => {
+        if (r.status === "needs-permission") setBackupPending(r);
+      });
+    });
+  }, []);
+
   /** Abre um negócio/ticket/etapa a partir de uma ficha de contato ou organização. */
   const openCardFrom = (pipelineId: string, cardId: string) => {
     setPersonOpen(null);
@@ -141,6 +160,7 @@ function Main() {
 
   return (
     <AppLayout
+      demoMode={env === "demo"}
       header={
         <TopNavBar
           brandName="ConectCRM"
@@ -151,9 +171,8 @@ function Main() {
           beforeNavEnd={<QuickCreateMenu activeTypes={activeTypes} onSelect={onQuickCreate} />}
           actions={
             <>
-              <button type="button" className={iconButton} title="Notificações" onClick={() => setComingSoon("Central de notificações")}>
-                <Bell size={18} />
-              </button>
+              {env && <EnvironmentSwitch env={env} />}
+              <NotificationBell />
               <button
                 type="button"
                 className={iconButton}
@@ -175,7 +194,7 @@ function Main() {
         <div className="mb-4 rounded-xl border border-error-200 bg-error-50 px-4 py-3 text-theme-sm text-error-700">Não foi possível abrir o banco local: {error}</div>
       )}
       {tab === "configuracoes" ? (
-        <SettingsView />
+        env && <SettingsView env={env} />
       ) : tab === "tarefas" ? (
         <TasksView
           refreshKey={tasksKey}
@@ -219,6 +238,7 @@ function Main() {
         }}
       />
       <ComingSoonModal feature={comingSoon} onClose={() => setComingSoon(null)} />
+      {backupPending && <AutoBackupPermissionModal handle={backupPending.handle} settings={backupPending.settings} onClose={() => setBackupPending(null)} />}
       {newTask && (
         <TaskModal
           request={{}}

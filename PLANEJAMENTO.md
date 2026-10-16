@@ -1,6 +1,6 @@
 # ConectCRM — Planejamento de implementação (v4)
 
-> Status: **Fases 0 a 7 concluídas** (branches em sequência até `fase-7-tarefas-agenda`). Próximo: Fase 8 (backup e segurança).
+> Status: **Fases 0 a 8 concluídas** (branches em sequência até `fase-8-backup`). Próximo: Fase 9 (WhatsApp).
 > v4: v1 individual (sem sincronização) com cadastro de equipes/usuários; estrutura pronta para sincronizar no futuro; "Fluxo geral" confirmado.
 
 ## 1. Visão
@@ -191,6 +191,13 @@ Regras aplicadas a **todas** as tabelas de dados:
 - Data sempre no **fuso local** (mesma correção já feita na financeira).
 - Se a permissão da pasta cair: modal pedindo reautorização com o backup rodando logo em seguida.
 - Notificação de sucesso/erro, exportação manual, **restauração** de backup e ambiente de **Teste** com dados de demonstração.
+
+Como ficou na Fase 8:
+- **Configurações → Backup e ambiente**: liga/desliga, frequência (diário/semanal), pasta, "Fazer backup agora", "Baixar cópia do banco" e "Restaurar backup…". Só o administrador altera o backup automático e restaura.
+- O backup automático só roda em **Produção**.
+- Antes de restaurar, o arquivo é validado (precisa ser um banco do ConectCRM). O banco atual fica guardado internamente como `<ambiente>-antes-da-restauracao`.
+- **Produção / Teste**: chave no topo. Cada ambiente tem seu banco no IndexedDB do documento offscreen, e a escolha do ambiente também fica lá (o offscreen não acessa `chrome.storage`). Cada ambiente lembra o próprio usuário atual. O Teste nasce com os dados do mockup (funil PowerCubus, Suporte, Implantação PUC-PR, 4 usuários, 12 contatos) e pode ser recriado.
+- **Sino de notificações**: backups (sucesso/erro), restauração e lembretes de tarefas. Fica em `chrome.storage.local`, até 200 itens; "Limpar tudo" só esconde.
 
 ## 8. Reaproveitamento do wa-pipedrive
 

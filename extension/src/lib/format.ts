@@ -14,7 +14,8 @@ export function parseMoneyToCents(text: string): number | null {
 }
 
 export function initials(name: string | null | undefined): string {
-  const parts = (name ?? "").trim().split(/\s+/).filter(Boolean);
+  // Só palavras com letra ou número: "Gustavo (gestor)" vira "GG", não "G(".
+  const parts = (name ?? "").trim().split(/\s+/).map((p) => p.replace(/^[^\p{L}\p{N}]+/u, "")).filter(Boolean);
   if (parts.length === 0) return "?";
   return ((parts[0]![0] ?? "") + (parts.length > 1 ? (parts[parts.length - 1]![0] ?? "") : "")).toUpperCase();
 }
