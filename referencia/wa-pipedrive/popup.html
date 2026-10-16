@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <link rel="stylesheet" href="popup.css" />
+  <title>ConectCRM</title>
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <img class="logo" src="icons/logo.png" alt="ClaudIA CRM" />
+      <h1>ConectCRM</h1>
+    </div>
+    <div class="top-actions">
+      <button id="btnLicense" class="ghost icon-btn" title="Licen&ccedil;a" aria-label="Licen&ccedil;a">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="3.5"></circle><path d="M10.2 12.8 21 2"></path><path d="M15 8h4v4"></path></svg>
+      </button>
+      <button id="btnActivities" class="ghost icon-btn" title="Atividades" aria-label="Atividades">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11"></path><path d="M9 12h11"></path><path d="M9 18h11"></path><path d="m3.5 6 1.2 1.2L7 4.8"></path><path d="m3.5 12 1.2 1.2L7 10.8"></path><path d="m3.5 18 1.2 1.2L7 16.8"></path></svg>
+      </button>
+      <button id="btnCnpj" class="ghost icon-btn" title="Consultar CNPJ" aria-label="Consultar CNPJ">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21h18"></path><path d="M5 21V5a2 2 0 0 1 2-2h7v18"></path><path d="M14 8h3a2 2 0 0 1 2 2v11"></path><path d="M8 7h2"></path><path d="M8 11h2"></path><path d="M8 15h2"></path></svg>
+      </button>
+      <button id="btnCobranca" class="ghost icon-btn" title="Gerar cobran&ccedil;a (ASAAS)" aria-label="Gerar cobran&ccedil;a">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 10h18"></path><path d="M7 15h3"></path><path d="M14 15h3"></path></svg>
+      </button>
+      <button id="btnSignature" class="ghost icon-btn" title="Assinatura eletr&ocirc;nica" aria-label="Assinatura eletr&ocirc;nica">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"></path><path d="M14 2v6h6"></path><path d="M8 17c3-3 5-3 8 0"></path><path d="M9 20l7-7 2 2-7 7H9z"></path></svg>
+      </button>
+      <button id="btnConfig" class="ghost icon-btn" title="Configura&ccedil;&otilde;es" aria-label="Configura&ccedil;&otilde;es">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a8 8 0 0 0 .1-2l2-1.5-2-3.4-2.4 1a8 8 0 0 0-1.7-1L15 5.5h-4l-.4 2.6a8 8 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.5a8 8 0 0 0 .1 2l-2.1 1.5 2 3.4 2.4-1a8 8 0 0 0 1.7 1l.4 2.6h4l.4-2.6a8 8 0 0 0 1.7-1l2.4 1 2-3.4z"></path></svg>
+      </button>
+      <button id="btnLogout" class="ghost" title="Sair">Sair</button>
+    </div>
+  </header>
+
+  <main class="scroll-area">
+  <!-- Tela de licença (gate) -->
+  <section id="viewLicense" class="hidden">
+    <div class="lic-box">
+      <button id="btnLicBack" class="back-btn hidden">← Voltar</button>
+      <div id="licStatus" class="lic-status"></div>
+
+      <div id="licInput" class="lic-section">
+        <label class="field">
+          <span>Chave de licença</span>
+          <div class="key-input" id="keyInputWrap">
+            <span class="key-prefix" id="keyPrefix">CLAUDIACRM-</span>
+            <input id="licKey" type="text" placeholder="XXXX-XXXX-XXXX" autocomplete="off" />
+          </div>
+        </label>
+        <button id="btnActivateLic" class="primary big">Ativar licença</button>
+        <button type="button" id="btnHaveCode" class="link-btn">Ativar com código recebido no WhatsApp</button>
+        <div id="resendStatus" class="status hidden"></div>
+        <div id="otpRow" class="hidden">
+          <input id="otpEmail" type="email" placeholder="Seu e-mail (do teste ou da compra)" style="margin:8px 0 6px" />
+          <input id="otpCode" type="text" inputmode="numeric" maxlength="8" placeholder="Código de 8 dígitos do WhatsApp" style="margin-bottom:8px" />
+          <button type="button" id="btnValidateOtp" class="primary">Validar código e ativar</button>
+          <button type="button" id="btnResendWa" class="link-btn">Não recebi — reenviar código por WhatsApp</button>
+        </div>
+      </div>
+
+      <div id="divOu" class="lic-divider"><span>ou</span></div>
+
+      <label class="terms-check" id="termsCheck">
+        <input type="checkbox" id="agreeTerms" />
+        <span>Li e concordo com a <a href="https://claudiacrm.com.br/privacidade" target="_blank" rel="noopener">Política de Privacidade</a> e os <a href="https://claudiacrm.com.br/termos" target="_blank" rel="noopener">Termos de Uso</a> da extensão <span style="color:#8a9a92">(v2026-06-14)</span>.</span>
+      </label>
+
+      <div class="lic-section" id="trialSection">
+        <input id="trialEmail" type="email" placeholder="Seu e-mail para o teste" style="margin-bottom:8px" />
+        <input id="trialPhone" type="tel" placeholder="WhatsApp com DDD (ex.: 87 99632-2306)" style="margin-bottom:8px" />
+        <button id="btnTrial" class="primary big"><svg class="btn-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"></rect><path d="M12 8v13"></path><path d="M19 12v9H5v-9"></path><path d="M7.5 8a2.5 2.5 0 0 1 0-5C10 3 12 8 12 8s2-5 4.5-5a2.5 2.5 0 0 1 0 5"></path></svg>Testar grátis por 7 dias</button>
+        <small class="lic-hint">Sem cartão. A chave é enviada para o seu e-mail.</small>
+      </div>
+
+      <div id="upgradeAlert" class="upgrade-alert hidden">
+        <svg class="btn-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6"></path><path d="M10 22h4"></path><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2.05V17h6v-.25c0-.85.4-1.55 1-2.05A7 7 0 0 0 12 2z"></path></svg>
+        <span>Você está no plano <b>Mensal</b>. No <b>Anual</b> você economiza e ainda ganha crédito pelos dias restantes.
+        <button type="button" id="btnUpgradeInfo" class="link-btn">Ver condições de upgrade →</button></span>
+      </div>
+
+      <div id="divAssinar" class="lic-divider"><span>assinar</span></div>
+
+      <div class="lic-plans" id="licPlans">
+        <button id="btnPlanMensal" class="plan-btn">
+          <span class="plan-name">Mensal <span class="plan-badge hidden" id="badgeMensal">(Contratado)</span></span>
+          <span class="plan-price">R$ 17,65/mês</span>
+          <span class="plan-desc">Renovação automática</span>
+        </button>
+        <button id="btnPlanAnual" class="plan-btn featured">
+          <span class="plan-name">Anual <span class="plan-badge hidden" id="badgeAnual">(Contratado)</span></span>
+          <span class="plan-price">R$ 180,00/ano</span>
+          <span class="plan-desc">15% de desconto</span>
+        </button>
+      </div>
+      <div id="licCheckoutStatus" class="status hidden"></div>
+    </div>
+  </section>
+
+  <!-- Upgrade Mensal -> Anual (explicação + cálculo) -->
+  <section id="viewUpgrade" class="hidden">
+    <div class="lic-box">
+      <button id="btnUpgradeBack" class="back-btn">← Voltar</button>
+      <h2 class="up-title">Upgrade para o plano Anual</h2>
+      <p class="up-intro">Ao migrar do Mensal para o Anual, você recebe um <b>crédito proporcional</b> pelos dias que ainda restavam do seu mês. Veja como fica:</p>
+      <div id="upgradeCalc" class="up-calc">
+        <div class="up-loading">Calculando…</div>
+      </div>
+      <button id="btnUpgradeGo" class="primary big hidden">Seguir com a contratação do Anual</button>
+      <div id="upgradeStatus" class="status hidden"></div>
+      <small class="up-foot">O valor é cobrado pela Stripe no checkout. Sua assinatura mensal é cancelada automaticamente após a confirmação do pagamento do plano anual.</small>
+    </div>
+  </section>
+
+  <!-- Configuração -->
+  <section id="viewConfig" class="hidden">
+    <button id="btnCfgBack" class="back-btn">← Voltar</button>
+    <div class="cfg-top-actions">
+      <button id="btnSaveConfigTop" class="primary">Salvar configurações</button>
+    </div>
+    <p class="cfg-intro">Para usar a extensão, configure suas chaves de acesso. Elas ficam salvas apenas neste navegador.</p>
+
+    <div class="cfg-group">
+      <span class="cfg-label">1 - CRM <span class="cfg-req">obrigatorio</span></span>
+      <label class="field">
+        <span>CRM principal</span>
+        <select id="cfgCrmProvider">
+          <option value="pipedrive">Pipedrive</option>
+          <option value="hubspot">HubSpot</option>
+        </select>
+        <small>Escolha para onde a extensao deve enviar deals, atividades, notas e arquivos.</small>
+      </label>
+    </div>
+
+    <div class="cfg-group crm-config" data-crm="pipedrive">
+      <span class="cfg-label">1.1 - Pipedrive <span class="cfg-req">obrigatorio</span></span>
+      <label class="field">
+        <span>Dominio da sua conta</span>
+        <input id="cfgDomain" type="text" placeholder="suaempresa" />
+        <small>E o que vem antes de .pipedrive.com no seu endereco.</small>
+      </label>
+      <label class="field">
+        <span>API Token</span>
+        <input id="cfgToken" type="password" placeholder="Cole seu API token" />
+        <small>Onde achar: Pipedrive -> foto do perfil -> <b>Configuracoes pessoais</b> -> <b>API</b> -> copie o "Seu token de API pessoal". <a href="https://suaempresa.pipedrive.com/settings/api" target="_blank" id="pdApiLink">Abrir pagina de API</a></small>
+      </label>
+    </div>
+
+    <div class="cfg-group crm-config hidden" data-crm="hubspot">
+      <span class="cfg-label">1.1 - HubSpot <span class="cfg-req">obrigatorio</span></span>
+      <label class="field">
+        <span>Token de aplicativo privado</span>
+        <input id="cfgHubspotToken" type="password" placeholder="pat-na1-..." />
+        <small>Onde achar: HubSpot -> Desenvolvimento -> Aplicativos antigos -> Criar aplicativo legado -> Privado -> aba Auth. Libere escopos de leitura e escrita para contatos, empresas, deals, notas, tarefas e arquivos.</small>
+      </label>
+      <div class="cfg-note" style="margin-top:8px">
+        <small>Não use "Chave de acesso pessoal"; para esta integração use o token do aplicativo privado.</small>
+      </div>
+    </div>
+    <div class="cfg-group">
+      <span class="cfg-label">2 · Inteligência Artificial <span class="cfg-opt">opcional</span></span>
+      <label class="field">
+        <span>Provedor de IA</span>
+        <select id="cfgAiProvider">
+          <option value="gemini">Google Gemini</option>
+          <option value="openai">OpenAI (ChatGPT)</option>
+          <option value="claude">Anthropic Claude</option>
+          <option value="deepseek">DeepSeek</option>
+        </select>
+        <small>Escolha qual IA usar nos resumos. Basta configurar a chave do provedor escolhido.</small>
+      </label>
+      <label class="field ai-key" data-prov="gemini">
+        <span>API Key do Gemini</span>
+        <input id="cfgGemini" type="password" placeholder="AIza... (deixe vazio se não usar)" />
+        <small>Gere grátis: <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey ↗</a> → <b>Create API key</b>.</small>
+      </label>
+      <label class="field ai-key ai-model" data-prov="gemini">
+        <span>Modelo <span class="cfg-opt">avançado</span></span>
+        <input id="cfgGeminiModel" type="text" placeholder="gemini-2.5-flash (padrão)" />
+        <small>Deixe vazio para usar o padrão. Só altere se souber o nome exato do modelo.</small>
+      </label>
+      <label class="field ai-key" data-prov="openai">
+        <span>API Key da OpenAI</span>
+        <input id="cfgOpenai" type="password" placeholder="sk-..." />
+        <small>Em <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com/api-keys ↗</a>.</small>
+      </label>
+      <label class="field ai-key ai-model" data-prov="openai">
+        <span>Modelo <span class="cfg-opt">avançado</span></span>
+        <input id="cfgOpenaiModel" type="text" placeholder="gpt-4.1-mini (padrão)" />
+        <small>Deixe vazio para usar o padrão.</small>
+      </label>
+      <label class="field ai-key" data-prov="claude">
+        <span>API Key do Claude (Anthropic)</span>
+        <input id="cfgClaude" type="password" placeholder="sk-ant-..." />
+        <small>Em <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com ↗</a>.</small>
+      </label>
+      <label class="field ai-key ai-model" data-prov="claude">
+        <span>Modelo <span class="cfg-opt">avançado</span></span>
+        <input id="cfgClaudeModel" type="text" placeholder="claude-sonnet-4-6 (padrão)" />
+        <small>Deixe vazio para usar o padrão.</small>
+      </label>
+      <label class="field ai-key" data-prov="deepseek">
+        <span>API Key do DeepSeek</span>
+        <input id="cfgDeepseek" type="password" placeholder="sk-..." />
+        <small>Em <a href="https://platform.deepseek.com/api_keys" target="_blank">platform.deepseek.com ↗</a>.</small>
+      </label>
+      <label class="field ai-key ai-model" data-prov="deepseek">
+        <span>Modelo <span class="cfg-opt">avançado</span></span>
+        <input id="cfgDeepseekModel" type="text" placeholder="deepseek-chat (padrão)" />
+        <small>Deixe vazio para usar o padrão. (deepseek-chat será aposentado em 24/07/2026 → use deepseek-v4-flash)</small>
+      </label>
+      <label class="field">
+        <span>Prompt 1 — análise comercial (técnico)</span>
+        <textarea id="cfgPrompt" rows="8" placeholder="Instruções de como a IA deve resumir as conversas…"></textarea>
+        <small>Resumo executivo completo (status do lead, objeções, follow-up…). <button type="button" id="btnResetPrompt" class="link-btn" style="font-size:11px">Restaurar padrão</button></small>
+      </label>
+      <label class="field">
+        <span>Prompt 2 — transcrição (simples)</span>
+        <textarea id="cfgPrompt2" rows="6" placeholder="Instruções para a transcrição simples…"></textarea>
+        <small>Apenas transcreve o conteúdo, sem análise. <button type="button" id="btnResetPrompt2" class="link-btn" style="font-size:11px">Restaurar padrão</button></small>
+      </label>
+    </div>
+
+    <div class="cfg-group cfg-note">
+      <span class="cfg-label">3 · Google Agenda <span class="cfg-opt">opcional</span></span>
+      <small>Não precisa de chave aqui. A conexão é feita pelo botão "Conectar Google Agenda" na tela principal, com login direto na sua conta Google.</small>
+    </div>
+
+    <div class="cfg-group" id="cfgAsaasGroup">
+      <span class="cfg-label">4 · ASAAS (cobranças) <span class="cfg-opt">opcional</span></span>
+      <label class="field">
+        <span>Ambiente</span>
+        <select id="cfgAsaasEnv">
+          <option value="producao">Produção</option>
+          <option value="sandbox">Sandbox (testes)</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>API Key do ASAAS</span>
+        <input id="cfgAsaas" type="password" placeholder="$aact_... (chave do ambiente escolhido)" />
+        <small>Onde achar: ASAAS → <b>Minha Conta</b> → <b>Integrações</b> → <b>Gerar API Key</b>. As chaves de Sandbox e Produção são diferentes. <button type="button" id="btnTestAsaas" class="link-btn" style="font-size:11px">Testar conexão</button> <span id="asaasTestMsg" class="secret-mask"></span></small>
+      </label>
+    </div>
+
+    <div class="cfg-group">
+      <span class="cfg-label">5 - ZapSign <span class="cfg-opt">opcional</span></span>
+      <label class="field">
+        <span>API token da ZapSign</span>
+        <input id="cfgZapsignToken" type="password" placeholder="Cole o token da ZapSign" />
+        <small>Onde achar: ZapSign -> Configura&ccedil;&otilde;es -> API. Esta chave ser&aacute; usada para criar documentos, listar templates, consultar status e reenviar links de assinatura.</small>
+      </label>
+    </div>
+
+    <button id="btnSaveConfig" class="primary">Salvar configurações</button>
+
+    <div class="cancel-section">
+      <button type="button" id="btnAbrirCancel" class="danger-solid">Solicitar cancelamento de assinatura</button>
+      <div id="cancelBox" class="hidden">
+        <p class="cancel-intro">Que pena que você quer cancelar. Selecione o motivo:</p>
+        <div id="cancelMotivos"></div>
+        <textarea id="cancelTexto" class="hidden" placeholder="Conte-nos o motivo…" rows="3"></textarea>
+        <button type="button" id="btnConfirmCancel" class="primary">Enviar solicitação</button>
+        <div id="cancelStatus" class="status hidden"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Principal -->
+  <section id="viewMain">
+    <div id="graceBanner" class="grace-banner hidden"></div>
+
+    <div class="step clip-step">
+      <span class="step-label">1 · Recortes de tela</span>
+      <p class="clip-hint">Recorte qualquer parte da tela (WhatsApp, e-mail, site). Os recortes ficam guardados aqui até você enviar ao deal.</p>
+      <button id="btnNewClip" class="pd-action clip-new" type="button"><svg class="btn-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><line x1="20" y1="4" x2="8.12" y2="15.88"></line><line x1="14.47" y1="14.48" x2="20" y2="20"></line><line x1="8.12" y1="8.12" x2="12" y2="12"></line></svg>Novo recorte</button>
+      <div id="clipTray" class="clip-tray"></div>
+      <div id="clipActions" class="clip-actions hidden">
+        <button id="btnClipSummarize" class="pd-action" type="button"><svg class="btn-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v6M12 16v6M2 12h6M16 12h6M5 5l4 4M15 15l4 4M19 5l-4 4M9 15l-4 4"></path></svg>Resumir com IA</button>
+        <button id="btnClipSend" class="primary" type="button">Anexar ao deal + nota</button>
+      </div>
+      <div id="clipPromptPick" class="prompt-pick hidden">
+        <label><input type="radio" name="clipPrompt" value="1" checked /> Prompt 1 — análise comercial</label>
+        <label><input type="radio" name="clipPrompt" value="2" /> Prompt 2 — transcrição</label>
+      </div>
+      <textarea id="clipSummary" class="hidden" rows="4" placeholder="Resumo da IA (revise antes de enviar)…"></textarea>
+      <div id="clipStatus" class="status hidden"></div>
+    </div>
+
+    <div class="step clip-step">
+      <span class="step-label"><svg class="btn-ico" viewBox="0 0 24 24" aria-hidden="true" style="margin-right:5px;vertical-align:-3px"><path d="M21.44 11.05 12.25 20.24a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95L9.64 18.36a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>Anexar arquivos ao deal</span>
+      <p class="clip-hint">Baixe o arquivo no WhatsApp (clique nele → ⤓) e selecione aqui. Áudios podem ser transcritos pela IA.</p>
+      <input id="attachFiles" type="file" multiple
+        accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.zip,image/*,audio/*" />
+      <ul id="attachList" class="media-list"></ul>
+      <div id="attachActions" class="clip-actions hidden">
+        <button id="btnAttachTranscribe" class="pd-action hidden" type="button"><svg class="btn-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v1a7 7 0 0 1-14 0v-1"></path><path d="M12 18v4M8 22h8"></path></svg>Transcrever áudio (IA)</button>
+        <button id="btnAttachSend" class="primary" type="button">Anexar ao deal</button>
+      </div>
+      <textarea id="attachTranscript" class="hidden" rows="4" placeholder="Transcrição do áudio (revise antes de enviar)…"></textarea>
+      <div id="attachStatus" class="status hidden"></div>
+    </div>
+
+    <div class="step hidden" style="display:none">
+      <span class="step-label">1 · Capturar</span>
+      <div class="row">
+        <label class="inline">
+          Últimas
+          <input id="msgCount" type="number" min="1" max="500" value="20" />
+          mensagens
+        </label>
+        <button id="btnCapture" class="primary">Capturar conversa</button>
+      </div>
+      <label class="field" style="margin-top:8px">
+        <span>A partir da data (opcional)</span>
+        <input id="msgDate" type="date" />
+        <small>Conta as mensagens desta data para trás. Em branco = da última mensagem para trás.</small>
+      </label>
+      <div id="captureStatus" class="status hidden"></div>
+      <div id="msgBlock" class="hidden">
+        <div class="msg-head">
+          <label class="check-all"><input type="checkbox" id="msgSelectAll" checked /> Selecionar todas as mensagens</label>
+          <span id="msgCountLabel" class="msg-count"></span>
+        </div>
+        <ul id="msgList" class="msg-list"></ul>
+      </div>
+      <div id="mediaBlock" class="hidden">
+        <div class="msg-head">
+          <span class="sub-label" style="margin:0">Mídias encontradas — marque para anexar ao deal:</span>
+          <label class="check-all"><input type="checkbox" id="mediaSelectAll" /> Todas</label>
+        </div>
+        <ul id="mediaList" class="media-list"></ul>
+      </div>
+      <div class="local-files">
+        <span class="sub-label">📎 Anexar arquivos do computador (PDFs, planilhas, etc.):</span>
+        <input id="localFiles" type="file" multiple
+          accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.zip,image/*,audio/*" />
+        <ul id="localFileList" class="media-list"></ul>
+        <small>Baixe o documento no WhatsApp (clique nele → ⤓) e selecione-o aqui. Vai anexado ao deal junto com a conversa.</small>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="step-label">2 · Deal de destino</span>
+      <div class="row">
+        <input id="dealSearch" type="text" placeholder="Buscar deal pelo nome…" />
+        <button id="btnSearch">Buscar</button>
+      </div>
+      <ul id="dealResults" class="deal-list"></ul>
+      <div id="dealSelected" class="deal-selected hidden"></div>
+      <div id="dealPanel" class="deal-panel hidden"></div>
+
+      <div class="pd-actions">
+        <button id="btnNewDeal" class="pd-action" type="button"><svg class="btn-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Novo deal</button>
+        <button id="btnNewActivity" class="pd-action" type="button"><svg class="btn-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Atividade</button>
+        <button id="btnNewNote" class="pd-action" type="button"><svg class="btn-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Nota</button>
+      </div>
+
+      <!-- Formulário de novo deal -->
+      <div id="newDealForm" class="new-deal hidden">
+        <span class="sub-label strong">Novo deal</span>
+
+        <label class="field"><span>Pessoa de contato *</span>
+          <div class="ac-wrap">
+            <input id="ndPerson" type="text" placeholder="Nome da pessoa" autocomplete="off" />
+            <ul id="ndPersonAc" class="ac-box hidden"></ul>
+          </div>
+        </label>
+        <div class="grid2">
+          <label class="field"><span>Telefone</span>
+            <input id="ndPhone" type="text" placeholder="(00) 00000-0000" />
+          </label>
+          <label class="field"><span>E-mail</span>
+            <input id="ndEmail" type="text" placeholder="email@dominio.com" />
+          </label>
+        </div>
+
+        <label class="field"><span>Organização</span>
+          <div class="ac-wrap">
+            <input id="ndOrg" type="text" placeholder="Nome da organização" autocomplete="off" />
+            <ul id="ndOrgAc" class="ac-box hidden"></ul>
+          </div>
+        </label>
+
+        <label class="field"><span>Endereço da organização</span>
+          <input id="ndOrgAddress" type="text" placeholder="Endereço completo da organização" />
+        </label>
+
+        <label class="field"><span>Título do deal *</span>
+          <input id="ndTitle" type="text" placeholder="Título" />
+        </label>
+
+        <div class="grid2">
+          <label class="field"><span>Funil</span>
+            <select id="ndPipeline"></select>
+          </label>
+          <label class="field"><span>Etapa</span>
+            <select id="ndStage"></select>
+          </label>
+        </div>
+
+        <div class="grid2">
+          <label class="field"><span>Etiqueta</span>
+            <select id="ndLabel"><option value="">— Sem etiqueta —</option></select>
+          </label>
+          <label class="field"><span>Proprietário</span>
+            <select id="ndOwner"></select>
+          </label>
+        </div>
+
+        <label class="field"><span>Canal de origem</span>
+          <select id="ndChannel"><option value="">— Selecionar —</option></select>
+        </label>
+
+        <button id="btnCreateDeal" class="primary">Criar deal</button>
+        <div id="newDealStatus" class="status hidden"></div>
+      </div>
+
+      <!-- Formulário de nova atividade -->
+      <div id="newActivityForm" class="new-deal hidden">
+        <span class="sub-label strong">Nova atividade</span>
+        <div id="naDealInfo" class="na-deal-info"></div>
+
+        <div class="grid2">
+          <label class="field"><span>Tipo de atividade</span>
+            <select id="naType"></select>
+          </label>
+          <label class="field"><span>Proprietário</span>
+            <select id="naOwner"></select>
+          </label>
+        </div>
+
+        <label class="field"><span>Assunto *</span>
+          <input id="naSubject" type="text" placeholder="Ex.: Ligar para o cliente" />
+        </label>
+
+        <div class="grid2">
+          <label class="field"><span>Data</span>
+            <input id="naDate" type="date" />
+          </label>
+          <label class="field"><span>Hora (opcional)</span>
+            <input id="naTime" type="time" />
+          </label>
+        </div>
+
+        <label class="field"><span>Duração (opcional)</span>
+          <select id="naDuration">
+            <option value="">— Sem duração —</option>
+            <option value="15">15 min</option>
+            <option value="30">30 min</option>
+            <option value="45">45 min</option>
+            <option value="60">1 hora</option>
+            <option value="90">1h30</option>
+          </select>
+        </label>
+
+        <label class="field"><span>Anotação (opcional)</span>
+          <textarea id="naNote" rows="2" placeholder="Detalhes da atividade…"></textarea>
+        </label>
+
+        <label class="check-row">
+          <input type="checkbox" id="naDone" /> Marcar como feita
+        </label>
+
+        <button id="btnCreateActivity" class="primary">Criar atividade</button>
+        <div id="newActivityStatus" class="status hidden"></div>
+      </div>
+
+      <!-- Formulário de nova nota -->
+      <div id="newNoteForm" class="new-deal hidden">
+        <span class="sub-label strong">Nova nota</span>
+        <div id="noteDealInfo" class="na-deal-info"></div>
+        <label class="field"><span>Anotação *</span>
+          <textarea id="noteContent" rows="4" placeholder="Escreva a anotação que será registrada no deal…"></textarea>
+        </label>
+        <button id="btnCreateNote" class="primary">Salvar nota</button>
+        <div id="newNoteStatus" class="status hidden"></div>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="step-label"><svg class="btn-ico" viewBox="0 0 24 24" aria-hidden="true" style="margin-right:5px;vertical-align:-3px"><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4M8 2v4M3 10h18"></path></svg>Agendar reunião</span>
+      <label class="field"><span>Agenda</span>
+        <select id="schProvider">
+          <option value="google">Google Agenda + Meet</option>
+          <option value="outlook">Outlook / Hotmail</option>
+        </select>
+      </label>
+      <div id="googleAuth">
+        <button id="btnGoogleLogin" class="primary">Conectar Google Agenda</button>
+        <button id="btnOutlookLogin" class="primary hidden">Conectar Outlook</button>
+        <button id="btnGoogleSwitch" class="ghost-btn hidden" type="button">Trocar conta Google</button>
+        <button id="btnOutlookSwitch" class="ghost-btn hidden" type="button">Trocar conta Outlook</button>
+        <div id="googleStatus" class="status hidden"></div>
+      </div>
+      <div id="schedForm" class="sched-form hidden">
+        <label class="field"><span>Título da reunião</span>
+          <input id="schTitle" type="text" placeholder="Ex.: Reunião comercial — Perseus ERP" />
+        </label>
+        <div class="grid2">
+          <label class="field"><span>Data</span>
+            <input id="schDate" type="date" />
+          </label>
+          <label class="field"><span>Duração</span>
+            <select id="schDuration">
+              <option value="30">30 min</option>
+              <option value="45">45 min</option>
+              <option value="60" selected>1 hora</option>
+              <option value="90">1h30</option>
+            </select>
+          </label>
+        </div>
+        <button id="btnFindSlots" class="ghost-btn"><svg class="btn-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="M21 21l-4.3-4.3"></path></svg>Ver horários livres neste dia</button>
+        <div id="slotList" class="slot-list"></div>
+        <label class="field"><span>Horário de início</span>
+          <input id="schTime" type="time" />
+        </label>
+        <label class="field"><span>Convidar contatos (e-mails)</span>
+          <div id="guestChips" class="guest-chips"></div>
+          <input id="schEmail" type="email" placeholder="Digite o e-mail e tecle Enter para adicionar" />
+          <small id="schGuestHint">Cada convidado recebe o convite por e-mail automaticamente (com o link do Meet). Enter ou vírgula confirma cada um.</small>
+        </label>
+        <label class="field"><span>Notificação (lembrete)</span>
+          <select id="schReminder">
+            <option value="">Padrão da agenda</option>
+            <option value="0">No horário da reunião</option>
+            <option value="10" selected>10 minutos antes</option>
+            <option value="30">30 minutos antes</option>
+            <option value="60">1 hora antes</option>
+            <option value="1440">1 dia antes</option>
+            <option value="none">Sem notificação</option>
+          </select>
+          <small>Define quando você será lembrado (pop-up e e-mail na sua agenda).</small>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" id="schMeet" checked /> <span id="schMeetLabel">Criar link do Google Meet</span>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" id="schLogPipe" checked /> Registrar como atividade no deal selecionado
+        </label>
+        <label class="check-row">
+          <input type="checkbox" id="schNote" /> Gravar o convite como nota no deal selecionado
+        </label>
+        <button id="btnCreateEvent" class="primary big">Criar agendamento</button>
+        <div id="schStatus" class="status hidden"></div>
+      </div>
+    </div>
+
+    <div class="step hidden" style="display:none">
+      <span class="step-label">3 · Gravar como</span>
+      <div class="choice">
+        <label><input type="radio" name="saveType" value="note" checked /> Nota</label>
+        <label><input type="radio" name="saveType" value="activity" /> Atividade</label>
+      </div>
+      <label class="field hidden" id="activitySubjectWrap">
+        <span>Assunto da atividade</span>
+        <input id="activitySubject" type="text" placeholder="Ex.: Conversa WhatsApp - Follow-up" />
+      </label>
+      <label class="check-row">
+        <input type="checkbox" id="useAiSummary" />
+        ✨ Resumir a conversa com IA antes de gravar (em vez do texto completo)
+      </label>
+      <button id="btnSave" class="primary big" disabled>Gravar no CRM</button>
+      <div id="saveStatus" class="status hidden"></div>
+    </div>
+  </section>
+
+  <section id="viewActivities" class="hidden">
+    <button id="btnActBack" class="back-btn">&larr; Voltar</button>
+
+    <div class="step">
+      <span class="step-label">Atividades do CRM</span>
+      <p class="act-hint">Visualize atividades do Pipedrive ou tarefas do HubSpot, filtre por vencimento e conclua sem abrir o CRM.</p>
+
+      <div class="act-filters">
+        <label class="field">
+          <span>Per&iacute;odo</span>
+          <select id="actPeriod">
+            <option value="overdue">Vencidas</option>
+            <option value="today">Hoje</option>
+            <option value="tomorrow">Amanh&atilde;</option>
+            <option value="week">Esta semana</option>
+            <option value="custom">Selecionar per&iacute;odo</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Status</span>
+          <select id="actDoneFilter">
+            <option value="open">Para fazer</option>
+            <option value="done">Conclu&iacute;das</option>
+            <option value="all">Todas</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Tipo</span>
+          <select id="actTypeFilter">
+            <option value="">Todos os tipos</option>
+          </select>
+        </label>
+      </div>
+
+      <div id="actCustomRange" class="grid2 hidden">
+        <label class="field"><span>De</span><input id="actDateStart" type="date" /></label>
+        <label class="field"><span>At&eacute;</span><input id="actDateEnd" type="date" /></label>
+      </div>
+
+      <button type="button" id="btnActRefresh" class="primary big">Buscar atividades</button>
+      <div id="actStatus" class="status hidden"></div>
+    </div>
+
+    <div class="act-summary" id="actSummary"></div>
+    <div class="act-list" id="actRows"></div>
+  </section>
+
+
+  <section id="viewCnpj" class="hidden">
+    <button id="btnCnpjBack" class="back-btn">&larr; Voltar</button>
+
+    <div class="step">
+      <span class="step-label">Consulta de CNPJ</span>
+      <p class="cnpj-hint">Consulte dados p&uacute;blicos de empresas usando BrasilAPI, Minha Receita e ReceitaWS.</p>
+
+      <label class="field">
+        <span>CNPJ</span>
+        <div class="row">
+          <input id="cnpjInput" type="text" inputmode="numeric" autocomplete="off" placeholder="00.000.000/0000-00" />
+          <button type="button" id="btnCnpjSearch">Buscar</button>
+        </div>
+      </label>
+      <div id="cnpjStatus" class="status hidden"></div>
+      <div id="cnpjContactPrompt" class="cnpj-contact-prompt hidden">
+        <span class="sub-label strong">Contato do novo deal</span>
+        <p class="cnpj-muted">Nenhum sócio foi retornado. Informe o nome da pessoa de contato para preencher o novo deal.</p>
+        <input id="cnpjContactName" type="text" placeholder="Nome da pessoa de contato" />
+        <button type="button" id="btnCnpjConfirmDeal" class="primary big">Continuar para novo deal</button>
+      </div>
+    </div>
+
+    <div id="cnpjResult" class="cnpj-result hidden"></div>
+  </section>
+
+
+  <section id="viewSignature" class="hidden">
+    <button id="btnSigBack" class="back-btn">&larr; Voltar</button>
+    <div class="step">
+      <span class="step-label">Assinatura eletr&ocirc;nica</span>
+      <p class="sig-hint">Envie um PDF ou DOCX para assinatura pela ZapSign, acompanhe o status dos signat&aacute;rios e baixe o documento assinado quando estiver finalizado.</p>
+      <div id="sigStatus" class="status hidden"></div>
+    </div>
+
+    <div class="sig-tabs">
+      <button type="button" id="btnSigTabSend" class="sig-tab active">Enviar</button>
+      <button type="button" id="btnSigTabTrack" class="sig-tab">Acompanhar</button>
+    </div>
+
+    <div id="sigSendPanel">
+      <div class="step sig-card">
+        <span class="sub-label strong">Documento</span>
+        <label class="field">
+          <span>Origem</span>
+          <select id="sigSource">
+            <option value="upload">Arquivo do computador</option>
+            <option value="template">Template ZapSign</option>
+          </select>
+        </label>
+        <label class="field" id="sigFileRow">
+          <span>Arquivo</span>
+          <input id="sigFile" type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+          <small>Use PDF ou DOCX. O arquivo &eacute; enviado para a ZapSign.</small>
+        </label>
+        <div id="sigTemplateRow" class="hidden">
+          <div class="row">
+            <select id="sigTemplate"></select>
+            <button type="button" id="btnSigLoadTemplates">Atualizar</button>
+          </div>
+          <small class="sig-small">Templates ativos da sua conta ZapSign.</small>
+        </div>
+        <label class="field">
+          <span>Nome do documento</span>
+          <input id="sigDocName" type="text" placeholder="Ex.: Proposta Comercial" />
+        </label>
+        <label class="check-row">
+          <input type="checkbox" id="sigOrder" /> Assinar em ordem
+        </label>
+      </div>
+
+      <div class="step sig-card">
+        <span class="sub-label strong">Signat&aacute;rios</span>
+        <div id="sigSignerList" class="sig-signer-list"></div>
+        <div class="grid2">
+          <label class="field"><span>Nome</span><input id="sigSignerName" type="text" placeholder="Nome" /></label>
+          <label class="field"><span>E-mail</span><input id="sigSignerEmail" type="email" placeholder="email@cliente.com" /></label>
+        </div>
+        <label class="field">
+          <span>WhatsApp (opcional)</span>
+          <input id="sigSignerPhone" type="tel" placeholder="DDD + n&uacute;mero" />
+        </label>
+        <button type="button" id="btnSigAddSigner" class="pd-action">+ Adicionar signat&aacute;rio</button>
+        <label class="check-row">
+          <input type="checkbox" id="sigAutoEmail" checked /> Enviar link por e-mail automaticamente
+        </label>
+        <label class="check-row">
+          <input type="checkbox" id="sigAutoWhatsapp" /> Enviar link por WhatsApp pela ZapSign
+        </label>
+      </div>
+
+      <button type="button" id="btnSigSend" class="primary big">Enviar para assinatura</button>
+    </div>
+
+    <div id="sigTrackPanel" class="hidden">
+      <div class="step sig-card">
+        <span class="sub-label strong">Buscar documento</span>
+        <div class="row">
+          <input id="sigSearch" type="text" placeholder="Token ou nome do documento" />
+          <button type="button" id="btnSigSearch">Buscar</button>
+        </div>
+        <button type="button" id="btnSigRecent" class="link-btn">Listar recentes</button>
+        <div id="sigDocsList" class="sig-doc-list"></div>
+      </div>
+      <div id="sigDocDetails" class="sig-details hidden"></div>
+    </div>
+  </section>
+
+  <section id="viewCobranca" class="hidden">
+    <button id="btnCobBack" class="back-btn">← Voltar</button>
+    <div class="step">
+      <span class="step-label"><svg class="btn-ico" viewBox="0 0 24 24" aria-hidden="true" style="margin-right:5px;vertical-align:-3px"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 10h18"></path><path d="M7 15h3"></path><path d="M14 15h3"></path></svg>Nova cobrança (ASAAS)</span>
+      <div id="cobMode" class="na-deal-info"></div>
+
+      <div id="cobEntityRow" class="field hidden">
+        <span>Cobrar</span>
+        <div class="radio-row">
+          <label><input type="radio" name="cobEntity" value="person" checked /> Contato</label>
+          <label><input type="radio" name="cobEntity" value="org" /> Organização</label>
+        </div>
+      </div>
+
+      <div class="field">
+        <span>Tipo de cobrança</span>
+        <div class="radio-row">
+          <label><input type="radio" name="cobKind" value="avulsa" checked /> Avulsa</label>
+          <label><input type="radio" name="cobKind" value="recorrente" /> Recorrente (assinatura)</label>
+        </div>
+      </div>
+
+      <span class="sub-label strong">Cliente</span>
+      <div class="grid2">
+        <label class="field" id="cobCpfRow"><span>CPF/CNPJ *</span><input id="cobCpf" type="text" placeholder="Somente números" /></label>
+        <label class="field"><span>Nome *</span><input id="cobName" type="text" placeholder="Nome do cliente" /></label>
+      </div>
+      <div class="grid2" id="cobContactRow">
+        <label class="field"><span>E-mail</span><input id="cobEmail" type="email" placeholder="email@cliente.com" /></label>
+        <label class="field"><span>Telefone</span><input id="cobPhone" type="text" placeholder="DDD + número" /></label>
+      </div>
+      <label id="cobSaveRow" class="check-row hidden"><input type="checkbox" id="cobSavePd" /> Salvar no CRM os dados alterados</label>
+
+      <span class="sub-label strong">Cobrança</span>
+      <label class="field"><span>Forma de pagamento</span>
+        <select id="cobBilling">
+          <option value="PIX">PIX</option>
+          <option value="BOLETO">Boleto</option>
+          <option value="LINK">Link de pagamento (cliente escolhe)</option>
+        </select>
+      </label>
+      <small id="cobLinkHint" class="cob-hint hidden">No link recorrente, o cliente informa o cartão no checkout do ASAAS e a cobrança se repete automaticamente a cada ciclo.</small>
+      <label class="field hidden" id="cobCycleRow"><span>Ciclo</span>        <select id="cobCycle">
+          <option value="MONTHLY">Mensal</option>
+          <option value="WEEKLY">Semanal</option>
+          <option value="BIWEEKLY">Quinzenal</option>
+          <option value="BIMONTHLY">Bimestral</option>
+          <option value="QUARTERLY">Trimestral</option>
+          <option value="SEMIANNUALLY">Semestral</option>
+          <option value="YEARLY">Anual</option>
+        </select>
+      </label>
+      <div class="grid2">
+        <label class="field"><span>Valor (R$) *</span><input id="cobValue" type="text" inputmode="decimal" placeholder="0,00" /></label>
+        <label class="field" id="cobDueRow"><span>Vencimento *</span><input id="cobDue" type="date" /></label>
+      </div>
+      <label class="field hidden" id="cobEndRow"><span>Encerrar em (opcional)</span><input id="cobEnd" type="date" /></label>
+      <label class="field"><span>Descrição</span><input id="cobDesc" type="text" placeholder="Ex.: Mensalidade / Proposta" /></label>
+      <label class="field" id="cobInstallRow"><span>Parcelas</span>
+        <select id="cobInstall">
+          <option value="1">À vista</option>
+          <option value="2">2x</option><option value="3">3x</option><option value="4">4x</option>
+          <option value="6">6x</option><option value="10">10x</option><option value="12">12x</option>
+        </select>
+      </label>
+
+      <button id="btnGenCharge" class="primary">Gerar cobrança</button>
+      <div id="cobStatus" class="status hidden"></div>
+
+      <div id="cobResult" class="cob-result hidden"></div>
+    </div>
+  </section>
+  </main>
+
+  <footer class="support-bar">
+    <a class="support-wa"
+       href="https://wa.me/5587996322306text=Suporte%20extens%C3%A3o%20pipedrive"
+       target="_blank" rel="noopener">
+      <svg class="btn-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>Falar com o suporte
+    </a>
+    <span class="support-email">ou por e-mail: <a href="mailto:suporte@claudiacrm.com.br">suporte@claudiacrm.com.br</a></span>
+    <span class="support-legal">
+      <a href="https://claudiacrm.com.br/privacidade" target="_blank" rel="noopener">Política de Privacidade</a>
+      ·
+      <a href="https://claudiacrm.com.br/termos" target="_blank" rel="noopener">Termos de Uso</a>
+      <span class="app-version" id="appVersion">v1.40.0</span>
+    </span>
+  </footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>

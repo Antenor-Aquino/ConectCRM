@@ -1,0 +1,54 @@
+{
+  "manifest_version": 3,
+  "name": "ConectCRM",
+  "description": "Captura mensagens da conversa aberta no WhatsApp Web e grava como nota ou atividade em um CRM.",
+  "version": "1.46.0",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "unlimitedStorage",
+    "tabs",
+    "downloads",
+    "identity"
+  ],
+  "host_permissions": [
+    "https://web.whatsapp.com/*",
+    "https://*.pipedrive.com/*",
+    "https://api.hubapi.com/*",
+    "https://generativelanguage.googleapis.com/*",
+    "https://www.googleapis.com/*",
+    "https://graph.microsoft.com/*",
+    "https://login.microsoftonline.com/*",
+    "https://extpipe.claudiacrm.com.br/*",
+    "https://brasilapi.com.br/*",
+    "https://minhareceita.org/*",
+    "https://www.receitaws.com.br/*",
+    "https://api.asaas.com/*",
+    "https://api-sandbox.asaas.com/*",
+    "https://api.zapsign.com.br/*",
+    "https://api.openai.com/*",
+    "https://api.anthropic.com/*",
+    "https://api.deepseek.com/*"
+  ],
+  "oauth2": {
+    "client_id": "152542487459-oe19v4epb0steru47frk3t4h6fqggq04.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/calendar.events",
+      "https://www.googleapis.com/auth/calendar.readonly",
+      "https://www.googleapis.com/auth/userinfo.email"
+    ]
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "ConectCRM"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

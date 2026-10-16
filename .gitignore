@@ -1,0 +1,43 @@
+﻿
+# --- Segurança: nunca versionar ---
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.pem
+*.key
+*.crt
+*.cer
+credentials*.json
+service-account*.json
+token*.json
+secrets*.*
+# --- Dependências e build ---
+node_modules/
+dist/
+build/
+.next/
+.output/
+out/
+coverage/
+tmp/
+.pnpm-store/
+.wrangler/
+.vite/
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+# --- Sistema / editor / logs ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.log
+*.tmp
+# --- Pacotes de extensão gerados ---
+*.crx
+*.zip
