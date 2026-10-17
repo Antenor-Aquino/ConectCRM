@@ -4,8 +4,14 @@
 // usuário (mesmas regras do quadro e das tarefas). Nomes de funil e de
 // responsável são resolvidos aqui; sem correspondência, a resposta traz as
 // opções existentes em vez de adivinhar.
+import { OUTCOME_TEXT, PIPELINE_TYPE_BY_KIND } from "../lib/cardTypes";
+import type { DealStatus } from "./deals";
+import type { DealKind } from "./pipelines";
 import { formatCents, formatDateTime } from "../lib/format";
-import { activityScope } from "./activities";
+import { normalizeText } from "../lib/search";
+import { isSimilar, nameSimilarity } from "../lib/similarity";
+import { isOverdue, overdueFrom } from "../lib/taskTiming";
+import { activityScope, OVERDUE, overdueParams } from "./activities";
 import { cardScope } from "./deals";
 import { buildReport } from "./reports";
 import { many, type DatabaseSync, type SqlValue } from "./sql";
@@ -14,7 +20,8 @@ import { ROLE_LABEL, type Viewer } from "./users";
 const DAY = 86_400_000;
 const MAX_ROWS = 30;
 const KIND = { deal: "negócio", ticket: "ticket", project: "etapa de projeto" } as const;
-const STATUS = { open: "aberto", won: "ganho", lost: "perdido" } as const;
+/** Situação com o termo do tipo: ganho/perdido, resolvido/não resolvido, concluído/não concluído. */
+const statusText = (kind: DealKind, status: "open" | "won" | "lost") => (status === "open" ? "aberto" : OUTCOME_TEXT[PIPELINE_TYPE_BY_KIND[kind]][status].toLowerCase());
 
 const days = (iso: string | null, now: Date) => (iso ? Math.max(0, Math.floor((now.getTime() - new Date(iso).getTime()) / DAY)) : null);
 const date = (iso: string | null) => (iso ? formatDateTime(iso) : null);
@@ -65,10 +72,7 @@ export function searchCardsForCopilot(db: DatabaseSync, viewer: Viewer | null, f
   if (isErr(owner)) return owner;
   const where = ["d.deleted_at IS NULL"];
   const params: SqlValue[] = [];
-  if (f.texto?.trim()) {
-    where.push("(d.title LIKE ? OR pe.name LIKE ? OR o.name LIKE ?)");
-    params.push(like(f.texto), like(f.texto), like(f.texto));
-  }
+  // Texto: filtrado abaixo (sem acento e tolerante a erro de digitação/ditado).
   const status = f.status ?? "open";
   if (status !== "all") {
     where.push("d.status = ?");
@@ -83,8 +87,8 @@ export function searchCardsForCopilot(db: DatabaseSync, viewer: Viewer | null, f
     params.push(...owner.ids);
   }
   const scope = cardScope(db, viewer);
-  const rows = many<{
-    id: string; title: string; kind: keyof typeof KIND; status: keyof typeof STATUS; value_cents: number; pipeline: string; stage: string;
+  const all = many<{
+    id: string; title: string; kind: DealKind; status: DealStatus; value_cents: number; pipeline: string; stage: string;
     probability: number | null; person: string | null; organization: string | null; owner: string | null; stage_entered_at: string;
     closed_at: string | null; next_task: string | null; next_due: string | null; overdue: number;
   }>(
@@ -93,16 +97,24 @@ export function searchCardsForCopilot(db: DatabaseSync, viewer: Viewer | null, f
        pe.name AS person, o.name AS organization, u.name AS owner, d.stage_entered_at, d.closed_at,
        (SELECT a.title FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0 ORDER BY COALESCE(a.end_at, a.due_at) LIMIT 1) AS next_task,
        (SELECT COALESCE(a.end_at, a.due_at) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0 ORDER BY COALESCE(a.end_at, a.due_at) LIMIT 1) AS next_due,
-       (SELECT COUNT(*) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0 AND a.end_at IS NOT NULL AND a.end_at < ?) AS overdue
+       (SELECT COUNT(*) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND ${OVERDUE}) AS overdue
      FROM deal d JOIN pipeline p ON p.id = d.pipeline_id JOIN stage s ON s.id = d.stage_id
      LEFT JOIN person pe ON pe.id = d.person_id LEFT JOIN organization o ON o.id = d.organization_id
      LEFT JOIN app_user u ON u.id = d.owner_id
      WHERE ${where.join(" AND ")}${scope.sql}
      ORDER BY d.status = 'open' DESC, d.value_cents DESC, d.updated_at DESC`,
-    now.toISOString(),
+    ...overdueParams(now),
     ...params,
     ...scope.params,
   );
+  // Contém o texto (título, contato ou organização) ou título parecido (> 70%):
+  // "Concerto gaveta" acha "Conserto Gaveta Miguel". Os exatos vêm primeiro.
+  const q = f.texto?.trim() ? normalizeText(f.texto) : "";
+  const contains = (r: (typeof all)[number]) => [r.title, r.person, r.organization].some((v) => v && normalizeText(v).includes(q));
+  const exact = q ? all.filter(contains) : all;
+  const similar = q ? all.filter((r) => !contains(r) && isSimilar(nameSimilarity(f.texto!, r.title))) : [];
+  const rows = [...exact, ...similar];
+  const fuzzy = new Set(similar.map((r) => r.id));
   const limit = Math.min(Math.max(1, f.limite ?? 20), MAX_ROWS);
   return {
     total: rows.length,
@@ -112,7 +124,7 @@ export function searchCardsForCopilot(db: DatabaseSync, viewer: Viewer | null, f
       id: r.id,
       titulo: r.title,
       tipo: KIND[r.kind],
-      status: STATUS[r.status],
+      status: statusText(r.kind, r.status),
       funil: r.pipeline,
       etapa: r.stage,
       probabilidade: r.probability == null ? null : `${r.probability}%`,
@@ -124,6 +136,7 @@ export function searchCardsForCopilot(db: DatabaseSync, viewer: Viewer | null, f
       fechadoEm: date(r.closed_at),
       proximaTarefa: r.next_task ? `${r.next_task} (${date(r.next_due)})` : null,
       tarefasAtrasadas: r.overdue,
+      ...(fuzzy.has(r.id) ? { nomeParecido: true } : {}),
     })),
   };
 }
@@ -134,7 +147,7 @@ export function cardDigest(db: DatabaseSync, viewer: Viewer | null, id: string, 
   const ok = many(db, `SELECT 1 FROM deal d WHERE d.id = ? AND d.deleted_at IS NULL${scope.sql}`, id, ...scope.params).length > 0;
   if (!ok) return { erro: "Cartão não encontrado ou sem permissão de acesso. Use buscar_cartoes para achar o id certo." };
   const base = many<{
-    title: string; kind: keyof typeof KIND; status: keyof typeof STATUS; value_cents: number; description: string | null; pipeline: string; stage: string;
+    title: string; kind: DealKind; status: DealStatus; value_cents: number; description: string | null; pipeline: string; stage: string;
     probability: number | null; person: string | null; person_phone: string | null; person_email: string | null; organization: string | null;
     owner: string | null; created_at: string; stage_entered_at: string; closed_at: string | null; expected_close_at: string | null;
     sla_at: string | null; due_at: string | null; origin: string | null; loss_reason: string | null; loss_note: string | null;
@@ -178,12 +191,11 @@ export function cardDigest(db: DatabaseSync, viewer: Viewer | null, id: string, 
      WHERE l.entity_type = 'deal' AND l.entity_id = ? AND l.deleted_at IS NULL`,
     id,
   )[0]!.n;
-  const nowIso = now.toISOString();
   return {
     id,
     titulo: base.title,
     tipo: KIND[base.kind],
-    status: STATUS[base.status],
+    status: statusText(base.kind, base.status),
     funil: base.pipeline,
     etapa: base.stage,
     probabilidade: base.probability == null ? null : `${base.probability}%`,
@@ -205,7 +217,7 @@ export function cardDigest(db: DatabaseSync, viewer: Viewer | null, id: string, 
     itens: items.map((i) => ({ descricao: i.description, quantidade: i.quantity, total: formatCents(i.total_cents), recorrencia: i.recurrence })),
     tarefasPendentes: tasks
       .filter((t) => !t.done)
-      .map((t) => ({ titulo: t.title, tipo: t.type, inicio: date(t.due_at), finalizacao: date(t.end_at), atrasada: !!t.end_at && t.end_at < nowIso, responsavel: t.owner })),
+      .map((t) => ({ titulo: t.title, tipo: t.type, inicio: date(t.due_at), finalizacao: date(t.end_at), atrasada: isOverdue(t, now), responsavel: t.owner })),
     tarefasConcluidasRecentes: tasks.filter((t) => t.done).slice(0, 5).map((t) => ({ titulo: t.title, tipo: t.type, quando: date(t.due_at) })),
     ultimasNotas: notes.map((n) => ({ em: date(n.created_at), autor: n.author, texto: cut(n.body, 600) })),
     etapasPercorridas: history.map((h) => ({ etapa: h.stage, entrou: date(h.entered_at), dias: days(h.entered_at, h.left_at ? new Date(h.left_at) : now) })),
@@ -275,9 +287,9 @@ export function tasksForCopilot(db: DatabaseSync, viewer: Viewer | null, f: { si
   start.setHours(0, 0, 0, 0);
   const situacao = f.situacao ?? "pendentes";
   if (situacao === "atrasadas") {
-    // Atrasada = finalização vencida (sem finalização, nunca atrasa).
-    where.push("a.end_at IS NOT NULL AND a.end_at < ?");
-    params.push(now.toISOString());
+    // Atrasada = finalização vencida; sem finalização, início antes de hoje.
+    where.push(OVERDUE);
+    params.push(...overdueParams(now));
   } else if (situacao === "hoje") {
     where.push("((a.due_at >= ? AND a.due_at < ?) OR (a.end_at >= ? AND a.end_at < ?))");
     const s = start.toISOString(), e = new Date(start.getTime() + DAY).toISOString();
@@ -301,7 +313,7 @@ export function tasksForCopilot(db: DatabaseSync, viewer: Viewer | null, f: { si
     `SELECT a.title, a.due_at, a.end_at, t.name AS type, u.name AS owner, d.id AS deal_id, d.title AS deal, pe.name AS person
      FROM activity a JOIN activity_type t ON t.id = a.type_id LEFT JOIN app_user u ON u.id = a.owner_id
      LEFT JOIN deal d ON d.id = a.deal_id AND d.deleted_at IS NULL LEFT JOIN person pe ON pe.id = a.person_id
-     WHERE ${where.join(" AND ")} ORDER BY a.due_at`,
+     WHERE ${where.join(" AND ")} ORDER BY COALESCE(a.end_at, a.due_at)`,
     ...params,
   );
   return {
@@ -312,7 +324,7 @@ export function tasksForCopilot(db: DatabaseSync, viewer: Viewer | null, f: { si
       tipo: r.type,
       inicio: date(r.due_at),
       finalizacao: date(r.end_at),
-      atrasadaHaDias: r.end_at && r.end_at < now.toISOString() ? days(r.end_at, now) : null,
+      atrasadaHaDias: isOverdue({ ...r, done: 0 }, now) ? days(overdueFrom(r), now) : null,
       responsavel: r.owner ?? "Sem responsável",
       cartaoId: r.deal_id,
       cartao: r.deal,
@@ -364,9 +376,9 @@ export function contactsForCopilot(db: DatabaseSync, viewer: Viewer | null, text
 /** Funis com etapas, usuários e equipes (para resolver nomes e explicar a estrutura). */
 export function crmStructure(db: DatabaseSync) {
   const pipelines = many<{ id: string; name: string; type: string }>(db, "SELECT id, name, type FROM pipeline WHERE deleted_at IS NULL AND archived_at IS NULL ORDER BY name");
-  const stages = many<{ pipeline_id: string; name: string; probability: number | null; stale_days: number | null }>(
+  const stages = many<{ id: string; pipeline_id: string; name: string; probability: number | null; stale_days: number | null }>(
     db,
-    "SELECT pipeline_id, name, probability, stale_days FROM stage WHERE deleted_at IS NULL ORDER BY position",
+    "SELECT id, pipeline_id, name, probability, stale_days FROM stage WHERE deleted_at IS NULL ORDER BY position",
   );
   const users = many<{ id: string; name: string; role: keyof typeof ROLE_LABEL }>(db, "SELECT id, name, role FROM app_user WHERE deleted_at IS NULL AND active = 1 ORDER BY name");
   const teams = many<{ id: string; name: string }>(db, "SELECT id, name FROM team WHERE deleted_at IS NULL AND active = 1 ORDER BY name");
@@ -378,9 +390,10 @@ export function crmStructure(db: DatabaseSync) {
   const types = many<{ name: string }>(db, "SELECT name FROM activity_type WHERE deleted_at IS NULL AND active = 1 ORDER BY name").map((r) => r.name);
   return {
     funis: pipelines.map((p) => ({
+      id: p.id,
       nome: p.name,
       tipo: p.type,
-      etapas: stages.filter((s) => s.pipeline_id === p.id).map((s) => ({ nome: s.name, probabilidade: s.probability, paradoApos: s.stale_days })),
+      etapas: stages.filter((s) => s.pipeline_id === p.id).map((s) => ({ id: s.id, nome: s.name, probabilidade: s.probability, paradoApos: s.stale_days })),
     })),
     usuarios: users.map((u) => ({ nome: u.name, papel: ROLE_LABEL[u.role] })),
     equipes: teams.map((t) => ({ nome: t.name, membros: members.filter((m) => m.team_id === t.id).map((m) => m.name) })),
@@ -409,6 +422,12 @@ export function salesSummary(db: DatabaseSync, viewer: Viewer | null, f: { de: s
   return {
     periodo: `${f.de} a ${f.ate}`,
     funil: f.funil ? (pipe!.ids.length > 1 ? "primeiro funil com esse nome" : f.funil) : "todos os funis comerciais",
+    // Nos funis operacionais e de projeto "ganhos/perdidos" se chamam resolvidos/não resolvidos ou concluídos/não concluídos.
+    termos: {
+      ganhos: OUTCOME_TEXT[r.pipelineType].wonPlural,
+      perdidos: OUTCOME_TEXT[r.pipelineType].lostPlural,
+      taxaDeConversao: OUTCOME_TEXT[r.pipelineType].rate,
+    },
     ganhos: { quantidade: s.won.count, valor: formatCents(s.won.valueCents) },
     perdidos: { quantidade: s.lost.count, valor: formatCents(s.lost.valueCents) },
     taxaDeConversao: pctx(s.winRate),

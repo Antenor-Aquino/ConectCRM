@@ -5,6 +5,7 @@ import { many, one, type DatabaseSync, type SqlValue } from "./sql";
 
 export type ProductKind = "produto" | "servico";
 export type Recurrence = "avulso" | "mensal" | "trimestral" | "semestral" | "anual";
+export const RECURRENCE_LABEL: Record<Recurrence, string> = { avulso: "Avulso", mensal: "Mensal", trimestral: "Trimestral", semestral: "Semestral", anual: "Anual" };
 export const RECURRENCES: Recurrence[] = ["avulso", "mensal", "trimestral", "semestral", "anual"];
 
 export interface Product {

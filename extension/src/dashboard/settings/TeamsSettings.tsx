@@ -7,6 +7,7 @@ import { ROLE_LABEL, type Team } from "../../db/users";
 import { useSession } from "../session";
 import { Avatar } from "../ui/Avatar";
 import { ErrorText, Field, SectionLabel } from "../ui/form";
+import { errorText } from "../../lib/errors";
 
 export function TeamsSettings() {
   const { user: me, users } = useSession();
@@ -100,7 +101,7 @@ function TeamModal({ team, onClose, onSaved }: { team: Team | null; onClose: () 
       } else await call("teams.create", { name, members: list });
       onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     }
   }
 

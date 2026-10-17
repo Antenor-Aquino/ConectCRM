@@ -10,6 +10,10 @@ Modal largo em **duas colunas**, botão ✕ no canto.
 **Coluna esquerda**
 - Círculo de **concluir** (marca/desmarca a tarefa como feita) + campo
   **Nome da tarefa** (título grande, obrigatório).
+- Tarefa nova: o nome já vem com o **tipo** escolhido ("Reunião ") para o
+  usuário completar ou trocar. Mudar o tipo troca só esse começo (o que foi
+  digitado depois continua); se o nome foi reescrito, não muda. Ao editar
+  uma tarefa existente o nome nunca é alterado.
 - **Add descrição...** — texto longo logo abaixo, sem borda.
 - **Documentos**: "Anexar documentos" (vários) — viram documentos do GED com
   nome e classificação, vinculados à tarefa, ao cartão, ao contato e à
@@ -23,7 +27,7 @@ Modal largo em **duas colunas**, botão ✕ no canto.
 | **Tipo** | Lista com ícone e busca (com botão de limpar). Padrão: **Tarefa** |
 | **Responsável** | Avatar + nome. O usuário atual aparece como **"Antenor (Você)"**; os demais com o tipo: "Maria (vendedor)". Padrão: o usuário atual |
 | **Início** | Texto por extenso: **"16 de outubro às 18:25"**. Padrão: o momento do cadastro; pode ser alterado e pode ser futuro. Abre o painel da seção 2 |
-| **Finalização** (opcional) | Data/hora de entrega. Vazio = "Sem finalização (opcional)"; ao abrir, sugere o dia seguinte ao início às 18:00. Nunca antes do início. Sem finalização, a tarefa nunca fica atrasada |
+| **Finalização** (opcional) | Data/hora de entrega. Vazio = "Sem finalização (opcional)"; ao abrir, sugere o dia seguinte ao início às 18:00. Nunca antes do início. Sem finalização, fica atrasada quando o início é de um dia que já passou |
 | **Vinculado a** (opcional) | Busca um **negócio, ticket ou etapa de projeto**. Pode ficar vazio (tarefa avulsa). Com vínculo, a tarefa herda contato e organização do cartão |
 | **Tags** | Tags próprias de tarefa (Configurações → Tags → Tarefa) |
 | **Campos personalizados** | Os criados em Configurações → Campos personalizados → Tarefa |
@@ -43,7 +47,7 @@ Modal largo em **duas colunas**, botão ✕ no canto.
 
 ## 3. Tipos de tarefa
 
-Padrão (com ícone): **Ligar, Reunião, Agendamento, Tarefa, Deadline, Almoço,
+Padrão (com ícone): **Ligar, Reunião, Agendamento, Tarefa, Prazo final, Almoço,
 E-mail**.
 
 - Cadastro em **Configurações → Tipos de tarefa** (nome, ícone, ativo,
@@ -68,12 +72,19 @@ E-mail**.
   no seu funil), **contato** e **organização** (clicáveis: abrem o cadastro),
   anexos (clique baixa o arquivo).
 - À direita, o prazo: "faltam N dias", "falta 1 dia", "vence hoje",
-  "atrasada há N dias"; sem finalização: "começa em N dias", "iniciada há N
-  dias · sem prazo"; concluídas: "concluída no prazo" ou "com N dias de
+  "atrasada há N dias"; sem finalização: "começa em N dias", "iniciada hoje ·
+  sem prazo" e, de um dia que já passou, "atrasada há N dias (sem
+  finalização)"; concluídas: "concluída no prazo" ou "com N dias de
   atraso". Abaixo, "Início dd/mm hh:mm" e "Fim dd/mm hh:mm · N dias" (duração
   total da tarefa).
-- Contadores: **atrasadas** = pendentes com finalização já passada; **hoje** e
+- **Atrasada** (regra única: contadores, filtros, cartão, relatórios e
+  Copiloto) = pendente com a finalização já passada ou, sem finalização, com
+  o início num dia anterior a hoje.
+- Contadores: **atrasadas** (regra acima); **hoje** e
   **próximos 7 dias** = início ou finalização no período.
+- Período: Hoje, Amanhã, Esta semana, Este mês, Todas e **Personalizado**
+  (de/até, dias inteiros; começa no mês atual; "até" antes de "de" ajusta o
+  outro lado). Vale para a lista; o calendário navega por mês.
 - Filtros por período (hoje, amanhã, esta semana, atrasadas, personalizado),
   tipo, responsável e visão *Geral / Minhas / Minha equipe*.
 - Concluir direto na lista; atrasadas em destaque.

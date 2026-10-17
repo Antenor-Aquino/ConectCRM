@@ -6,6 +6,7 @@
 // só são sugeridas — quem aplica é o usuário, com um clique.
 import { AI_DEFAULT_MODELS, AI_LABELS, translateAiError, type AiProvider, type AiSettings } from "../ai";
 import { DATA_TOOLS, normalizeCard, RESPOND_TOOL, type CopilotCard, type Schema, type ToolDef } from "./tools";
+import { errorText } from "../errors";
 
 export interface CopilotMessage {
   role: "user" | "assistant";
@@ -38,7 +39,12 @@ export function buildSystemPrompt(c: CopilotContext): string {
     "Responda em português do Brasil, direto e objetivo, com foco comercial: o que está em risco, o que priorizar e qual o próximo passo.",
     "",
     "DADOS: para qualquer número, valor, nome ou fato do CRM, use as ferramentas. Nunca invente, estime ou recalcule valores; copie os valores já formatados que as ferramentas devolvem. " +
-      "Os resultados das ferramentas NÃO ficam no histórico: numa pergunta seguinte, consulte de novo.",
+      "Os resultados das ferramentas NÃO ficam no histórico e o CRM muda durante a conversa (tarefas e negócios novos, concluídos, movidos): " +
+      "a CADA pergunta, consulte as ferramentas de novo, mesmo que já tenha respondido algo parecido. Nunca repita uma resposta anterior sem consultar.",
+    `QUEM: 'eu', 'meu', 'minhas' = ${c.userName}; passe esse nome em 'responsavel' quando a pergunta for sobre o próprio usuário.`,
+    "TAREFAS: atrasada = pendente com a finalização vencida ou, sem finalização, com o início num dia anterior a hoje. " +
+      "Para 'atrasadas' ou 'a mais atrasada', use listar_tarefas com situacao 'atrasadas' (vem da mais antiga para a mais recente, com atrasadaHaDias). " +
+      "Se vier vazio, confira também situacao 'pendentes' antes de dizer que não há nada pendente.",
     "PERÍODOS: converta 'este mês', 'mês passado', 'trimestre', 'este ano' etc. em datas AAAA-MM-DD a partir de hoje antes de chamar resumo_comercial.",
     "NOMES: funil e responsável aceitam parte do nome. Se a ferramenta devolver 'erro' com 'opcoes', mostre as opções e pergunte qual é; não adivinhe.",
     "PANORAMA: para 'como estou', 'pontos de atenção' ou 'o que fazer hoje', combine listar_tarefas (atrasadas e hoje), negocios_parados e resumo_comercial do mês atual.",
@@ -46,10 +52,19 @@ export function buildSystemPrompt(c: CopilotContext): string {
     "",
     "RESPOSTA: termine SEMPRE chamando a ferramenta 'responder'. Use 'tabela' quando houver linhas comparáveis (lista de negócios, tarefas, responsáveis); senão null. " +
       "Até 3 insights, cada um com o valor-chave entre **dois asteriscos** e um tom (alerta para atraso/risco/perda, positivo para ganho/folga, neutro para o resto). " +
-      "Em 'sugestoes', 2 a 4 perguntas de acompanhamento que façam sentido.",
-    "AÇÕES: em 'acoes', sugira até 3 ações concretas que o usuário aplica com um clique, só com cartaoId que veio das ferramentas nesta pergunta: " +
-      "criar_tarefa (titulo e quando em AAAA-MM-DDTHH:MM, em horário comercial e no futuro), adicionar_nota (texto) ou abrir_cartao. " +
-      "Você NÃO grava nada no CRM: nunca diga que criou tarefa ou nota; diga que o usuário pode aplicar pelo botão. Sem ação útil, acoes = [].",
+      "Em 'sugestoes', 2 a 4 próximos pedidos que façam sentido (regra de SUGESTÕES abaixo).",
+    "AÇÕES: em 'acoes', sugira até 3 ações concretas que o usuário aplica com um clique, só com ids que vieram das ferramentas nesta pergunta: " +
+      "criar_tarefa (cartaoId, titulo e quando em AAAA-MM-DDTHH:MM, em horário comercial e no futuro), adicionar_nota (cartaoId e texto), abrir_cartao (cartaoId) " +
+      "ou criar_cartao (titulo, funilId e etapaId de estrutura_do_crm; cartaoId vazio). " +
+      "Você NÃO grava nada no CRM: nunca diga que criou; diga que o usuário confirma pelo botão. Sem ação útil, acoes = [].",
+    "CRIAR CARTÃO: quando o usuário pedir para criar um negócio/ticket/etapa (ex.: 'crie no funil Casa o cartão Conserto Gaveta Miguel'), NÃO pergunte se ele quer: " +
+      "consulte estrutura_do_crm (funil e etapa pelo nome; sem etapa informada, a primeira), confira com buscar_cartoes se já existe cartão com nome igual ou parecido " +
+      "e entregue a ação criar_cartao pronta, dizendo 'Confirme no botão abaixo para criar'. Se existir parecido, avise e ofereça também abrir_cartao do existente.",
+    "PEDIDOS: o usuário dita por voz; nomes podem vir com erro ('Concerto' por 'Conserto'). buscar_cartoes já tolera nomes parecidos (campo nomeParecido): " +
+      "se só achar parecido, mostre-o como provável ('Encontrei Conserto Gaveta Miguel'). Pedido claro é ordem: execute (consulte e entregue a ação) em vez de perguntar. " +
+      "'Sim', 'pode', 'crie' ou um clique numa sugestão confirmam o que você ofereceu na resposta anterior.",
+    "SUGESTÕES: escreva como o próximo pedido do usuário, no imperativo e sem ponto de interrogação, porque o clique envia o texto como se ele tivesse digitado " +
+      "(ex.: 'Crie o cartão Conserto Gaveta Miguel no funil Casa', 'Liste minhas tarefas atrasadas'). Nunca 'Você quer…?'.",
     c.cardId ? `CONTEXTO: o usuário está com o cartão de id ${c.cardId} aberto; quando a pergunta falar 'deste negócio', use detalhar_cartao com esse id.` : "",
   ]
     .filter(Boolean)
@@ -71,7 +86,7 @@ async function runTool(execute: ToolExecutor, name: string, args: Record<string,
   try {
     return await execute(name, args ?? {});
   } catch (e) {
-    return { erro: e instanceof Error ? e.message : String(e) };
+    return { erro: errorText(e) };
   }
 }
 

@@ -243,22 +243,24 @@ export async function createDocumentsFrom(
   items: { file: File; name: string }[],
   typeId: string,
   context: { type: "deal" | "activity" | "person" | "organization"; id: string },
-): Promise<{ created: number; linked: number }> {
+): Promise<{ created: number; linked: number; ids: string[] }> {
   const links = (await call("documents.contextLinks", context)).map(({ type, id, auto }) => ({ type, id, auto }));
   let created = 0;
   let linked = 0;
+  const ids: string[] = [];
   for (const it of items) {
     const prepared = await prepareFile(it.file);
     const dup = (await call("documents.bySha", { sha256: prepared.sha256 }))[0];
     if (dup) {
       await call("documents.addLinks", { ids: [dup.id], links });
+      ids.push(dup.id);
       linked++;
       continue;
     }
-    await call("documents.create", { name: it.name, typeId, links, file: await saveContent(prepared, it.name) });
+    ids.push(await call("documents.create", { name: it.name, typeId, links, file: await saveContent(prepared, it.name) }));
     created++;
   }
-  return { created, linked };
+  return { created, linked, ids };
 }
 
 export function dataUrlToFile(dataUrl: string, filename: string): File {

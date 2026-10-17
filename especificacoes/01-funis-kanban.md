@@ -32,6 +32,31 @@ herdado do funil e colunas específicas (`value`, `description`, `sla_at`,
 preenchidas conforme o tipo. Assim o Kanban, filtros, histórico, tarefas e
 relatórios funcionam igual para todos os tipos.
 
+### 2.1 Desfecho do cartão
+
+No banco o status é sempre `open` / `won` / `lost`; só os termos mudam:
+
+| Tipo | Positivo (verde) | Negativo (vermelho) |
+|---|---|---|
+| Comercial | **Ganho** | **Perdido** |
+| Operacional | **Resolvido** | **Não resolvido** |
+| Projeto | **Concluído** | **Não concluído** |
+
+- Cartão fechado no quadro: fundo e borda verdes ou vermelhos, canto dobrado
+  com ✓ / ✕, título na mesma cor e etiqueta "Ganho em 15/10/2026" (ou o termo
+  do tipo) no rodapé.
+- Detalhe: botões com os termos do tipo e faixa verde/vermelha com data,
+  motivo e observação.
+- Os mesmos termos valem no filtro do quadro ("Resolvidos", "Não
+  concluídos"…), nos indicadores do funil, no histórico ("Marcou como
+  resolvido"), nas fichas de contato/organização, no popup do WhatsApp, no
+  copiloto e nos relatórios (ver spec 06).
+- Os motivos (Configurações → Motivos de perda) são os mesmos para os três
+  tipos.
+- Etapas sugeridas para funis novos não terminam em "Resolvido"/"Concluído"
+  (o desfecho é marcado pelos botões): operacional termina em "Em
+  validação", projeto em "Entrega".
+
 ## 3. Botão "+" (cadastro rápido)
 
 Menu suspenso com as opções abaixo. As opções de item de funil **só aparecem
@@ -113,6 +138,19 @@ Sem mockup próprio; segue o padrão dos outros dois:
 Obs.: no menu "+" e no formulário, o cartão de projeto se chama
 **"Etapa"**; a coluna do quadro continua sendo a "etapa do funil".
 
+### 5.2 Cartão parecido (anti-duplicidade)
+
+Nos três formulários, o CRM avisa "Possível duplicidade" quando já existe,
+no mesmo tipo de funil e visível para o usuário:
+
+- cartão com **título parecido** (mais de 70% em alguma parte, sem acento —
+  mesma regra de contatos, spec 03); ou
+- cartão **em aberto do mesmo contato ou organização** escolhidos.
+
+Cada item mostra funil › etapa, situação, contato e organização, com o botão
+**Abrir** (no popup: **Usar este**, vira o destino). Salvar sem confirmar
+pergunta antes de criar (**Criar mesmo assim**).
+
 ## 6. Seletor de SLA (data e hora)
 
 - Campo com ícone de calendário; ao clicar abre um painel com:
@@ -136,6 +174,39 @@ Obs.: no menu "+" e no formulário, o cartão de projeto se chama
 - Padrão: o usuário atual.
 - Usuários inativos não aparecem para novos registros (mas continuam nos
   registros antigos).
+
+### 6.1 Visão em lista
+
+Botões **Quadro / Lista** ao lado do nome do funil (a escolha fica lembrada).
+A lista mostra uma linha por cartão com os mesmos filtros, visão e busca do
+quadro:
+
+- Título (sempre, fixo à esquerda; verde/vermelho com o desfecho quando
+  encerrado) e as colunas escolhidas em **Personalizar colunas**: busca,
+  visíveis com ordem (↑/↓), demais campos por grupo (negócio, contato,
+  organização e campos personalizados), **Colunas padrão**, Cancelar e
+  Salvar. Colunas lembradas por funil e usuário. Padrão: Etapa, Valor
+  (comercial) / SLA (operacional) / Início e Prazo (projeto), Organização,
+  Contato, Responsável e Próxima tarefa.
+- Clique no cabeçalho ordena (crescente, decrescente, original); vazios no
+  fim. Próxima tarefa atrasada em vermelho.
+- Quantidade e soma no topo; clique na linha abre o cartão.
+
+### 6.2 Detalhe do cartão: painel ou tela cheia
+
+O detalhe abre como painel lateral (até 1100 px) ou em **tela cheia** (botão
+⤢ ao lado do ✕): ocupa a área do quadro/lista, mantendo a lista de funis; ao
+fechar, volta ao quadro. A escolha fica lembrada. As duas colunas do
+detalhe se ajustam à largura do painel (estreito: uma coluna só, sem
+rolagem lateral).
+
+### 7.0 Editar contato, organização e responsável pelo cartão
+
+No detalhe do cartão, o **nome** do contato e da organização é um link: o
+clique abre o formulário de edição do cadastro por cima do cartão; ao salvar,
+o cartão já mostra os dados novos. Para trocar o vínculo, ⇆ abre a busca; ✕
+tira o vínculo. Ao lado do responsável, o lápis abre o cadastro do usuário
+(administrador edita qualquer um; os demais, só o próprio).
 
 ## 7.1 Permissão por tipo de usuário
 
@@ -188,6 +259,10 @@ Em **Configurações → Funis** (e pelo menu ⋯ do quadro):
 - Etapas: nome, cor, ordem (arrastar), probabilidade % (comercial), prazo
   em dias para considerar o item parado.
 - Excluir etapa com itens: pede para mover os itens para outra etapa.
+- **Filtrar** do quadro (status, responsável, tags): o último filtro escolhido
+  fica salvo por funil e por usuário e volta a valer ao reabrir. Ao lado do
+  botão aparecem a quantidade e as opções ativas, ex.: "Filtrar (3) Todos ·
+  Antenor · Teste" (o status só aparece quando não é o padrão "Abertos").
 - Lista de funis (tela Funis e seletores): agrupada por categoria —
   **Comercial**, **Projeto**, **Operacional** (título em negrito com uma linha
   abaixo) — e, dentro de cada uma, por nome.
@@ -219,6 +294,10 @@ no cartão mais recente do funil.
 - Com produtos/serviços no negócio, o resumo aparece logo abaixo do valor:
   produto/serviço, quantidade, preço unitário, desconto e total (com linha
   de total quando há mais de um item). Clicar abre o editor de itens.
+- Abas do detalhe: **Histórico**, Notas, Tarefas e Documentos (o cartão
+  abre em Notas). No histórico, as linhas de **nota, tarefa e documento**
+  que ainda existem são links: a nota abre na aba Notas destacada, a tarefa
+  no formulário e o documento na prévia do GED.
 - A aba **Histórico** mostra toda alteração do cartão, com quem fez, quando
   e o valor antigo → novo: campos (valor, contato, organização,
   responsável, datas, motivo da perda…), etapa, ganho/perdido/reaberto,

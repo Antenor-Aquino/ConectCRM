@@ -1,15 +1,16 @@
-// Detalhe do cartão (Fase 4): dados editáveis, etapas, ganho/perdido,
+// Detalhe do cartão (Fase 4): dados editáveis, etapas, desfecho (ganho/perdido,
+// resolvido/não resolvido, concluído/não concluído conforme o tipo),
 // notas, tarefas e histórico de alterações.
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, Circle, PlusCircle, RotateCcw, Sparkles, Trash2, Trophy, X, XCircle } from "lucide-react";
+import { Check, CheckCircle2, Circle, Maximize2, Minimize2, Pencil, PlusCircle, RotateCcw, Sparkles, Trash2, Trophy, X, XCircle } from "lucide-react";
 import { TaBadge, TaButton, TaInput, TaTextarea, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { ActivityListItem } from "../../db/activities";
 import type { CustomField, CustomValue } from "../../db/customFields";
 import type { CardDetail as CardData } from "../../db/deals";
-import type { HistoryEvent } from "../../db/cardHistory";
+import type { HistoryEvent, HistoryRef } from "../../db/cardHistory";
 import type { Pipeline, Stage } from "../../db/pipelines";
-import { CARD_TEXT } from "../../lib/cardTypes";
+import { CARD_TEXT, OUTCOME_TEXT } from "../../lib/cardTypes";
 import { formatCents, formatDateTime, fromDateInput, toDateInput } from "../../lib/format";
 import { Combobox, type ComboItem } from "../ui/Combobox";
 import { CustomFieldsForm } from "../ui/CustomFieldsForm";
@@ -19,29 +20,59 @@ import { SlaPicker } from "../ui/SlaPicker";
 import { stageColor } from "../ui/StageSelect";
 import { TagPicker } from "../ui/TagPicker";
 import { UserSelect } from "../ui/UserSelect";
+import { OrganizationFormModal } from "../contacts/OrganizationFormModal";
+import { PersonFormModal } from "../contacts/PersonFormModal";
+import { UserModal } from "../settings/UsersSettings";
+import { useSession } from "../session";
 import { openCopilot } from "../copilot/CopilotPanel";
 import { DocumentsPanel } from "../documents/DocumentsPanel";
 import { NotesPanel } from "../ui/NotesPanel";
 import { TaskModal, type TaskRequest } from "../tasks/TaskModal";
+import { DocumentViewer } from "../documents/DocumentViewer";
 import { ActivityIcon } from "../../lib/activityIcons";
 import { taskTiming } from "../../lib/taskTiming";
 import { ItemsEditor, type ItemDraft } from "./ItemsEditor";
 import { LostModal } from "./LostModal";
 import { createOrganizationQuick, createPersonQuick, searchOrganizations, searchPersons } from "./searchers";
+import { errorText } from "../../lib/errors";
+import { RECURRENCE_LABEL, type Recurrence } from "../../db/products";
 
-const STATUS_BADGE = { open: null, won: { color: "green", label: "Ganho" }, lost: { color: "red", label: "Perdido" } } as const;
 
 type Tab = "notas" | "tarefas" | "documentos" | "historico";
 
-export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: string; pipeline: Pipeline; onClose: () => void; onChanged: () => void }) {
+export type CardDetailMode = "drawer" | "full";
+
+export function CardDetail({
+  cardId,
+  pipeline,
+  onClose,
+  onChanged,
+  mode = "drawer",
+  onToggleMode,
+}: {
+  cardId: string;
+  pipeline: Pipeline;
+  onClose: () => void;
+  onChanged: () => void;
+  /** drawer = painel lateral sobre o quadro; full = ocupa a área do quadro. */
+  mode?: CardDetailMode;
+  onToggleMode?: () => void;
+}) {
   const text = CARD_TEXT[pipeline.type];
   const [card, setCard] = useState<CardData | null>(null);
   const [stages, setStages] = useState<Stage[]>([]);
   const [fields, setFields] = useState<CustomField[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("notas");
+  // Origem aberta a partir do histórico.
+  const [noteFocus, setNoteFocus] = useState<string | null>(null);
+  const [taskOpen, setTaskOpen] = useState<string | null>(null);
+  const [docOpen, setDocOpen] = useState<string | null>(null);
   const [itemsOpen, setItemsOpen] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
+  // Cadastro aberto a partir do nome do contato, da organização ou do responsável.
+  const [editing, setEditing] = useState<{ kind: "person" | "organization" | "user"; id: string } | null>(null);
+  const { user: me, users, reloadUsers } = useSession();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
 
@@ -69,20 +100,21 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
       await load();
       onChanged();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     }
   };
   const update = (patch: Record<string, unknown>) => run(() => call("cards.update", { id: cardId, patch }));
 
   if (!card) {
     return (
-      <Shell onClose={onClose}>
+      <Shell onClose={onClose} mode={mode} onToggleMode={onToggleMode}>
         <ErrorText>{error}</ErrorText>
       </Shell>
     );
   }
 
-  const status = STATUS_BADGE[card.status];
+  const outcome = OUTCOME_TEXT[pipeline.type];
+  const status = card.status === "open" ? null : { color: card.status === "won" ? ("green" as const) : ("red" as const), label: outcome[card.status] };
   const person: ComboItem | null = card.person_id ? { id: card.person_id, label: card.person_name ?? "" } : null;
   const org: ComboItem | null = card.organization_id ? { id: card.organization_id, label: card.organization_name ?? "" } : null;
   const items: ItemDraft[] = card.items.map((i) => ({
@@ -96,9 +128,9 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
   }));
 
   return (
-    <Shell onClose={onClose}>
+    <Shell onClose={onClose} mode={mode} onToggleMode={onToggleMode}>
       {/* Cabeçalho */}
-      <div className="flex items-start gap-3 pr-8">
+      <div className={cn("flex items-start gap-3", onToggleMode ? "pr-20" : "pr-8")}>
         <input
           className="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-theme-xl font-semibold text-gray-800 hover:border-gray-200 focus:border-brand-300 focus:outline-none dark:text-white/90"
           value={title}
@@ -138,13 +170,13 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
           <>
             <TaButton
               className="!bg-success-600 !text-white !ring-0 hover:!bg-success-700"
-              startIcon={<Trophy size={15} />}
+              startIcon={pipeline.type === "comercial" ? <Trophy size={15} /> : <CheckCircle2 size={15} />}
               onClick={() => void run(() => call("cards.setStatus", { id: cardId, status: "won" }))}
             >
-              Ganho
+              {outcome.won}
             </TaButton>
             <TaButton variant="danger" startIcon={<XCircle size={15} />} onClick={() => setLostOpen(true)}>
-              Perdido
+              {outcome.lost}
             </TaButton>
           </>
         ) : (
@@ -174,12 +206,33 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
           Excluir
         </TaButton>
       </div>
-      {card.status === "lost" && (card.loss_note || card.loss_reason_id) && (
-        <p className="mb-4 rounded-lg bg-error-50 px-3 py-2 text-theme-sm text-error-700">Perdido{card.loss_note ? `: ${card.loss_note}` : ""}</p>
+      {card.status !== "open" && (
+        // Faixa do desfecho: verde (ganho/resolvido/concluído) ou vermelha (perdido/não…), com data e motivo.
+        <div
+          className={cn(
+            "mb-4 flex items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-theme-sm",
+            card.status === "won" ? "border-success-200 bg-success-50 text-success-800" : "border-error-200 bg-error-50 text-error-800",
+          )}
+        >
+          <span className={cn("mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white", card.status === "won" ? "bg-success-500" : "bg-error-500")}>
+            {card.status === "won" ? <Check size={13} strokeWidth={3} /> : <X size={13} strokeWidth={3} />}
+          </span>
+          <span>
+            <b>{outcome[card.status]}</b>
+            {card.closed_at && ` em ${formatDateTime(card.closed_at)}`}
+            {card.status === "lost" && card.loss_reason_name && (
+              <span className="block">
+                {outcome.lossReason}: {card.loss_reason_name}
+              </span>
+            )}
+            {card.status === "lost" && card.loss_note && <span className="block">{card.loss_note}</span>}
+          </span>
+        </div>
       )}
       <ErrorText>{error}</ErrorText>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
+      {/* Colunas pela largura do próprio painel (não da janela): estreito, uma coluna só. */}
+      <div className="grid gap-6 @3xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] @6xl:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
         {/* Dados */}
         <div>
           {pipeline.type === "comercial" && (
@@ -224,7 +277,16 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
 
           <SectionLabel>Relacionamento</SectionLabel>
           <Field label="Contato">
-            <Combobox value={person} onChange={(i) => void update({ personId: i?.id ?? null })} search={searchPersons} placeholder="Buscar por nome, telefone ou e-mail" onCreate={createPersonQuick} createLabel="Criar contato" />
+            <Combobox
+              value={person}
+              onChange={(i) => void update({ personId: i?.id ?? null })}
+              search={searchPersons}
+              placeholder="Buscar por nome, telefone ou e-mail"
+              onCreate={createPersonQuick}
+              createLabel="Criar contato"
+              onOpenValue={(i) => setEditing({ kind: "person", id: i.id })}
+              openTitle="Editar o cadastro do contato"
+            />
           </Field>
           <Field label="Organização">
             <Combobox
@@ -235,12 +297,29 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
               onCreate={createOrganizationQuick}
               createLabel="Criar organização"
               dashed={<><PlusCircle size={15} /> Vincular ou criar organização</>}
+              onOpenValue={(i) => setEditing({ kind: "organization", id: i.id })}
+              openTitle="Editar o cadastro da organização"
             />
           </Field>
 
           <SectionLabel>Mais detalhes</SectionLabel>
           <Field label="Responsável">
-            <UserSelect value={card.owner_id} onChange={(id) => void update({ ownerId: id })} />
+            <div className="flex items-center gap-1.5">
+              <div className="min-w-0 flex-1">
+                <UserSelect value={card.owner_id} onChange={(id) => void update({ ownerId: id })} />
+              </div>
+              {/* Usuários: administrador edita qualquer um; os demais, só o próprio cadastro. */}
+              {card.owner_id && (me.role === "admin" || me.id === card.owner_id) && (
+                <button
+                  type="button"
+                  title="Editar o cadastro do responsável"
+                  onClick={() => setEditing({ kind: "user", id: card.owner_id! })}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-gray-300 text-gray-500 hover:text-brand-600 dark:border-gray-700"
+                >
+                  <Pencil size={15} />
+                </button>
+              )}
+            </div>
           </Field>
           <Field label="Tags">
             <TagPicker entity={text.kind} value={card.tags.map((t) => t.id)} onChange={(ids) => void update({ tagIds: ids })} />
@@ -264,16 +343,19 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
           <div className="mb-3 flex gap-1 rounded-lg bg-gray-100 p-1 dark:bg-white/5">
             {(
               [
+                ["historico", "Histórico"],
                 ["notas", "Notas"],
                 ["tarefas", "Tarefas"],
                 ["documentos", "Documentos"],
-                ["historico", "Histórico"],
               ] as [Tab, string][]
             ).map(([id, label]) => (
               <button
                 key={id}
                 type="button"
-                onClick={() => setTab(id)}
+                onClick={() => {
+                  setTab(id);
+                  setNoteFocus(null);
+                }}
                 className={cn(
                   "flex-1 rounded-md py-1.5 text-theme-sm font-medium",
                   tab === id ? "bg-white text-brand-600 shadow-theme-xs dark:bg-gray-900" : "text-gray-600 dark:text-gray-400",
@@ -283,14 +365,38 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
               </button>
             ))}
           </div>
-          {tab === "notas" && <NotesPanel entityType="deal" entityId={cardId} onChanged={onChanged} />}
+          {tab === "notas" && <NotesPanel entityType="deal" entityId={cardId} onChanged={onChanged} highlightId={noteFocus} />}
           {tab === "tarefas" && <TasksTab cardId={cardId} onChanged={onChanged} />}
           {tab === "documentos" && <DocumentsPanel type="deal" id={cardId} />}
           {tab === "historico" && (
-            <HistoryTab cardId={cardId} stageHistory={card.stageHistory} refreshKey={card.version} />
+            <HistoryTab
+              cardId={cardId}
+              stageHistory={card.stageHistory}
+              refreshKey={card.version}
+              onOpen={(ref) => {
+                if (ref.kind === "note") {
+                  setNoteFocus(ref.id);
+                  setTab("notas");
+                } else if (ref.kind === "activity") setTaskOpen(ref.id);
+                else setDocOpen(ref.id);
+              }}
+            />
           )}
         </div>
       </div>
+
+      {taskOpen && (
+        <TaskModal
+          request={{ id: taskOpen }}
+          onClose={() => setTaskOpen(null)}
+          onSaved={() => {
+            setTaskOpen(null);
+            void load();
+            onChanged();
+          }}
+        />
+      )}
+      {docOpen && <DocumentViewer documentId={docOpen} onClose={() => setDocOpen(null)} />}
 
       <ItemsEditor
         open={itemsOpen}
@@ -301,8 +407,45 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
           void run(() => call("cards.setItems", { id: cardId, items: list }));
         }}
       />
+      {editing?.kind === "person" && (
+        <PersonFormModal
+          personId={editing.id}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            void load();
+            onChanged();
+          }}
+        />
+      )}
+      {editing?.kind === "organization" && (
+        <OrganizationFormModal
+          organizationId={editing.id}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            void load();
+            onChanged();
+          }}
+        />
+      )}
+      {editing?.kind === "user" && users.some((u) => u.id === editing.id) && (
+        <UserModal
+          target={users.find((u) => u.id === editing.id)!}
+          isAdmin={me.role === "admin"}
+          isSelf={me.id === editing.id}
+          onClose={() => setEditing(null)}
+          onSaved={async () => {
+            setEditing(null);
+            await reloadUsers();
+            void load();
+            onChanged();
+          }}
+        />
+      )}
       <LostModal
         cardId={lostOpen ? cardId : null}
+        type={pipeline.type}
         onClose={() => setLostOpen(false)}
         onDone={() => {
           setLostOpen(false);
@@ -334,7 +477,7 @@ function ItemsSummary({ items, onEdit }: { items: CardData["items"]; onEdit: () 
             <tr key={i.id} onClick={onEdit} className="cursor-pointer border-b border-gray-100 last:border-0 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-white/5">
               <td className="px-2.5 py-2 text-gray-800 dark:text-white/90">
                 {i.description}
-                {i.recurrence !== "avulso" && <span className="ml-1 text-gray-400">({i.recurrence})</span>}
+                {i.recurrence !== "avulso" && <span className="ml-1 text-gray-400">({RECURRENCE_LABEL[i.recurrence as Recurrence] ?? i.recurrence})</span>}
               </td>
               <td className="px-2.5 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{qty(i.quantity)}</td>
               <td className="px-2.5 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{formatCents(i.unit_price_cents)}</td>
@@ -358,14 +501,37 @@ function ItemsSummary({ items, onEdit }: { items: CardData["items"]; onEdit: () 
   );
 }
 
-function Shell({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+function Shell({ children, onClose, mode, onToggleMode }: { children: React.ReactNode; onClose: () => void; mode: CardDetailMode; onToggleMode?: () => void }) {
+  const buttons = (
+    <div className="absolute right-5 top-5 flex gap-1.5">
+      {onToggleMode && (
+        <button
+          type="button"
+          onClick={onToggleMode}
+          title={mode === "full" ? "Voltar ao painel lateral" : "Abrir em tela cheia (no lugar do quadro)"}
+          className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-white/5"
+        >
+          {mode === "full" ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+        </button>
+      )}
+      <button type="button" onClick={onClose} title="Fechar" className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-white/5">
+        <X size={18} />
+      </button>
+    </div>
+  );
+  if (mode === "full") {
+    return (
+      <section className="@container relative min-w-0 flex-1 rounded-2xl border border-gray-200 bg-white p-6 shadow-theme-xs dark:border-gray-800 dark:bg-gray-900">
+        {buttons}
+        {children}
+      </section>
+    );
+  }
   return (
     <div className="fixed inset-0 z-[9999] flex justify-end">
       <div className="fixed inset-0 bg-gray-900/40" onClick={onClose} aria-hidden />
-      <div className="relative h-full w-full max-w-[980px] overflow-y-auto bg-white p-6 shadow-theme-xl dark:bg-gray-900">
-        <button type="button" onClick={onClose} title="Fechar" className="absolute right-5 top-5 flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-white/5">
-          <X size={18} />
-        </button>
+      <div className="@container relative h-full w-full max-w-[1100px] overflow-y-auto bg-white p-6 shadow-theme-xl dark:bg-gray-900">
+        {buttons}
         {children}
       </div>
     </div>
@@ -427,7 +593,19 @@ function TasksTab({ cardId, onChanged }: { cardId: string; onChanged: () => void
   );
 }
 
-function HistoryTab({ cardId, stageHistory, refreshKey }: { cardId: string; stageHistory: CardData["stageHistory"]; refreshKey: unknown }) {
+const REF_TITLE: Record<HistoryRef["kind"], string> = { note: "Abrir a nota", activity: "Abrir a tarefa", document: "Abrir o documento" };
+
+function HistoryTab({
+  cardId,
+  stageHistory,
+  refreshKey,
+  onOpen,
+}: {
+  cardId: string;
+  stageHistory: CardData["stageHistory"];
+  refreshKey: unknown;
+  onOpen: (ref: HistoryRef) => void;
+}) {
   const [events, setEvents] = useState<HistoryEvent[]>([]);
   useEffect(() => {
     void call("cards.history", { id: cardId }).then(setEvents);
@@ -455,11 +633,20 @@ function HistoryTab({ cardId, stageHistory, refreshKey }: { cardId: string; stag
               <span className="font-medium text-gray-700 dark:text-gray-300">{e.userName}</span> · {formatDateTime(e.at)}
             </p>
             <ul className="mt-0.5 space-y-0.5">
-              {e.lines.map((line, j) => (
-                <li key={j} className="break-words text-theme-sm text-gray-700 dark:text-gray-300">
-                  {line}
-                </li>
-              ))}
+              {e.lines.map((line, j) => {
+                const ref = e.refs?.[j];
+                return (
+                  <li key={j} className="break-words text-theme-sm text-gray-700 dark:text-gray-300">
+                    {ref ? (
+                      <button type="button" title={REF_TITLE[ref.kind]} className="text-left text-brand-600 hover:underline dark:text-brand-400" onClick={() => onOpen(ref)}>
+                        {line}
+                      </button>
+                    ) : (
+                      line
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </li>
         ))}

@@ -14,6 +14,7 @@ import { useSession } from "../session";
 import { DocumentViewer } from "./DocumentViewer";
 import { FileTypeIcon, LinkChip, RestrictedBadge, TypeBadge, ValidityBadge } from "./docUi";
 import { UploadModal } from "./UploadModal";
+import { errorText } from "../../lib/errors";
 
 const NOUN: Record<DocLinkType, string> = { deal: "deste cartão", activity: "desta tarefa", person: "deste contato", organization: "desta organização" };
 
@@ -40,7 +41,7 @@ export function DocumentsPanel({ type, id, onChanged, compact }: { type: DocLink
       await fn();
       await changed();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     }
   };
 

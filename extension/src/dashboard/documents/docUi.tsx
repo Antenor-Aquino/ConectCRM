@@ -1,7 +1,7 @@
 // Peças comuns do GED: navegação pelos vínculos, etiquetas de vínculo,
 // classificação, validade e ícone do arquivo.
 import { createContext, useContext, type ReactNode } from "react";
-import { Building2, CheckSquare, FileImage, FileSpreadsheet, FileText, File as FileIcon, Filter, Lock, User, X } from "lucide-react";
+import { Building2, CheckSquare, FileAudio, FileImage, FileSpreadsheet, FileText, File as FileIcon, Filter, Lock, User, X } from "lucide-react";
 import { badgePalette, cn, type BadgeColor } from "@tailadmin";
 import type { DocLink, DocLinkType } from "../../db/documents";
 
@@ -123,6 +123,7 @@ export function RestrictedBadge() {
 export function FileTypeIcon({ mime, size = 18 }: { mime: string; size?: number }) {
   if (mime === "application/pdf") return <FileText size={size} className="text-error-500" />;
   if (mime.startsWith("image/")) return <FileImage size={size} className="text-blue-light-500" />;
+  if (mime.startsWith("audio/")) return <FileAudio size={size} className="text-brand-500" />;
   if (/spreadsheet|excel|csv/.test(mime)) return <FileSpreadsheet size={size} className="text-success-600" />;
   if (/word|text|opendocument/.test(mime)) return <FileText size={size} className="text-brand-500" />;
   return <FileIcon size={size} className="text-gray-500" />;

@@ -12,6 +12,7 @@ import { formatBytes } from "../../lib/files";
 import { useSession } from "../session";
 import { Switch } from "../ui/Switch";
 import { ColorPicker } from "./TagsSettings";
+import { errorText } from "../../lib/errors";
 
 type Msg = { text: string; kind: "ok" | "err" } | null;
 
@@ -44,7 +45,7 @@ function StoragePanel({ env }: { env: DbEnv }) {
       const text = await fn();
       if (text) setMsg({ text, kind: "ok" });
     } catch (e) {
-      if (!(e instanceof DOMException && e.name === "AbortError")) setMsg({ text: e instanceof Error ? e.message : String(e), kind: "err" });
+      if (!(e instanceof DOMException && e.name === "AbortError")) setMsg({ text: errorText(e), kind: "err" });
     } finally {
       setBusy(false);
       await load();
@@ -182,7 +183,7 @@ function TypesPanel() {
       await fn();
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     }
   };
   const move = (i: number, dir: -1 | 1) => {

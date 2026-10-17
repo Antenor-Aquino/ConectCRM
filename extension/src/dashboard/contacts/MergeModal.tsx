@@ -3,6 +3,7 @@ import { useState } from "react";
 import { TaButton, TaModal } from "@tailadmin";
 import { Combobox, type ComboItem } from "../ui/Combobox";
 import { ErrorText } from "../ui/form";
+import { errorText } from "../../lib/errors";
 
 export function MergeModal({
   keepName,
@@ -38,7 +39,7 @@ export function MergeModal({
             try {
               await onMerge(other.id);
             } catch (e) {
-              setError(e instanceof Error ? e.message : String(e));
+              setError(errorText(e));
             }
           }}
         >

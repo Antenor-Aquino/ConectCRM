@@ -5,6 +5,7 @@ import { Workflow } from "lucide-react";
 import { TaButton, TaInput } from "@tailadmin";
 import { call } from "../../rpc/client";
 import { ErrorText, Field } from "../ui/form";
+import { errorText } from "../../lib/errors";
 
 export function FirstRunSetup({ onDone }: { onDone: () => void }) {
   const [name, setName] = useState("");
@@ -17,7 +18,7 @@ export function FirstRunSetup({ onDone }: { onDone: () => void }) {
       await chrome.storage.local.set({ "conectcrm-current-user": id });
       onDone();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     }
   }
 

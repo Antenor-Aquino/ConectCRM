@@ -58,6 +58,11 @@ export interface LicenseDeps {
 }
 
 /** Mensagens para cada motivo devolvido pelo servidor (mesmos textos do wa-pipedrive). */
+/** Código do servidor → texto; código desconhecido usa o texto padrão. */
+export function licenseReason(code: string | null | undefined, fallback: string): string {
+  return (code && LICENSE_REASON[code]) || fallback;
+}
+
 export const LICENSE_REASON: Record<string, string> = {
   sem_chave: "",
   nao_encontrada: "Chave não encontrada. Verifique e tente de novo.",
@@ -85,7 +90,7 @@ export function formatKeyInput(value: string): string {
 export function planLabel(data: LicenseData | null | undefined): string {
   if (!data) return "";
   const names: Record<string, string> = { trial: "Teste (7 dias)", mensal: "Mensal", anual: "Anual", dev: "Desenvolvimento" };
-  let text = names[data.plano ?? ""] ?? data.plano ?? "";
+  let text = names[data.plano ?? ""] ?? (data.plano ? "Plano personalizado" : "");
   if (data.expira_em) {
     const d = new Date(data.expira_em);
     if (!Number.isNaN(d.getTime())) text += ` — expira em ${d.toLocaleDateString("pt-BR")}`;
@@ -180,7 +185,7 @@ export class LicenseClient {
 
   async checkoutUrl(plan: "mensal" | "anual"): Promise<string> {
     const r = await this.post<{ url?: string; erro?: string }>("/checkout", { plano: plan });
-    if (!r.url) throw new Error(r.erro || "Não foi possível abrir o pagamento.");
+    if (!r.url) throw new Error(licenseReason(r.erro, "Não foi possível abrir o pagamento."));
     return r.url;
   }
 
@@ -208,7 +213,7 @@ export class LicenseClient {
 
   async upgradeCheckoutUrl(): Promise<string> {
     const r = await this.post<{ url?: string; erro?: string }>("/upgrade-checkout", { chave: await this.savedKey() });
-    if (!r.url) throw new Error(r.erro || "Não foi possível iniciar o upgrade agora.");
+    if (!r.url) throw new Error(licenseReason(r.erro, "Não foi possível iniciar a mudança de plano agora."));
     return r.url;
   }
 }

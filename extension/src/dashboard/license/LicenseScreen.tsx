@@ -8,12 +8,14 @@ import {
   formatKeyInput,
   KEY_PREFIX,
   LICENSE_REASON,
+  licenseReason,
   planLabel,
   PLAN_PRICES,
   type LicenseClient,
   type LicenseResult,
 } from "../../lib/license";
 import { isValidEmail } from "../../lib/validate";
+import { errorText } from "../../lib/errors";
 
 type Msg = { text: string; kind: "ok" | "err" | "info" } | null;
 
@@ -164,7 +166,7 @@ export function LicenseScreen({
       await chrome.tabs.create({ url: await client.checkoutUrl(p) });
       setShopMsg({ text: 'Após o pagamento você receberá um código no WhatsApp. Volte aqui, clique em "Ativar com código recebido no WhatsApp" e informe o código.', kind: "info" });
     } catch (e) {
-      setShopMsg({ text: e instanceof Error ? e.message : "Erro de conexão ao abrir o pagamento.", kind: "err" });
+      setShopMsg({ text: e instanceof Error ? errorText(e) : "Erro de conexão ao abrir o pagamento.", kind: "err" });
     }
   }
 
@@ -265,7 +267,7 @@ export function LicenseScreen({
             <span>
               Você está no plano <b>Mensal</b>. No <b>Anual</b> você economiza e ainda ganha crédito pelos dias restantes.{" "}
               <button type="button" className="font-medium underline" onClick={() => setUpgradeOpen(true)}>
-                Ver condições de upgrade →
+                Ver condições para mudar para o plano Anual →
               </button>
             </span>
           </div>
@@ -300,7 +302,7 @@ export function LicenseScreen({
                 try {
                   await chrome.tabs.create({ url: await client.billingPortalUrl() });
                 } catch (e) {
-                  setShopMsg({ text: e instanceof Error ? e.message : String(e), kind: "err" });
+                  setShopMsg({ text: errorText(e), kind: "err" });
                 }
               }}
             >
@@ -318,13 +320,13 @@ export function LicenseScreen({
   );
 }
 
-const brl = (v: number | undefined) => `R$ ${Number(v ?? 0).toFixed(2).replace(".", ",")}`;
+const brl = (v: number | undefined) => Number(v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 function UpgradeModal({ client, onClose }: { client: LicenseClient; onClose: () => void }) {
   const [calc, setCalc] = useState<Awaited<ReturnType<LicenseClient["upgradePreview"]>> | null>(null);
   const [msg, setMsg] = useState<Msg>(null);
   useEffect(() => {
-    client.upgradePreview().then(setCalc, () => setMsg({ text: "Erro de conexão ao calcular o upgrade.", kind: "err" }));
+    client.upgradePreview().then(setCalc, () => setMsg({ text: "Erro de conexão ao calcular a mudança de plano.", kind: "err" }));
   }, [client]);
   const rows: [string, string, string?][] = calc?.ok
     ? [
@@ -339,12 +341,12 @@ function UpgradeModal({ client, onClose }: { client: LicenseClient; onClose: () 
       ]
     : [];
   return (
-    <TaModal isOpen onClose={onClose} title="Upgrade para o plano Anual">
+    <TaModal isOpen onClose={onClose} title="Mudar para o plano Anual">
       <p className="mb-3 text-theme-sm text-gray-600 dark:text-gray-300">
         Ao migrar do Mensal para o Anual, você recebe um <b>crédito proporcional</b> pelos dias que restavam do seu mês.
       </p>
       {!calc && !msg && <p className="text-theme-sm text-gray-500">Calculando…</p>}
-      {calc && !calc.ok && <p className="text-theme-sm text-error-600">Não foi possível calcular o upgrade{calc.motivo ? ` (${calc.motivo})` : ""}.</p>}
+      {calc && !calc.ok && <p className="text-theme-sm text-error-600">{licenseReason(calc.motivo, "Não foi possível calcular a mudança de plano agora.")}</p>}
       {rows.map(([label, value, cls]) => (
         <div key={label} className={cn("flex justify-between border-b border-gray-100 py-1.5 text-theme-sm dark:border-gray-800", cls)}>
           <span>{label}</span>
@@ -360,7 +362,7 @@ function UpgradeModal({ client, onClose }: { client: LicenseClient; onClose: () 
             try {
               await chrome.tabs.create({ url: await client.upgradeCheckoutUrl() });
             } catch (e) {
-              setMsg({ text: e instanceof Error ? e.message : String(e), kind: "err" });
+              setMsg({ text: errorText(e), kind: "err" });
             }
           }}
         >

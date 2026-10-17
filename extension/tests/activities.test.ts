@@ -46,12 +46,12 @@ describe("tarefas", () => {
   it("filtros: período, atrasadas, concluídas", async () => {
     const { db, ctx } = await freshDb();
     const ago = (h: number) => new Date(Date.now() - h * 3600000).toISOString();
-    // Atrasada só com finalização vencida; sem finalização, a tarefa segue "em andamento".
+    // Atrasada: finalização vencida; sem finalização, início antes de hoje.
     createActivity(db, ctx, { title: "Ontem", dueAt: ago(30), endAt: ago(24) });
     createActivity(db, ctx, { title: "Sem prazo", dueAt: ago(48) });
     createActivity(db, ctx, { title: "Amanhã", dueAt: ago(-24) });
     createActivity(db, ctx, { title: "Feita", dueAt: ago(1), done: true });
-    expect(listActivities(db, { overdue: true }).map((a) => a.title)).toEqual(["Ontem"]);
+    expect(listActivities(db, { overdue: true }).map((a) => a.title)).toEqual(["Sem prazo", "Ontem"]);
     expect(listActivities(db, { done: true }).map((a) => a.title)).toEqual(["Feita"]);
     // Daqui para frente: a pendente sem prazo (em andamento) e a de amanhã.
     expect(listActivities(db, { from: new Date().toISOString(), done: false }).map((a) => a.title)).toEqual(["Sem prazo", "Amanhã"]);

@@ -2,9 +2,12 @@
 // ganhos/perdidos por período, motivo, responsável e equipe, tempo por etapa,
 // produtos vendidos e atividades por usuário. Respeitam a permissão do
 // usuário (mesma regra do quadro e das tarefas).
+import { OUTCOME_TEXT } from "../lib/cardTypes";
+import { isOverdue } from "../lib/taskTiming";
 import { activityScope } from "./activities";
 import { cardScope } from "./deals";
 import { many, type DatabaseSync, type SqlValue } from "./sql";
+import type { PipelineType } from "./pipelines";
 import type { Viewer } from "./users";
 
 export interface ReportFilter {
@@ -107,6 +110,8 @@ export interface ActivityRow {
 }
 
 export interface Report {
+  /** Tipo dos funis no relatório (sem funil escolhido: todos os comerciais). Define os termos do desfecho. */
+  pipelineType: PipelineType;
   summary: Summary;
   funnel: FunnelStep[] | null;
   forecast: ForecastRow[];
@@ -204,7 +209,7 @@ function summarize(deals: DealRow[], f: ReportFilter): Summary {
 }
 
 /** Conversão: cada cartão criado no período conta em todas as etapas até a mais avançada que alcançou. */
-function funnel(db: DatabaseSync, deals: DealRow[], f: ReportFilter): FunnelStep[] | null {
+function funnel(db: DatabaseSync, deals: DealRow[], f: ReportFilter, type: PipelineType): FunnelStep[] | null {
   if (!f.pipelineId) return null;
   const stages = many<{ id: string; name: string; color: string | null; position: number }>(
     db,
@@ -222,7 +227,7 @@ function funnel(db: DatabaseSync, deals: DealRow[], f: ReportFilter): FunnelStep
   );
   const maxPos = new Map(created.map((d) => [d.id, d.stage_position]));
   for (const h of hist) maxPos.set(h.deal_id, Math.max(maxPos.get(h.deal_id) ?? -Infinity, h.position));
-  // Ganho conta como tendo passado por todas as etapas.
+  // Ganho (resolvido, concluído) conta como tendo passado por todas as etapas.
   const last = stages.at(-1)?.position ?? 0;
   for (const d of created) if (d.status === "won") maxPos.set(d.id, Math.max(maxPos.get(d.id)!, last));
   const steps: FunnelStep[] = [];
@@ -233,7 +238,7 @@ function funnel(db: DatabaseSync, deals: DealRow[], f: ReportFilter): FunnelStep
   }
   const won = created.filter((d) => d.status === "won").length;
   const prev = steps.at(-1);
-  steps.push({ stageId: "won", name: "Ganho", color: null, reached: won, fromPrevious: prev?.reached ? won / prev.reached : null });
+  steps.push({ stageId: "won", name: OUTCOME_TEXT[type].won, color: null, reached: won, fromPrevious: prev?.reached ? won / prev.reached : null });
   return steps;
 }
 
@@ -364,14 +369,13 @@ function activities(db: DatabaseSync, f: ReportFilter, now: Date): ActivityRow[]
     ...scope.params,
   );
   const map = new Map<string | null, Omit<ActivityRow, "id" | "name">>();
-  const nowIso = now.toISOString();
   for (const a of rows) {
     const r = map.get(a.owner_id) ?? { total: 0, done: 0, pending: 0, overdue: 0 };
     r.total++;
     if (a.done) r.done++;
     else {
       r.pending++;
-      if (a.end_at && a.end_at < nowIso) r.overdue++;
+      if (isOverdue(a, now)) r.overdue++;
     }
     map.set(a.owner_id, r);
   }
@@ -380,6 +384,7 @@ function activities(db: DatabaseSync, f: ReportFilter, now: Date): ActivityRow[]
 
 export function buildReport(db: DatabaseSync, f: ReportFilter, now = new Date()): Report {
   const deals = scopedDeals(db, f);
+  const pipelineType = (f.pipelineId && many<{ type: PipelineType }>(db, "SELECT type FROM pipeline WHERE id = ?", f.pipelineId)[0]?.type) || "comercial";
   const users = new Map(many<{ id: string; name: string }>(db, "SELECT id, name FROM app_user").map((u) => [u.id, u.name]));
   const nameOf = (id: string | null) => (id ? (users.get(id) ?? "Usuário removido") : "Sem responsável");
 
@@ -415,8 +420,9 @@ export function buildReport(db: DatabaseSync, f: ReportFilter, now = new Date())
   }
 
   return {
+    pipelineType,
     summary: summarize(deals, f),
-    funnel: funnel(db, deals, f),
+    funnel: funnel(db, deals, f, pipelineType),
     forecast: forecast(deals),
     months: byMonth(deals, f),
     lossReasons: lossReasons(deals, f),

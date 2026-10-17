@@ -7,6 +7,8 @@ import { TAG_ENTITIES, type Tag, type TagEntity } from "../../db/tags";
 import { useSession } from "../session";
 import { Switch } from "../ui/Switch";
 import { TagChip } from "../ui/TagPicker";
+import { colorLabel } from "../../lib/colors";
+import { errorText } from "../../lib/errors";
 
 const ENTITY_LABEL: Record<TagEntity, string> = {
   person: "Contato",
@@ -26,7 +28,7 @@ export function ColorPicker({ value, onChange }: { value: string; onChange: (c: 
         <button
           key={c}
           type="button"
-          title={c}
+          title={colorLabel(c)}
           onClick={() => onChange(c)}
           className={cn("h-6 w-6 rounded-full border-2", value === c ? "border-gray-800 dark:border-white" : "border-transparent")}
           style={{ background: badgePalette[c].fg }}
@@ -61,7 +63,7 @@ export function TagsSettings() {
       await fn();
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     }
   };
 

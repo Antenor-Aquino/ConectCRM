@@ -14,21 +14,41 @@ import { taskTiming } from "../../lib/taskTiming";
 import { useSession } from "../session";
 import { Avatar } from "../ui/Avatar";
 import { TaskModal, type TaskRequest } from "./TaskModal";
+import { errorText } from "../../lib/errors";
 
-type Period = "hoje" | "amanha" | "semana" | "mes" | "todas" | "atrasadas" | "proximos7";
+type Period = "hoje" | "amanha" | "semana" | "mes" | "todas" | "personalizado" | "atrasadas" | "proximos7";
 type Status = "pendentes" | "concluidas" | "todas";
 type Scope = "minhas" | "equipe" | "todas";
 
-const PERIOD_LABEL: Record<Exclude<Period, "atrasadas" | "proximos7">, string> = { hoje: "Hoje", amanha: "Amanhã", semana: "Esta semana", mes: "Este mês", todas: "Todas" };
+const PERIOD_LABEL: Record<Exclude<Period, "atrasadas" | "proximos7">, string> = {
+  hoje: "Hoje",
+  amanha: "Amanhã",
+  semana: "Esta semana",
+  mes: "Este mês",
+  todas: "Todas",
+  personalizado: "Personalizado",
+};
+/** Período personalizado: dias inteiros, de/até inclusive (AAAA-MM-DD, local). */
+interface CustomRange {
+  start: string;
+  end: string;
+}
+const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const parseYmd = (s: string) => {
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(y!, m! - 1, d!);
+};
 const MONTHS = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 const WEEKDAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const pad = (n: number) => String(n).padStart(2, "0");
 const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 
-function range(p: Period): { from?: string; to?: string; overdue?: boolean } {
+function range(p: Period, custom?: CustomRange): { from?: string; to?: string; overdue?: boolean } {
   const t = dayStart(new Date());
   switch (p) {
+    case "personalizado":
+      return custom?.start && custom.end ? { from: parseYmd(custom.start).toISOString(), to: addDays(parseYmd(custom.end), 1).toISOString() } : {};
     case "hoje":
       return { from: t.toISOString(), to: addDays(t, 1).toISOString() };
     case "amanha":
@@ -77,6 +97,10 @@ export function TasksView({
   const { user, users } = useSession();
   const [mode, setMode] = useState<"lista" | "calendario">(initialMode ?? "lista");
   const [period, setPeriod] = useState<Period>("semana");
+  const [custom, setCustom] = useState<CustomRange>(() => {
+    const t = new Date();
+    return { start: ymd(new Date(t.getFullYear(), t.getMonth(), 1)), end: ymd(new Date(t.getFullYear(), t.getMonth() + 1, 0)) };
+  });
   const [status, setStatus] = useState<Status>("pendentes");
   const [scope, setScope] = useState<Scope>(user.role === "vendedor" ? "minhas" : "todas");
   const [ownerId, setOwnerId] = useState("");
@@ -115,12 +139,12 @@ export function TasksView({
     const r =
       mode === "calendario"
         ? { from: addDays(month, -month.getDay()).toISOString(), to: addDays(month, 42 - month.getDay()).toISOString() }
-        : range(period);
+        : range(period, custom);
     const done = status === "pendentes" || r.overdue ? false : status === "concluidas" ? true : undefined;
     const [list, c] = await Promise.all([call("activities.list", { ...base, ...r, done, limit: 1000 }), call("activities.counters", base)]);
     setRows(list);
     setCounters(c);
-  }, [base, period, status, mode, month]);
+  }, [base, period, custom, status, mode, month]);
 
   useEffect(() => {
     const t = setTimeout(() => void load(), search ? 200 : 0);
@@ -210,7 +234,7 @@ export function TasksView({
                   key={f.id}
                   type="button"
                   title={`Baixar ${f.filename}`}
-                  onClick={() => void downloadVersion(f.version_id).catch((e: unknown) => alert(e instanceof Error ? e.message : String(e)))}
+                  onClick={() => void downloadVersion(f.version_id).catch((e: unknown) => alert(errorText(e)))}
                   className="inline-flex max-w-[220px] items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-600 hover:border-brand-300 hover:text-brand-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400"
                 >
                   <Paperclip size={11} />
@@ -265,6 +289,28 @@ export function TasksView({
             {PERIOD_LABEL[p]}
           </button>
         ))}
+        {period === "personalizado" && mode === "lista" && (
+          <div className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 ring-1 ring-inset ring-gray-300 dark:ring-gray-700">
+            <CalendarDays size={15} className="text-gray-500" />
+            <input
+              type="date"
+              aria-label="De"
+              value={custom.start}
+              max={custom.end || undefined}
+              onChange={(e) => e.target.value && setCustom((c) => ({ start: e.target.value, end: c.end < e.target.value ? e.target.value : c.end }))}
+              className="bg-transparent text-theme-sm text-gray-700 outline-none dark:text-gray-300"
+            />
+            <span className="text-gray-400">-</span>
+            <input
+              type="date"
+              aria-label="Até"
+              value={custom.end}
+              min={custom.start || undefined}
+              onChange={(e) => e.target.value && setCustom((c) => ({ end: e.target.value, start: c.start > e.target.value ? e.target.value : c.start }))}
+              className="bg-transparent text-theme-sm text-gray-700 outline-none dark:text-gray-300"
+            />
+          </div>
+        )}
         <div className="ml-auto flex items-center gap-1 rounded-lg bg-gray-100 p-1 dark:bg-white/5">
           {(
             [

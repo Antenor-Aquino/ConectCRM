@@ -1,7 +1,7 @@
 // Campo de busca com lista de resultados e opção de criar novo
 // (Contato: "Buscar por nome, telefone ou e-mail"; Organização; Vinculado a).
 import { useEffect, useState, type ReactNode } from "react";
-import { ChevronDown, Plus, X } from "lucide-react";
+import { ArrowLeftRight, ChevronDown, Pencil, Plus, X } from "lucide-react";
 import { cn } from "@tailadmin";
 import { Popover } from "./Popover";
 import { inputClass } from "./form";
@@ -22,6 +22,8 @@ export function Combobox({
   createLabel = "Criar",
   dashed,
   emptyText = "Nada encontrado.",
+  onOpenValue,
+  openTitle = "Abrir o cadastro",
 }: {
   value: ComboItem | null;
   onChange: (item: ComboItem | null) => void;
@@ -33,6 +35,9 @@ export function Combobox({
   /** Visual de botão tracejado quando vazio ("Vincular ou criar organização"). */
   dashed?: ReactNode;
   emptyText?: string;
+  /** Com valor: clicar no nome abre o cadastro (ex.: editar o contato); a busca vai para o botão "trocar". */
+  onOpenValue?: (item: ComboItem) => void;
+  openTitle?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
@@ -60,10 +65,28 @@ export function Combobox({
   const trigger = value ? (
     <div className={cn(inputClass, "flex items-center gap-2")}>
       {value.icon}
-      <button type="button" className="min-w-0 flex-1 truncate text-left" onClick={() => setOpen(true)}>
-        {value.label}
-        {value.sublabel && <span className="ml-1.5 text-theme-xs text-gray-400">{value.sublabel}</span>}
-      </button>
+      {onOpenValue ? (
+        <>
+          <button
+            type="button"
+            title={openTitle}
+            className="group flex min-w-0 flex-1 items-center gap-1.5 text-left text-brand-600 dark:text-brand-400"
+            onClick={() => onOpenValue(value)}
+          >
+            <span className="truncate group-hover:underline">{value.label}</span>
+            {value.sublabel && <span className="truncate text-theme-xs text-gray-400">{value.sublabel}</span>}
+            <Pencil size={12} className="shrink-0 opacity-0 transition group-hover:opacity-70" />
+          </button>
+          <button type="button" title="Trocar" className="text-gray-400 hover:text-gray-600" onClick={() => setOpen(true)}>
+            <ArrowLeftRight size={14} />
+          </button>
+        </>
+      ) : (
+        <button type="button" className="min-w-0 flex-1 truncate text-left" onClick={() => setOpen(true)}>
+          {value.label}
+          {value.sublabel && <span className="ml-1.5 text-theme-xs text-gray-400">{value.sublabel}</span>}
+        </button>
+      )}
       <button type="button" title="Remover" className="text-gray-400 hover:text-gray-600" onClick={() => pick(null)}>
         <X size={14} />
       </button>

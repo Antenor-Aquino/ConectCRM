@@ -2,17 +2,20 @@
 // classificação; data, validade, restrito, palavras-chave e vínculos valem
 // para todos. Os vínculos da tela de origem já vêm marcados.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Loader2, Lock, Paperclip, X } from "lucide-react";
-import { TaButton, TaInput, TaModal, TaSelect, TaTextarea } from "@tailadmin";
+import { AlertTriangle, Info, Loader2, Lock, Paperclip, Sparkles, X } from "lucide-react";
+import { cn, TaButton, TaInput, TaModal, TaSelect, TaTextarea } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { DocLink, DocLinkType, DocumentType } from "../../db/documents";
 import { prepareFile, saveContent, type PreparedFile } from "../../lib/documentFiles";
+import { loadAiSettings, type AiSettings } from "../../lib/ai";
 import { formatBytes } from "../../lib/files";
+import { checkTranscription, transcribeFile, transcriptionNote, type TranscribeCheck } from "../../lib/transcribe";
 import { Field, SectionLabel } from "../ui/form";
 import { Switch } from "../ui/Switch";
 import { TagPicker } from "../ui/TagPicker";
 import { FileTypeIcon } from "./docUi";
 import { LinkEditor } from "./LinkEditor";
+import { errorText } from "../../lib/errors";
 
 interface Row {
   key: string;
@@ -24,7 +27,15 @@ interface Row {
   duplicates: { id: string; name: string; type_name: string | null }[];
   /** Arquivo já existe: vincular o documento existente em vez de enviar de novo. */
   useExisting: boolean;
+  /** O que dá para transcrever deste arquivo (null = avaliando). */
+  check: TranscribeCheck | null;
+  /** Usuário pediu a transcrição (opcional; vira nota no cadastro). */
+  transcribe: boolean;
 }
+
+/** Onde fica a nota da transcrição: a tela de origem ou o 1º vínculo (cartão primeiro). */
+const NOTE_ORDER: DocLinkType[] = ["deal", "activity", "person", "organization"];
+const NOTE_PLACE: Record<DocLinkType, string> = { deal: "no cartão", activity: "na tarefa", person: "no contato", organization: "na organização" };
 
 const baseName = (filename: string) =>
   filename
@@ -64,9 +75,13 @@ export function UploadModal({
   const [links, setLinks] = useState<DocLink[]>([]);
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** Documentos salvos, mas alguma transcrição falhou: mostra o resumo antes de fechar. */
+  const [done, setDone] = useState<{ ids: string[]; errors: string[] } | null>(null);
+  const [ai, setAi] = useState<AiSettings | null | undefined>(undefined);
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    void loadAiSettings().then(setAi, () => setAi(null));
     void call("documentTypes.list", {}).then(setTypes);
     if (context) void call("documents.contextLinks", context).then(setLinks);
   }, [context]);
@@ -81,6 +96,8 @@ export function UploadModal({
       typeId: "",
       duplicates: [],
       useExisting: false,
+      check: null,
+      transcribe: false,
     }));
     setRows((r) => [...r, ...fresh]);
     for (const row of fresh) {
@@ -89,7 +106,7 @@ export function UploadModal({
           const duplicates = await call("documents.bySha", { sha256: prepared.sha256 });
           setRows((r) => r.map((x) => (x.key === row.key ? { ...x, prepared, duplicates, useExisting: duplicates.length > 0 } : x)));
         })
-        .catch((e: unknown) => setRows((r) => r.map((x) => (x.key === row.key ? { ...x, error: e instanceof Error ? e.message : String(e) } : x))));
+        .catch((e: unknown) => setRows((r) => r.map((x) => (x.key === row.key ? { ...x, error: errorText(e) } : x))));
     }
   };
   const started = useRef(false);
@@ -98,6 +115,18 @@ export function UploadModal({
     started.current = true;
     addFiles(files);
   }, [files]);
+
+  // Avalia a transcrição de cada arquivo lido (tipo, tamanho, páginas, IA configurada).
+  const checking = useRef(new Set<string>());
+  useEffect(() => {
+    if (ai === undefined) return;
+    for (const r of rows) {
+      if (!r.prepared || r.check || checking.current.has(r.key)) continue;
+      checking.current.add(r.key);
+      void checkTranscription(r.prepared, ai).then((check) => setRows((x) => x.map((y) => (y.key === r.key ? { ...y, check } : y))));
+    }
+  }, [rows, ai]);
+  const noteTarget = context ?? NOTE_ORDER.flatMap((t) => links.filter((l) => l.type === t)).map(({ type, id }) => ({ type, id }))[0] ?? null;
 
   const update = (key: string, patch: Partial<Row>) => setRows((r) => r.map((x) => (x.key === key ? { ...x, ...patch } : x)));
 
@@ -117,16 +146,41 @@ export function UploadModal({
   const save = async () => {
     setError(null);
     const ids: string[] = [];
+    const errors: string[] = [];
     const refs = links.map(({ type, id, auto }) => ({ type, id, auto }));
+    const toTranscribe = rows.filter((r) => r.transcribe && r.check && r.check.level !== "no" && noteTarget);
     try {
       for (const [i, r] of rows.entries()) {
         setSaving(multiple ? `Salvando ${i + 1} de ${rows.length}…` : "Salvando…");
+        // Transcrição primeiro: o texto também vai para a busca do GED.
+        let transcript: string | null = null;
+        if (toTranscribe.includes(r)) {
+          const label = toTranscribe.length > 1 ? `Transcrevendo ${toTranscribe.indexOf(r) + 1} de ${toTranscribe.length}` : "Transcrevendo";
+          setSaving(`${label}…`);
+          try {
+            transcript = await transcribeFile(r.prepared!, r.check!, ai ?? null, (step) => setSaving(`${label} (${step})…`));
+          } catch (e) {
+            errors.push(`${r.useExisting ? r.duplicates[0]!.name : r.name}: ${errorText(e)}`);
+          }
+          setSaving(multiple ? `Salvando ${i + 1} de ${rows.length}…` : "Salvando…");
+        }
+        const note = async (docId: string, docName: string) => {
+          if (transcript && noteTarget)
+            await call("notes.add", {
+              entityType: noteTarget.type,
+              entityId: noteTarget.id,
+              body: transcriptionNote(docName, r.check!, transcript),
+              documentIds: [docId],
+            });
+        };
         if (r.useExisting && r.duplicates[0]) {
           await call("documents.addLinks", { ids: [r.duplicates[0].id], links: refs });
           ids.push(r.duplicates[0].id);
+          await note(r.duplicates[0].id, r.duplicates[0].name);
           continue;
         }
-        const file = await saveContent(r.prepared!, r.name);
+        const prepared = transcript && !r.prepared!.text ? { ...r.prepared!, text: transcript } : r.prepared!;
+        const file = await saveContent(prepared, r.name);
         ids.push(
           await call("documents.create", {
             name: r.name,
@@ -140,10 +194,12 @@ export function UploadModal({
             file,
           }),
         );
+        await note(ids.at(-1)!, r.name);
       }
-      onSaved(ids);
+      if (errors.length) setDone({ ids, errors });
+      else onSaved(ids);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     } finally {
       setSaving(null);
     }
@@ -213,6 +269,9 @@ export function UploadModal({
                     ))}
                   </TaSelect>
                 </div>
+              )}
+              {r.check && noteTarget && (
+                <TranscribeOption row={r} place={NOTE_PLACE[noteTarget.type]} onChange={(transcribe) => update(r.key, { transcribe })} />
               )}
             </li>
           ))}
@@ -294,16 +353,61 @@ export function UploadModal({
         <LinkEditor value={links} onChange={setLinks} />
 
         {error && <p className="mt-3 rounded-lg bg-error-50 px-3 py-2 text-theme-sm text-error-700">{error}</p>}
-        <div className="mt-5 flex items-center gap-2 border-t border-gray-100 pt-4 dark:border-gray-800">
-          <TaButton variant="primary" disabled={!ready || !!saving} onClick={() => void save()}>
-            {saving ?? "Salvar"}
-          </TaButton>
-          <TaButton variant="outline" disabled={!!saving} onClick={onClose}>
-            Cancelar
-          </TaButton>
-          {!ready && rows.length > 0 && <span className="text-theme-xs text-gray-400">Dê nome e classificação a cada arquivo.</span>}
-        </div>
+        {done ? (
+          <div className="mt-3 rounded-lg bg-warning-50 px-3 py-2 text-theme-sm text-warning-800">
+            <p className="font-medium">Documento(s) salvo(s), mas a transcrição não foi feita:</p>
+            <ul className="mt-1 list-disc pl-5 text-theme-xs">
+              {done.errors.map((e) => (
+                <li key={e}>{e}</li>
+              ))}
+            </ul>
+            <div className="mt-3">
+              <TaButton size="sm" variant="primary" onClick={() => onSaved(done.ids)}>
+                Concluir
+              </TaButton>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-5 flex items-center gap-2 border-t border-gray-100 pt-4 dark:border-gray-800">
+            <TaButton variant="primary" disabled={!ready || !!saving} onClick={() => void save()}>
+              {saving ?? "Salvar"}
+            </TaButton>
+            <TaButton variant="outline" disabled={!!saving} onClick={onClose}>
+              Cancelar
+            </TaButton>
+            {!ready && rows.length > 0 && <span className="text-theme-xs text-gray-400">Dê nome e classificação a cada arquivo.</span>}
+          </div>
+        )}
       </div>
     </TaModal>
+  );
+}
+
+/** Pergunta, por arquivo, se é para transcrever (com o aviso do que esperar). */
+function TranscribeOption({ row, place, onChange }: { row: Row; place: string; onChange: (v: boolean) => void }) {
+  const c = row.check!;
+  if (c.level === "no" && !c.kind && /Já é um arquivo de texto|Este tipo de arquivo/.test(c.message)) return null;
+  const can = c.level !== "no";
+  return (
+    <div
+      className={cn(
+        "mt-2 rounded-lg px-3 py-2 text-theme-xs",
+        !can
+          ? "bg-gray-50 text-gray-500 dark:bg-white/5"
+          : row.transcribe
+            ? "bg-brand-50 text-gray-700 dark:bg-brand-500/10 dark:text-gray-300"
+            : "bg-gray-50 text-gray-600 dark:bg-white/5",
+      )}
+    >
+      <label className={cn("flex items-center gap-2 font-medium", can ? "cursor-pointer" : "cursor-not-allowed")}>
+        <input type="checkbox" disabled={!can} checked={can && row.transcribe} onChange={(e) => onChange(e.target.checked)} />
+        <Sparkles size={13} className={can ? "text-brand-500" : "text-gray-400"} />
+        Transcrever com IA? <span className="font-normal text-gray-500">O texto vira uma nota {place}.</span>
+      </label>
+      <p className={cn("mt-1 flex items-start gap-1.5 pl-6", c.level === "warn" ? "text-warning-700" : c.level === "no" ? "text-gray-500" : "text-gray-500")}>
+        {c.level === "warn" ? <AlertTriangle size={12} className="mt-0.5 shrink-0" /> : <Info size={12} className="mt-0.5 shrink-0" />}
+        {c.message}
+      </p>
+    </div>
   );
 }

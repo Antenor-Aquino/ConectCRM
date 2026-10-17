@@ -29,7 +29,9 @@ export const DATA_TOOLS: ToolDef[] = [
       type: "object",
       properties: {
         texto: str("Parte do título, do contato ou da organização (opcional)"),
-        status: str("Situação; padrão: open", { enum: ["open", "won", "lost", "all"] }),
+        status: str("Situação; padrão: open. won = ganho (comercial), resolvido (operacional) ou concluído (projeto); lost = perdido, não resolvido ou não concluído", {
+          enum: ["open", "won", "lost", "all"],
+        }),
         funil: str("Nome (ou parte) do funil (opcional)"),
         responsavel: str("Nome (ou parte) do usuário ou da equipe (opcional)"),
         limite: { type: "integer", description: "Máximo de cartões (1 a 30; padrão 20)" },
@@ -61,7 +63,9 @@ export const DATA_TOOLS: ToolDef[] = [
   },
   {
     name: "listar_tarefas",
-    description: "Tarefas pendentes: atrasadas, de hoje, dos próximos 7 dias ou todas as pendentes, com cartão vinculado e responsável.",
+    description:
+      "Tarefas pendentes: atrasadas (finalização vencida ou, sem finalização, início antes de hoje; da mais atrasada para a menos), de hoje, dos próximos 7 dias " +
+      "ou todas as pendentes, com cartão vinculado, responsável e atrasadaHaDias.",
     parameters: {
       type: "object",
       properties: {
@@ -99,15 +103,19 @@ export const DATA_TOOLS: ToolDef[] = [
 // ---------- Card de resposta ----------
 
 export type Tom = "alerta" | "positivo" | "neutro";
-export type ActionType = "criar_tarefa" | "adicionar_nota" | "abrir_cartao";
+export type ActionType = "criar_tarefa" | "adicionar_nota" | "abrir_cartao" | "criar_cartao";
 
 export interface CopilotAction {
   tipo: ActionType;
   /** Texto do botão, ex.: "Criar tarefa: ligar para Regina amanhã 10h". */
   rotulo: string;
+  /** Cartão da ação (vazio em criar_cartao). */
   cartaoId: string;
-  /** criar_tarefa: título da tarefa. */
+  /** criar_tarefa: título da tarefa; criar_cartao: título do cartão. */
   titulo: string | null;
+  /** criar_cartao: funil e etapa (ids vindos de estrutura_do_crm; etapa null = primeira). */
+  funilId: string | null;
+  etapaId: string | null;
   /** criar_tarefa: data/hora local AAAA-MM-DDTHH:MM. */
   quando: string | null;
   /** adicionar_nota: texto da nota. */
@@ -162,28 +170,35 @@ export const RESPOND_TOOL: ToolDef = {
       },
       acoes: {
         type: "array",
-        description: "Até 3 ações que o usuário pode aplicar com um clique (só com cartaoId vindo das ferramentas); [] quando não houver",
+        description:
+          "Até 3 ações que o usuário aplica com um clique (cartaoId vindo das ferramentas; em criar_cartao, funilId/etapaId de estrutura_do_crm); [] quando não houver",
         items: {
           type: "object",
           properties: {
-            tipo: str("Tipo da ação", { enum: ["criar_tarefa", "adicionar_nota", "abrir_cartao"] }),
-            rotulo: str("Texto do botão"),
-            cartaoId: str("Id do cartão"),
-            titulo: str("criar_tarefa: título da tarefa; senão null", { nullable: true }),
+            tipo: str("Tipo da ação", { enum: ["criar_tarefa", "adicionar_nota", "abrir_cartao", "criar_cartao"] }),
+            rotulo: str("Texto do botão, no imperativo (ex.: 'Criar cartão \"Conserto Gaveta Miguel\" em Casa › A fazer')"),
+            cartaoId: str("Id do cartão; em criar_cartao, string vazia"),
+            titulo: str("criar_tarefa: título da tarefa; criar_cartao: título do cartão; senão null", { nullable: true }),
+            funilId: str("criar_cartao: id do funil (de estrutura_do_crm); senão null", { nullable: true }),
+            etapaId: str("criar_cartao: id da etapa (de estrutura_do_crm; null = primeira etapa); senão null", { nullable: true }),
             quando: str("criar_tarefa: data e hora local AAAA-MM-DDTHH:MM; senão null", { nullable: true }),
             texto: str("adicionar_nota: texto da nota; senão null", { nullable: true }),
           },
-          required: ["tipo", "rotulo", "cartaoId", "titulo", "quando", "texto"],
+          required: ["tipo", "rotulo", "cartaoId", "titulo", "funilId", "etapaId", "quando", "texto"],
         },
       },
-      sugestoes: { type: "array", description: "2 a 4 perguntas de acompanhamento", items: { type: "string" } },
+      sugestoes: {
+        type: "array",
+        description: "2 a 4 próximos pedidos que o usuário pode fazer com um clique, escritos como o usuário falaria (imperativo, sem '?'), ex.: 'Liste minhas tarefas de hoje'",
+        items: { type: "string" },
+      },
     },
     required: ["titulo", "subtitulo", "tabela", "insights", "acoes", "sugestoes"],
   },
 };
 
 const TOMS: Tom[] = ["alerta", "positivo", "neutro"];
-const ACTIONS: ActionType[] = ["criar_tarefa", "adicionar_nota", "abrir_cartao"];
+const ACTIONS: ActionType[] = ["criar_tarefa", "adicionar_nota", "abrir_cartao", "criar_cartao"];
 
 /** Normaliza o que veio da IA (campos faltando, tipos trocados, excesso de itens). */
 export function normalizeCard(raw: unknown): CopilotCard {
@@ -208,15 +223,17 @@ export function normalizeCard(raw: unknown): CopilotCard {
       .slice(0, 3)
       .map((i: any) => ({ texto: String(i.texto), tom: (TOMS.includes(i.tom) ? i.tom : "neutro") as Tom })),
     acoes: (Array.isArray(r.acoes) ? r.acoes : [])
-      .filter((a: any) => ACTIONS.includes(a?.tipo) && a?.cartaoId && a?.rotulo)
+      .filter((a: any) => ACTIONS.includes(a?.tipo) && a?.rotulo && (a.tipo === "criar_cartao" ? a.funilId && a.titulo : a.cartaoId))
       .filter((a: any) => a.tipo !== "criar_tarefa" || a.titulo)
       .filter((a: any) => a.tipo !== "adicionar_nota" || a.texto)
       .slice(0, 3)
       .map((a: any) => ({
         tipo: a.tipo as ActionType,
         rotulo: String(a.rotulo),
-        cartaoId: String(a.cartaoId),
+        cartaoId: a.cartaoId ? String(a.cartaoId) : "",
         titulo: a.titulo ? String(a.titulo) : null,
+        funilId: a.funilId ? String(a.funilId) : null,
+        etapaId: a.etapaId ? String(a.etapaId) : null,
         quando: a.quando ? String(a.quando) : null,
         texto: a.texto ? String(a.texto) : null,
       })),

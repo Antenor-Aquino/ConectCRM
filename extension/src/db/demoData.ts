@@ -36,7 +36,7 @@ export function seedDemoData(db: DatabaseSync, workspaceId: string): void {
     const reasons = [createLossReason(db, ctx, "Preço"), createLossReason(db, ctx, "Escolheu concorrente"), createLossReason(db, ctx, "Sem orçamento")];
     const origem = createCustomField(db, ctx, {
       entity: "person",
-      name: "Origem do Lead",
+      name: "Origem do contato",
       fieldType: "select",
       options: [{ label: "Instagram" }, { label: "Indicação" }, { label: "Site" }],
     });
@@ -76,7 +76,7 @@ export function seedDemoData(db: DatabaseSync, workspaceId: string): void {
       name: "PowerCubus",
       type: "comercial",
       stages: [
-        { name: "Prospect", color: "red", probability: 10 },
+        { name: "Prospecção", color: "red", probability: 10 },
         { name: "Contato", color: "purple", probability: 30 },
         { name: "Reunião", color: "slate", probability: 50 },
         { name: "Pendência Pedagógica", color: "cyan", probability: 70 },
@@ -145,9 +145,9 @@ export function seedDemoData(db: DatabaseSync, workspaceId: string): void {
     }
 
     // Funis operacional e de projeto
-    const suporte = createPipeline(db, ctx, { name: "Suporte", type: "operacional", stages: [{ name: "Novo ticket", color: "red" }, { name: "Em atendimento", color: "amber" }, { name: "Resolvido", color: "green" }] });
+    const suporte = createPipeline(db, ctx, { name: "Suporte", type: "operacional", stages: [{ name: "Novo ticket", color: "red" }, { name: "Em atendimento", color: "amber" }, { name: "Aguardando cliente", color: "blue" }] });
     createCard(db, ctx, { pipelineId: suporte, title: "Falha no acesso do cliente", description: "Usuário não consegue entrar no portal.", slaAt: at(1, 17), personId: people.mari, ownerId: gestor });
-    const projeto = createPipeline(db, ctx, { name: "Implantação PUC-PR", type: "projeto", stages: [{ name: "A fazer" }, { name: "Em andamento", color: "blue" }, { name: "Concluído", color: "green" }] });
+    const projeto = createPipeline(db, ctx, { name: "Implantação PUC-PR", type: "projeto", stages: [{ name: "A fazer" }, { name: "Em andamento", color: "blue" }, { name: "Em revisão", color: "amber" }] });
     createCard(db, ctx, { pipelineId: projeto, title: "Treinamento dos coordenadores", startAt: at(3, 9), dueAt: at(10, 18), organizationId: orgs.puc, ownerId: gestor });
 
     // Tarefas

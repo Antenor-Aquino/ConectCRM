@@ -1,6 +1,7 @@
 // Recorte de tela (portado do background.js do wa-pipedrive): captura a aba
 // ativa, injeta um seletor de retângulo e guarda o recorte para o popup.
 import { addClip, CLIP_LAST_KEY, type ClipResult } from "../lib/clips";
+import { errorText } from "../lib/errors";
 
 export interface ClipStartMessage {
   target: "background";
@@ -87,7 +88,7 @@ async function crop(dataUrl: string, r: { x: number; y: number; w: number; h: nu
 export async function startClip(): Promise<ClipResult> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) return { ok: false, error: "Nenhuma aba ativa." };
-  if (/^(chrome|edge|about|chrome-extension):/i.test(tab.url ?? "")) {
+  if (/^(chrome|chrome-search|chrome-untrusted|edge|about|chrome-extension|devtools):/i.test(tab.url ?? "") || /chrome\.google\.com\/webstore|chromewebstore\.google\.com/i.test(tab.url ?? "")) {
     return { ok: false, error: "Não é possível recortar páginas internas do navegador. Abra um site comum (ex.: WhatsApp Web)." };
   }
   let dataUrl: string;
@@ -95,14 +96,20 @@ export async function startClip(): Promise<ClipResult> {
     // Captura ANTES do seletor, para não pegar o escurecimento.
     dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
   } catch (e) {
-    return { ok: false, error: `Falha ao capturar a tela: ${e instanceof Error ? e.message : String(e)}` };
+    return { ok: false, error: `Falha ao capturar a tela: ${errorText(e)}` };
   }
   let rect: Awaited<ReturnType<typeof clipOverlay>>;
   try {
     const [res] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: clipOverlay, args: [dataUrl] });
     rect = (res?.result as typeof rect) ?? null;
   } catch {
-    return { ok: false, error: "Não foi possível abrir o seletor nesta página." };
+    // Páginas onde o Chrome não deixa extensões desenharem o seletor (Nova guia,
+    // páginas internas, loja de extensões): guarda a tela visível inteira.
+    const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+    const size = await createImageBitmap(await (await fetch(dataUrl)).blob());
+    const count = await addClip({ base64, w: size.width, h: size.height });
+    size.close();
+    return { ok: true, count, full: true };
   }
   if (!rect) return { ok: false, canceled: true };
   const count = await addClip({ base64: await crop(dataUrl, rect), w: Math.round(rect.w), h: Math.round(rect.h) });
@@ -115,7 +122,7 @@ export async function runClip(): Promise<ClipResult> {
   try {
     r = await startClip();
   } catch (e) {
-    r = { ok: false, error: e instanceof Error ? e.message : String(e) };
+    r = { ok: false, error: errorText(e) };
   }
   await chrome.storage.local.set({ [CLIP_LAST_KEY]: r });
   return r;

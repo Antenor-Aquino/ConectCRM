@@ -15,6 +15,16 @@
 Permissões: as mesmas do quadro (administrador vê tudo; gestor, a equipe;
 vendedor, os seus; cartões sem responsável contam para todos).
 
+### 1.1 Funil operacional ou de projeto
+
+Com um funil operacional ou de projeto escolhido, o relatório usa os termos
+do tipo (Resolvidos/Não resolvidos, Concluídos/Não concluídos; taxa de
+resolução/conclusão; tempo médio até a resolução/conclusão; última etapa da
+conversão "Resolvido"/"Concluído") e mostra **quantidades** em vez de R$.
+Ficam de fora o que só faz sentido em vendas: ticket médio, previsão
+ponderada, previsão por etapa e produtos vendidos (também no Excel). Sem
+funil escolhido o relatório continua sendo dos funis comerciais, sem mudança.
+
 ## 2. Indicadores
 
 | Indicador | Regra |

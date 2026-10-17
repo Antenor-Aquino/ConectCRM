@@ -17,6 +17,7 @@ import { DocumentsPanel } from "../documents/DocumentsPanel";
 import { ChangeLogList, CustomValuesView, DrawerShell, InfoRow, RelatedCards, RelatedTasks, Tabs } from "./detailParts";
 import { MergeModal } from "./MergeModal";
 import { PersonFormModal } from "./PersonFormModal";
+import { errorText } from "../../lib/errors";
 
 type Tab = "negocios" | "tarefas" | "documentos" | "notas" | "historico";
 
@@ -98,7 +99,7 @@ export function PersonDetail({
               onChanged();
               onClose();
             } catch (e) {
-              setError(e instanceof Error ? e.message : String(e));
+              setError(errorText(e));
             }
           }}
         >

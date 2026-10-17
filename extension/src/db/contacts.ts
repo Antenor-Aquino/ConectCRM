@@ -120,7 +120,7 @@ export interface PersonListItem extends Person {
 }
 
 /** Contato privado só aparece para o responsável, quem criou e administradores (spec 03). */
-function personVisibility(viewer: Viewer | null | undefined, alias = "p"): { sql: string; params: SqlValue[] } {
+export function personVisibility(viewer: Viewer | null | undefined, alias = "p"): { sql: string; params: SqlValue[] } {
   if (!viewer || viewer.role === "admin") return { sql: "", params: [] };
   return {
     sql: ` AND (${alias}.is_private = 0 OR ${alias}.owner_id = ? OR ${alias}.created_by = ?)`,

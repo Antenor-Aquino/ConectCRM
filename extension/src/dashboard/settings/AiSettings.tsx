@@ -17,6 +17,7 @@ import {
   type AiSettings as Settings,
 } from "../../lib/ai";
 import { Field } from "../ui/form";
+import { errorText } from "../../lib/errors";
 
 const KEY_HELP: Record<AiProvider, string> = {
   gemini: "aistudio.google.com/apikey",
@@ -56,7 +57,7 @@ export function AiSettings() {
       const answer = await aiGenerate(s, "Responda apenas: OK");
       setMsg({ text: `Conexão com o ${AI_LABELS[prov]} funcionando (resposta: "${answer.slice(0, 40)}").`, kind: "ok" });
     } catch (e) {
-      setMsg({ text: e instanceof Error ? e.message : String(e), kind: "err" });
+      setMsg({ text: errorText(e), kind: "err" });
     } finally {
       setBusy(false);
     }
@@ -64,7 +65,7 @@ export function AiSettings() {
 
   return (
     <>
-      <TaPanel title="Inteligência artificial" subtitle="Usada no popup do WhatsApp para resumir recortes de tela e transcrever áudios. A chave fica só neste computador.">
+      <TaPanel title="Inteligência artificial" subtitle="Usada na janela da extensão (ícone na barra do Chrome) para resumir recortes de tela e transcrever áudios. A chave fica só neste computador.">
         <div className="grid gap-x-4 md:grid-cols-2">
           <Field label="Provedor">
             <TaSelect value={prov} onChange={(e) => set({ provider: e.target.value as AiProvider })}>
@@ -106,11 +107,11 @@ export function AiSettings() {
         {msg && <p className={`mt-3 rounded-lg px-3 py-2 text-theme-sm ${msg.kind === "ok" ? "bg-success-50 text-success-700" : "bg-error-50 text-error-700"}`}>{msg.text}</p>}
       </TaPanel>
 
-      <TaPanel title="Prompts dos recortes de tela" subtitle="Prompt 1 faz a análise comercial; prompt 2 só transcreve. Em branco usa o texto padrão.">
-        <PromptField label="Prompt 1 — análise comercial" value={s.prompt1} fallback={DEFAULT_AI_PROMPT} onChange={(v) => set({ prompt1: v })} />
-        <PromptField label="Prompt 2 — transcrição" value={s.prompt2} fallback={DEFAULT_AI_PROMPT2} onChange={(v) => set({ prompt2: v })} />
+      <TaPanel title="Instruções da IA para os recortes de tela" subtitle="A instrução 1 faz a análise comercial; a instrução 2 só transcreve. Em branco, usa o texto padrão.">
+        <PromptField label="Instrução 1 — análise comercial" value={s.prompt1} fallback={DEFAULT_AI_PROMPT} onChange={(v) => set({ prompt1: v })} />
+        <PromptField label="Instrução 2 — transcrição" value={s.prompt2} fallback={DEFAULT_AI_PROMPT2} onChange={(v) => set({ prompt2: v })} />
         <TaButton variant="primary" onClick={() => void save()}>
-          Salvar prompts
+          Salvar instruções
         </TaButton>
       </TaPanel>
     </>

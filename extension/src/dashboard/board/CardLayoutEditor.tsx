@@ -1,49 +1,24 @@
 // Editar funil → Cartão: escolha e ordem dos campos exibidos nos cartões
 // deste funil (do negócio, do contato, da organização e personalizados),
 // com prévia ao vivo no cartão mais recente do funil.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, RotateCcw, X } from "lucide-react";
 import { TaButton, TaSelect } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { CardFieldValue } from "../../db/cardFieldValues";
-import type { CustomField } from "../../db/customFields";
 import type { Pipeline } from "../../db/pipelines";
-import { builtinsFor, CUSTOM_PREFIX, DEFAULT_CARD_FIELDS, MAX_CARD_FIELDS } from "../../lib/cardFields";
+import { DEFAULT_CARD_FIELDS, MAX_CARD_FIELDS } from "../../lib/cardFields";
+import { useCardFieldOptions } from "./fieldOptions";
 import { CardFields } from "./KanbanCard";
 
-const KIND = { comercial: "deal", operacional: "ticket", projeto: "project" } as const;
-
-interface Option {
-  key: string;
-  label: string;
-  group: string;
-}
-
 export function CardLayoutEditor({ pipeline, keys, onChange }: { pipeline: Pipeline; keys: string[]; onChange: (keys: string[]) => void }) {
-  const [custom, setCustom] = useState<{ deal: CustomField[]; person: CustomField[]; organization: CustomField[] }>({ deal: [], person: [], organization: [] });
   const [preview, setPreview] = useState<{ title: string; fields: Record<string, CardFieldValue> } | null | undefined>(undefined);
-
-  useEffect(() => {
-    void Promise.all([
-      call("customFields.list", { entity: KIND[pipeline.type], pipelineId: pipeline.id }),
-      call("customFields.list", { entity: "person" }),
-      call("customFields.list", { entity: "organization" }),
-    ]).then(([deal, person, organization]) => setCustom({ deal, person, organization }));
-  }, [pipeline]);
+  const options = useCardFieldOptions(pipeline);
 
   useEffect(() => {
     void call("cards.previewFields", { pipelineId: pipeline.id, keys }).then(setPreview);
   }, [pipeline, keys]);
 
-  const options: Option[] = useMemo(
-    () => [
-      ...builtinsFor(pipeline.type).map((f) => ({ key: f.key, label: f.label, group: f.group })),
-      ...custom.deal.map((f) => ({ key: `${CUSTOM_PREFIX.deal}${f.id}`, label: f.name, group: "Campos personalizados do cartão" })),
-      ...custom.person.map((f) => ({ key: `${CUSTOM_PREFIX.person}${f.id}`, label: f.name, group: "Campos personalizados do contato" })),
-      ...custom.organization.map((f) => ({ key: `${CUSTOM_PREFIX.organization}${f.id}`, label: f.name, group: "Campos personalizados da organização" })),
-    ],
-    [pipeline.type, custom],
-  );
   const label = (k: string) => {
     const o = options.find((x) => x.key === k);
     return o ? `${o.label}` : "Campo removido";

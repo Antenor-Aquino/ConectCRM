@@ -2,7 +2,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { cn, TaSelect } from "@tailadmin";
 import { call } from "../rpc/client";
+import type { OpenCardMessage } from "../rpc/protocol";
 import type { DocumentType } from "../db/documents";
+import { errorText } from "../lib/errors";
 
 export function Section({ title, icon, children, aside }: { title: string; icon: ReactNode; children: ReactNode; aside?: ReactNode }) {
   return (
@@ -35,10 +37,31 @@ export function StatusText({ status }: { status: Status }) {
   );
 }
 
-export const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+export const errText = (e: unknown) => errorText(e);
 
-export function openCrm(query = ""): void {
-  void chrome.tabs.create({ url: chrome.runtime.getURL(`src/dashboard/dashboard.html${query}`) });
+/** Abre o CRM em tela cheia (aba do navegador). Se já houver uma aba do CRM,
+ * ativa ela em vez de abrir outra; com `cardId`, abre o cartão no funil dele. */
+export async function openCrm(cardId?: string): Promise<void> {
+  const base = chrome.runtime.getURL("src/dashboard/dashboard.html");
+  try {
+    const tabs = await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.TAB] });
+    const tab = tabs.find((c) => c.documentUrl?.startsWith(base) && c.tabId >= 0);
+    if (tab) {
+      if (cardId) {
+        const msg: OpenCardMessage = { target: "dashboard", kind: "open-card", tabId: tab.tabId, cardId };
+        const ok = await chrome.runtime.sendMessage(msg).catch(() => false);
+        // Aba sem resposta (ex.: tela de bloqueio): recarrega já no cartão.
+        if (ok !== true) await chrome.tabs.update(tab.tabId, { url: `${base}?negocio=${cardId}` });
+      }
+      await chrome.tabs.update(tab.tabId, { active: true });
+      if (tab.windowId >= 0) await chrome.windows.update(tab.windowId, { focused: true });
+      window.close();
+      return;
+    }
+  } catch {
+    // Chrome sem getContexts: abre uma aba nova.
+  }
+  await chrome.tabs.create({ url: cardId ? `${base}?negocio=${cardId}` : base });
   window.close();
 }
 

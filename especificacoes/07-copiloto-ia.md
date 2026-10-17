@@ -25,7 +25,7 @@ devolvem os valores já formatados; a IA só organiza esses números num card.
 | buscar_cartoes | Cartões por texto/situação/funil/responsável: etapa, valor, contato, dias na etapa, próxima tarefa, atrasadas, total e soma |
 | detalhar_cartao | Um cartão: contato, itens, tarefas pendentes e concluídas, últimas notas, etapas percorridas com dias |
 | resumo_comercial | Indicadores de um período (mesmos números da tela Relatórios) |
-| listar_tarefas | Atrasadas, de hoje, próximos 7 dias ou pendentes |
+| listar_tarefas | Atrasadas (finalização vencida ou, sem finalização, início antes de hoje; da mais atrasada para a menos), de hoje, próximos 7 dias ou pendentes |
 | negocios_parados | Abertos sem movimento (etapa, tarefa concluída ou nota) além do limite da etapa (ou 14 dias, ou o informado) |
 | buscar_contatos | Pessoas e organizações por nome, e-mail ou telefone, com os cartões abertos |
 | estrutura_do_crm | Funis e etapas, usuários, equipes, motivos de perda, tipos de tarefa |
@@ -37,13 +37,22 @@ a consulta devolve as opções e o Copiloto pergunta qual é.
 
 Título, subtítulo, até 3 destaques (valor-chave em negrito; vermelho para
 risco, verde para resultado positivo), tabela quando há linhas comparáveis
-(com **Exportar Excel**), perguntas sugeridas para continuar e **ações**.
+(com **Exportar Excel**), **sugestões** para continuar e **ações**.
+
+As sugestões são escritas como o próximo pedido do usuário, no imperativo e
+sem "?" (ex.: "Crie o cartão Conserto Gaveta Miguel no funil Casa"): o
+clique envia o texto como se o usuário tivesse digitado. "Sim", "pode" ou
+"crie" confirmam o que o Copiloto ofereceu na resposta anterior.
 
 ## 4. Ações sugeridas
 
 A IA pode sugerir até 3 ações por resposta, só com cartões que vieram das
-consultas: **criar tarefa** (título e data/hora), **adicionar nota** ou
-**abrir o cartão**. Nada é gravado sem o clique do usuário; a tarefa é
+consultas: **criar tarefa** (título e data/hora), **adicionar nota**,
+**abrir o cartão** ou **criar cartão** (título, funil e etapa; depois de
+criado, o botão abre o cartão). Pedido claro de criação não vira pergunta:
+o Copiloto confere o funil/etapa e se já existe cartão parecido e entrega o
+botão pronto. A busca de cartões tolera nomes ditados com erro ("Concerto"
+acha "Conserto"). Nada é gravado sem o clique do usuário; a tarefa é
 criada para o usuário atual e vinculada ao cartão.
 
 ## 5. Permissões e privacidade
@@ -53,3 +62,10 @@ criada para o usuário atual e vinculada ao cartão.
 - Vai para o provedor de IA só o que a pergunta precisa: a pergunta, o
   histórico da conversa e o resultado das consultas feitas (nunca o banco
   inteiro). A chave fica só neste computador.
+
+## Ajustes (0.2.9)
+
+- A cada pergunta o Copiloto consulta o CRM de novo (tarefas e negócios
+  criados durante a conversa entram na resposta); nunca repete uma resposta
+  anterior sem consultar.
+- "Eu/meu/minhas" = o usuário atual (filtra pelo responsável).

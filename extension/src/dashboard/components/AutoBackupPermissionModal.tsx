@@ -8,6 +8,7 @@ import { writeBackup, type AutoBackupSettings } from "../../lib/autoBackup";
 import { backupDocuments } from "../../lib/documentFiles";
 import type { PermissionedDirectoryHandle } from "../../lib/backupFolder";
 import { exportDatabase } from "../settings/BackupSettings";
+import { errorText } from "../../lib/errors";
 
 export function AutoBackupPermissionModal({ handle, settings, onClose }: { handle: PermissionedDirectoryHandle; settings: AutoBackupSettings; onClose: () => void }) {
   const [working, setWorking] = useState(false);
@@ -38,7 +39,7 @@ export function AutoBackupPermissionModal({ handle, settings, onClose }: { handl
               await writeBackup(exportDatabase, handle, settings, undefined, backupDocuments);
               onClose();
             } catch (e) {
-              setError(e instanceof Error ? e.message : String(e));
+              setError(errorText(e));
             } finally {
               setWorking(false);
             }

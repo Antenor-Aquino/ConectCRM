@@ -5,13 +5,16 @@ import { Trash2, Plus } from "lucide-react";
 import { TaButton, TaInput, TaModal, TaSelect, badgePalette, type BadgeColor } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { PipelineType } from "../../db/pipelines";
+import { colorLabel } from "../../lib/colors";
+import { errorText } from "../../lib/errors";
 
 const STAGE_COLORS = Object.keys(badgePalette) as BadgeColor[];
 
 const DEFAULT_STAGES: Record<PipelineType, string[]> = {
-  comercial: ["Prospect", "Contato", "Reunião", "Proposta", "Fechamento"],
-  operacional: ["Novo ticket", "Em atendimento", "Aguardando cliente", "Resolvido"],
-  projeto: ["A fazer", "Em andamento", "Em revisão", "Concluído"],
+  comercial: ["Prospecção", "Contato", "Reunião", "Proposta", "Fechamento"],
+  // Sem etapa "Resolvido"/"Concluído": o desfecho é marcado pelos botões do cartão.
+  operacional: ["Novo ticket", "Em atendimento", "Aguardando cliente", "Em validação"],
+  projeto: ["A fazer", "Em andamento", "Em revisão", "Entrega"],
 };
 
 interface DraftStage {
@@ -56,7 +59,7 @@ export function NewPipelineModal({
       const id = await call("pipelines.create", { name, type, stages });
       onCreated(id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }
@@ -93,12 +96,12 @@ export function NewPipelineModal({
                 <TaSelect
                   value={s.color}
                   onChange={(e) => updateStage(i, { color: e.target.value as BadgeColor })}
-                  className="w-28 shrink-0"
+                  className="w-32 shrink-0"
                   style={{ color: badgePalette[s.color].fg }}
                 >
                   {STAGE_COLORS.map((c) => (
                     <option key={c} value={c} style={{ color: badgePalette[c].fg }}>
-                      ● {c}
+                      ● {colorLabel(c)}
                     </option>
                   ))}
                 </TaSelect>

@@ -7,6 +7,7 @@ import { TaButton, cn } from "@tailadmin";
 import { fetchVersion, isImage, isPdf } from "../../lib/documentFiles";
 import { FolderAccessError, requestDocumentsFolderAccess } from "../../lib/fileStore";
 import { closePdf, loadPdf, renderPdfPage } from "../../lib/pdf";
+import { errorText } from "../../lib/errors";
 
 const TEXT_LIMIT = 200_000;
 
@@ -155,7 +156,7 @@ export function Preview({ versionId, mime, filename }: { versionId: string; mime
     try {
       setBlob((await fetchVersion(versionId, "view")).blob);
     } catch (e) {
-      setError({ text: e instanceof Error ? e.message : String(e), access: e instanceof FolderAccessError });
+      setError({ text: errorText(e), access: e instanceof FolderAccessError });
     }
   }, [versionId, mime, filename]);
   useEffect(() => {

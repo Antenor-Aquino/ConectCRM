@@ -22,6 +22,7 @@ import { TagPicker } from "../ui/TagPicker";
 import { formatBytes, MAX_UPLOAD_BYTES } from "../../lib/files";
 import { DocumentsPanel } from "../documents/DocumentsPanel";
 import { UploadModal } from "../documents/UploadModal";
+import { errorText } from "../../lib/errors";
 
 const KIND_LABEL = { deal: "Negócio", ticket: "Ticket", project: "Projeto" } as const;
 
@@ -201,6 +202,20 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
   }, [request]);
 
   const type = types.find((t) => t.id === typeId);
+  // Tarefa nova: o nome começa com o tipo ("Reunião ") para o usuário completar.
+  // Trocar o tipo troca só esse começo; nome reescrito pelo usuário não muda.
+  const titlePrefix = useRef("");
+  useEffect(() => {
+    if (request.id || !type) return;
+    const next = `${type.name} `;
+    const prev = titlePrefix.current;
+    setTitle((cur) => {
+      if (!cur.trim() || cur.trim() === prev.trim()) return next;
+      if (prev && cur.startsWith(prev)) return next + cur.slice(prev.length);
+      return cur;
+    });
+    titlePrefix.current = next;
+  }, [type, request.id]);
   const isMeeting = !!type?.is_meeting && !existing?.external_event_id;
 
   useEffect(() => {
@@ -230,7 +245,7 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
       const { dayStart, dayEnd, busy } = await busyRanges(provider, when);
       setSlots(computeFreeSlots(dayStart, dayEnd, busy, Math.max(duration, 15)));
     } catch (e) {
-      setCalMsg(e instanceof Error ? e.message : String(e));
+      setCalMsg(errorText(e));
     }
   }
 
@@ -263,7 +278,7 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
       if (id) await call("activities.update", { id, patch: input });
       else id = await call("activities.create", input);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
       setSaving(false);
       return;
     }
@@ -281,7 +296,7 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
         await call("activities.setExternalEvent", { id, provider, eventId: ev.id, meetingUrl: ev.link, guests });
       } catch (e) {
         setSaving(false);
-        setError(`Tarefa salva, mas o evento não foi criado na agenda: ${e instanceof Error ? e.message : String(e)}`);
+        setError(`Tarefa salva, mas o evento não foi criado na agenda: ${errorText(e)}`);
         return;
       }
     }
@@ -324,7 +339,7 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
               </div>
               <textarea
                 className="ml-8 mt-2 min-h-[120px] w-[calc(100%-2rem)] resize-y border-none bg-transparent text-theme-sm text-gray-700 outline-none placeholder:text-gray-400 dark:text-gray-300"
-                placeholder="Add descrição..."
+                placeholder="Adicionar descrição…"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
               />
@@ -429,7 +444,7 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
                             setConnected(true);
                             setMakeEvent(true);
                           } catch (e) {
-                            setCalMsg(e instanceof Error ? e.message : String(e));
+                            setCalMsg(errorText(e));
                           }
                         }}
                       >

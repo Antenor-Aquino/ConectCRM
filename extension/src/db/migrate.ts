@@ -5,6 +5,8 @@ import migration0002 from "./migrations/0002_pipeline_card_fields.sql?raw";
 import migration0003 from "./migrations/0003_activity_end.sql?raw";
 import migration0004 from "./migrations/0004_tag_activity.sql?raw";
 import migration0005 from "./migrations/0005_ged.sql?raw";
+import migration0006 from "./migrations/0006_note_documents.sql?raw";
+import migration0007 from "./migrations/0007_tipo_prazo_final.sql?raw";
 
 export const MIGRATIONS: { name: string; sql: string }[] = [
   { name: "0000_init.sql", sql: migration0000 },
@@ -13,6 +15,8 @@ export const MIGRATIONS: { name: string; sql: string }[] = [
   { name: "0003_activity_end.sql", sql: migration0003 },
   { name: "0004_tag_activity.sql", sql: migration0004 },
   { name: "0005_ged.sql", sql: migration0005 },
+  { name: "0006_note_documents.sql", sql: migration0006 },
+  { name: "0007_tipo_prazo_final.sql", sql: migration0007 },
 ];
 
 /** Aplica as migrations pendentes; devolve quantas rodaram. */
@@ -31,7 +35,7 @@ export function runMigrations(db: DatabaseSync): number {
     db.exec("BEGIN");
     try {
       db.exec(sql);
-      if (fkOff && db.exec("PRAGMA foreign_key_check").length) throw new Error(`Migration ${name}: chaves estrangeiras inválidas.`);
+      if (fkOff && db.exec("PRAGMA foreign_key_check").length) throw new Error(`Migração ${name}: chaves estrangeiras inválidas.`);
       db.run("INSERT INTO _migrations (name, applied_at) VALUES (?, ?)", [name, new Date().toISOString()]);
       db.exec("COMMIT");
     } catch (err) {

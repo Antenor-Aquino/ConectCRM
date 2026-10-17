@@ -21,6 +21,7 @@ import { formatDateTime } from "../../lib/format";
 import { addNotification } from "../../lib/notifications";
 import { useSession } from "../session";
 import { Switch } from "../ui/Switch";
+import { errorText } from "../../lib/errors";
 
 export async function exportDatabase(): Promise<Uint8Array> {
   return base64ToBytes(await systemCall<string>("system.export"));
@@ -54,7 +55,7 @@ export function BackupSettings({ env }: { env: DbEnv }) {
       if (text) setMsg({ text, kind: "ok" });
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return; // escolha de pasta cancelada
-      setMsg({ text: e instanceof Error ? e.message : String(e), kind: "err" });
+      setMsg({ text: errorText(e), kind: "err" });
     } finally {
       setBusy(false);
     }

@@ -3,14 +3,25 @@
 // anexos e tarefas) e descreve cada alteração em português, com o valor
 // antigo e o novo. Gravações do mesmo usuário em até 2 segundos viram um só
 // evento (ex.: salvar produtos também atualiza o valor do negócio).
+import { OUTCOME_TEXT, PIPELINE_TYPE_BY_KIND } from "../lib/cardTypes";
 import { formatCents, formatDateTime } from "../lib/format";
+import type { DealKind } from "./pipelines";
 import { many, type DatabaseSync } from "./sql";
+import { RECURRENCE_LABEL, type Recurrence } from "./products";
+
+/** Origem clicável de uma linha do histórico (nota, tarefa ou documento que ainda existe). */
+export interface HistoryRef {
+  kind: "note" | "activity" | "document";
+  id: string;
+}
 
 export interface HistoryEvent {
   at: string;
   userId: string | null;
   userName: string;
   lines: string[];
+  /** Mesma posição de `lines`: a origem da linha (null = só texto). */
+  refs: (HistoryRef | null)[];
 }
 
 interface LogRow {
@@ -52,7 +63,7 @@ const ITEM_FIELDS: Record<string, string> = {
   recurrence: "Recorrência",
   product_id: "Produto",
 };
-const STATUS: Record<string, string> = { open: "aberto", won: "ganho", lost: "perdido" };
+
 const WINDOW_MS = 2000;
 
 const clip = (s: unknown, n = 120) => {
@@ -108,6 +119,11 @@ export function formatCustomRaw(
 }
 
 export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
+  // Termos do desfecho conforme o tipo do funil (ganho, resolvido, concluído...).
+  const kind = many<{ kind: DealKind }>(db, "SELECT kind FROM deal WHERE id = ?", cardId)[0]?.kind ?? "deal";
+  const outcome = OUTCOME_TEXT[PIPELINE_TYPE_BY_KIND[kind]];
+  const dealFields = { ...DEAL_FIELDS, loss_reason_id: outcome.lossReason, loss_note: outcome.lossNote };
+  const statusName: Record<string, string> = { open: "aberto", won: outcome.won.toLowerCase(), lost: outcome.lost.toLowerCase() };
   const users = lookup(db, "app_user");
   const stages = lookup(db, "stage");
   const persons = lookup(db, "person");
@@ -159,6 +175,7 @@ export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
     if (field.endsWith("_cents")) return formatCents(Number(v));
     if (field === "quantity") return qty(v);
     if (field === "product_id") return name(products, v);
+    if (field === "recurrence") return RECURRENCE_LABEL[v as Recurrence] ?? String(v);
     return clip(v, 80);
   };
   const itemSummary = (r: Record<string, unknown>) =>
@@ -182,9 +199,9 @@ export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
       if (ch.stage_id) out.push(`Moveu de etapa: ${name(stages, ch.stage_id[0])} → ${name(stages, ch.stage_id[1])}`);
       if (ch.status) {
         const [a, b] = ch.status as [string, string];
-        out.push(b === "won" ? "Marcou como ganho" : b === "lost" ? "Marcou como perdido" : `Reabriu (estava ${STATUS[a] ?? a})`);
+        out.push(b === "won" ? outcome.markedWon : b === "lost" ? outcome.markedLost : `Reabriu (estava ${statusName[a] ?? a})`);
       }
-      out.push(...fieldChanges(ch, DEAL_FIELDS, fmtDeal, DEAL_SKIP));
+      out.push(...fieldChanges(ch, dealFields, fmtDeal, DEAL_SKIP));
       return out;
     }
     if (t === "deal_item") {
@@ -246,15 +263,31 @@ export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
     return [];
   }
 
+  // O que ainda existe pode ser aberto a partir do histórico.
+  const alive = (table: string) => new Set(many<{ id: string }>(db, `SELECT id FROM ${table} WHERE deleted_at IS NULL`).map((r) => r.id));
+  const liveNotes = alive("note");
+  const liveTasks = alive("activity");
+  const liveDocs = new Set(many<{ id: string }>(db, "SELECT id FROM document WHERE deleted_at IS NULL AND purged_at IS NULL").map((r) => r.id));
+  const refOf = (l: LogRow): HistoryRef | null => {
+    if (l.table_name === "note" && liveNotes.has(l.row_id)) return { kind: "note", id: l.row_id };
+    if (l.table_name === "activity" && liveTasks.has(l.row_id)) return { kind: "activity", id: l.row_id };
+    const docId = l.table_name === "document_link" ? String(state.get(l.row_id)?.document_id ?? "") : "";
+    if (docId && liveDocs.has(docId)) return { kind: "document", id: docId };
+    return null;
+  };
+
   const events: HistoryEvent[] = [];
   for (const l of logs) {
     const lines = describe(l);
     if (!lines.length) continue;
+    const ref = refOf(l);
+    const refs = lines.map(() => ref);
     const last = events.at(-1);
     if (last && last.userId === l.user_id && new Date(l.at).getTime() - new Date(last.at).getTime() <= WINDOW_MS) {
       last.lines.push(...lines);
+      last.refs.push(...refs);
     } else {
-      events.push({ at: l.at, userId: l.user_id, userName: l.user_id ? (users.get(l.user_id) ?? "Usuário removido") : "Sistema", lines });
+      events.push({ at: l.at, userId: l.user_id, userName: l.user_id ? (users.get(l.user_id) ?? "Usuário removido") : "Sistema", lines, refs });
     }
   }
   return events.reverse();

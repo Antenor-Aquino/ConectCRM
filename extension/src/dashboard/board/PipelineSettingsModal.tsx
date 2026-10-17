@@ -10,6 +10,8 @@ import { DEFAULT_CARD_FIELDS, parseCardFields } from "../../lib/cardFields";
 import { PIPELINE_TYPE_LABEL } from "../../lib/cardTypes";
 import { CardLayoutEditor } from "./CardLayoutEditor";
 import { ErrorText, Field, SectionLabel } from "../ui/form";
+import { colorLabel } from "../../lib/colors";
+import { errorText } from "../../lib/errors";
 
 const COLORS = Object.keys(badgePalette) as BadgeColor[];
 
@@ -75,7 +77,7 @@ export function PipelineSettingsModal({ pipeline, onClose, onSaved }: { pipeline
       });
       onSaved(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     }
   }
 
@@ -112,7 +114,7 @@ export function PipelineSettingsModal({ pipeline, onClose, onSaved }: { pipeline
 
       <div className={tab === "etapas" ? "" : "hidden"}>
       <SectionLabel>Etapas</SectionLabel>
-      <div className="grid grid-cols-[110px_1fr_90px_90px_64px] gap-2 text-theme-xs text-gray-500">
+      <div className="grid grid-cols-[128px_1fr_90px_90px_64px] gap-2 text-theme-xs text-gray-500">
         <span>Cor</span>
         <span>Nome</span>
         <span>{pipeline.type === "comercial" ? "Prob. %" : ""}</span>
@@ -120,11 +122,11 @@ export function PipelineSettingsModal({ pipeline, onClose, onSaved }: { pipeline
         <span />
       </div>
       {stages.map((s, i) => (
-        <div key={s.id ?? `new-${i}`} className="mt-2 grid grid-cols-[110px_1fr_90px_90px_64px] items-center gap-2">
+        <div key={s.id ?? `new-${i}`} className="mt-2 grid grid-cols-[128px_1fr_90px_90px_64px] items-center gap-2">
           <TaSelect value={s.color} onChange={(e) => set(i, { color: e.target.value })} style={{ color: badgePalette[s.color as BadgeColor]?.fg }}>
             {COLORS.map((c) => (
               <option key={c} value={c} style={{ color: badgePalette[c].fg }}>
-                ● {c}
+                ● {colorLabel(c)}
               </option>
             ))}
           </TaSelect>

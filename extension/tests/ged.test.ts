@@ -393,7 +393,7 @@ describe("GED: migração dos anexos antigos", () => {
     const cfOld = createCustomField(db, ctx, { entity: "deal", name: "Origem", fieldType: "text" });
     void updateCard;
 
-    expect(runMigrations(db)).toBe(1);
+    expect(runMigrations(db)).toBe(MIGRATIONS.filter((x) => x.name >= "0005").length);
     bootstrap(db);
     expect(db.exec("PRAGMA foreign_keys")[0]!.values[0]![0]).toBe(1);
     expect(db.exec("SELECT name FROM tag")[0]!.values).toEqual([["Venda"]]);
@@ -437,3 +437,18 @@ function bootstrapOld(db: import("sql.js").Database): string {
   db.run("INSERT INTO activity_type (id, workspace_id, name, icon, created_at, updated_at) VALUES ('tt', ?, 'Tarefa', 'timer', 'x', 'x')", [ws]);
   return ws;
 }
+
+describe("nota com o arquivo de origem", () => {
+  it("guarda a referência ao documento (ex.: áudio transcrito) e some se ele for para a lixeira", async () => {
+    const { db, ctx, deal, type } = await setup();
+    const audio = docs.createDocument(db, ctx, { name: "Áudio do cliente", typeId: type("Outros"), links: [{ type: "deal", id: deal }], file: file("audio.ogg", "audio/ogg") });
+    methods["notes.add"](db, ctx, { entityType: "deal", entityId: deal, body: "Transcrição de áudio:\n\nBom dia", documentIds: [audio] });
+    methods["notes.add"](db, ctx, { entityType: "deal", entityId: deal, body: "Nota comum" });
+    const notes = methods["notes.list"](db, ctx, { entityType: "deal", entityId: deal });
+    expect(notes.find((n) => n.body.startsWith("Transcrição"))!.documents).toEqual([expect.objectContaining({ id: audio, name: "Áudio do cliente", filename: "audio.ogg" })]);
+    expect(notes.find((n) => n.body === "Nota comum")!.documents).toEqual([]);
+    expect(() => methods["notes.add"](db, ctx, { entityType: "deal", entityId: deal, body: "x", documentIds: ["nao-existe"] })).toThrow(/Documento/);
+    docs.trashDocument(db, ctx, audio);
+    expect(methods["notes.list"](db, ctx, { entityType: "deal", entityId: deal }).find((n) => n.body.startsWith("Transcrição"))!.documents).toEqual([]);
+  });
+});

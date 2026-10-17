@@ -10,7 +10,7 @@ export const DEFAULT_ACTIVITY_TYPES: { name: string; icon: string; isMeeting?: b
   { name: "Reunião", icon: "users", isMeeting: true },
   { name: "Agendamento", icon: "calendar-check", isMeeting: true },
   { name: "Tarefa", icon: "timer" },
-  { name: "Deadline", icon: "flag" },
+  { name: "Prazo final", icon: "flag" },
   { name: "Almoço", icon: "utensils" },
   { name: "E-mail", icon: "mail" },
 ];

@@ -15,6 +15,7 @@ import { TagPicker } from "../ui/TagPicker";
 import { DOC_NAV_EVENT, LinkChip, RestrictedBadge, TypeBadge, ValidityBadge } from "./docUi";
 import { LinkEditor } from "./LinkEditor";
 import { Preview } from "./Preview";
+import { errorText } from "../../lib/errors";
 
 type Tab = "info" | "links" | "versions" | "audit";
 const TABS: { id: Tab; label: string }[] = [
@@ -54,7 +55,7 @@ export function DocumentViewer({ documentId, onClose, onChanged }: { documentId:
     }
   }, [documentId]);
   useEffect(() => {
-    void load().catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+    void load().catch((e: unknown) => setError(errorText(e)));
     void call("documentTypes.list", { includeInactive: true }).then(setTypes);
   }, [load]);
   useEffect(() => {
@@ -74,7 +75,7 @@ export function DocumentViewer({ documentId, onClose, onChanged }: { documentId:
       onChanged?.();
       after?.();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     } finally {
       setBusy(false);
     }

@@ -36,6 +36,7 @@ import { TagPicker } from "../ui/TagPicker";
 import { DocumentViewer } from "./DocumentViewer";
 import { FileTypeIcon, LINK_TYPE_LABEL, LinkChip, LinkIcon, RestrictedBadge, TypeBadge, ValidityBadge } from "./docUi";
 import { UploadModal } from "./UploadModal";
+import { errorText } from "../../lib/errors";
 
 const PAGE = 25;
 
@@ -235,7 +236,7 @@ export function GedView() {
       if (text) setMsg({ text, kind: "ok" });
       await load();
     } catch (e) {
-      setMsg({ text: e instanceof Error ? e.message : String(e), kind: "err" });
+      setMsg({ text: errorText(e), kind: "err" });
     } finally {
       setBusy(false);
     }

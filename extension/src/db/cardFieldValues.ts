@@ -3,6 +3,7 @@
 // de uma vez, e devolve tudo já formatado para exibição.
 import { CUSTOM_PREFIX, parseCardFields } from "../lib/cardFields";
 import { formatCents, formatDateTime, formatPhone } from "../lib/format";
+import { isOverdue } from "../lib/taskTiming";
 import { formatCustomRaw } from "./cardHistory";
 import type { PipelineType } from "./pipelines";
 import { many, one, type DatabaseSync } from "./sql";
@@ -173,7 +174,7 @@ export function cardFieldValues(
           break;
         }
         case "proxima_tarefa":
-          put(k, r.next_task ? `${r.next_task} · ${formatDateTime(r.next_due!)}` : null, r.next_end && r.next_end < now.toISOString() ? "danger" : undefined);
+          put(k, r.next_task ? `${r.next_task} · ${formatDateTime(r.next_due!)}` : null, r.next_due && isOverdue({ due_at: r.next_due, end_at: r.next_end, done: 0 }, now) ? "danger" : undefined);
           break;
         case "tarefas":
           put(k, r.tasks_total ? `${r.tasks_done}/${r.tasks_total}` : null);

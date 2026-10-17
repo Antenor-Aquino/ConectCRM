@@ -1,10 +1,12 @@
 // Indicadores do funil (ícone de gráfico no cabeçalho do quadro): quantidade
-// e valor por etapa, abertos, ganhos e perdidos. Relatórios completos: Fase 10.
+// e valor por etapa, abertos e fechados (ganhos/perdidos, resolvidos/não
+// resolvidos ou concluídos/não concluídos, conforme o tipo). Relatórios completos: Fase 10.
 import { useEffect, useState } from "react";
 import { TaModal } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { BoardColumn } from "../../db/deals";
 import type { Pipeline } from "../../db/pipelines";
+import { OUTCOME_TEXT } from "../../lib/cardTypes";
 import { formatCents } from "../../lib/format";
 import { StageDot } from "../ui/StageSelect";
 
@@ -25,8 +27,8 @@ export function FunnelStatsModal({ pipeline, onClose }: { pipeline: Pipeline | n
   const tiles = cols
     ? ([
         ["Em aberto", sum(cols.open), "border-l-brand-500"],
-        ["Ganhos", sum(cols.won), "border-l-success-500"],
-        ["Perdidos", sum(cols.lost), "border-l-error-500"],
+        [OUTCOME_TEXT[pipeline.type].wonPlural, sum(cols.won), "border-l-success-500"],
+        [OUTCOME_TEXT[pipeline.type].lostPlural, sum(cols.lost), "border-l-error-500"],
       ] as const)
     : [];
   const maxCount = Math.max(1, ...(cols?.open.map((c) => c.count) ?? [1]));

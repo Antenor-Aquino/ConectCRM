@@ -9,6 +9,7 @@ import { ACTIVITY_ICONS, ActivityIcon } from "../../lib/activityIcons";
 import { useSession } from "../session";
 import { Popover } from "../ui/Popover";
 import { Switch } from "../ui/Switch";
+import { errorText } from "../../lib/errors";
 
 function IconPicker({ value, onChange, disabled }: { value: string; onChange: (v: string) => void; disabled?: boolean }) {
   const [open, setOpen] = useState(false);
@@ -53,7 +54,7 @@ export function ActivityTypesSettings() {
       await fn();
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     }
   };
   const move = (i: number, dir: -1 | 1) => {

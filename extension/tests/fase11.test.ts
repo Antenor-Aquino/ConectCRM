@@ -68,10 +68,15 @@ describe("copiloto: consultas", () => {
   });
 
   it("tarefas atrasadas, contatos por telefone e estrutura do CRM", async () => {
-    const { db, ctx, bruno } = await crm();
+    const { db, ctx, ana, bruno } = await crm();
     const late = methods["copilot.tasks"](db, ctx, { situacao: "atrasadas" }) as any;
     expect(late.tarefas[0]).toMatchObject({ titulo: "Enviar proposta revisada", atrasadaHaDias: 2, cartao: "Licenças Colégio Sol" });
     expect((methods["copilot.tasks"](db, { ...ctx, userId: bruno }, { situacao: "atrasadas" }) as any).total).toBe(0);
+    // Sem finalização e iniciada num dia que já passou também é atrasada (a mais antiga primeiro).
+    createActivity(db, ctx, { title: "Tarefa sem finalização", dueAt: ago(10), ownerId: ana });
+    createActivity(db, ctx, { title: "Começa hoje", dueAt: new Date().toISOString(), ownerId: ana });
+    const late2 = methods["copilot.tasks"](db, ctx, { situacao: "atrasadas", responsavel: "Ana" }) as any;
+    expect(late2.tarefas.map((t: any) => [t.titulo, t.atrasadaHaDias])).toEqual([["Tarefa sem finalização", 10], ["Enviar proposta revisada", 2]]);
     const c = methods["copilot.contacts"](db, ctx, { texto: "99999-8888" }) as any;
     expect(c.contatos[0]).toMatchObject({ nome: "Regina Alves" });
     expect(c.contatos[0].cartoesAbertos[0].titulo).toBe("Licenças Colégio Sol");

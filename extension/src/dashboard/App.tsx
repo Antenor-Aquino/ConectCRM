@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Building2, Sparkles, CalendarDays, CircleCheck, Filter, FolderArchive, LineChart, Settings, User, Workflow } from "lucide-react";
 import { AppLayout, TopNavBar, cn, type TopNavItem } from "@tailadmin";
 import { call, systemCall } from "../rpc/client";
 import { checkAutoBackup, type AutoBackupCheck } from "../lib/autoBackup";
 import { backupDocuments, checkDocumentExpiry } from "../lib/documentFiles";
+import type { OpenCardMessage } from "../rpc/protocol";
 import type { DbEnv } from "../lib/environment";
 import type { Pipeline, PipelineType } from "../db/pipelines";
 import type { QuickCreateOption } from "../lib/quickCreate";
@@ -33,6 +34,7 @@ import { PersonsView } from "./contacts/PersonsView";
 import { TaskModal } from "./tasks/TaskModal";
 import { TasksView } from "./tasks/TasksView";
 import { SessionProvider, useSession } from "./session";
+import { errorText } from "../lib/errors";
 
 // Menu principal (spec 01, seção 1).
 const NAV: TopNavItem[] = [
@@ -120,6 +122,22 @@ function Main() {
     if (!id) return;
     void call("cards.get", { id }).then((c) => c && openCardFrom(c.pipeline_id, c.id));
   }, []);
+  // Popup → "Abrir no CRM" com esta aba já aberta: abre o cartão aqui (sem nova aba).
+  const openCardRef = useRef<(pipelineId: string, cardId: string) => void>(() => {});
+  useEffect(() => {
+    let myTab: number | undefined;
+    void chrome.tabs.getCurrent().then((t) => (myTab = t?.id));
+    const onMsg = (msg: OpenCardMessage, _s: chrome.runtime.MessageSender, sendResponse: (ok: boolean) => void) => {
+      if (msg?.target !== "dashboard" || msg.kind !== "open-card" || msg.tabId !== myTab) return false;
+      void call("cards.get", { id: msg.cardId }).then((c) => {
+        if (c) openCardRef.current(c.pipeline_id, c.id);
+        sendResponse(!!c);
+      });
+      return true;
+    };
+    chrome.runtime.onMessage.addListener(onMsg);
+    return () => chrome.runtime.onMessage.removeListener(onMsg);
+  }, []);
 
   // Ambiente (Produção/Teste) e backup automático ao abrir o CRM (só em Produção).
   const [env, setEnv] = useState<DbEnv | null>(null);
@@ -145,6 +163,7 @@ function Main() {
     // Funil criado depois que a lista foi carregada (ex.: pelo popup): recarrega.
     if (!pipelines.some((p) => p.id === pipelineId)) void reload();
   };
+  openCardRef.current = openCardFrom;
 
   const reload = useCallback(async () => {
     try {
@@ -154,7 +173,7 @@ function Main() {
       setRefreshKey((k) => k + 1);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorText(err));
     }
   }, []);
 
@@ -221,9 +240,11 @@ function Main() {
                 <button
                   type="button"
                   onClick={() => setCopilotOpen(true)}
+                  title="Copiloto"
+                  aria-label="Copiloto"
                   className="flex h-9 items-center gap-1.5 rounded-lg border border-brand-200 px-3 text-theme-sm font-medium text-brand-600 hover:bg-brand-50 dark:border-brand-500/30 dark:hover:bg-brand-500/10"
                 >
-                  <Sparkles size={16} /> Copiloto
+                  <Sparkles size={16} /> <span className="hidden 2xl:inline">Copiloto</span>
                 </button>
                 <NotificationBell />
                 <button
@@ -296,6 +317,10 @@ function Main() {
           request={cardForm}
           pipelines={pipelines}
           onClose={() => setCardForm(null)}
+          onOpenExisting={(id, pipelineId) => {
+            setCardForm(null);
+            openCardFrom(pipelineId, id);
+          }}
           onCreated={(id, pipelineId, open) => {
             setCardForm(null);
             setTab("funis");
@@ -359,6 +384,10 @@ function Main() {
           <OrganizationFormModal
             organizationId={null}
             onClose={() => setNewOrg(false)}
+            onOpenExisting={(id) => {
+              setNewOrg(false);
+              setOrgOpen(id);
+            }}
             onSaved={(id) => {
               setNewOrg(false);
               contactsChanged();
