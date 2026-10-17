@@ -130,3 +130,12 @@ describe("copiloto aberto num cartão", () => {
     expect(normalizeCard({ acoes: [{ tipo: "criar_tarefa", rotulo: "x", cartaoId: "", titulo: "y" }] }).acoes).toEqual([]);
   });
 });
+
+describe("erros da IA", () => {
+  it("parâmetro recusado não vira 'modelo não encontrado'", async () => {
+    const { translateAiError } = await import("../src/lib/ai");
+    const msg = "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.";
+    expect(translateAiError("OpenAI", msg, 400)).toMatch(/recusou um parâmetro/);
+    expect(translateAiError("OpenAI", "The model `gpt-x` does not exist or you do not have access to it.", 404)).toMatch(/não encontrado/);
+  });
+});

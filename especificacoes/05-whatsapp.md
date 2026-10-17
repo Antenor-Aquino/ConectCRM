@@ -67,7 +67,11 @@ estiver aberto em alguma aba, ela é ativada em vez de abrir outra.
 ## 5. Inteligência artificial
 
 Configurações → **Inteligência artificial**: provedor (Gemini, OpenAI, Claude,
-DeepSeek), chave, modelo (opcional), instruções 1 e 2 da IA e **Testar conexão**. A
+DeepSeek), chave, modelo (opcional; **Testar conexão** também carrega a lista
+de modelos liberados para a chave como sugestões do campo), instruções 1 e 2
+da IA e **Testar conexão**. Modelo inexistente: a mensagem lista os modelos
+disponíveis. OpenAI usa `max_completion_tokens` (exigido pelos modelos novos,
+como GPT‑5). A
 chave fica só neste computador; as chamadas saem direto do navegador para o
 provedor.
 

@@ -107,7 +107,10 @@ export function translateAiError(prov: string, raw: unknown, status: number): st
     return `Limite de uso (ou créditos) da API do ${prov} atingido. Verifique a cota/saldo da sua chave e tente novamente.`;
   if (m.includes("api key") || m.includes("api_key") || m.includes("invalid key") || m.includes("incorrect api key") || m.includes("authentication") || m.includes("unauthorized") || m.includes("permission denied") || status === 401 || status === 403)
     return `A chave de API do ${prov} é inválida ou sem permissão. Confira em Configurações → Inteligência artificial.`;
-  if (m.includes("not found") || m.includes("does not exist") || (m.includes("model") && m.includes("not")) || status === 404)
+  // Parâmetro recusado pelo modelo (ex.: "max_tokens is not supported with this model"): não é modelo inexistente.
+  if (m.includes("unsupported parameter") || m.includes("unsupported value") || m.includes("unrecognized request argument") || m.includes("not supported with this model"))
+    return `O ${prov} recusou um parâmetro da requisição para este modelo. Detalhe: ${text}`;
+  if (m.includes("model_not_found") || m.includes("does not exist") || m.includes("not found") || status === 404)
     return `Modelo do ${prov} não encontrado ou indisponível para esta chave.`;
   if (m.includes("safety") || m.includes("blocked") || m.includes("content policy")) return `O conteúdo foi bloqueado pelos filtros de segurança do ${prov}.`;
   if (m.includes("deadline") || m.includes("timeout") || m.includes("timed out") || status === 504) return `O ${prov} demorou demais para responder. Tente novamente.`;
@@ -115,6 +118,34 @@ export function translateAiError(prov: string, raw: unknown, status: number): st
   if (status === 400 && (m.includes("image") || m.includes("payload") || m.includes("too large") || m.includes("size")))
     return `A requisição ao ${prov} foi rejeitada (possível imagem muito grande). Tente com menos recortes ou imagens menores.`;
   return text ? `Erro do ${prov}: ${text}` : `Erro do ${prov} (HTTP ${status}).`;
+}
+
+/** Modelos que a chave pode usar (para sugerir no campo Modelo e quando o modelo não existe). */
+export async function listModels(s: AiSettings): Promise<string[]> {
+  const prov = s.provider;
+  const key = s.keys[prov]?.trim();
+  if (!key) return [];
+  const get = async (url: string, headers: Record<string, string>) => {
+    const resp = await fetch(url, { headers });
+    if (!resp.ok) return null;
+    return (await resp.json().catch(() => null)) as Record<string, any> | null;
+  };
+  let ids: string[] = [];
+  if (prov === "gemini") {
+    const json = await get("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200", { "x-goog-api-key": key });
+    ids = (json?.models ?? [])
+      .filter((m: any) => (m.supportedGenerationMethods ?? []).includes("generateContent"))
+      .map((m: any) => String(m.name).replace(/^models\//, ""));
+  } else if (prov === "claude") {
+    const json = await get("https://api.anthropic.com/v1/models?limit=100", { "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" });
+    ids = (json?.data ?? []).map((m: any) => String(m.id));
+  } else {
+    const json = await get(prov === "openai" ? "https://api.openai.com/v1/models" : "https://api.deepseek.com/models", { Authorization: `Bearer ${key}` });
+    ids = (json?.data ?? []).map((m: any) => String(m.id));
+    // OpenAI: só os de conversa (sem embeddings, imagem, áudio, moderação).
+    if (prov === "openai") ids = ids.filter((id) => /^(gpt-|o\d|chatgpt-)/.test(id) && !/(audio|realtime|tts|transcribe|image|search|embedding)/.test(id));
+  }
+  return [...new Set(ids)].sort().reverse();
 }
 
 function resolve(s: AiSettings): { prov: AiProvider; key: string; model: string } {
@@ -153,7 +184,10 @@ export async function aiGenerate(settings: AiSettings, prompt: string, images: s
     // OpenAI e DeepSeek usam o mesmo formato (Chat Completions).
     const url = prov === "openai" ? "https://api.openai.com/v1/chat/completions" : "https://api.deepseek.com/chat/completions";
     const content = [{ type: "text", text: prompt }, ...images.map((data) => ({ type: "image_url", image_url: { url: `data:image/png;base64,${data}` } }))];
-    const json = await postJson(url, { Authorization: `Bearer ${key}` }, { model, messages: [{ role: "user", content }], max_tokens: maxTokens }, label);
+    // OpenAI: os modelos novos (GPT-5, o-series) só aceitam max_completion_tokens, e o raciocínio
+    // interno também conta nesse limite (por isso a folga). DeepSeek segue com max_tokens.
+    const limit = prov === "openai" ? { max_completion_tokens: Math.max(maxTokens, 16000) } : { max_tokens: maxTokens };
+    const json = await postJson(url, { Authorization: `Bearer ${key}` }, { model, messages: [{ role: "user", content }], ...limit }, label);
     text = json.choices?.[0]?.message?.content;
   }
   if (typeof text !== "string" || !text.trim()) throw new Error(`O ${label} não retornou um resultado.`);

@@ -175,6 +175,15 @@ pergunta antes de criar (**Criar mesmo assim**).
 - Usuários inativos não aparecem para novos registros (mas continuam nos
   registros antigos).
 
+### 6.0 Recolher etapas
+
+- Cada coluna do quadro tem o botão **‹ Recolher etapa** no topo: a etapa
+  vira uma coluna estreita com o nome na vertical e a quantidade; clicar
+  nela expande. Dá para arrastar um cartão para uma etapa recolhida.
+- Na linha da pesquisa, **Recolher etapas** recolhe todas (para expandir só
+  as necessárias); com alguma recolhida, o botão vira **Expandir etapas**.
+- As etapas recolhidas ficam lembradas por funil e usuário.
+
 ### 6.1 Visão em lista
 
 Botões **Quadro / Lista** ao lado do nome do funil (a escolha fica lembrada).
