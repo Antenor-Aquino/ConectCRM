@@ -7,6 +7,7 @@ import { getCustomValues, setCustomValues, type CustomValue } from "./customFiel
 import { KIND_BY_PIPELINE_TYPE, type DealKind, type PipelineType } from "./pipelines";
 import { getProduct, RECURRENCES, type Recurrence } from "./products";
 import { cardFieldValues, type CardFieldValue } from "./cardFieldValues";
+import { isCardFieldKey } from "../lib/cardFields";
 import { getRow, insertRow, softDelete, updateRow, type DbContext } from "./repo";
 import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
 import { getEntityTags, setEntityTags, type Tag } from "./tags";
@@ -464,7 +465,17 @@ const SORT_SQL: Record<BoardSort, string> = {
 export function getBoard(
   db: DatabaseSync,
   pipelineId: string,
-  opts: { view?: BoardView; viewer?: Viewer | null; search?: string; status?: DealStatus | "all"; sort?: BoardSort; ownerIds?: string[]; tagIds?: string[] } = {},
+  opts: {
+    view?: BoardView;
+    viewer?: Viewer | null;
+    search?: string;
+    status?: DealStatus | "all";
+    sort?: BoardSort;
+    ownerIds?: string[];
+    tagIds?: string[];
+    /** Visão em lista: colunas escolhidas pelo usuário (no lugar dos campos do cartão). */
+    fieldKeys?: string[];
+  } = {},
 ): BoardColumn[] {
   const where = ["d.pipeline_id = ?", "d.deleted_at IS NULL"];
   const params: SqlValue[] = [pipelineId];
@@ -516,7 +527,8 @@ export function getBoard(
     "SELECT id, name, color FROM stage WHERE pipeline_id = ? AND deleted_at IS NULL ORDER BY position",
     pipelineId,
   );
-  const { values } = cardFieldValues(db, pipelineId, cards.map((c) => c.id));
+  const keys = opts.fieldKeys ? [...new Set(opts.fieldKeys.filter(isCardFieldKey))].slice(0, 40) : undefined;
+  const { values } = cardFieldValues(db, pipelineId, cards.map((c) => c.id), { keys });
   for (const c of cards) c.fields = values.get(c.id) ?? {};
   return stages.map((s) => {
     const inStage = cards.filter((c) => c.stage_id === s.id).map(({ stage_id: _s, ...c }) => c);

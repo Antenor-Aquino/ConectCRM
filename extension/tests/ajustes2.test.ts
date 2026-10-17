@@ -27,9 +27,9 @@ describe("tarefas: início, finalização, tags, anexos e vínculos", () => {
     expect(getActivity(db, id)!.end_at).toBe(end);
     updateActivity(db, ctx, id, { endAt: null });
     expect(getActivity(db, id)!.end_at).toBeNull();
-    // Sem finalização nunca fica atrasada.
+    // Sem finalização: atrasada quando o início é de um dia que já passou.
     createActivity(db, ctx, { title: "Antiga sem prazo", dueAt: new Date(Date.now() - 9 * 86400_000).toISOString() });
-    expect(listActivities(db, { overdue: true })).toEqual([]);
+    expect(listActivities(db, { overdue: true }).map((a) => a.title)).toEqual(["Antiga sem prazo"]);
   });
 
   it("lista traz tags, anexos, funil, contato e organização da tarefa", async () => {
@@ -128,7 +128,7 @@ describe("prazo da tarefa no painel", () => {
     expect(t(at(0, 9), at(0))).toEqual({ label: "vence hoje", tone: "warning", span: "mesmo dia" });
     expect(t(at(-5), at(-2)).label).toBe("atrasada há 2 dias");
     expect(t(at(0, 8), at(0, 9)).label).toBe("atrasada (venceu hoje)");
-    expect(t(at(-4, 9), null)).toEqual({ label: "iniciada há 4 dias · sem prazo", tone: "muted", span: null });
+    expect(t(at(-4, 9), null)).toEqual({ label: "atrasada há 4 dias (sem finalização)", tone: "danger", span: null });
     expect(t(at(0, 9), null).label).toBe("iniciada hoje · sem prazo");
     expect(t(at(2, 9), null).label).toBe("começa em 2 dias");
     expect(t(at(1, 9), null).label).toBe("começa amanhã");

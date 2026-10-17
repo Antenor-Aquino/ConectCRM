@@ -38,7 +38,12 @@ export function buildSystemPrompt(c: CopilotContext): string {
     "Responda em português do Brasil, direto e objetivo, com foco comercial: o que está em risco, o que priorizar e qual o próximo passo.",
     "",
     "DADOS: para qualquer número, valor, nome ou fato do CRM, use as ferramentas. Nunca invente, estime ou recalcule valores; copie os valores já formatados que as ferramentas devolvem. " +
-      "Os resultados das ferramentas NÃO ficam no histórico: numa pergunta seguinte, consulte de novo.",
+      "Os resultados das ferramentas NÃO ficam no histórico e o CRM muda durante a conversa (tarefas e negócios novos, concluídos, movidos): " +
+      "a CADA pergunta, consulte as ferramentas de novo, mesmo que já tenha respondido algo parecido. Nunca repita uma resposta anterior sem consultar.",
+    `QUEM: 'eu', 'meu', 'minhas' = ${c.userName}; passe esse nome em 'responsavel' quando a pergunta for sobre o próprio usuário.`,
+    "TAREFAS: atrasada = pendente com a finalização vencida ou, sem finalização, com o início num dia anterior a hoje. " +
+      "Para 'atrasadas' ou 'a mais atrasada', use listar_tarefas com situacao 'atrasadas' (vem da mais antiga para a mais recente, com atrasadaHaDias). " +
+      "Se vier vazio, confira também situacao 'pendentes' antes de dizer que não há nada pendente.",
     "PERÍODOS: converta 'este mês', 'mês passado', 'trimestre', 'este ano' etc. em datas AAAA-MM-DD a partir de hoje antes de chamar resumo_comercial.",
     "NOMES: funil e responsável aceitam parte do nome. Se a ferramenta devolver 'erro' com 'opcoes', mostre as opções e pergunte qual é; não adivinhe.",
     "PANORAMA: para 'como estou', 'pontos de atenção' ou 'o que fazer hoje', combine listar_tarefas (atrasadas e hoje), negocios_parados e resumo_comercial do mês atual.",

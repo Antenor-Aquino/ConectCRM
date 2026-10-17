@@ -8,7 +8,7 @@ import { PIPELINE_TYPE_LABEL, PIPELINE_TYPE_ORDER } from "../../lib/cardTypes";
 import { Board } from "../board/Board";
 import { FunnelStatsModal } from "../board/FunnelStatsModal";
 import { PipelineSettingsModal } from "../board/PipelineSettingsModal";
-import { CardDetail } from "../cards/CardDetail";
+import { CardDetail, type CardDetailMode } from "../cards/CardDetail";
 import { NewPipelineModal } from "./NewPipelineModal";
 
 const TYPE_ICON: Record<PipelineType, React.ReactNode> = {
@@ -41,6 +41,24 @@ export function FunnelsView({
   const [editing, setEditing] = useState(false);
   const [stats, setStats] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Detalhe do cartão: painel lateral ou tela cheia (no lugar do quadro); lembra a escolha.
+  const [cardMode, setCardMode] = useState<CardDetailMode>(() => {
+    try {
+      return localStorage.getItem("conectcrm-card-mode") === "full" ? "full" : "drawer";
+    } catch {
+      return "drawer";
+    }
+  });
+  const toggleCardMode = () => {
+    const next = cardMode === "full" ? "drawer" : "full";
+    setCardMode(next);
+    try {
+      localStorage.setItem("conectcrm-card-mode", next);
+    } catch {
+      /* preferência só desta tela */
+    }
+  };
+  const cardFull = !!openCardId && !!selected && cardMode === "full";
 
   return (
     <div className="flex gap-5">
@@ -93,6 +111,16 @@ export function FunnelsView({
             Novo funil
           </TaButton>
         </section>
+      ) : cardFull ? (
+        <CardDetail
+          key={openCardId}
+          cardId={openCardId!}
+          pipeline={selected}
+          mode="full"
+          onToggleMode={toggleCardMode}
+          onClose={() => onOpenCard(null)}
+          onChanged={() => void onChanged()}
+        />
       ) : (
         <Board
           pipeline={selected}
@@ -126,8 +154,15 @@ export function FunnelsView({
         />
       )}
       {stats && <FunnelStatsModal pipeline={selected} onClose={() => setStats(false)} />}
-      {openCardId && selected && (
-        <CardDetail cardId={openCardId} pipeline={selected} onClose={() => onOpenCard(null)} onChanged={() => void onChanged()} />
+      {openCardId && selected && !cardFull && (
+        <CardDetail
+          key={openCardId}
+          cardId={openCardId}
+          pipeline={selected}
+          onToggleMode={toggleCardMode}
+          onClose={() => onOpenCard(null)}
+          onChanged={() => void onChanged()}
+        />
       )}
     </div>
   );

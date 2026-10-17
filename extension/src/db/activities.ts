@@ -1,6 +1,7 @@
 // Tarefas (spec 02) e tipos de tarefa. O vínculo com negócio/ticket/projeto
 // ("Vinculado a") é opcional.
 import { nowIso } from "../lib/ids";
+import { startOfDay } from "../lib/taskTiming";
 import { normalizeIsoDate, optionalText, requireText, ValidationError } from "../lib/validate";
 import { getCustomValues, setCustomValues, type CustomValue } from "./customFields";
 import { getCardRow } from "./deals";
@@ -263,8 +264,13 @@ export interface ActivityFilter {
 }
 
 /** Administrador vê todas; gestor, as da equipe; vendedor, as suas. Sem responsável: todos. */
-/** Pendente com finalização vencida (sem finalização, nunca atrasa). */
-export const OVERDUE = "a.done = 0 AND a.end_at IS NOT NULL AND a.end_at < ?";
+/**
+ * Atrasada (mesma regra de isOverdue em lib/taskTiming): finalização vencida;
+ * sem finalização, início antes de hoje. Parâmetros: overdueParams(agora).
+ */
+export const OVERDUE_COND = "((a.end_at IS NOT NULL AND a.end_at < ?) OR (a.end_at IS NULL AND a.due_at < ?))";
+export const OVERDUE = `a.done = 0 AND ${OVERDUE_COND}`;
+export const overdueParams = (now = new Date()): [string, string] => [now.toISOString(), startOfDay(now).toISOString()];
 /** Fim efetivo da tarefa para filtros por período (parâmetro: agora). */
 const EFFECTIVE_END = "COALESCE(a.end_at, CASE WHEN a.done = 0 THEN MAX(a.due_at, ?) ELSE COALESCE(a.done_at, a.due_at) END)";
 
@@ -289,7 +295,7 @@ function activityWhere(db: DatabaseSync, f: ActivityFilter): { sql: string; para
   if (f.to) add("a.due_at < ?", new Date(f.to).toISOString());
   if (f.from) add(`${EFFECTIVE_END} >= ?`, nowIso(), new Date(f.from).toISOString());
   if (f.done !== undefined) add("a.done = ?", f.done ? 1 : 0);
-  if (f.overdue) add(OVERDUE, nowIso());
+  if (f.overdue) add(OVERDUE, ...overdueParams());
   if (f.ownerIds?.length) add(`a.owner_id IN (${f.ownerIds.map(() => "?").join(", ")})`, ...f.ownerIds);
   if (f.typeId) add("a.type_id = ?", f.typeId);
   if (f.dealId) add("a.deal_id = ?", f.dealId);
@@ -353,8 +359,8 @@ export function activityCounters(db: DatabaseSync, f: Omit<ActivityFilter, "from
   const in7 = new Date(startToday.getTime() + 8 * 86400_000);
   const count = (extra: string, ...p: SqlValue[]) =>
     one<{ n: number }>(db, `SELECT COUNT(*) AS n FROM activity a WHERE ${sql} AND ${extra}`, ...params, ...p)?.n ?? 0;
-  const nowIso_ = now.toISOString();
-  const notOverdue = "NOT (a.end_at IS NOT NULL AND a.end_at < ?)";
+  const late = overdueParams(now);
+  const notOverdue = `NOT ${OVERDUE_COND}`;
   const touches = (from: Date, to: Date) => [
     // end_at nulo precisa dar falso (não NULL), senão o NOT abaixo descarta a tarefa.
     "((a.due_at >= ? AND a.due_at < ?) OR (a.end_at IS NOT NULL AND a.end_at >= ? AND a.end_at < ?))",
@@ -366,11 +372,11 @@ export function activityCounters(db: DatabaseSync, f: Omit<ActivityFilter, "from
   const [todaySql, ...todayP] = touches(startToday, startTomorrow);
   const [nextSql, ...nextP] = touches(startTomorrow, in7);
   return {
-    overdue: count(OVERDUE.replace("a.done = 0 AND ", ""), nowIso_),
+    overdue: count(OVERDUE_COND, ...late),
     // Hoje: começa ou termina hoje (sem contar as atrasadas).
-    today: count(`${notOverdue} AND ${todaySql}`, nowIso_, ...todayP),
+    today: count(`${notOverdue} AND ${todaySql}`, ...late, ...todayP),
     // Próximos 7 dias: começa ou termina de amanhã a +7, e não é de hoje.
-    next7: count(`${notOverdue} AND NOT ${todaySql} AND ${nextSql}`, nowIso_, ...todayP, ...nextP),
+    next7: count(`${notOverdue} AND NOT ${todaySql} AND ${nextSql}`, ...late, ...todayP, ...nextP),
   };
 }
 

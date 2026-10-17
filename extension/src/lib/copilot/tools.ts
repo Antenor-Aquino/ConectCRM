@@ -63,7 +63,9 @@ export const DATA_TOOLS: ToolDef[] = [
   },
   {
     name: "listar_tarefas",
-    description: "Tarefas pendentes: atrasadas, de hoje, dos próximos 7 dias ou todas as pendentes, com cartão vinculado e responsável.",
+    description:
+      "Tarefas pendentes: atrasadas (finalização vencida ou, sem finalização, início antes de hoje; da mais atrasada para a menos), de hoje, dos próximos 7 dias " +
+      "ou todas as pendentes, com cartão vinculado, responsável e atrasadaHaDias.",
     parameters: {
       type: "object",
       properties: {

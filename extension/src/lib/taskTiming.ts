@@ -17,6 +17,23 @@ const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(
 const calDays = (a: Date, b: Date) => Math.round((dayStart(b) - dayStart(a)) / DAY);
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
+/** Início do dia (fuso local). */
+export function startOfDay(d = new Date()): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+/**
+ * Atrasada = pendente com a finalização vencida; sem finalização, com o início
+ * antes de hoje (começou num dia que já passou e não foi concluída).
+ */
+export function isOverdue(t: { due_at: string; end_at: string | null; done: number | boolean }, now = new Date()): boolean {
+  if (t.done) return false;
+  return t.end_at ? new Date(t.end_at) < now : new Date(t.due_at) < startOfDay(now);
+}
+
+/** Data de referência do atraso (finalização ou, sem ela, o início). */
+export const overdueFrom = (t: { due_at: string; end_at: string | null }) => t.end_at ?? t.due_at;
+
 export function taskTiming(t: { due_at: string; end_at: string | null; done: number | boolean; done_at?: string | null }, now = new Date()): TaskTiming {
   const start = new Date(t.due_at);
   const end = t.end_at ? new Date(t.end_at) : null;
@@ -48,5 +65,7 @@ export function taskTiming(t: { due_at: string; end_at: string | null; done: num
     return { label: toStart === 1 ? "começa amanhã" : `começa em ${toStart} dias`, tone: "ok", span };
   }
   const since = -toStart;
-  return { label: since === 0 ? "iniciada hoje · sem prazo" : `iniciada há ${plural(since, "dia", "dias")} · sem prazo`, tone: "muted", span };
+  // Começou num dia que já passou e não foi concluída: atrasada (mesma regra de isOverdue).
+  if (since > 0) return { label: `atrasada há ${plural(since, "dia", "dias")} (sem finalização)`, tone: "danger", span };
+  return { label: "iniciada hoje · sem prazo", tone: "muted", span };
 }

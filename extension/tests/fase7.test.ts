@@ -60,14 +60,14 @@ describe("tarefas: permissão, contadores, busca", () => {
     const at = (days: number, h = 15) => new Date(2026, 9, 16 + days, h, 0).toISOString();
     createActivity(db, ctx, { title: "Atrasada", dueAt: at(-2), endAt: at(-1) });
     createActivity(db, ctx, { title: "Hoje cedo (atrasada)", dueAt: at(0, 8), endAt: at(0, 9) });
-    createActivity(db, ctx, { title: "Antiga sem prazo (não atrasa)", dueAt: at(-3) });
+    createActivity(db, ctx, { title: "Antiga sem finalização (atrasada)", dueAt: at(-3) });
     createActivity(db, ctx, { title: "Termina hoje", dueAt: at(-5), endAt: at(0) });
     createActivity(db, ctx, { title: "Começa hoje", dueAt: at(0, 8) });
     createActivity(db, ctx, { title: "Amanhã", dueAt: at(1) });
     createActivity(db, ctx, { title: "Termina daqui 6", dueAt: at(-1), endAt: at(6) });
     createActivity(db, ctx, { title: "Daqui 20", dueAt: at(20) });
     createActivity(db, ctx, { title: "Feita", dueAt: at(-2), endAt: at(-1), done: true });
-    expect(activityCounters(db, {}, now)).toEqual({ overdue: 2, today: 2, next7: 2 });
+    expect(activityCounters(db, {}, now)).toEqual({ overdue: 3, today: 2, next7: 2 });
   });
 
   it("busca cartões para 'Vinculado a' e guarda o evento da agenda", async () => {

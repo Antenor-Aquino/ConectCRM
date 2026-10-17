@@ -2,7 +2,7 @@
 // resolvido/não resolvido, concluído/não concluído conforme o tipo),
 // notas, tarefas e histórico de alterações.
 import { useCallback, useEffect, useState } from "react";
-import { Check, CheckCircle2, Circle, Pencil, PlusCircle, RotateCcw, Sparkles, Trash2, Trophy, X, XCircle } from "lucide-react";
+import { Check, CheckCircle2, Circle, Maximize2, Minimize2, Pencil, PlusCircle, RotateCcw, Sparkles, Trash2, Trophy, X, XCircle } from "lucide-react";
 import { TaBadge, TaButton, TaInput, TaTextarea, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { ActivityListItem } from "../../db/activities";
@@ -37,7 +37,24 @@ import { createOrganizationQuick, createPersonQuick, searchOrganizations, search
 
 type Tab = "notas" | "tarefas" | "documentos" | "historico";
 
-export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: string; pipeline: Pipeline; onClose: () => void; onChanged: () => void }) {
+export type CardDetailMode = "drawer" | "full";
+
+export function CardDetail({
+  cardId,
+  pipeline,
+  onClose,
+  onChanged,
+  mode = "drawer",
+  onToggleMode,
+}: {
+  cardId: string;
+  pipeline: Pipeline;
+  onClose: () => void;
+  onChanged: () => void;
+  /** drawer = painel lateral sobre o quadro; full = ocupa a área do quadro. */
+  mode?: CardDetailMode;
+  onToggleMode?: () => void;
+}) {
   const text = CARD_TEXT[pipeline.type];
   const [card, setCard] = useState<CardData | null>(null);
   const [stages, setStages] = useState<Stage[]>([]);
@@ -83,7 +100,7 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
 
   if (!card) {
     return (
-      <Shell onClose={onClose}>
+      <Shell onClose={onClose} mode={mode} onToggleMode={onToggleMode}>
         <ErrorText>{error}</ErrorText>
       </Shell>
     );
@@ -104,9 +121,9 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
   }));
 
   return (
-    <Shell onClose={onClose}>
+    <Shell onClose={onClose} mode={mode} onToggleMode={onToggleMode}>
       {/* Cabeçalho */}
-      <div className="flex items-start gap-3 pr-8">
+      <div className={cn("flex items-start gap-3", onToggleMode ? "pr-20" : "pr-8")}>
         <input
           className="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-theme-xl font-semibold text-gray-800 hover:border-gray-200 focus:border-brand-300 focus:outline-none dark:text-white/90"
           value={title}
@@ -207,7 +224,8 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
       )}
       <ErrorText>{error}</ErrorText>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
+      {/* Colunas pela largura do próprio painel (não da janela): estreito, uma coluna só. */}
+      <div className="grid gap-6 @3xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] @6xl:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
         {/* Dados */}
         <div>
           {pipeline.type === "comercial" && (
@@ -449,14 +467,37 @@ function ItemsSummary({ items, onEdit }: { items: CardData["items"]; onEdit: () 
   );
 }
 
-function Shell({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+function Shell({ children, onClose, mode, onToggleMode }: { children: React.ReactNode; onClose: () => void; mode: CardDetailMode; onToggleMode?: () => void }) {
+  const buttons = (
+    <div className="absolute right-5 top-5 flex gap-1.5">
+      {onToggleMode && (
+        <button
+          type="button"
+          onClick={onToggleMode}
+          title={mode === "full" ? "Voltar ao painel lateral" : "Abrir em tela cheia (no lugar do quadro)"}
+          className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-white/5"
+        >
+          {mode === "full" ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+        </button>
+      )}
+      <button type="button" onClick={onClose} title="Fechar" className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-white/5">
+        <X size={18} />
+      </button>
+    </div>
+  );
+  if (mode === "full") {
+    return (
+      <section className="@container relative min-w-0 flex-1 rounded-2xl border border-gray-200 bg-white p-6 shadow-theme-xs dark:border-gray-800 dark:bg-gray-900">
+        {buttons}
+        {children}
+      </section>
+    );
+  }
   return (
     <div className="fixed inset-0 z-[9999] flex justify-end">
       <div className="fixed inset-0 bg-gray-900/40" onClick={onClose} aria-hidden />
-      <div className="relative h-full w-full max-w-[980px] overflow-y-auto bg-white p-6 shadow-theme-xl dark:bg-gray-900">
-        <button type="button" onClick={onClose} title="Fechar" className="absolute right-5 top-5 flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-white/5">
-          <X size={18} />
-        </button>
+      <div className="@container relative h-full w-full max-w-[1100px] overflow-y-auto bg-white p-6 shadow-theme-xl dark:bg-gray-900">
+        {buttons}
         {children}
       </div>
     </div>

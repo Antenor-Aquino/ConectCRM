@@ -8,7 +8,8 @@ import { OUTCOME_TEXT, PIPELINE_TYPE_BY_KIND } from "../lib/cardTypes";
 import type { DealStatus } from "./deals";
 import type { DealKind } from "./pipelines";
 import { formatCents, formatDateTime } from "../lib/format";
-import { activityScope } from "./activities";
+import { isOverdue, overdueFrom } from "../lib/taskTiming";
+import { activityScope, OVERDUE, overdueParams } from "./activities";
 import { cardScope } from "./deals";
 import { buildReport } from "./reports";
 import { many, type DatabaseSync, type SqlValue } from "./sql";
@@ -97,13 +98,13 @@ export function searchCardsForCopilot(db: DatabaseSync, viewer: Viewer | null, f
        pe.name AS person, o.name AS organization, u.name AS owner, d.stage_entered_at, d.closed_at,
        (SELECT a.title FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0 ORDER BY COALESCE(a.end_at, a.due_at) LIMIT 1) AS next_task,
        (SELECT COALESCE(a.end_at, a.due_at) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0 ORDER BY COALESCE(a.end_at, a.due_at) LIMIT 1) AS next_due,
-       (SELECT COUNT(*) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0 AND a.end_at IS NOT NULL AND a.end_at < ?) AS overdue
+       (SELECT COUNT(*) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND ${OVERDUE}) AS overdue
      FROM deal d JOIN pipeline p ON p.id = d.pipeline_id JOIN stage s ON s.id = d.stage_id
      LEFT JOIN person pe ON pe.id = d.person_id LEFT JOIN organization o ON o.id = d.organization_id
      LEFT JOIN app_user u ON u.id = d.owner_id
      WHERE ${where.join(" AND ")}${scope.sql}
      ORDER BY d.status = 'open' DESC, d.value_cents DESC, d.updated_at DESC`,
-    now.toISOString(),
+    ...overdueParams(now),
     ...params,
     ...scope.params,
   );
@@ -182,7 +183,6 @@ export function cardDigest(db: DatabaseSync, viewer: Viewer | null, id: string, 
      WHERE l.entity_type = 'deal' AND l.entity_id = ? AND l.deleted_at IS NULL`,
     id,
   )[0]!.n;
-  const nowIso = now.toISOString();
   return {
     id,
     titulo: base.title,
@@ -209,7 +209,7 @@ export function cardDigest(db: DatabaseSync, viewer: Viewer | null, id: string, 
     itens: items.map((i) => ({ descricao: i.description, quantidade: i.quantity, total: formatCents(i.total_cents), recorrencia: i.recurrence })),
     tarefasPendentes: tasks
       .filter((t) => !t.done)
-      .map((t) => ({ titulo: t.title, tipo: t.type, inicio: date(t.due_at), finalizacao: date(t.end_at), atrasada: !!t.end_at && t.end_at < nowIso, responsavel: t.owner })),
+      .map((t) => ({ titulo: t.title, tipo: t.type, inicio: date(t.due_at), finalizacao: date(t.end_at), atrasada: isOverdue(t, now), responsavel: t.owner })),
     tarefasConcluidasRecentes: tasks.filter((t) => t.done).slice(0, 5).map((t) => ({ titulo: t.title, tipo: t.type, quando: date(t.due_at) })),
     ultimasNotas: notes.map((n) => ({ em: date(n.created_at), autor: n.author, texto: cut(n.body, 600) })),
     etapasPercorridas: history.map((h) => ({ etapa: h.stage, entrou: date(h.entered_at), dias: days(h.entered_at, h.left_at ? new Date(h.left_at) : now) })),
@@ -279,9 +279,9 @@ export function tasksForCopilot(db: DatabaseSync, viewer: Viewer | null, f: { si
   start.setHours(0, 0, 0, 0);
   const situacao = f.situacao ?? "pendentes";
   if (situacao === "atrasadas") {
-    // Atrasada = finalização vencida (sem finalização, nunca atrasa).
-    where.push("a.end_at IS NOT NULL AND a.end_at < ?");
-    params.push(now.toISOString());
+    // Atrasada = finalização vencida; sem finalização, início antes de hoje.
+    where.push(OVERDUE);
+    params.push(...overdueParams(now));
   } else if (situacao === "hoje") {
     where.push("((a.due_at >= ? AND a.due_at < ?) OR (a.end_at >= ? AND a.end_at < ?))");
     const s = start.toISOString(), e = new Date(start.getTime() + DAY).toISOString();
@@ -305,7 +305,7 @@ export function tasksForCopilot(db: DatabaseSync, viewer: Viewer | null, f: { si
     `SELECT a.title, a.due_at, a.end_at, t.name AS type, u.name AS owner, d.id AS deal_id, d.title AS deal, pe.name AS person
      FROM activity a JOIN activity_type t ON t.id = a.type_id LEFT JOIN app_user u ON u.id = a.owner_id
      LEFT JOIN deal d ON d.id = a.deal_id AND d.deleted_at IS NULL LEFT JOIN person pe ON pe.id = a.person_id
-     WHERE ${where.join(" AND ")} ORDER BY a.due_at`,
+     WHERE ${where.join(" AND ")} ORDER BY COALESCE(a.end_at, a.due_at)`,
     ...params,
   );
   return {
@@ -316,7 +316,7 @@ export function tasksForCopilot(db: DatabaseSync, viewer: Viewer | null, f: { si
       tipo: r.type,
       inicio: date(r.due_at),
       finalizacao: date(r.end_at),
-      atrasadaHaDias: r.end_at && r.end_at < now.toISOString() ? days(r.end_at, now) : null,
+      atrasadaHaDias: isOverdue({ ...r, done: 0 }, now) ? days(overdueFrom(r), now) : null,
       responsavel: r.owner ?? "Sem responsável",
       cartaoId: r.deal_id,
       cartao: r.deal,

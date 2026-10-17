@@ -175,6 +175,31 @@ pergunta antes de criar (**Criar mesmo assim**).
 - Usuários inativos não aparecem para novos registros (mas continuam nos
   registros antigos).
 
+### 6.1 Visão em lista
+
+Botões **Quadro / Lista** ao lado do nome do funil (a escolha fica lembrada).
+A lista mostra uma linha por cartão com os mesmos filtros, visão e busca do
+quadro:
+
+- Título (sempre, fixo à esquerda; verde/vermelho com o desfecho quando
+  encerrado) e as colunas escolhidas em **Personalizar colunas**: busca,
+  visíveis com ordem (↑/↓), demais campos por grupo (negócio, contato,
+  organização e campos personalizados), **Colunas padrão**, Cancelar e
+  Salvar. Colunas lembradas por funil e usuário. Padrão: Etapa, Valor
+  (comercial) / SLA (operacional) / Início e Prazo (projeto), Organização,
+  Contato, Responsável e Próxima tarefa.
+- Clique no cabeçalho ordena (crescente, decrescente, original); vazios no
+  fim. Próxima tarefa atrasada em vermelho.
+- Quantidade e soma no topo; clique na linha abre o cartão.
+
+### 6.2 Detalhe do cartão: painel ou tela cheia
+
+O detalhe abre como painel lateral (até 1100 px) ou em **tela cheia** (botão
+⤢ ao lado do ✕): ocupa a área do quadro/lista, mantendo a lista de funis; ao
+fechar, volta ao quadro. A escolha fica lembrada. As duas colunas do
+detalhe se ajustam à largura do painel (estreito: uma coluna só, sem
+rolagem lateral).
+
 ### 7.0 Editar contato, organização e responsável pelo cartão
 
 No detalhe do cartão, o **nome** do contato e da organização é um link: o

@@ -3,6 +3,7 @@
 // produtos vendidos e atividades por usuário. Respeitam a permissão do
 // usuário (mesma regra do quadro e das tarefas).
 import { OUTCOME_TEXT } from "../lib/cardTypes";
+import { isOverdue } from "../lib/taskTiming";
 import { activityScope } from "./activities";
 import { cardScope } from "./deals";
 import { many, type DatabaseSync, type SqlValue } from "./sql";
@@ -368,14 +369,13 @@ function activities(db: DatabaseSync, f: ReportFilter, now: Date): ActivityRow[]
     ...scope.params,
   );
   const map = new Map<string | null, Omit<ActivityRow, "id" | "name">>();
-  const nowIso = now.toISOString();
   for (const a of rows) {
     const r = map.get(a.owner_id) ?? { total: 0, done: 0, pending: 0, overdue: 0 };
     r.total++;
     if (a.done) r.done++;
     else {
       r.pending++;
-      if (a.end_at && a.end_at < nowIso) r.overdue++;
+      if (isOverdue(a, now)) r.overdue++;
     }
     map.set(a.owner_id, r);
   }

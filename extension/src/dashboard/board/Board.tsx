@@ -2,7 +2,7 @@
 // Fluxo geral / Meu fluxo / Minha equipe, ordenação, colunas com quantidade
 // e soma, "+" tracejado por coluna e arrastar cartões entre etapas.
 import { useCallback, useEffect, useState } from "react";
-import { BarChart3, ChevronDown, Filter, MoreHorizontal, PanelLeft, Plus, Search } from "lucide-react";
+import { BarChart3, ChevronDown, Columns3, Filter, List, MoreHorizontal, PanelLeft, Plus, Search } from "lucide-react";
 import { TaBadge, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { BoardColumn, BoardSort, BoardView, DealStatus } from "../../db/deals";
@@ -14,6 +14,8 @@ import { useSession } from "../session";
 import { Popover } from "../ui/Popover";
 import { StageDot } from "../ui/StageSelect";
 import { TagChip } from "../ui/TagPicker";
+import { BoardList, loadListColumns, STAGE_COLUMN } from "./BoardList";
+import { useCardFieldOptions } from "./fieldOptions";
 import { KanbanCard } from "./KanbanCard";
 
 const VIEW_LABEL: Record<BoardView, string> = { all: "Fluxo geral", mine: "Meu fluxo", team: "Minha equipe" };
@@ -80,7 +82,11 @@ function Menu<T extends string>({ value, labels, onChange, icon }: { value: T; l
   const [open, setOpen] = useState(false);
   return (
     <div className="relative">
-      <button type="button" onClick={() => setOpen((o) => !o)} className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-theme-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/5">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-theme-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/5"
+      >
         {icon}
         {labels[value]}
         <ChevronDown size={14} className="text-gray-400" />
@@ -94,7 +100,10 @@ function Menu<T extends string>({ value, labels, onChange, icon }: { value: T; l
               onChange(k);
               setOpen(false);
             }}
-            className={cn("block w-full px-3.5 py-2 text-left text-theme-sm hover:bg-gray-50 dark:hover:bg-white/5", k === value ? "font-medium text-brand-600" : "text-gray-700 dark:text-gray-300")}
+            className={cn(
+              "block w-full px-3.5 py-2 text-left text-theme-sm hover:bg-gray-50 dark:hover:bg-white/5",
+              k === value ? "font-medium text-brand-600" : "text-gray-700 dark:text-gray-300",
+            )}
           >
             {labels[k]}
           </button>
@@ -128,6 +137,24 @@ export function Board({
   const [search, setSearch] = useState("");
   const [view, setView] = usePref<BoardView>("conectcrm-board-view", "all");
   const [sort, setSort] = usePref<BoardSort>("conectcrm-board-sort", "recent");
+  // Quadro (Kanban) ou lista; colunas da lista lembradas por funil e usuário.
+  const [mode, setMode] = usePref<"kanban" | "lista">("conectcrm-board-mode", "kanban");
+  const listKey = `conectcrm-list-columns-${user.id}-${pipeline.id}`;
+  const [listCols, setListCols] = useState(() => loadListColumns(listKey, pipeline.type));
+  const [listLoadedKey, setListLoadedKey] = useState(listKey);
+  if (listLoadedKey !== listKey) {
+    setListLoadedKey(listKey);
+    setListCols(loadListColumns(listKey, pipeline.type));
+  }
+  const saveListCols = (keys: string[]) => {
+    setListCols(keys);
+    try {
+      localStorage.setItem(listKey, JSON.stringify(keys));
+    } catch {
+      /* preferência só desta tela */
+    }
+  };
+  const fieldOptions = useCardFieldOptions(pipeline);
   // Filtro lembrado por funil e usuário: ao voltar, vale o último escolhido.
   const filterKey = `conectcrm-board-filter-${user.id}-${pipeline.id}`;
   const [filter, setFilter] = useState<BoardFilter>(() => loadFilter(filterKey));
@@ -159,12 +186,13 @@ export function Board({
   const kind = CARD_TEXT[pipeline.type].kind;
   const load = useCallback(async () => {
     try {
-      setColumns(await call("board.get", { pipelineId: pipeline.id, view, sort, status, search, ownerIds, tagIds }));
+      const fieldKeys = mode === "lista" ? listCols.filter((k) => k !== STAGE_COLUMN) : undefined;
+      setColumns(await call("board.get", { pipelineId: pipeline.id, view, sort, status, search, ownerIds, tagIds, fieldKeys }));
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [pipeline.id, view, sort, status, search, ownerIds, tagIds]);
+  }, [pipeline.id, view, sort, status, search, ownerIds, tagIds, mode, listCols]);
 
   useEffect(() => {
     const t = setTimeout(() => void load(), search ? 200 : 0);
@@ -251,14 +279,46 @@ export function Board({
         <button type="button" title={sidebarOpen ? "Esconder funis" : "Mostrar funis"} onClick={onToggleSidebar} className="text-gray-500 hover:text-gray-700">
           <PanelLeft size={20} />
         </button>
+        <div className="flex rounded-lg border border-gray-200 p-0.5 dark:border-gray-700" role="group" aria-label="Visualização">
+          {(
+            [
+              ["kanban", "Quadro (Kanban)", <Columns3 key="k" size={16} />],
+              ["lista", "Lista", <List key="l" size={16} />],
+            ] as const
+          ).map(([m, title, icon]) => (
+            <button
+              key={m}
+              type="button"
+              title={title}
+              aria-pressed={mode === m}
+              onClick={() => setMode(m)}
+              className={cn(
+                "flex h-8 w-8 items-center justify-center rounded-md",
+                mode === m ? "bg-brand-500 text-white" : "text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5",
+              )}
+            >
+              {icon}
+            </button>
+          ))}
+        </div>
         <h1 className="truncate text-theme-xl font-semibold text-gray-800 dark:text-white/90">{pipeline.name}</h1>
         <TaBadge color={TYPE_BADGE[pipeline.type]} label={PIPELINE_TYPE_LABEL[pipeline.type]} />
         <div className="ml-auto flex items-center gap-1">
-          <button type="button" title="Indicadores do funil" onClick={onShowStats} className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5">
+          <button
+            type="button"
+            title="Indicadores do funil"
+            onClick={onShowStats}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5"
+          >
             <BarChart3 size={18} />
           </button>
           <div className="relative">
-            <button type="button" title="Mais opções" onClick={() => setMenuOpen((o) => !o)} className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5">
+            <button
+              type="button"
+              title="Mais opções"
+              onClick={() => setMenuOpen((o) => !o)}
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5"
+            >
               <MoreHorizontal size={18} />
             </button>
             <Popover open={menuOpen} onClose={() => setMenuOpen(false)} className="left-auto right-0 min-w-[180px] py-1">
@@ -292,7 +352,10 @@ export function Board({
           <button
             type="button"
             onClick={() => setFilterOpen((o) => !o)}
-            className={cn("flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-theme-sm font-medium hover:bg-gray-100 dark:hover:bg-white/5", filterCount ? "text-brand-600" : "text-gray-700 dark:text-gray-300")}
+            className={cn(
+              "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-theme-sm font-medium hover:bg-gray-100 dark:hover:bg-white/5",
+              filterCount ? "text-brand-600" : "text-gray-700 dark:text-gray-300",
+            )}
           >
             <Filter size={15} className="shrink-0" /> Filtrar{filterCount ? ` (${filterCount})` : ""}
             {filterCount > 0 && (
@@ -305,7 +368,15 @@ export function Board({
             <p className="mb-1.5 text-theme-xs font-semibold uppercase text-gray-400">Status</p>
             <div className="mb-3 flex flex-wrap gap-1">
               {(Object.keys(STATUS_LABEL) as (DealStatus | "all")[]).map((s) => (
-                <button key={s} type="button" onClick={() => setStatus(s)} className={cn("rounded-full px-2.5 py-1 text-theme-xs", status === s ? "bg-brand-500 text-white" : "bg-gray-100 text-gray-700 dark:bg-white/5 dark:text-gray-300")}>
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setStatus(s)}
+                  className={cn(
+                    "rounded-full px-2.5 py-1 text-theme-xs",
+                    status === s ? "bg-brand-500 text-white" : "bg-gray-100 text-gray-700 dark:bg-white/5 dark:text-gray-300",
+                  )}
+                >
                   {statusLabels(pipeline.type)[s]}
                 </button>
               ))}
@@ -314,7 +385,11 @@ export function Board({
             <div className="mb-3 max-h-40 space-y-1 overflow-y-auto">
               {users.map((u) => (
                 <label key={u.id} className="flex items-center gap-2 text-theme-sm text-gray-700 dark:text-gray-300">
-                  <input type="checkbox" checked={ownerIds.includes(u.id)} onChange={(e) => setOwnerIds(e.target.checked ? [...ownerIds, u.id] : ownerIds.filter((x) => x !== u.id))} />
+                  <input
+                    type="checkbox"
+                    checked={ownerIds.includes(u.id)}
+                    onChange={(e) => setOwnerIds(e.target.checked ? [...ownerIds, u.id] : ownerIds.filter((x) => x !== u.id))}
+                  />
                   {u.name}
                 </label>
               ))}
@@ -324,7 +399,12 @@ export function Board({
                 <p className="mb-1.5 text-theme-xs font-semibold uppercase text-gray-400">Tags</p>
                 <div className="mb-3 flex flex-wrap gap-1.5">
                   {tags.map((t) => (
-                    <button key={t.id} type="button" className={cn("rounded-full", tagIds.includes(t.id) ? "ring-2 ring-brand-300" : "opacity-70")} onClick={() => setTagIds(tagIds.includes(t.id) ? tagIds.filter((x) => x !== t.id) : [...tagIds, t.id])}>
+                    <button
+                      key={t.id}
+                      type="button"
+                      className={cn("rounded-full", tagIds.includes(t.id) ? "ring-2 ring-brand-300" : "opacity-70")}
+                      onClick={() => setTagIds(tagIds.includes(t.id) ? tagIds.filter((x) => x !== t.id) : [...tagIds, t.id])}
+                    >
                       <TagChip tag={t} />
                     </button>
                   ))}
@@ -346,59 +426,66 @@ export function Board({
 
       {error && <p className="mb-3 rounded-lg bg-error-50 px-3 py-2 text-theme-sm text-error-700">{error}</p>}
 
-      {/* Colunas */}
-      <div className="flex min-h-[60vh] flex-1 gap-4 overflow-x-auto pb-3 custom-scrollbar">
-        {columns.map((col) => (
-          <div
-            key={col.id}
-            onDragOver={(e) => onDragOver(e, col.id)}
-            onDragLeave={(e) => {
-              if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDrop(null);
-            }}
-            onDrop={(e) => void onDrop(e)}
-            className={cn("flex w-[300px] shrink-0 flex-col rounded-xl bg-gray-50 p-3 transition-colors dark:bg-white/[0.03]", drop?.stageId === col.id && "bg-brand-25 ring-2 ring-brand-200 dark:bg-brand-500/10")}
-          >
-            <div className="mb-0.5 flex items-center gap-2 px-1">
-              <StageDot color={col.color} />
-              <span className="truncate text-theme-sm font-semibold text-gray-800 dark:text-white/90">{col.name}</span>
-              <span className="text-theme-xs text-gray-400">{col.count}</span>
+      {mode === "lista" ? (
+        <BoardList pipeline={pipeline} columns={columns} keys={listCols} options={fieldOptions} onChangeKeys={saveListCols} onOpenCard={onOpenCard} />
+      ) : (
+        /* Colunas */
+        <div className="flex min-h-[60vh] flex-1 gap-4 overflow-x-auto pb-3 custom-scrollbar">
+          {columns.map((col) => (
+            <div
+              key={col.id}
+              onDragOver={(e) => onDragOver(e, col.id)}
+              onDragLeave={(e) => {
+                if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDrop(null);
+              }}
+              onDrop={(e) => void onDrop(e)}
+              className={cn(
+                "flex w-[300px] shrink-0 flex-col rounded-xl bg-gray-50 p-3 transition-colors dark:bg-white/[0.03]",
+                drop?.stageId === col.id && "bg-brand-25 ring-2 ring-brand-200 dark:bg-brand-500/10",
+              )}
+            >
+              <div className="mb-0.5 flex items-center gap-2 px-1">
+                <StageDot color={col.color} />
+                <span className="truncate text-theme-sm font-semibold text-gray-800 dark:text-white/90">{col.name}</span>
+                <span className="text-theme-xs text-gray-400">{col.count}</span>
+              </div>
+              {pipeline.type === "comercial" && <div className="mb-3 px-1 text-theme-xs text-gray-500">{formatCents(col.total_cents)}</div>}
+              {pipeline.type !== "comercial" && <div className="mb-2" />}
+              <div className="flex flex-1 flex-col gap-2.5">
+                {col.cards.map((card) => (
+                  <div key={card.id}>
+                    {drop?.stageId === col.id && drop.beforeId === card.id && <div className="mb-2 h-1 rounded bg-brand-400" />}
+                    <KanbanCard
+                      card={card}
+                      pipeline={pipeline}
+                      dragging={drag?.id === card.id}
+                      onOpen={() => onOpenCard(card.id)}
+                      onDragStart={(e) => {
+                        e.dataTransfer.effectAllowed = "move";
+                        e.dataTransfer.setData("text/plain", card.id);
+                        setDrag({ id: card.id, from: col.id });
+                      }}
+                      onDragEnd={() => {
+                        setDrag(null);
+                        setDrop(null);
+                      }}
+                    />
+                  </div>
+                ))}
+                {sort === "manual" && drop?.stageId === col.id && drop.beforeId === null && drag && <div className="h-1 rounded bg-brand-400" />}
+                <button
+                  type="button"
+                  title={`Novo ${CARD_TEXT[pipeline.type].noun} em ${col.name}`}
+                  onClick={() => onCreateCard(col.id)}
+                  className="flex h-10 shrink-0 items-center justify-center rounded-lg border border-dashed border-gray-300 text-gray-400 hover:border-brand-300 hover:text-brand-500 dark:border-gray-700"
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
             </div>
-            {pipeline.type === "comercial" && <div className="mb-3 px-1 text-theme-xs text-gray-500">{formatCents(col.total_cents)}</div>}
-            {pipeline.type !== "comercial" && <div className="mb-2" />}
-            <div className="flex flex-1 flex-col gap-2.5">
-              {col.cards.map((card) => (
-                <div key={card.id}>
-                  {drop?.stageId === col.id && drop.beforeId === card.id && <div className="mb-2 h-1 rounded bg-brand-400" />}
-                  <KanbanCard
-                    card={card}
-                    pipeline={pipeline}
-                    dragging={drag?.id === card.id}
-                    onOpen={() => onOpenCard(card.id)}
-                    onDragStart={(e) => {
-                      e.dataTransfer.effectAllowed = "move";
-                      e.dataTransfer.setData("text/plain", card.id);
-                      setDrag({ id: card.id, from: col.id });
-                    }}
-                    onDragEnd={() => {
-                      setDrag(null);
-                      setDrop(null);
-                    }}
-                  />
-                </div>
-              ))}
-              {sort === "manual" && drop?.stageId === col.id && drop.beforeId === null && drag && <div className="h-1 rounded bg-brand-400" />}
-              <button
-                type="button"
-                title={`Novo ${CARD_TEXT[pipeline.type].noun} em ${col.name}`}
-                onClick={() => onCreateCard(col.id)}
-                className="flex h-10 shrink-0 items-center justify-center rounded-lg border border-dashed border-gray-300 text-gray-400 hover:border-brand-300 hover:text-brand-500 dark:border-gray-700"
-              >
-                <Plus size={16} />
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
