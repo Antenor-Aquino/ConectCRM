@@ -100,7 +100,7 @@ export function UsersSettings() {
   );
 }
 
-function UserModal({
+export function UserModal({
   target,
   isAdmin,
   isSelf,

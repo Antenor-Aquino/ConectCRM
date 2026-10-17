@@ -162,6 +162,14 @@ Obs.: no menu "+" e no formulário, o cartão de projeto se chama
 - Usuários inativos não aparecem para novos registros (mas continuam nos
   registros antigos).
 
+### 7.0 Editar contato, organização e responsável pelo cartão
+
+No detalhe do cartão, o **nome** do contato e da organização é um link: o
+clique abre o formulário de edição do cadastro por cima do cartão; ao salvar,
+o cartão já mostra os dados novos. Para trocar o vínculo, ⇆ abre a busca; ✕
+tira o vínculo. Ao lado do responsável, o lápis abre o cadastro do usuário
+(administrador edita qualquer um; os demais, só o próprio).
+
 ## 7.1 Permissão por tipo de usuário
 
 - **Administrador:** vê e edita todos os cartões.

@@ -2,7 +2,7 @@
 // resolvido/não resolvido, concluído/não concluído conforme o tipo),
 // notas, tarefas e histórico de alterações.
 import { useCallback, useEffect, useState } from "react";
-import { Check, CheckCircle2, Circle, PlusCircle, RotateCcw, Sparkles, Trash2, Trophy, X, XCircle } from "lucide-react";
+import { Check, CheckCircle2, Circle, Pencil, PlusCircle, RotateCcw, Sparkles, Trash2, Trophy, X, XCircle } from "lucide-react";
 import { TaBadge, TaButton, TaInput, TaTextarea, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { ActivityListItem } from "../../db/activities";
@@ -20,6 +20,10 @@ import { SlaPicker } from "../ui/SlaPicker";
 import { stageColor } from "../ui/StageSelect";
 import { TagPicker } from "../ui/TagPicker";
 import { UserSelect } from "../ui/UserSelect";
+import { OrganizationFormModal } from "../contacts/OrganizationFormModal";
+import { PersonFormModal } from "../contacts/PersonFormModal";
+import { UserModal } from "../settings/UsersSettings";
+import { useSession } from "../session";
 import { openCopilot } from "../copilot/CopilotPanel";
 import { DocumentsPanel } from "../documents/DocumentsPanel";
 import { NotesPanel } from "../ui/NotesPanel";
@@ -42,6 +46,9 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
   const [tab, setTab] = useState<Tab>("notas");
   const [itemsOpen, setItemsOpen] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
+  // Cadastro aberto a partir do nome do contato, da organização ou do responsável.
+  const [editing, setEditing] = useState<{ kind: "person" | "organization" | "user"; id: string } | null>(null);
+  const { user: me, users, reloadUsers } = useSession();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
 
@@ -245,7 +252,16 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
 
           <SectionLabel>Relacionamento</SectionLabel>
           <Field label="Contato">
-            <Combobox value={person} onChange={(i) => void update({ personId: i?.id ?? null })} search={searchPersons} placeholder="Buscar por nome, telefone ou e-mail" onCreate={createPersonQuick} createLabel="Criar contato" />
+            <Combobox
+              value={person}
+              onChange={(i) => void update({ personId: i?.id ?? null })}
+              search={searchPersons}
+              placeholder="Buscar por nome, telefone ou e-mail"
+              onCreate={createPersonQuick}
+              createLabel="Criar contato"
+              onOpenValue={(i) => setEditing({ kind: "person", id: i.id })}
+              openTitle="Editar o cadastro do contato"
+            />
           </Field>
           <Field label="Organização">
             <Combobox
@@ -256,12 +272,29 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
               onCreate={createOrganizationQuick}
               createLabel="Criar organização"
               dashed={<><PlusCircle size={15} /> Vincular ou criar organização</>}
+              onOpenValue={(i) => setEditing({ kind: "organization", id: i.id })}
+              openTitle="Editar o cadastro da organização"
             />
           </Field>
 
           <SectionLabel>Mais detalhes</SectionLabel>
           <Field label="Responsável">
-            <UserSelect value={card.owner_id} onChange={(id) => void update({ ownerId: id })} />
+            <div className="flex items-center gap-1.5">
+              <div className="min-w-0 flex-1">
+                <UserSelect value={card.owner_id} onChange={(id) => void update({ ownerId: id })} />
+              </div>
+              {/* Usuários: administrador edita qualquer um; os demais, só o próprio cadastro. */}
+              {card.owner_id && (me.role === "admin" || me.id === card.owner_id) && (
+                <button
+                  type="button"
+                  title="Editar o cadastro do responsável"
+                  onClick={() => setEditing({ kind: "user", id: card.owner_id! })}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-gray-300 text-gray-500 hover:text-brand-600 dark:border-gray-700"
+                >
+                  <Pencil size={15} />
+                </button>
+              )}
+            </div>
           </Field>
           <Field label="Tags">
             <TagPicker entity={text.kind} value={card.tags.map((t) => t.id)} onChange={(ids) => void update({ tagIds: ids })} />
@@ -322,6 +355,42 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
           void run(() => call("cards.setItems", { id: cardId, items: list }));
         }}
       />
+      {editing?.kind === "person" && (
+        <PersonFormModal
+          personId={editing.id}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            void load();
+            onChanged();
+          }}
+        />
+      )}
+      {editing?.kind === "organization" && (
+        <OrganizationFormModal
+          organizationId={editing.id}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            void load();
+            onChanged();
+          }}
+        />
+      )}
+      {editing?.kind === "user" && users.some((u) => u.id === editing.id) && (
+        <UserModal
+          target={users.find((u) => u.id === editing.id)!}
+          isAdmin={me.role === "admin"}
+          isSelf={me.id === editing.id}
+          onClose={() => setEditing(null)}
+          onSaved={async () => {
+            setEditing(null);
+            await reloadUsers();
+            void load();
+            onChanged();
+          }}
+        />
+      )}
       <LostModal
         cardId={lostOpen ? cardId : null}
         type={pipeline.type}
