@@ -5,6 +5,7 @@ import { createActivity, getActivity, listActivities, updateActivity } from "../
 import { createOrganization, createPerson } from "../src/db/contacts";
 import { createCard } from "../src/db/deals";
 import { MIGRATIONS, runMigrations } from "../src/db/migrate";
+import { listDocumentTypes } from "../src/db/documents";
 import { createPipeline } from "../src/db/pipelines";
 import { createTag } from "../src/db/tags";
 import { createUser } from "../src/db/users";
@@ -12,7 +13,7 @@ import { methods } from "../src/rpc/methods";
 import { freshDb } from "./helpers";
 
 const require = createRequire(import.meta.url);
-const b64 = (s: string) => Buffer.from(s).toString("base64");
+const file = (filename: string, mime: string, sha = "b".repeat(64)) => ({ sha256: sha, mime, size: 10, filename, location: "browser" as const });
 
 describe("tarefas: início, finalização, tags, anexos e vínculos", () => {
   it("finalização opcional e nunca antes do início; início pode ser futuro", async () => {
@@ -39,7 +40,8 @@ describe("tarefas: início, finalização, tags, anexos e vínculos", () => {
     const deal = createCard(db, ctx, { pipelineId: pid, title: "Negociação Teste", personId: person, organizationId: org });
     const tag = createTag(db, ctx, { entity: "activity", name: "Urgente", color: "red" });
     const id = createActivity(db, ctx, { title: "Enviar proposta", dealId: deal, tagIds: [tag] });
-    methods["attachments.add"](db, ctx, { entityType: "activity", entityId: id, filename: "proposta.pdf", dataUrl: `data:application/pdf;base64,${b64("%PDF")}` });
+    const typeId = listDocumentTypes(db)[0]!.id;
+    methods["documents.create"](db, ctx, { name: "Proposta", typeId, links: [{ type: "activity", id }], file: file("proposta.pdf", "application/pdf") });
     const [t] = listActivities(db);
     expect(t).toMatchObject({
       title: "Enviar proposta",
@@ -52,24 +54,25 @@ describe("tarefas: início, finalização, tags, anexos e vínculos", () => {
       organization_name: "Posto 5 irmãos",
     });
     expect(t!.tags).toEqual([{ id: tag, name: "Urgente", color: "red" }]);
-    expect(t!.attachments).toEqual([expect.objectContaining({ filename: "proposta.pdf", mime: "application/pdf" })]);
+    expect(t!.documents).toEqual([expect.objectContaining({ name: "Proposta", filename: "proposta.pdf", mime: "application/pdf" })]);
     expect(getActivity(db, id)!.tagIds).toEqual([tag]);
     // Tag de outra entidade é recusada.
     const dealTag = createTag(db, ctx, { entity: "deal", name: "Venda" });
     expect(() => updateActivity(db, ctx, id, { tagIds: [dealTag] })).toThrow(/outro tipo/);
   });
 
-  it("anexo de tarefa segue a permissão da tarefa", async () => {
+  it("documento da tarefa segue a permissão da tarefa", async () => {
     const { db, ctx } = await freshDb();
     createUser(db, ctx, { name: "Admin", role: "admin" });
     const ana = createUser(db, ctx, { name: "Ana", role: "vendedor" });
     const bruno = createUser(db, ctx, { name: "Bruno", role: "vendedor" });
     const id = createActivity(db, { ...ctx, userId: ana }, { title: "Da Ana", ownerId: ana });
-    const p = { entityType: "activity" as const, entityId: id, filename: "a.txt", dataUrl: `data:text/plain;base64,${b64("oi")}` };
-    expect(() => methods["attachments.add"](db, { ...ctx, userId: bruno }, p)).toThrow(/permissão/);
-    const file = methods["attachments.add"](db, { ...ctx, userId: ana }, p);
-    expect(() => methods["attachments.get"](db, { ...ctx, userId: bruno }, { id: file })).toThrow(/permissão/);
-    expect(methods["attachments.get"](db, { ...ctx, userId: ana }, { id: file })).toMatch(/^data:text\/plain;base64,/);
+    const p = { name: "Anotações", typeId: listDocumentTypes(db)[0]!.id, links: [{ type: "activity" as const, id }], file: file("a.txt", "text/plain") };
+    expect(() => methods["documents.create"](db, { ...ctx, userId: bruno }, p)).toThrow(/permissão/);
+    const doc = methods["documents.create"](db, { ...ctx, userId: ana }, p);
+    const versionId = methods["documents.get"](db, { ...ctx, userId: ana }, { id: doc })!.version_id;
+    expect(() => methods["documents.file"](db, { ...ctx, userId: bruno }, { versionId, action: "view" })).toThrow(/permissão/);
+    expect(methods["documents.file"](db, { ...ctx, userId: ana }, { versionId, action: "view" })).toMatchObject({ location: "browser", filename: "a.txt" });
   });
 
   it("migração: data escolhida vira finalização; 'agora' do cadastro não", async () => {
@@ -104,7 +107,7 @@ describe("tarefas: início, finalização, tags, anexos e vínculos", () => {
     db.run("INSERT INTO workspace (id, name, created_at, updated_at) VALUES ('w', 'W', 'x', 'x')");
     db.run("INSERT INTO tag (id, workspace_id, entity, name, created_at, updated_at) VALUES ('t1', 'w', 'deal', 'Venda', 'x', 'x')");
     db.run("INSERT INTO entity_tag (id, workspace_id, tag_id, entity_type, entity_id, created_at, updated_at) VALUES ('l1', 'w', 't1', 'deal', 'd1', 'x', 'x')");
-    expect(runMigrations(db)).toBe(1);
+    expect(runMigrations(db)).toBe(MIGRATIONS.filter((x) => x.name >= "0004").length);
     expect(db.exec("SELECT name FROM tag")[0]!.values).toEqual([["Venda"]]);
     expect(db.exec("SELECT tag_id FROM entity_tag")[0]!.values).toEqual([["t1"]]);
     expect(db.exec("PRAGMA foreign_keys")[0]!.values[0]![0]).toBe(1);

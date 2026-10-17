@@ -5,6 +5,7 @@ import { TaBadge, TaButton, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { ActivityListItem } from "../../db/activities";
 import type { CustomField, CustomValue } from "../../db/customFields";
+import { DocumentFieldView } from "../documents/DocumentField";
 import type { DataTable } from "../../db/repo";
 import { formatCents, formatDateTime } from "../../lib/format";
 import { taskTiming } from "../../lib/taskTiming";
@@ -67,6 +68,8 @@ export function CustomValuesView({ fields, values }: { fields: CustomField[]; va
       case "person":
       case "organization":
         return <RefName kind={f.field_type} id={String(v)} />;
+      case "document":
+        return <DocumentFieldView id={String(v)} />;
       default:
         return String(v);
     }

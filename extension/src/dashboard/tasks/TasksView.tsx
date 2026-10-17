@@ -9,7 +9,7 @@ import { TaButton, TaSelect, badgePalette, cn, type BadgeColor } from "@tailadmi
 import { call } from "../../rpc/client";
 import type { ActivityListItem, ActivityType } from "../../db/activities";
 import { ActivityIcon } from "../../lib/activityIcons";
-import { downloadDataUrl } from "../../lib/files";
+import { downloadVersion } from "../../lib/documentFiles";
 import { taskTiming } from "../../lib/taskTiming";
 import { useSession } from "../session";
 import { Avatar } from "../ui/Avatar";
@@ -203,21 +203,18 @@ export function TasksView({
               </button>
             )}
           </div>
-          {a.attachments.length > 0 && (
+          {a.documents.length > 0 && (
             <div className="mt-1 flex flex-wrap gap-1.5">
-              {a.attachments.map((f) => (
+              {a.documents.map((f) => (
                 <button
                   key={f.id}
                   type="button"
                   title={`Baixar ${f.filename}`}
-                  onClick={async () => {
-                    const url = await call("attachments.get", { id: f.id });
-                    if (url) downloadDataUrl(url, f.filename);
-                  }}
+                  onClick={() => void downloadVersion(f.version_id).catch((e: unknown) => alert(e instanceof Error ? e.message : String(e)))}
                   className="inline-flex max-w-[220px] items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-600 hover:border-brand-300 hover:text-brand-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400"
                 >
                   <Paperclip size={11} />
-                  <span className="truncate">{f.filename}</span>
+                  <span className="truncate">{f.name}</span>
                   <Download size={11} />
                 </button>
               ))}

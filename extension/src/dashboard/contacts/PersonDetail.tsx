@@ -13,11 +13,12 @@ import { useImages } from "../ui/ImageUpload";
 import { NotesPanel } from "../ui/NotesPanel";
 import { formatPhone } from "../ui/PhoneInput";
 import { TagChip } from "../ui/TagPicker";
+import { DocumentsPanel } from "../documents/DocumentsPanel";
 import { ChangeLogList, CustomValuesView, DrawerShell, InfoRow, RelatedCards, RelatedTasks, Tabs } from "./detailParts";
 import { MergeModal } from "./MergeModal";
 import { PersonFormModal } from "./PersonFormModal";
 
-type Tab = "negocios" | "tarefas" | "notas" | "historico";
+type Tab = "negocios" | "tarefas" | "documentos" | "notas" | "historico";
 
 export function PersonDetail({
   personId,
@@ -41,10 +42,13 @@ export function PersonDetail({
   const [error, setError] = useState<string | null>(null);
   const images = useImages([p?.avatar_id]);
 
-  const load = useCallback(() => call("persons.get", { id: personId }).then((r) => setP(r ?? null)), [personId]);
+  // Os campos vêm junto: um campo novo pode ter sido criado no formulário de edição.
+  const load = useCallback(
+    () => Promise.all([call("persons.get", { id: personId }).then((r) => setP(r ?? null)), call("customFields.list", { entity: "person" }).then(setFields)]),
+    [personId],
+  );
   useEffect(() => {
     void load();
-    void call("customFields.list", { entity: "person" }).then(setFields);
   }, [load]);
 
   const after = async () => {
@@ -147,6 +151,7 @@ export function PersonDetail({
             tabs={[
               ["negocios", "Negócios"],
               ["tarefas", "Tarefas"],
+              ["documentos", "Documentos"],
               ["notas", "Notas"],
               ["historico", "Histórico"],
             ]}
@@ -155,6 +160,7 @@ export function PersonDetail({
           />
           {tab === "negocios" && <RelatedCards filter={{ personId: p.id }} onOpenCard={onOpenCard} />}
           {tab === "tarefas" && <RelatedTasks filter={{ personId: p.id }} />}
+          {tab === "documentos" && <DocumentsPanel type="person" id={p.id} />}
           {tab === "notas" && <NotesPanel entityType="person" entityId={p.id} />}
           {tab === "historico" && <ChangeLogList table="person" id={p.id} />}
         </div>

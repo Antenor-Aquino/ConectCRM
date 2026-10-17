@@ -30,7 +30,8 @@ export type CustomFieldType =
   | "url"
   | "user"
   | "person"
-  | "organization";
+  | "organization"
+  | "document";
 
 export const CUSTOM_FIELD_TYPE_LABEL: Record<CustomFieldType, string> = {
   text: "Texto",
@@ -48,6 +49,7 @@ export const CUSTOM_FIELD_TYPE_LABEL: Record<CustomFieldType, string> = {
   user: "Usuário",
   person: "Contato",
   organization: "Organização",
+  document: "Documento (GED)",
 };
 
 const PIPELINE_ENTITIES: CustomFieldEntity[] = ["deal", "ticket", "project"];
@@ -303,7 +305,8 @@ function encodeValue(db: DatabaseSync, field: CustomField, value: CustomValue): 
     }
     case "user":
     case "person":
-    case "organization": {
+    case "organization":
+    case "document": {
       const table = field.field_type === "user" ? "app_user" : field.field_type;
       if (!one(db, `SELECT 1 FROM ${table} WHERE id = ? AND deleted_at IS NULL`, String(value))) {
         throw new ValidationError(`${label}: registro não encontrado.`);

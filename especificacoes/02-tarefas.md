@@ -11,9 +11,10 @@ Modal largo em **duas colunas**, botão ✕ no canto.
 - Círculo de **concluir** (marca/desmarca a tarefa como feita) + campo
   **Nome da tarefa** (título grande, obrigatório).
 - **Add descrição...** — texto longo logo abaixo, sem borda.
-- **Anexos**: "Anexar arquivos" (vários). Numa tarefa nova os arquivos ficam
-  marcados "envia ao salvar" e sobem depois de salvar. Baixar e excluir na
-  própria lista. Permissão do anexo = permissão da tarefa.
+- **Documentos**: "Anexar documentos" (vários) — viram documentos do GED com
+  nome e classificação, vinculados à tarefa, ao cartão, ao contato e à
+  organização (spec 08). Numa tarefa nova os arquivos aguardam e a janela
+  Novo documento abre ao salvar.
 
 **Coluna direita**
 

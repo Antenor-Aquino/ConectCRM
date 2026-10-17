@@ -172,7 +172,12 @@ export function cardDigest(db: DatabaseSync, viewer: Viewer | null, id: string, 
      WHERE h.deal_id = ? AND h.deleted_at IS NULL ORDER BY h.entered_at`,
     id,
   );
-  const attachments = many<{ n: number }>(db, "SELECT COUNT(*) AS n FROM attachment WHERE entity_type = 'deal' AND entity_id = ? AND deleted_at IS NULL", id)[0]!.n;
+  const attachments = many<{ n: number }>(
+    db,
+    `SELECT COUNT(*) AS n FROM document_link l JOIN document d ON d.id = l.document_id AND d.deleted_at IS NULL AND d.purged_at IS NULL
+     WHERE l.entity_type = 'deal' AND l.entity_id = ? AND l.deleted_at IS NULL`,
+    id,
+  )[0]!.n;
   const nowIso = now.toISOString();
   return {
     id,

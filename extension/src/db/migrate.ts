@@ -4,6 +4,7 @@ import migration0001 from "./migrations/0001_activity_meeting_reminder.sql?raw";
 import migration0002 from "./migrations/0002_pipeline_card_fields.sql?raw";
 import migration0003 from "./migrations/0003_activity_end.sql?raw";
 import migration0004 from "./migrations/0004_tag_activity.sql?raw";
+import migration0005 from "./migrations/0005_ged.sql?raw";
 
 export const MIGRATIONS: { name: string; sql: string }[] = [
   { name: "0000_init.sql", sql: migration0000 },
@@ -11,6 +12,7 @@ export const MIGRATIONS: { name: string; sql: string }[] = [
   { name: "0002_pipeline_card_fields.sql", sql: migration0002 },
   { name: "0003_activity_end.sql", sql: migration0003 },
   { name: "0004_tag_activity.sql", sql: migration0004 },
+  { name: "0005_ged.sql", sql: migration0005 },
 ];
 
 /** Aplica as migrations pendentes; devolve quantas rodaram. */

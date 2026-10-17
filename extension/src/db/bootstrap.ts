@@ -1,6 +1,7 @@
 // Dados mínimos de uma instalação nova: o workspace (na v1 existe um só) e
-// os tipos de tarefa padrão (spec 02). Idempotente.
+// os tipos de tarefa padrão (spec 02) e de documento (spec 08). Idempotente.
 import { newId, nowIso } from "../lib/ids";
+import { ensureDocumentTypes } from "./documents";
 import { insertRow, type DbContext } from "./repo";
 import { one, run, withTransaction, type DatabaseSync } from "./sql";
 
@@ -18,7 +19,11 @@ export const DEFAULT_ACTIVITY_TYPES: { name: string; icon: string; isMeeting?: b
 export function bootstrap(db: DatabaseSync): string {
   return withTransaction(db, () => {
     const existing = one<{ id: string }>(db, "SELECT id FROM workspace ORDER BY created_at LIMIT 1");
-    if (existing) return existing.id;
+    if (existing) {
+      // Bases anteriores ao GED ganham os tipos de documento padrão.
+      ensureDocumentTypes(db, { workspaceId: existing.id, userId: null });
+      return existing.id;
+    }
 
     const workspaceId = newId();
     const at = nowIso();
@@ -28,6 +33,7 @@ export function bootstrap(db: DatabaseSync): string {
     DEFAULT_ACTIVITY_TYPES.forEach((t, i) => {
       insertRow(db, ctx, "activity_type", { name: t.name, icon: t.icon, is_meeting: t.isMeeting ? 1 : 0, position: i });
     });
+    ensureDocumentTypes(db, ctx);
     return workspaceId;
   });
 }

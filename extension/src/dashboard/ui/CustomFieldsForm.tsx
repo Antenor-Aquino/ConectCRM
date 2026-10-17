@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { TaInput, TaSelect, TaTextarea } from "@tailadmin";
 import { call } from "../../rpc/client";
 import { searchOrganizations, searchPersons } from "../cards/searchers";
+import { DocumentFieldInput } from "../documents/DocumentField";
 import { Combobox, type ComboItem } from "./Combobox";
 import type { CustomField, CustomValue } from "../../db/customFields";
 import { Field } from "./form";
@@ -107,6 +108,8 @@ function FieldInput({ field, value, onChange }: { field: CustomField; value: Cus
     case "person":
     case "organization":
       return <RefInput kind={field.field_type} value={str || null} onChange={onChange} />;
+    case "document":
+      return <DocumentFieldInput value={str || null} onChange={onChange} />;
     default:
       // text, phone
       return <TaInput value={str} onChange={(e) => onChange(e.target.value)} />;

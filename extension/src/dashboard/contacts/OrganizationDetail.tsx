@@ -14,11 +14,12 @@ import { useImages } from "../ui/ImageUpload";
 import { NotesPanel } from "../ui/NotesPanel";
 import { formatPhone } from "../ui/PhoneInput";
 import { TagChip } from "../ui/TagPicker";
+import { DocumentsPanel } from "../documents/DocumentsPanel";
 import { ChangeLogList, CustomValuesView, DrawerShell, InfoRow, RelatedCards, RelatedTasks, Tabs } from "./detailParts";
 import { MergeModal } from "./MergeModal";
 import { OrganizationFormModal } from "./OrganizationFormModal";
 
-type Tab = "contatos" | "negocios" | "tarefas" | "notas" | "historico";
+type Tab = "contatos" | "negocios" | "tarefas" | "documentos" | "notas" | "historico";
 
 export function OrganizationDetail({
   organizationId,
@@ -42,10 +43,13 @@ export function OrganizationDetail({
   const [error, setError] = useState<string | null>(null);
   const images = useImages([o?.logo_id]);
 
-  const load = useCallback(() => call("organizations.get", { id: organizationId }).then((r) => setO(r ?? null)), [organizationId]);
+  // Os campos vêm junto: um campo novo pode ter sido criado no formulário de edição.
+  const load = useCallback(
+    () => Promise.all([call("organizations.get", { id: organizationId }).then((r) => setO(r ?? null)), call("customFields.list", { entity: "organization" }).then(setFields)]),
+    [organizationId],
+  );
   useEffect(() => {
     void load();
-    void call("customFields.list", { entity: "organization" }).then(setFields);
   }, [load]);
   const after = async () => {
     await load();
@@ -148,6 +152,7 @@ export function OrganizationDetail({
               ["contatos", `Contatos (${o.persons.length})`],
               ["negocios", "Negócios"],
               ["tarefas", "Tarefas"],
+              ["documentos", "Documentos"],
               ["notas", "Notas"],
               ["historico", "Histórico"],
             ]}
@@ -171,6 +176,7 @@ export function OrganizationDetail({
             ))}
           {tab === "negocios" && <RelatedCards filter={{ organizationId: o.id }} onOpenCard={onOpenCard} />}
           {tab === "tarefas" && <RelatedTasks filter={{ organizationId: o.id }} />}
+          {tab === "documentos" && <DocumentsPanel type="organization" id={o.id} />}
           {tab === "notas" && <NotesPanel entityType="organization" entityId={o.id} />}
           {tab === "historico" && <ChangeLogList table="organization" id={o.id} />}
         </div>

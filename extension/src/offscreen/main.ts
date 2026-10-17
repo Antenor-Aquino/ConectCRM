@@ -3,9 +3,11 @@
 // telas abertas nunca sobrescrevem o snapshot uma da outra.
 // Também troca de ambiente (Produção/Teste), exporta e restaura backups.
 import initSqlJs, { type SqlJsStatic } from "sql.js";
+import { finishLegacyBlob, legacyBlobs, legacyBytes } from "../db/documents";
 import { openDatabase, validateBackup } from "../db/open";
 import { setWriteListener, type DatabaseSync } from "../db/sql";
 import { base64ToBytes, bytesToBase64, type DbEnv } from "../lib/environment";
+import { clearBrowser, putInBrowser, sha256Hex } from "../lib/fileStore";
 import { methods } from "../rpc/methods";
 import type { RpcRequest, RpcResponse } from "../rpc/protocol";
 import { loadActiveEnv, loadSnapshot, saveActiveEnv, saveSnapshot } from "./storage";
@@ -59,7 +61,25 @@ async function open(env: DbEnv): Promise<State> {
   await saveSnapshot(env, db.export());
   envOf.set(db, env);
   current = { db, workspaceId, env };
+  await moveLegacyFiles(current);
   return current;
+}
+
+/** Anexos antigos (antes do GED): o conteúdo sai do banco para o depósito. */
+async function moveLegacyFiles(st: State): Promise<void> {
+  const ctx = { workspaceId: st.workspaceId, userId: null };
+  for (const b of legacyBlobs(st.db)) {
+    try {
+      const bytes = legacyBytes(st.db, b.id);
+      if (!bytes) continue;
+      const sha = await sha256Hex(bytes);
+      await putInBrowser(st.env, sha, new Blob([bytes as BlobPart], { type: b.mime }));
+      finishLegacyBlob(st.db, ctx, b.id, sha);
+    } catch (err) {
+      // Continua no banco e é lido de lá; tenta de novo na próxima abertura.
+      console.warn("ConectCRM: anexo antigo não mudou para o depósito", b.id, err);
+    }
+  }
 }
 
 let opened: Promise<State> = loadActiveEnv().then(open);
@@ -88,6 +108,7 @@ async function system(method: string, params: Record<string, unknown>): Promise<
       await flush();
       st.db.close();
       await saveSnapshot("demo", null);
+      await clearBrowser("demo");
       opened = open("demo");
       await opened;
       return true;
@@ -104,6 +125,7 @@ async function system(method: string, params: Record<string, unknown>): Promise<
       await saveSnapshot(st.env, restored.db.export());
       envOf.set(restored.db, st.env);
       current = { ...restored, env: st.env };
+      await moveLegacyFiles(current);
       opened = Promise.resolve(current);
       return true;
     }

@@ -8,7 +8,7 @@ import { call } from "../../rpc/client";
 import type { Report } from "../../db/reports";
 import type { Pipeline } from "../../db/pipelines";
 import type { Team } from "../../db/users";
-import { PIPELINE_TYPE_LABEL } from "../../lib/cardTypes";
+import { PIPELINE_TYPE_LABEL, PIPELINE_TYPE_ORDER } from "../../lib/cardTypes";
 import { formatCents } from "../../lib/format";
 import { formatPeriod, monthLabel, PERIOD_LABEL, periodToIso, presetPeriod, type Period, type PeriodPreset } from "../../lib/period";
 import { downloadWorkbook } from "../../lib/xlsxExport";
@@ -177,10 +177,16 @@ export function ReportsView() {
           Funil
           <TaSelect className="mt-1 w-56" value={pipelineId} onChange={(e) => setPipelineId(e.target.value)}>
             <option value="">Todos os funis comerciais</option>
-            {pipelines.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} ({PIPELINE_TYPE_LABEL[p.type]})
-              </option>
+            {PIPELINE_TYPE_ORDER.filter((t) => pipelines.some((p) => p.type === t)).map((t) => (
+              <optgroup key={t} label={PIPELINE_TYPE_LABEL[t]}>
+                {pipelines
+                  .filter((p) => p.type === t)
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+              </optgroup>
             ))}
           </TaSelect>
         </label>

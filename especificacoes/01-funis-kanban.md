@@ -7,8 +7,8 @@
 
 ## 1. Menu principal
 
-`Funis · Tarefas · Contatos · Organizações · Relatórios` + botão **"+"** ·
-Configurações · Notificações · Agenda.
+`Funis · Tarefas · Contatos · Organizações · GED · Relatórios` + botão **"+"** ·
+Copiloto · Notificações · Agenda · Configurações (engrenagem).
 
 (O antigo item "Clientes" foi dividido em **Contatos** e **Organizações**.)
 
@@ -188,6 +188,9 @@ Em **Configurações → Funis** (e pelo menu ⋯ do quadro):
 - Etapas: nome, cor, ordem (arrastar), probabilidade % (comercial), prazo
   em dias para considerar o item parado.
 - Excluir etapa com itens: pede para mover os itens para outra etapa.
+- Lista de funis (tela Funis e seletores): agrupada por categoria —
+  **Comercial**, **Projeto**, **Operacional** (título em negrito com uma linha
+  abaixo) — e, dentro de cada uma, por nome.
 
 ## 10.1 Campos do cartão (por funil)
 

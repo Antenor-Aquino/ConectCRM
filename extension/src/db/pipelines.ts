@@ -1,4 +1,5 @@
 import { isCardFieldKey, MAX_CARD_FIELDS } from "../lib/cardFields";
+import { PIPELINE_TYPE_ORDER } from "../lib/cardTypes";
 import { insertRow, softDelete, updateRow, type DbContext } from "./repo";
 import { many, one, withTransaction, type DatabaseSync } from "./sql";
 
@@ -44,13 +45,14 @@ export interface NewPipeline {
   stages: { name: string; color?: string | null; probability?: number | null; staleDays?: number | null }[];
 }
 
+/** Por categoria (comercial, projeto, operacional) e depois por nome. */
 export function listPipelines(db: DatabaseSync, opts: { includeArchived?: boolean } = {}): Pipeline[] {
-  return many<Pipeline>(
+  const rows = many<Pipeline>(
     db,
     `SELECT id, name, type, icon, color, position, archived_at, card_fields, version FROM pipeline
-     WHERE deleted_at IS NULL ${opts.includeArchived ? "" : "AND archived_at IS NULL"}
-     ORDER BY position, name`,
+     WHERE deleted_at IS NULL ${opts.includeArchived ? "" : "AND archived_at IS NULL"}`,
   );
+  return rows.sort((a, b) => PIPELINE_TYPE_ORDER.indexOf(a.type) - PIPELINE_TYPE_ORDER.indexOf(b.type) || a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" }));
 }
 
 export function listStages(db: DatabaseSync, pipelineId: string): Stage[] {

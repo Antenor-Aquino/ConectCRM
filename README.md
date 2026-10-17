@@ -99,3 +99,13 @@ em linguagem natural sobre negócios, tarefas e vendas, respondidas com consulta
 reais ao banco local e com ações sugeridas (criar tarefa, nota) que só são
 aplicadas com um clique. Usa o provedor de **Configurações → Inteligência
 artificial** (detalhes em [`especificacoes/07-copiloto-ia.md`](especificacoes/07-copiloto-ia.md)).
+
+### GED (documentos)
+
+Todo arquivo anexado (cartão, tarefa, contato, organização, popup) vira um
+documento com nome, classificação, validade e vínculos — anexado numa tarefa,
+aparece também no cartão, no contato e na organização. O menu **GED** busca em
+qualquer campo (inclusive no texto dos PDFs), filtra, mostra a prévia de PDFs e
+imagens, guarda versões e a trilha de auditoria. Os arquivos ficam no
+navegador ou numa pasta escolhida (detalhes em
+[`especificacoes/08-ged.md`](especificacoes/08-ged.md)).

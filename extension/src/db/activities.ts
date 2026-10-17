@@ -5,6 +5,7 @@ import { normalizeIsoDate, optionalText, requireText, ValidationError } from "..
 import { getCustomValues, setCustomValues, type CustomValue } from "./customFields";
 import { getCardRow } from "./deals";
 import { getRow, insertRow, softDelete, updateRow, type DbContext } from "./repo";
+import { documentScope } from "./documents";
 import { getEntityTags, setEntityTags } from "./tags";
 import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
 import { getUser, teammateIds, type Viewer } from "./users";
@@ -121,7 +122,8 @@ export interface ActivityListItem extends Activity {
   organization_name: string | null;
   owner_name: string | null;
   tags: { id: string; name: string; color: string }[];
-  attachments: { id: string; filename: string; mime: string; size_bytes: number }[];
+  /** Documentos do GED vinculados à tarefa (que o usuário pode ver). */
+  documents: { id: string; version_id: string; name: string; filename: string; mime: string; size_bytes: number }[];
 }
 
 /** Finalização: depois do início (ou igual). */
@@ -298,7 +300,7 @@ function activityWhere(db: DatabaseSync, f: ActivityFilter): { sql: string; para
 
 export function listActivities(db: DatabaseSync, f: ActivityFilter = {}): ActivityListItem[] {
   const { sql, params } = activityWhere(db, f);
-  const rows = many<Omit<ActivityListItem, "tags" | "attachments">>(
+  const rows = many<Omit<ActivityListItem, "tags" | "documents">>(
     db,
     `SELECT a.*, t.name AS type_name, t.icon AS type_icon, d.title AS deal_title, d.kind AS deal_kind,
        d.pipeline_id AS pipeline_id, pl.name AS pipeline_name,
@@ -326,16 +328,20 @@ export function listActivities(db: DatabaseSync, f: ActivityFilter = {}): Activi
      WHERE et.deleted_at IS NULL AND et.entity_id IN (${marks}) ORDER BY t.name COLLATE NOCASE`,
     ...ids,
   );
-  const files = many<{ entity_id: string; id: string; filename: string; mime: string; size_bytes: number }>(
+  const scope = documentScope(db, f.viewer);
+  const files = many<{ entity_id: string; id: string; version_id: string; name: string; filename: string; mime: string; size_bytes: number }>(
     db,
-    `SELECT entity_id, id, filename, mime, size_bytes FROM attachment
-     WHERE deleted_at IS NULL AND entity_type = 'activity' AND entity_id IN (${marks}) ORDER BY created_at`,
+    `SELECT l.entity_id, d.id, v.id AS version_id, d.name, v.filename, v.mime, v.size_bytes FROM document_link l
+     JOIN document d ON d.id = l.document_id AND d.deleted_at IS NULL AND d.purged_at IS NULL
+     JOIN document_version v ON v.id = d.current_version_id
+     WHERE l.deleted_at IS NULL AND l.entity_type = 'activity' AND l.entity_id IN (${marks})${scope.sql} ORDER BY d.created_at`,
     ...ids,
+    ...scope.params,
   );
   return rows.map((r) => ({
     ...r,
     tags: tags.filter((t) => t.entity_id === r.id).map(({ entity_id: _e, ...t }) => t),
-    attachments: files.filter((a) => a.entity_id === r.id).map(({ entity_id: _e, ...a }) => a),
+    documents: files.filter((a) => a.entity_id === r.id).map(({ entity_id: _e, ...a }) => a),
   }));
 }
 

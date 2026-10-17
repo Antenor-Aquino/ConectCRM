@@ -2,8 +2,8 @@
 // campos personalizados e anexos; direita = Tipo, Responsável, Início
 // (duração/lembrete), Finalização (opcional), Vinculado a e Tags.
 // Tipos de reunião podem criar o evento no Google Agenda / Outlook.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, Circle, Download, Link2, Paperclip, Trash2, Video, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronDown, Circle, Link2, Paperclip, Trash2, Video, X } from "lucide-react";
 import { TaButton, TaInput, TaModal, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { Activity, ActivityType } from "../../db/activities";
@@ -19,8 +19,9 @@ import { ErrorText, Field } from "../ui/form";
 import { Popover } from "../ui/Popover";
 import { EndPicker, WhenPicker } from "./WhenPicker";
 import { TagPicker } from "../ui/TagPicker";
-import type { AttachmentInfo } from "../../db/attachments";
-import { downloadDataUrl, fileToDataUrl, formatBytes, MAX_UPLOAD_BYTES } from "../../lib/files";
+import { formatBytes, MAX_UPLOAD_BYTES } from "../../lib/files";
+import { DocumentsPanel } from "../documents/DocumentsPanel";
+import { UploadModal } from "../documents/UploadModal";
 
 const KIND_LABEL = { deal: "Negócio", ticket: "Ticket", project: "Projeto" } as const;
 
@@ -134,6 +135,7 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
   const [tagIds, setTagIds] = useState<string[]>([]);
   /** Arquivos escolhidos antes de salvar uma tarefa nova. */
   const [pending, setPending] = useState<File[]>([]);
+  const [uploadAfter, setUploadAfter] = useState<{ taskId: string; files: File[] } | null>(null);
   const [duration, setDuration] = useState(5);
   const [reminder, setReminder] = useState<number | null>(5);
   const [link, setLink] = useState<ComboItem | null>(null);
@@ -260,10 +262,6 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
     try {
       if (id) await call("activities.update", { id, patch: input });
       else id = await call("activities.create", input);
-      for (const f of pending) {
-        if (f.size > MAX_UPLOAD_BYTES) throw new Error(`"${f.name}" passa de 25 MB.`);
-        await call("attachments.add", { entityType: "activity", entityId: id!, filename: f.name, dataUrl: await fileToDataUrl(f) });
-      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setSaving(false);
@@ -288,7 +286,14 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
       }
     }
     setSaving(false);
-    onSaved();
+    // Arquivos escolhidos na tarefa nova: a janela Novo documento abre agora,
+    // já vinculada à tarefa (e ao cartão, contato e organização dela).
+    if (pending.length && id) setUploadAfter({ taskId: id, files: pending });
+    else onSaved();
+  }
+
+  if (uploadAfter) {
+    return <UploadModal files={uploadAfter.files} context={{ type: "activity", id: uploadAfter.taskId }} onClose={onSaved} onSaved={onSaved} />;
   }
 
   return (
@@ -329,7 +334,7 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
                 </div>
               )}
               <div className="ml-8 mt-3">
-                <TaskFiles taskId={request.id ?? null} pending={pending} onPending={setPending} />
+                {request.id ? <DocumentsPanel type="activity" id={request.id} compact /> : <PendingFiles pending={pending} onPending={setPending} />}
               </div>
               {existing?.external_event_id && (
                 <div className="ml-8 mt-3 rounded-lg bg-brand-25 p-3 text-theme-sm text-gray-700 dark:bg-brand-500/10 dark:text-gray-300">
@@ -502,41 +507,22 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
   );
 }
 
-/** Anexos da tarefa: na tarefa já salva vão direto; na nova, sobem ao salvar. */
-function TaskFiles({ taskId, pending, onPending }: { taskId: string | null; pending: File[]; onPending: (f: File[]) => void }) {
-  const [list, setList] = useState<AttachmentInfo[]>([]);
+/** Tarefa nova: arquivos escolhidos agora viram documentos logo depois de salvar. */
+function PendingFiles({ pending, onPending }: { pending: File[]; onPending: (f: File[]) => void }) {
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const input = useRef<HTMLInputElement>(null);
-  const load = useCallback(async () => {
-    if (taskId) setList(await call("attachments.list", { entityType: "activity", entityId: taskId }));
-  }, [taskId]);
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const add = async (files: File[]) => {
+  const add = (files: File[]) => {
     setError(null);
     const big = files.find((f) => f.size > MAX_UPLOAD_BYTES);
     if (big) return setError(`"${big.name}" passa de 25 MB.`);
-    if (!taskId) return onPending([...pending, ...files]);
-    setBusy(true);
-    try {
-      for (const f of files) await call("attachments.add", { entityType: "activity", entityId: taskId, filename: f.name, dataUrl: await fileToDataUrl(f) });
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
+    onPending([...pending, ...files]);
   };
-
   return (
     <div>
       <div className="mb-1.5 flex items-center justify-between">
-        <span className="text-theme-xs font-semibold uppercase tracking-wide text-gray-400">Anexos</span>
-        <button type="button" disabled={busy} onClick={() => input.current?.click()} className="flex items-center gap-1 text-theme-xs font-medium text-brand-600 hover:underline disabled:opacity-50">
-          <Paperclip size={13} /> {busy ? "Enviando…" : "Anexar arquivos"}
+        <span className="text-theme-xs font-semibold uppercase tracking-wide text-gray-400">Documentos</span>
+        <button type="button" onClick={() => input.current?.click()} className="flex items-center gap-1 text-theme-xs font-medium text-brand-600 hover:underline">
+          <Paperclip size={13} /> Anexar documentos
         </button>
       </div>
       <input
@@ -547,51 +533,21 @@ function TaskFiles({ taskId, pending, onPending }: { taskId: string | null; pend
         onChange={(e) => {
           const files = [...(e.target.files ?? [])];
           e.target.value = "";
-          if (files.length) void add(files);
+          if (files.length) add(files);
         }}
       />
       <ul className="space-y-1">
-        {list.map((a) => (
-          <li key={a.id} className="flex items-center gap-2 rounded-lg bg-gray-50 px-2.5 py-1.5 text-theme-xs dark:bg-white/5">
-            <Paperclip size={13} className="text-gray-400" />
-            <span className="min-w-0 flex-1 truncate text-gray-700 dark:text-gray-300">{a.filename}</span>
-            <span className="text-gray-400">{formatBytes(a.size_bytes)}</span>
-            <button
-              type="button"
-              title="Baixar"
-              className="text-gray-400 hover:text-brand-600"
-              onClick={async () => {
-                const url = await call("attachments.get", { id: a.id });
-                if (url) downloadDataUrl(url, a.filename);
-              }}
-            >
-              <Download size={14} />
-            </button>
-            <button
-              type="button"
-              title="Excluir"
-              className="text-gray-400 hover:text-error-600"
-              onClick={async () => {
-                if (!confirm(`Excluir o anexo "${a.filename}"?`)) return;
-                await call("attachments.delete", { id: a.id });
-                await load();
-              }}
-            >
-              <Trash2 size={14} />
-            </button>
-          </li>
-        ))}
         {pending.map((f, i) => (
           <li key={`${f.name}-${i}`} className="flex items-center gap-2 rounded-lg border border-dashed border-gray-300 px-2.5 py-1.5 text-theme-xs dark:border-gray-700">
             <Paperclip size={13} className="text-gray-400" />
             <span className="min-w-0 flex-1 truncate text-gray-700 dark:text-gray-300">{f.name}</span>
-            <span className="text-gray-400">{formatBytes(f.size)} · envia ao salvar</span>
+            <span className="text-gray-400">{formatBytes(f.size)} · nome e classificação ao salvar</span>
             <button type="button" title="Remover" className="text-gray-400 hover:text-error-600" onClick={() => onPending(pending.filter((_, j) => j !== i))}>
               <X size={14} />
             </button>
           </li>
         ))}
-        {list.length === 0 && pending.length === 0 && <li className="text-theme-xs text-gray-400">Nenhum anexo.</li>}
+        {pending.length === 0 && <li className="text-theme-xs text-gray-400">Nenhum documento.</li>}
       </ul>
       {error && <p className="mt-1 text-theme-xs text-error-600">{error}</p>}
     </div>

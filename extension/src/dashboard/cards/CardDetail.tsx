@@ -20,7 +20,7 @@ import { stageColor } from "../ui/StageSelect";
 import { TagPicker } from "../ui/TagPicker";
 import { UserSelect } from "../ui/UserSelect";
 import { openCopilot } from "../copilot/CopilotPanel";
-import { AttachmentsPanel } from "../ui/AttachmentsPanel";
+import { DocumentsPanel } from "../documents/DocumentsPanel";
 import { NotesPanel } from "../ui/NotesPanel";
 import { TaskModal, type TaskRequest } from "../tasks/TaskModal";
 import { ActivityIcon } from "../../lib/activityIcons";
@@ -31,7 +31,7 @@ import { createOrganizationQuick, createPersonQuick, searchOrganizations, search
 
 const STATUS_BADGE = { open: null, won: { color: "green", label: "Ganho" }, lost: { color: "red", label: "Perdido" } } as const;
 
-type Tab = "notas" | "tarefas" | "anexos" | "historico";
+type Tab = "notas" | "tarefas" | "documentos" | "historico";
 
 export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: string; pipeline: Pipeline; onClose: () => void; onChanged: () => void }) {
   const text = CARD_TEXT[pipeline.type];
@@ -266,7 +266,7 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
               [
                 ["notas", "Notas"],
                 ["tarefas", "Tarefas"],
-                ["anexos", "Anexos"],
+                ["documentos", "Documentos"],
                 ["historico", "Histórico"],
               ] as [Tab, string][]
             ).map(([id, label]) => (
@@ -285,7 +285,7 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
           </div>
           {tab === "notas" && <NotesPanel entityType="deal" entityId={cardId} onChanged={onChanged} />}
           {tab === "tarefas" && <TasksTab cardId={cardId} onChanged={onChanged} />}
-          {tab === "anexos" && <AttachmentsPanel dealId={cardId} />}
+          {tab === "documentos" && <DocumentsPanel type="deal" id={cardId} />}
           {tab === "historico" && (
             <HistoryTab cardId={cardId} stageHistory={card.stageHistory} refreshKey={card.version} />
           )}

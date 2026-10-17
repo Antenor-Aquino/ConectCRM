@@ -66,14 +66,17 @@ export async function writeBackup(
   handle: PermissionedDirectoryHandle,
   settings: AutoBackupSettings,
   filename = autoBackupFilename(settings.frequency),
+  /** Copia também os documentos do GED (devolve um resumo para o aviso). */
+  saveDocuments?: (handle: PermissionedDirectoryHandle) => Promise<string | null>,
 ): Promise<string> {
   const bytes = await getBytes();
   const file = await handle.getFileHandle(filename, { create: true });
   const writable = await file.createWritable();
   await writable.write(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "application/x-sqlite3" }));
   await writable.close();
+  const docs = saveDocuments ? await saveDocuments(handle) : null;
   await saveAutoBackupSettings({ ...settings, lastRunAt: new Date().toISOString(), folderName: handle.name });
-  await addNotification({ kind: "success", title: "Backup concluído", message: `Salvo em "${handle.name}/${filename}".` });
+  await addNotification({ kind: "success", title: "Backup concluído", message: `Salvo em "${handle.name}/${filename}".${docs ? ` ${docs}` : ""}` });
   return filename;
 }
 
@@ -85,14 +88,17 @@ export type AutoBackupCheck =
 
 /** Chamada ao abrir o CRM. Sem permissão (o Chrome pede de novo após reiniciar),
  * devolve "needs-permission" para a tela pedir a autorização com um clique. */
-export async function checkAutoBackup(getBytes: () => Promise<Uint8Array>): Promise<AutoBackupCheck> {
+export async function checkAutoBackup(
+  getBytes: () => Promise<Uint8Array>,
+  saveDocuments?: (handle: PermissionedDirectoryHandle) => Promise<string | null>,
+): Promise<AutoBackupCheck> {
   const settings = await loadAutoBackupSettings();
   if (!settings.enabled || !isBackupDue(settings.frequency, settings.lastRunAt)) return { status: "skipped" };
   const handle = await loadBackupFolderHandle();
   if (!handle) return { status: "skipped" };
   if ((await handle.queryPermission({ mode: "readwrite" })) !== "granted") return { status: "needs-permission", handle, settings };
   try {
-    await writeBackup(getBytes, handle, settings);
+    await writeBackup(getBytes, handle, settings, undefined, saveDocuments);
     return { status: "done" };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

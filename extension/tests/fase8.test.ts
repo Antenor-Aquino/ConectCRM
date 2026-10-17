@@ -38,7 +38,7 @@ describe("ambiente de teste e restauração", () => {
     const { db } = openDatabase(await sql(), null, { seedDemo: true });
     expect(listUsers(db).map((u) => u.role).sort()).toEqual(["admin", "gestor", "vendedor", "vendedor"]);
     const pipes = listPipelines(db);
-    expect(pipes.map((p) => p.name)).toEqual(["PowerCubus", "Suporte", "Implantação PUC-PR"]);
+    expect(pipes.map((p) => p.name)).toEqual(["PowerCubus", "Implantação PUC-PR", "Suporte"]);
     const board = getBoard(db, pipes[0]!.id);
     expect(board.map((c) => [c.name, c.count])).toEqual([["Prospect", 6], ["Contato", 4], ["Reunião", 1], ["Pendência Pedagógica", 0]]);
     expect(countPersons(db)).toBe(12);

@@ -42,6 +42,11 @@ export const DATA_TABLES = [
   "custom_field_pipeline",
   "custom_field_value",
   "saved_filter",
+  "document_type",
+  "file_blob",
+  "document",
+  "document_version",
+  "document_link",
 ] as const;
 export type DataTable = (typeof DATA_TABLES)[number];
 

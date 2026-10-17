@@ -6,7 +6,8 @@ import { TaButton, TaTextarea, cn } from "@tailadmin";
 import { call } from "../rpc/client";
 import { AI_LABELS, aiConfigured, loadAiSettings, summarizeImages, type AiSettings } from "../lib/ai";
 import { CLIP_LAST_KEY, CLIPS_KEY, loadClips, saveClips, type Clip, type ClipResult } from "../lib/clips";
-import { errText, Section, StatusText, type Status } from "./ui";
+import { createDocumentsFrom, dataUrlToFile } from "../lib/documentFiles";
+import { DocumentTypeSelect, errText, Section, StatusText, type Status } from "./ui";
 
 export function ClipsSection({ targetId, onSent }: { targetId: string | null; onSent: () => void }) {
   const [clips, setClips] = useState<Clip[]>([]);
@@ -15,6 +16,7 @@ export function ClipsSection({ targetId, onSent }: { targetId: string | null; on
   const [summary, setSummary] = useState("");
   const [ai, setAi] = useState<AiSettings | null>(null);
   const [busy, setBusy] = useState(false);
+  const [typeId, setTypeId] = useState("");
   const [status, setStatus] = useState<Status>(null);
 
   const reload = useCallback(async () => {
@@ -79,9 +81,11 @@ export function ClipsSection({ targetId, onSent }: { targetId: string | null; on
     setStatus({ text: `Anexando ${chosen.length} recorte(s)…`, kind: "info" });
     try {
       const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-      for (const [i, c] of chosen.entries()) {
-        await call("attachments.add", { entityType: "deal", entityId: targetId, filename: `recorte-${stamp}-${i + 1}.png`, dataUrl: `data:image/png;base64,${c.base64}` });
-      }
+      await createDocumentsFrom(
+        chosen.map((c, i) => ({ file: dataUrlToFile(`data:image/png;base64,${c.base64}`, `recorte-${stamp}-${i + 1}.png`), name: `Recorte ${stamp} ${i + 1}` })),
+        typeId,
+        { type: "deal", id: targetId },
+      );
       const text = summary.trim();
       if (text) await call("notes.add", { entityType: "deal", entityId: targetId, body: text });
       await saveClips(clips.filter((c) => !selected.has(c.id)));
@@ -146,13 +150,16 @@ export function ClipsSection({ targetId, onSent }: { targetId: string | null; on
             <p className="mt-3 text-theme-xs text-gray-500">Para resumir com IA, configure em CRM → Configurações → Inteligência artificial.</p>
           )}
           {summary && <TaTextarea className="mt-2" rows={6} value={summary} onChange={(e) => setSummary(e.target.value)} />}
+          <div className="mt-2">
+            <DocumentTypeSelect value={typeId} onChange={setTypeId} preferred="Foto/imagem" />
+          </div>
           <div className="mt-2 flex gap-2">
             {ai && aiConfigured(ai) && (
               <TaButton size="sm" disabled={busy || !chosen.length} startIcon={<Sparkles size={14} />} onClick={() => void summarize()}>
                 Resumir com IA
               </TaButton>
             )}
-            <TaButton size="sm" variant="primary" disabled={busy || !chosen.length || !targetId} startIcon={<Upload size={14} />} onClick={() => void send()}>
+            <TaButton size="sm" variant="primary" disabled={busy || !chosen.length || !targetId || !typeId} startIcon={<Upload size={14} />} onClick={() => void send()}>
               Anexar ao cartão{summary.trim() ? " + nota" : ""}
             </TaButton>
           </div>

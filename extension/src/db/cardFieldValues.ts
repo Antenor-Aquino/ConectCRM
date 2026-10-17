@@ -120,6 +120,7 @@ export function cardFieldValues(
       users: lookup("SELECT id, name AS v FROM app_user"),
       persons: lookup("SELECT id, name AS v FROM person"),
       orgs: lookup("SELECT id, name AS v FROM organization"),
+      documents: lookup("SELECT id, name AS v FROM document"),
     };
     for (const v of many<{ entity_id: string; field_id: string; value: string }>(
       db,

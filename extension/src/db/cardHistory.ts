@@ -70,7 +70,7 @@ function lookup(db: DatabaseSync, table: string, col = "name"): Map<string, stri
 export function formatCustomRaw(
   raw: string | null | undefined,
   type: string,
-  names: { options: Map<string, string>; users: Map<string, string>; persons: Map<string, string>; orgs: Map<string, string> },
+  names: { options: Map<string, string>; users: Map<string, string>; persons: Map<string, string>; orgs: Map<string, string>; documents?: Map<string, string> },
 ): string {
   if (raw == null || raw === "") return "vazio";
   switch (type) {
@@ -100,6 +100,8 @@ export function formatCustomRaw(
       return names.persons.get(raw) ?? raw;
     case "organization":
       return names.orgs.get(raw) ?? raw;
+    case "document":
+      return names.documents?.get(raw) ?? "documento";
     default:
       return clip(raw, 80);
   }
@@ -114,6 +116,7 @@ export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
   const pipelines = lookup(db, "pipeline");
   const tags = lookup(db, "tag");
   const products = lookup(db, "product");
+  const documents = lookup(db, "document");
   const options = lookup(db, "custom_field_option", "label");
   const fields = new Map(many<{ id: string; name: string; field_type: string }>(db, "SELECT id, name, field_type FROM custom_field").map((f) => [f.id, f]));
 
@@ -124,6 +127,7 @@ export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
     { table: "custom_field_value", sql: "SELECT id FROM custom_field_value WHERE entity_id = ?" },
     { table: "note", sql: "SELECT id FROM note WHERE entity_type = 'deal' AND entity_id = ?" },
     { table: "attachment", sql: "SELECT id FROM attachment WHERE entity_type = 'deal' AND entity_id = ?" },
+    { table: "document_link", sql: "SELECT id FROM document_link WHERE entity_type = 'deal' AND entity_id = ?" },
     { table: "activity", sql: "SELECT id FROM activity WHERE deal_id = ?" },
   ];
   const ids: string[] = [cardId];
@@ -199,7 +203,7 @@ export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
     if (t === "custom_field_value") {
       const f = fields.get(String(next.field_id));
       if (!f) return [];
-      const fmt = (v: unknown) => formatCustomRaw(v == null ? null : String(v), f.field_type, { options, users, persons, orgs });
+      const fmt = (v: unknown) => formatCustomRaw(v == null ? null : String(v), f.field_type, { options, users, persons, orgs, documents });
       if (l.op === "insert") return [`Campo "${f.name}": ${fmt(next.value)}`];
       if (l.op === "delete") return [`Campo "${f.name}" apagado (era ${fmt(prev.value)})`];
       if (ch.value) return [`Campo "${f.name}": ${fmt(ch.value[0])} → ${fmt(ch.value[1])}`];
@@ -215,6 +219,11 @@ export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
     if (t === "attachment") {
       if (l.op === "insert") return [`Anexou o arquivo ${next.filename}`];
       if (l.op === "delete") return [`Removeu o anexo ${next.filename}`];
+      return [];
+    }
+    if (t === "document_link") {
+      if (l.op === "insert") return [`Vinculou o documento ${name(documents, next.document_id)}`];
+      if (l.op === "delete") return [`Desvinculou o documento ${name(documents, next.document_id)}`];
       return [];
     }
     if (t === "activity") {

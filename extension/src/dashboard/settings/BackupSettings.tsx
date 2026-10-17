@@ -1,6 +1,7 @@
 // Configurações → Backup (mesma lógica da gestao-financeira-extensao):
 // backup automático diário/semanal numa pasta escolhida, backup manual,
-// download de uma cópia, restauração e ambiente de teste.
+// download de uma cópia (.zip com os documentos do GED), restauração e
+// ambiente de teste.
 import { useEffect, useRef, useState } from "react";
 import { DatabaseBackup, Download, FolderOpen, RefreshCw, Upload } from "lucide-react";
 import { TaButton, TaPanel, TaSelect } from "@tailadmin";
@@ -14,6 +15,7 @@ import {
   type BackupFrequency,
 } from "../../lib/autoBackup";
 import { loadBackupFolderHandle, pickBackupFolder } from "../../lib/backupFolder";
+import { backupDocuments, buildBackupZip, readBackupZip, recoverFromBackupFolder, restoreDocumentFiles, saveBlobAs } from "../../lib/documentFiles";
 import { base64ToBytes, bytesToBase64, type DbEnv } from "../../lib/environment";
 import { formatDateTime } from "../../lib/format";
 import { addNotification } from "../../lib/notifications";
@@ -112,7 +114,7 @@ export function BackupSettings({ env }: { env: DbEnv }) {
               const handle = await loadBackupFolderHandle();
               if (!handle) throw new Error("Escolha a pasta primeiro.");
               if ((await handle.requestPermission({ mode: "readwrite" })) !== "granted") throw new Error("Permissão da pasta não concedida.");
-              const name = await writeBackup(exportDatabase, handle, settings, manualBackupFilename());
+              const name = await writeBackup(exportDatabase, handle, settings, manualBackupFilename(), backupDocuments);
               setSettings(await loadAutoBackupSettings());
               return `Backup salvo: ${name}`;
             })
@@ -122,25 +124,20 @@ export function BackupSettings({ env }: { env: DbEnv }) {
         </TaButton>
       </TaPanel>
 
-      <TaPanel title="Cópia e restauração" subtitle="Baixe uma cópia do banco ou restaure um backup (.sqlite).">
+      <TaPanel title="Cópia e restauração" subtitle="Baixe uma cópia (.zip com o banco e os documentos) ou restaure um backup (.zip ou .sqlite).">
         <div className="flex flex-wrap gap-2">
           <TaButton
             disabled={busy}
             startIcon={<Download size={15} />}
             onClick={() =>
               void run(async () => {
-                const bytes = await exportDatabase();
-                const url = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "application/x-sqlite3" }));
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = manualBackupFilename();
-                a.click();
-                setTimeout(() => URL.revokeObjectURL(url), 5000);
-                return "Cópia baixada.";
+                const bytes = await buildBackupZip(await exportDatabase());
+                saveBlobAs(new Blob([bytes as BlobPart], { type: "application/zip" }), manualBackupFilename().replace(/\.sqlite$/, ".zip"));
+                return "Cópia baixada (banco e documentos).";
               })
             }
           >
-            Baixar cópia do banco
+            Baixar cópia (banco e documentos)
           </TaButton>
           <TaButton variant="danger" disabled={busy || !isAdmin} startIcon={<Upload size={15} />} onClick={() => fileInput.current?.click()}>
             Restaurar backup…
@@ -149,15 +146,24 @@ export function BackupSettings({ env }: { env: DbEnv }) {
             ref={fileInput}
             type="file"
             hidden
-            accept=".sqlite,.db,application/x-sqlite3"
+            accept=".zip,.sqlite,.db,application/zip,application/x-sqlite3"
             onChange={(e) => {
               const file = e.target.files?.[0];
               e.target.value = "";
               if (!file) return;
               if (!confirm(`Restaurar "${file.name}"? TODOS os dados atuais ${env === "demo" ? "do ambiente de Teste " : ""}serão substituídos por este arquivo.`)) return;
               void run(async () => {
-                await systemCall("system.restore", { base64: bytesToBase64(new Uint8Array(await file.arrayBuffer())) });
-                await addNotification({ kind: "success", title: "Backup restaurado", message: `Dados restaurados de "${file.name}".` });
+                const raw = new Uint8Array(await file.arrayBuffer());
+                const isZip = raw[0] === 0x50 && raw[1] === 0x4b;
+                const backup = isZip ? await readBackupZip(raw) : null;
+                await systemCall("system.restore", { base64: bytesToBase64(backup ? backup.db : raw) });
+                // Documentos: os do .zip; num .sqlite, os que estiverem na pasta de backup.
+                const docs = backup ? await restoreDocumentFiles(backup.files) : await recoverFromBackupFolder(await loadBackupFolderHandle());
+                await addNotification({
+                  kind: "success",
+                  title: "Backup restaurado",
+                  message: `Dados restaurados de "${file.name}"${docs ? `, com ${docs} documento(s)` : ""}.`,
+                });
                 location.reload();
               });
             }}

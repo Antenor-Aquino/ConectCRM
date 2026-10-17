@@ -9,7 +9,7 @@ import type { CustomField, CustomValue } from "../../db/customFields";
 import { useSession } from "../session";
 import { createOrganizationQuick, searchOrganizations } from "../cards/searchers";
 import { Combobox } from "../ui/Combobox";
-import { CustomFieldsForm } from "../ui/CustomFieldsForm";
+import { CustomFieldsSection } from "../ui/CustomFieldsSection";
 import { ErrorText, Field, SectionLabel } from "../ui/form";
 import { ImageUpload } from "../ui/ImageUpload";
 import { localPart, PhoneInput } from "../ui/PhoneInput";
@@ -108,8 +108,6 @@ export function PersonFormModal({
       setSaving(false);
     }
   }
-
-  const visibleFields = fields.filter((f) => !f.hidden);
 
   return (
     <TaModal isOpen onClose={onClose} title={personId ? "Editar contato" : "Criar contato"} width="max-w-xl">
@@ -225,12 +223,13 @@ export function PersonFormModal({
             <TagPicker entity="person" value={tagIds} onChange={setTagIds} />
           </Field>
 
-          {visibleFields.length > 0 && (
-            <>
-              <SectionLabel>Campos personalizados ({visibleFields.length})</SectionLabel>
-              <CustomFieldsForm fields={fields} values={values} onChange={setValues} columns={2} />
-            </>
-          )}
+          <CustomFieldsSection
+            entity="person"
+            fields={fields}
+            values={values}
+            onChange={setValues}
+            onFieldsChanged={() => void call("customFields.list", { entity: "person" }).then(setFields)}
+          />
 
           <ErrorText>{error}</ErrorText>
           <div className="mt-5 flex gap-2">

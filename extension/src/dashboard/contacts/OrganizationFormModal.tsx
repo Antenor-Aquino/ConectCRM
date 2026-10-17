@@ -12,7 +12,7 @@ import { cnpjDigits, isValidCnpj } from "../../lib/validate";
 import { useSession } from "../session";
 import { createPersonQuick, searchPersons } from "../cards/searchers";
 import { Combobox } from "../ui/Combobox";
-import { CustomFieldsForm } from "../ui/CustomFieldsForm";
+import { CustomFieldsSection } from "../ui/CustomFieldsSection";
 import { ErrorText, Field, SectionLabel } from "../ui/form";
 import { ImageUpload } from "../ui/ImageUpload";
 import { localPart, PhoneInput } from "../ui/PhoneInput";
@@ -241,7 +241,13 @@ export function OrganizationFormModal({
           <Field label="Tags">
             <TagPicker entity="organization" value={tagIds} onChange={setTagIds} />
           </Field>
-          <CustomFieldsForm fields={fields} values={values} onChange={setValues} columns={2} />
+          <CustomFieldsSection
+            entity="organization"
+            fields={fields}
+            values={values}
+            onChange={setValues}
+            onFieldsChanged={() => void call("customFields.list", { entity: "organization" }).then(setFields)}
+          />
 
           <SectionLabel>Contatos</SectionLabel>
           {persons.length > 0 && (

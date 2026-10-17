@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createActivity, setActivityDone, updateActivity } from "../src/db/activities";
-import { addFile } from "../src/db/attachments";
 import { cardHistory } from "../src/db/cardHistory";
 import { createPerson } from "../src/db/contacts";
 import { createCustomField, listCustomFields } from "../src/db/customFields";
+import { createDocument, listDocumentTypes } from "../src/db/documents";
 import { createCard, createLossReason, moveCard, setCardStatus, setDealItems, updateCard } from "../src/db/deals";
 import { addNote } from "../src/db/notes";
 import { createPipeline, listStages } from "../src/db/pipelines";
@@ -49,7 +49,12 @@ describe("histórico completo do cartão", () => {
     updateCard(db, ctx, id, { customValues: { [cf]: opts[1]!.id } });
     step();
     addNote(db, ctx, "deal", id, "Cliente pediu desconto");
-    addFile(db, ctx, { entityType: "deal", entityId: id, filename: "proposta.pdf", dataUrl: `data:application/pdf;base64,${btoa("pdf")}` });
+    createDocument(db, ctx, {
+      name: "Proposta comercial",
+      typeId: listDocumentTypes(db)[0]!.id,
+      links: [{ type: "deal", id }],
+      file: { sha256: "a".repeat(64), mime: "application/pdf", size: 3, filename: "proposta.pdf", location: "browser" },
+    });
     step();
     const t = createActivity(db, ctx, { title: "Ligar", dealId: id, dueAt: "2026-10-20T13:00:00.000Z" });
     step();
@@ -74,7 +79,7 @@ describe("histórico completo do cartão", () => {
     has(/^Campo "Origem do lead": Site$/);
     has(/^Campo "Origem do lead": Site → Indicação$/);
     has(/^Adicionou nota: "Cliente pediu desconto"$/);
-    has(/^Anexou o arquivo proposta\.pdf$/);
+    has(/^Vinculou o documento Proposta comercial$/);
     has(/^Criou a tarefa "Ligar" com início em /);
     has(/^Concluiu a tarefa "Ligar"$/);
     has(/^Remarcou o início da tarefa "Ligar": /);
