@@ -78,6 +78,9 @@ E-mail**.
   total da tarefa).
 - Contadores: **atrasadas** = pendentes com finalização já passada; **hoje** e
   **próximos 7 dias** = início ou finalização no período.
+- Período: Hoje, Amanhã, Esta semana, Este mês, Todas e **Personalizado**
+  (de/até, dias inteiros; começa no mês atual; "até" antes de "de" ajusta o
+  outro lado). Vale para a lista; o calendário navega por mês.
 - Filtros por período (hoje, amanhã, esta semana, atrasadas, personalizado),
   tipo, responsável e visão *Geral / Minhas / Minha equipe*.
 - Concluir direto na lista; atrasadas em destaque.
