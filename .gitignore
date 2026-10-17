@@ -41,3 +41,4 @@ desktop.ini
 # --- Pacotes de extensão gerados ---
 *.crx
 *.zip
+*.tsbuildinfo

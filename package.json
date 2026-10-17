@@ -1,0 +1,17 @@
+{
+  "name": "conectcrm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ConectCRM - CRM local como extensão do Chrome",
+  "type": "module",
+  "workspaces": [
+    "extension",
+    "shared/tailadmin"
+  ],
+  "scripts": {
+    "build": "npm run build -w extension",
+    "dev": "npm run dev -w extension",
+    "test": "npm test -w extension",
+    "typecheck": "npm run typecheck -w extension"
+  }
+}

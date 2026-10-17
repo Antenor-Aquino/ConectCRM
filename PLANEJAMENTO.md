@@ -1,6 +1,6 @@
 # ConectCRM — Planejamento de implementação (v4)
 
-> Status: **plano fechado, aguardando aprovação final para iniciar a Fase 0**. Nenhum código escrito.
+> Status: **Fases 0 a 11 concluídas** (Fase 11 só com o copiloto de IA; ZapSign e Asaas pendentes por decisão do cliente). Branches em sequência até `fase-11-copiloto-ia`. Fases 12 (sincronização) e 13 (publicação) adiadas por decisão do cliente.
 > v4: v1 individual (sem sincronização) com cadastro de equipes/usuários; estrutura pronta para sincronizar no futuro; "Fluxo geral" confirmado.
 
 ## 1. Visão
@@ -26,6 +26,8 @@ gravando no CRM local em vez de Pipedrive/HubSpot (que deixam de existir).
 | Sincronização | **Futura.** O modelo de dados já nasce preparado (seção 5.1). |
 | Visões do Kanban | *Fluxo geral* (todos), *Meu fluxo*, *Minha equipe*. |
 | Indicadores dos cartões | A definir mais à frente. A v1 mostra o básico (título, valor, contato, responsável); os indicadores entram depois. |
+| Licença ConectCRM × wa-pipedrive | **Separadas.** A extensão envia `produto: "conectcrm"` em todas as chamadas; o servidor (`extpipe`) precisa passar a validar o produto para que chaves de um não ativem o outro. |
+| Preços e checkout | Os mesmos do wa-pipedrive (R$ 17,65/mês; R$ 180,00/ano). |
 | Campos personalizados | Entram na estrutura desde o início. |
 | Produtos e serviços | Entram na estrutura desde o início. |
 | WhatsApp | Mesmo fluxo atual (popup), apontando para o CRM local. |
@@ -190,6 +192,13 @@ Regras aplicadas a **todas** as tabelas de dados:
 - Se a permissão da pasta cair: modal pedindo reautorização com o backup rodando logo em seguida.
 - Notificação de sucesso/erro, exportação manual, **restauração** de backup e ambiente de **Teste** com dados de demonstração.
 
+Como ficou na Fase 8:
+- **Configurações → Backup e ambiente**: liga/desliga, frequência (diário/semanal), pasta, "Fazer backup agora", "Baixar cópia do banco" e "Restaurar backup…". Só o administrador altera o backup automático e restaura.
+- O backup automático só roda em **Produção**.
+- Antes de restaurar, o arquivo é validado (precisa ser um banco do ConectCRM). O banco atual fica guardado internamente como `<ambiente>-antes-da-restauracao`.
+- **Produção / Teste**: chave no topo. Cada ambiente tem seu banco no IndexedDB do documento offscreen, e a escolha do ambiente também fica lá (o offscreen não acessa `chrome.storage`). Cada ambiente lembra o próprio usuário atual. O Teste nasce com os dados do mockup (funil PowerCubus, Suporte, Implantação PUC-PR, 4 usuários, 12 contatos) e pode ser recriado.
+- **Sino de notificações**: backups (sucesso/erro), restauração e lembretes de tarefas. Fica em `chrome.storage.local`, até 200 itens; "Limpar tudo" só esconde.
+
 ## 8. Reaproveitamento do wa-pipedrive
 
 Fonte em `referencia/wa-pipedrive/` (será portado para TypeScript modular).
@@ -223,7 +232,7 @@ Fonte em `referencia/wa-pipedrive/` (será portado para TypeScript modular).
 | **8. Backup e segurança** | Backup diário, restauração, ambiente de teste |
 | **9. WhatsApp** | Popup sobre o WhatsApp Web gravando no CRM local |
 | **10. Relatórios** | Conversão do funil, previsão (valor × probabilidade), ganhos/perdidos por período/motivo/responsável/equipe, tempo por etapa, produtos vendidos, atividades por usuário; exportar Excel |
-| **11. Integrações** | ZapSign, Asaas, copiloto IA |
+| **11. Integrações** | Copiloto IA (feito); ZapSign e Asaas pendentes |
 | **12. Sincronização** (futura) | Servidor, espaço da empresa, convites, envio/recebimento de alterações, permissões no servidor |
 | **13. Publicação** | Política de privacidade, verificação OAuth, Chrome Web Store |
 
@@ -237,6 +246,9 @@ personalizados, tarefas, backup e WhatsApp).
 - `especificacoes/02-tarefas.md` — modal de tarefa, tipos, quando/duração/lembrete.
 - `especificacoes/03-contatos.md` — modal de contato, canais, organizações, campos personalizados.
 - `especificacoes/04-organizacoes.md` — modal de organização, CNPJ, CEP, contatos vinculados.
+- `especificacoes/05-whatsapp.md` — popup do WhatsApp (Fase 9): conversa, destino, recortes com IA, anexos, reunião.
+- `especificacoes/06-relatorios.md` — relatórios (Fase 10): filtros, indicadores, regras de cada relatório, Excel.
+- `especificacoes/07-copiloto-ia.md` — copiloto de IA (Fase 11): consultas, card de resposta, ações sugeridas, permissões.
 
 ## 11. Dúvidas
 

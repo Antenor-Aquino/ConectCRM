@@ -137,6 +137,16 @@ Obs.: no menu "+" e no formulário, o cartão de projeto se chama
 - Usuários inativos não aparecem para novos registros (mas continuam nos
   registros antigos).
 
+## 7.1 Permissão por tipo de usuário
+
+- **Administrador:** vê e edita todos os cartões.
+- **Gestor:** vê e edita os cartões da(s) sua(s) equipe(s).
+- **Vendedor:** vê e edita só os seus cartões.
+- Cartões sem responsável ficam visíveis a todos.
+- Vendedor só atribui cartões a si mesmo; gestor, a alguém da equipe.
+- As visões *Fluxo geral / Meu fluxo / Minha equipe* filtram dentro do que
+  o usuário pode ver.
+
 ## 8. Tags
 
 Novo cadastro em **Configurações → Tags**:

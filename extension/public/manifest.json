@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "ConectCRM",
+  "version": "0.1.0",
+  "description": "CRM local com funis, Kanban, tarefas, contatos e organizações - dados no seu computador. Integra com o WhatsApp Web.",
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_title": "ConectCRM"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "offscreen",
+    "alarms",
+    "notifications",
+    "identity",
+    "activeTab",
+    "scripting"
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  "host_permissions": [
+    "https://extpipe.claudiacrm.com.br/*",
+    "https://brasilapi.com.br/*",
+    "https://minhareceita.org/*",
+    "https://www.receitaws.com.br/*",
+    "https://viacep.com.br/*",
+    "https://www.googleapis.com/*",
+    "https://graph.microsoft.com/*",
+    "https://login.microsoftonline.com/*",
+    "https://web.whatsapp.com/*",
+    "https://generativelanguage.googleapis.com/*",
+    "https://api.openai.com/*",
+    "https://api.anthropic.com/*",
+    "https://api.deepseek.com/*"
+  ],
+  "oauth2": {
+    "client_id": "COLE_AQUI_O_CLIENT_ID_DO_GOOGLE.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/calendar.events",
+      "https://www.googleapis.com/auth/calendar.readonly",
+      "https://www.googleapis.com/auth/userinfo.email"
+    ]
+  }
+}

@@ -22,6 +22,10 @@ ConectCRM sem alterações de estilo:
   (sem Google Fonts/CDN). Fallback: `Inter, system-ui, sans-serif`.
 - Mesma escala de tamanhos e pesos da gestão financeira.
 
+Decisão: usar a Inter **de fato**. Na gestão financeira a fonte é declarada
+mas não chega às telas (aparece a fonte do sistema); no ConectCRM ela é
+importada pelo JavaScript de cada página e aplicada ao `<html>`.
+
 ## 3. Cores
 
 | Uso | Valor |

@@ -65,3 +65,10 @@ E-mail**.
 
 - T1: campo "Vinculado a" opcional (negócio, ticket ou projeto).
 - T2: seletor do SLA e seletor da tarefa coexistem, cada um como no mockup.
+- Permissão: administrador vê todas as tarefas; gestor, as da equipe;
+  vendedor, as suas (tarefas sem responsável aparecem para todos).
+- Lembrete: notificação do Chrome a cada minuto (service worker), só para as
+  tarefas do usuário atual desta instalação; tarefas vencidas há mais de um
+  dia não são notificadas. Mudar a data ou o lembrete reativa o aviso.
+- Agenda: tipos marcados como "Reunião" podem criar o evento no Google Agenda
+  ou Outlook, com convidados, link do Meet/Teams e horários livres do dia.

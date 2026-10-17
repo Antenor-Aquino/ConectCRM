@@ -1,0 +1,55 @@
+# Especificação 07 — Copiloto de IA
+
+> Status: **implementado na Fase 11**. ZapSign e Asaas ficaram pendentes por
+> decisão do cliente.
+
+Mesma lógica do Copiloto Financeiro da gestao-financeira-extensao: a IA
+**nunca recebe o banco nem faz contas**. Ela escolhe quais consultas rodar; as
+consultas são SQL de verdade no banco local (com a permissão do usuário) e
+devolvem os valores já formatados; a IA só organiza esses números num card.
+
+## 1. Onde fica
+
+- Botão **Copiloto** no topo (qualquer tela): abre um painel lateral. A
+  conversa continua enquanto o CRM estiver aberto; **Nova conversa** recomeça.
+- No detalhe do cartão: **Perguntar ao Copiloto** abre o painel já pedindo o
+  resumo do negócio (ou ticket/etapa) e o próximo passo.
+- Perguntas por **áudio** (microfone): transcritas pelo Gemini ou OpenAI.
+- Provedor e chave: Configurações → Inteligência artificial (Gemini, OpenAI,
+  Claude ou DeepSeek — os quatro com consultas).
+
+## 2. Consultas disponíveis para a IA
+
+| Consulta | O que devolve |
+|---|---|
+| buscar_cartoes | Cartões por texto/situação/funil/responsável: etapa, valor, contato, dias na etapa, próxima tarefa, atrasadas, total e soma |
+| detalhar_cartao | Um cartão: contato, itens, tarefas pendentes e concluídas, últimas notas, etapas percorridas com dias |
+| resumo_comercial | Indicadores de um período (mesmos números da tela Relatórios) |
+| listar_tarefas | Atrasadas, de hoje, próximos 7 dias ou pendentes |
+| negocios_parados | Abertos sem movimento (etapa, tarefa concluída ou nota) além do limite da etapa (ou 14 dias, ou o informado) |
+| buscar_contatos | Pessoas e organizações por nome, e-mail ou telefone, com os cartões abertos |
+| estrutura_do_crm | Funis e etapas, usuários, equipes, motivos de perda, tipos de tarefa |
+
+Nomes de funil, usuário ou equipe aceitam parte do nome; sem correspondência,
+a consulta devolve as opções e o Copiloto pergunta qual é.
+
+## 3. Resposta (card)
+
+Título, subtítulo, até 3 destaques (valor-chave em negrito; vermelho para
+risco, verde para resultado positivo), tabela quando há linhas comparáveis
+(com **Exportar Excel**), perguntas sugeridas para continuar e **ações**.
+
+## 4. Ações sugeridas
+
+A IA pode sugerir até 3 ações por resposta, só com cartões que vieram das
+consultas: **criar tarefa** (título e data/hora), **adicionar nota** ou
+**abrir o cartão**. Nada é gravado sem o clique do usuário; a tarefa é
+criada para o usuário atual e vinculada ao cartão.
+
+## 5. Permissões e privacidade
+
+- As consultas seguem a permissão do usuário (vendedor vê só os seus
+  cartões; gestor, os da equipe; administrador, todos).
+- Vai para o provedor de IA só o que a pergunta precisa: a pergunta, o
+  histórico da conversa e o resultado das consultas feitas (nunca o banco
+  inteiro). A chave fica só neste computador.
