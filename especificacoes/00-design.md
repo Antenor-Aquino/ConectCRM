@@ -71,3 +71,10 @@ Todo o sistema em português do Brasil: textos, cores (Azul, Roxo, Verde,
 sugeridas ("Prospecção"), datas dd/mm/aaaa e valores em R$ com milhar.
 Erros que chegam em inglês do navegador, da rede ou dos serviços externos
 (Google, Microsoft) são traduzidos (`lib/errors.ts`).
+
+## Menu do usuário (topo, à direita)
+
+Trocar usuário (pede o PIN de quem tiver), **Bloquear agora** (só com PIN)
+e **Sair**: fecha a aba do CRM e abre a página inicial do Chrome (nova
+guia). Quem tem PIN fica bloqueado ao sair; ao abrir o CRM de novo, o PIN é
+pedido.
