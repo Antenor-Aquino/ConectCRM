@@ -10,6 +10,7 @@ import * as deals from "../db/deals";
 import * as notes from "../db/notes";
 import * as pipelines from "../db/pipelines";
 import * as products from "../db/products";
+import * as reports from "../db/reports";
 import * as stages from "../db/stages";
 import { rowHistory, type DataTable, type DbContext } from "../db/repo";
 import { many, one, type DatabaseSync } from "../db/sql";
@@ -237,6 +238,17 @@ export const methods = {
   "activities.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
     assertActivityAccess(db, ctx, p.id);
     activities.deleteActivity(db, ctx, p.id);
+  },
+
+  // Relatórios (respeitam a permissão do usuário)
+  "reports.get": (db: DatabaseSync, ctx: DbContext, p: { from: string; to: string; pipelineId?: string | null; ownerId?: string | null; teamId?: string | null }) => {
+    let ownerIds: string[] | null = null;
+    if (p.ownerId) ownerIds = [p.ownerId];
+    else if (p.teamId) {
+      ownerIds = many<{ user_id: string }>(db, "SELECT user_id FROM team_member WHERE team_id = ? AND deleted_at IS NULL", p.teamId).map((r) => r.user_id);
+      if (!ownerIds.length) ownerIds = ["-"];
+    }
+    return reports.buildReport(db, { from: p.from, to: p.to, pipelineId: p.pipelineId, ownerIds, viewer: viewer(db, ctx) });
   },
 
   // Notas

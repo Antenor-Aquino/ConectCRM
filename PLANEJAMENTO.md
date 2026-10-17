@@ -1,6 +1,6 @@
 # ConectCRM — Planejamento de implementação (v4)
 
-> Status: **Fases 0 a 9 concluídas — MVP completo** (branches em sequência até `fase-9-whatsapp`). Próximo: Fase 10 (Relatórios).
+> Status: **Fases 0 a 10 concluídas** (MVP + relatórios; branches em sequência até `fase-10-relatorios`). Próximo: Fase 11 (ZapSign, Asaas, copiloto IA).
 > v4: v1 individual (sem sincronização) com cadastro de equipes/usuários; estrutura pronta para sincronizar no futuro; "Fluxo geral" confirmado.
 
 ## 1. Visão
@@ -247,6 +247,7 @@ personalizados, tarefas, backup e WhatsApp).
 - `especificacoes/03-contatos.md` — modal de contato, canais, organizações, campos personalizados.
 - `especificacoes/04-organizacoes.md` — modal de organização, CNPJ, CEP, contatos vinculados.
 - `especificacoes/05-whatsapp.md` — popup do WhatsApp (Fase 9): conversa, destino, recortes com IA, anexos, reunião.
+- `especificacoes/06-relatorios.md` — relatórios (Fase 10): filtros, indicadores, regras de cada relatório, Excel.
 
 ## 11. Dúvidas
 

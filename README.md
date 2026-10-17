@@ -82,3 +82,12 @@ tela e arquivos no cartão escolhido (detalhes em
 [`especificacoes/05-whatsapp.md`](especificacoes/05-whatsapp.md)). Para resumir
 recortes e transcrever áudios, informe a chave do provedor em
 **Configurações → Inteligência artificial**.
+
+### Relatórios
+
+Menu **Relatórios**: indicadores, conversão do funil, previsão (valor ×
+probabilidade da etapa), ganhos/perdidos por mês, motivos de perda, tempo por
+etapa, produtos vendidos, desempenho por responsável/equipe e atividades, com
+exportação para Excel (regras em
+[`especificacoes/06-relatorios.md`](especificacoes/06-relatorios.md)). A
+probabilidade de cada etapa é definida nas configurações do funil.

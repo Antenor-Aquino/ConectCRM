@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Building2, CalendarDays, CircleCheck, Filter, LineChart, Settings, User, Workflow } from "lucide-react";
-import { AppLayout, TaPanel, TopNavBar, type TopNavItem } from "@tailadmin";
+import { AppLayout, TopNavBar, type TopNavItem } from "@tailadmin";
 import { call, systemCall } from "../rpc/client";
 import { checkAutoBackup, type AutoBackupCheck } from "../lib/autoBackup";
 import type { DbEnv } from "../lib/environment";
@@ -18,6 +18,7 @@ import { UserSwitcher } from "./components/UserSwitcher";
 import { LicenseGate } from "./license/LicenseGate";
 import { LockScreen } from "./components/LockScreen";
 import { exportDatabase } from "./settings/BackupSettings";
+import { ReportsView } from "./reports/ReportsView";
 import { SettingsView } from "./settings/SettingsView";
 import { OrganizationDetail } from "./contacts/OrganizationDetail";
 import { OrganizationFormModal } from "./contacts/OrganizationFormModal";
@@ -38,10 +39,6 @@ const NAV: TopNavItem[] = [
   { id: "relatorios", label: "Relatórios", icon: <LineChart /> },
   { id: "configuracoes", label: "Configurações", icon: <Settings /> },
 ];
-
-const PHASE_BY_TAB: Record<string, string> = {
-  relatorios: "Fase 10 — Relatórios",
-};
 
 const TYPE_BY_OPTION: Partial<Record<QuickCreateOption["id"], PipelineType>> = { negocio: "comercial", ticket: "operacional", projeto: "projeto" };
 
@@ -227,9 +224,7 @@ function Main() {
           onOpenCard={setOpenCardId}
         />
       ) : (
-        <TaPanel title={NAV.find((n) => n.id === tab)?.label ?? ""} subtitle={PHASE_BY_TAB[tab]}>
-          <p className="text-theme-sm text-gray-500">Em construção.</p>
-        </TaPanel>
+        <ReportsView />
       )}
       <CardFormModal
         request={cardForm}

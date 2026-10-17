@@ -1,13 +1,13 @@
 // Dados de exemplo do ambiente de Teste (baseados no mockup da tela inicial).
 // Só roda num banco vazio do ambiente "demo"; nunca em Produção.
-import { createActivity } from "./activities";
+import { createActivity, setActivityDone } from "./activities";
 import { createOrganization, createPerson } from "./contacts";
 import { createCustomField, listCustomFields } from "./customFields";
 import { createCard, createLossReason, moveCard, setCardStatus, setDealItems } from "./deals";
 import { createPipeline, listStages } from "./pipelines";
 import { createProduct } from "./products";
 import type { DbContext } from "./repo";
-import { withTransaction, type DatabaseSync } from "./sql";
+import { many, withTransaction, type DatabaseSync } from "./sql";
 import { createTag, setEntityTags } from "./tags";
 import { createTeam, createUser } from "./users";
 
@@ -31,8 +31,7 @@ export function seedDemoData(db: DatabaseSync, workspaceId: string): void {
     const quente = createTag(db, ctx, { entity: "deal", name: "Quente", color: "red" });
     createTag(db, ctx, { entity: "deal", name: "Indicação", color: "green" });
     createTag(db, ctx, { entity: "person", name: "Decisor", color: "purple" });
-    createLossReason(db, ctx, "Preço");
-    createLossReason(db, ctx, "Escolheu concorrente");
+    const reasons = [createLossReason(db, ctx, "Preço"), createLossReason(db, ctx, "Escolheu concorrente"), createLossReason(db, ctx, "Sem orçamento")];
     const origem = createCustomField(db, ctx, {
       entity: "person",
       name: "Origem do Lead",
@@ -102,6 +101,37 @@ export function seedDemoData(db: DatabaseSync, workspaceId: string): void {
     setDealItems(db, ctx, d3, [{ productId: licenca }, { productId: implantacao }]);
     setCardStatus(db, ctx, lost, { status: "lost", lossNote: "Sem orçamento este ano" });
     setEntityTags(db, ctx, "deal", d1, [quente]);
+
+    // Histórico dos últimos 6 meses (para os Relatórios): negócios ganhos e
+    // perdidos com datas retroativas, etapas percorridas e itens vendidos.
+    const stages = listStages(db, power);
+    const owners = [ana, bruno, gestor];
+    const contacts = Object.values(people);
+    const titles = ["Renovação", "Licença anual", "Ampliação de turmas", "Projeto pedagógico", "Plano escola", "Pacote coordenação"];
+    for (let i = 0; i < 18; i++) {
+      const won = i % 3 !== 2;
+      const depth = won ? stages.length - 1 : i % stages.length; // perdidos param em etapas diferentes
+      const value = (6 + ((i * 7) % 11)) * 60000;
+      const id = createCard(db, ctx, { pipelineId: power, title: `${titles[i % titles.length]} ${i + 1}`, personId: contacts[i % contacts.length], ownerId: owners[(i + Math.floor(i / 3)) % owners.length], valueCents: value });
+      for (let s = 1; s <= depth; s++) moveCard(db, ctx, id, { stageId: stages[s]!.id });
+      if (won) setDealItems(db, ctx, id, i % 2 ? [{ productId: licenca }] : [{ productId: licenca }, { productId: implantacao }]);
+      setCardStatus(db, ctx, id, won ? { status: "won" } : { status: "lost", lossReasonId: reasons[Math.floor(i / 3) % reasons.length] });
+      // Datas: criado entre 6 meses e 1 semana atrás; cada etapa leva de 2 a 9 dias.
+      let t = Date.now() - (180 - i * 9) * day;
+      db.run("UPDATE deal SET created_at = ? WHERE id = ?", [new Date(t).toISOString(), id]);
+      const hist = many<{ id: string }>(db, "SELECT id FROM deal_stage_history WHERE deal_id = ? ORDER BY entered_at, rowid", id);
+      hist.forEach((h, k) => {
+        const len = (2 + ((i + k * 3) % 8)) * day;
+        db.run("UPDATE deal_stage_history SET entered_at = ?, left_at = ? WHERE id = ?", [new Date(t).toISOString(), k < hist.length - 1 ? new Date(t + len).toISOString() : null, h.id]);
+        if (k < hist.length - 1) t += len;
+      });
+      t += (1 + (i % 4)) * day;
+      db.run("UPDATE deal SET stage_entered_at = ?, closed_at = ? WHERE id = ?", [new Date(t - day).toISOString(), new Date(Math.min(t, Date.now())).toISOString(), id]);
+    }
+    for (let i = 0; i < 24; i++) {
+      const a = createActivity(db, ctx, { title: `Follow-up ${i + 1}`, dueAt: at(-3 - i * 7, 10), ownerId: owners[i % owners.length] });
+      if (i % 5 !== 0) setActivityDone(db, ctx, a, true);
+    }
 
     // Funis operacional e de projeto
     const suporte = createPipeline(db, ctx, { name: "Suporte", type: "operacional", stages: [{ name: "Novo ticket", color: "red" }, { name: "Em atendimento", color: "amber" }, { name: "Resolvido", color: "green" }] });
