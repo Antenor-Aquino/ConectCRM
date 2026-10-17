@@ -1,7 +1,7 @@
 // Popup sobre o WhatsApp Web (Fase 9): o mesmo fluxo do wa-pipedrive, gravando
 // no CRM local. Usa a licença, o usuário atual e o PIN do CRM.
 import { useCallback, useEffect, useState } from "react";
-import { ExternalLink, FlaskConical, Workflow } from "lucide-react";
+import { FlaskConical, Maximize2, Workflow } from "lucide-react";
 import { TaButton } from "@tailadmin";
 import { call, systemCall } from "../rpc/client";
 import type { PersonListItem } from "../db/contacts";
@@ -29,7 +29,7 @@ export function Popup() {
           setup={() => (
             <div className="p-6 text-center">
               <p className="mb-4 text-theme-sm text-gray-600">Abra o CRM para cadastrar o primeiro usuário.</p>
-              <TaButton variant="primary" onClick={() => openCrm()}>
+              <TaButton variant="primary" onClick={() => void openCrm()}>
                 Abrir o CRM
               </TaButton>
             </div>
@@ -63,6 +63,18 @@ function Main() {
     });
   }, []);
 
+  // Ctrl+Enter (⌘+Enter no Mac) abre o CRM em tela cheia.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        void openCrm();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const onContact = useCallback((chat: OpenChat | null, person: PersonListItem | null) => setContact({ chat, person }), []);
 
   const newCard = (type: PipelineType, person?: { id: string; label: string }) => {
@@ -82,12 +94,16 @@ function Main() {
             <FlaskConical size={10} /> Teste
           </span>
         )}
-        <span className="ml-auto flex items-center gap-1.5 text-theme-xs text-gray-600 dark:text-gray-400" title={label(user)}>
-          <Avatar name={user.name} size={22} />
-          <span className="max-w-[110px] truncate">{user.name}</span>
+        <span className="ml-auto flex items-center" title={label(user)}>
+          <Avatar name={user.name} size={24} />
         </span>
-        <button type="button" title="Abrir o CRM" className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100" onClick={() => openCrm()}>
-          <ExternalLink size={16} />
+        <button
+          type="button"
+          title="Abrir o CRM em tela cheia (aba do navegador) · Ctrl+Enter"
+          className="flex h-8 items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-25 px-2.5 text-theme-xs font-semibold text-brand-600 hover:bg-brand-50 dark:border-brand-500/30 dark:bg-brand-500/10"
+          onClick={() => void openCrm()}
+        >
+          <Maximize2 size={14} /> Abrir CRM
         </button>
       </header>
 
@@ -115,7 +131,7 @@ function Main() {
           setCardForm(null);
           setTarget(id);
           refresh();
-          if (open) openCrm(`?negocio=${id}`);
+          if (open) void openCrm(id);
         }}
       />
       {task && (

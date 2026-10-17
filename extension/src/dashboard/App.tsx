@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Building2, Sparkles, CalendarDays, CircleCheck, Filter, FolderArchive, LineChart, Settings, User, Workflow } from "lucide-react";
 import { AppLayout, TopNavBar, cn, type TopNavItem } from "@tailadmin";
 import { call, systemCall } from "../rpc/client";
 import { checkAutoBackup, type AutoBackupCheck } from "../lib/autoBackup";
 import { backupDocuments, checkDocumentExpiry } from "../lib/documentFiles";
+import type { OpenCardMessage } from "../rpc/protocol";
 import type { DbEnv } from "../lib/environment";
 import type { Pipeline, PipelineType } from "../db/pipelines";
 import type { QuickCreateOption } from "../lib/quickCreate";
@@ -120,6 +121,22 @@ function Main() {
     if (!id) return;
     void call("cards.get", { id }).then((c) => c && openCardFrom(c.pipeline_id, c.id));
   }, []);
+  // Popup → "Abrir no CRM" com esta aba já aberta: abre o cartão aqui (sem nova aba).
+  const openCardRef = useRef<(pipelineId: string, cardId: string) => void>(() => {});
+  useEffect(() => {
+    let myTab: number | undefined;
+    void chrome.tabs.getCurrent().then((t) => (myTab = t?.id));
+    const onMsg = (msg: OpenCardMessage, _s: chrome.runtime.MessageSender, sendResponse: (ok: boolean) => void) => {
+      if (msg?.target !== "dashboard" || msg.kind !== "open-card" || msg.tabId !== myTab) return false;
+      void call("cards.get", { id: msg.cardId }).then((c) => {
+        if (c) openCardRef.current(c.pipeline_id, c.id);
+        sendResponse(!!c);
+      });
+      return true;
+    };
+    chrome.runtime.onMessage.addListener(onMsg);
+    return () => chrome.runtime.onMessage.removeListener(onMsg);
+  }, []);
 
   // Ambiente (Produção/Teste) e backup automático ao abrir o CRM (só em Produção).
   const [env, setEnv] = useState<DbEnv | null>(null);
@@ -145,6 +162,7 @@ function Main() {
     // Funil criado depois que a lista foi carregada (ex.: pelo popup): recarrega.
     if (!pipelines.some((p) => p.id === pipelineId)) void reload();
   };
+  openCardRef.current = openCardFrom;
 
   const reload = useCallback(async () => {
     try {

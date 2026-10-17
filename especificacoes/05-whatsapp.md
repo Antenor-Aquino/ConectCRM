@@ -8,6 +8,11 @@ mesmo usuário atual e o mesmo PIN do CRM; no ambiente de Teste mostra o selo
 "Teste". As permissões são as do usuário (vendedor só vê e grava nos seus
 cartões).
 
+**Abrir o CRM em tela cheia:** botão **"Abrir CRM"** (ícone ⤢) no topo, com a
+dica "Abrir o CRM em tela cheia (aba do navegador)"; atalho **Ctrl+Enter**
+(⌘+Enter no Mac). O nome do usuário fica na dica do avatar. Se o CRM já
+estiver aberto em alguma aba, ela é ativada em vez de abrir outra.
+
 ## 1. Conversa no WhatsApp
 
 - Com o WhatsApp Web na aba ativa, o popup lê o **nome** e o **telefone** da
@@ -24,7 +29,9 @@ cartões).
 
 - Busca por título ou nome do contato (negócio, ticket ou etapa de projeto).
 - Resumo: título, funil › etapa, contato, organização, responsável, valor e
-  tarefas em aberto (concluir com um clique). ↗ abre o cartão no CRM.
+  tarefas em aberto (concluir com um clique). Botão **"Abrir no CRM"** abre o
+  cartão no funil dele, na aba do CRM já aberta (ou numa nova); ✕ troca o
+  destino.
 - Ações: **Novo** (formulário completo do CRM, origem "WhatsApp"),
   **Tarefa**, **Reunião** (formulário de tarefa já como reunião, com Google
   Agenda/Outlook, horários livres e convidados) e **Nota**.

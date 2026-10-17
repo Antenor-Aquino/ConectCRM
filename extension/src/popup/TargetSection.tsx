@@ -2,7 +2,7 @@
 // tarefas em aberto e ações rápidas (novo cartão, tarefa, reunião, nota).
 import { OUTCOME_TEXT, PIPELINE_TYPE_BY_KIND } from "../lib/cardTypes";
 import { useCallback, useEffect, useState } from "react";
-import { CalendarPlus, CheckCircle2, Circle, ExternalLink, ListPlus, NotebookPen, Plus, Target, X } from "lucide-react";
+import { CalendarPlus, CheckCircle2, Circle, ListPlus, Maximize2, NotebookPen, Plus, Target, X } from "lucide-react";
 import { TaBadge, TaButton, TaTextarea, cn } from "@tailadmin";
 import { call } from "../rpc/client";
 import type { ActivityListItem } from "../db/activities";
@@ -104,10 +104,15 @@ export function TargetSection({
                 {[card.person_name, card.organization_name, owner && `Resp.: ${owner.name}`].filter(Boolean).join(" · ") || "Sem contato"}
                 {card.kind === "deal" && card.value_cents > 0 && ` · ${formatCents(card.value_cents)}`}
               </p>
+              <button
+                type="button"
+                title="Abrir este cartão no CRM, em tela cheia"
+                onClick={() => void openCrm(card.id)}
+                className="mt-2 inline-flex items-center gap-1 rounded-md border border-brand-200 bg-white px-2 py-0.5 text-theme-xs font-semibold text-brand-600 hover:bg-brand-50 dark:border-brand-500/30 dark:bg-gray-900"
+              >
+                <Maximize2 size={12} /> Abrir no CRM
+              </button>
             </div>
-            <button type="button" title="Abrir no CRM" className="text-gray-400 hover:text-brand-600" onClick={() => openCrm(`?negocio=${card.id}`)}>
-              <ExternalLink size={15} />
-            </button>
             <button type="button" title="Trocar o destino" className="text-gray-400 hover:text-error-600" onClick={() => setTarget(null)}>
               <X size={15} />
             </button>

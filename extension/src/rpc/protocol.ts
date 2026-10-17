@@ -15,3 +15,11 @@ export interface RpcRequest {
 }
 
 export type RpcResponse = { ok: true; result: unknown } | { ok: false; error: string };
+
+/** Popup → aba do CRM já aberta: abrir um cartão nela (ver dashboard/App). */
+export interface OpenCardMessage {
+  target: "dashboard";
+  kind: "open-card";
+  tabId: number;
+  cardId: string;
+}
