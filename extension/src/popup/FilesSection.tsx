@@ -91,7 +91,9 @@ export function FilesSection({ targetId, onSent }: { targetId: string | null; on
         { type: "deal", id: targetId },
       );
       const text = transcript.trim();
-      if (text) await call("notes.add", { entityType: "deal", entityId: targetId, body: `Transcrição de áudio:\n\n${text}` });
+      // A nota da transcrição aponta para os áudios transcritos.
+      const audioIds = chosen.flatMap((f, i) => (f.audio && r.ids[i] ? [r.ids[i]!] : []));
+      if (text) await call("notes.add", { entityType: "deal", entityId: targetId, body: `Transcrição de áudio:\n\n${text}`, documentIds: audioIds });
       setFiles((cur) => cur.filter((f) => !f.checked));
       setTranscript("");
       setStatus({

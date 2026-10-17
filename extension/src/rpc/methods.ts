@@ -383,8 +383,8 @@ export const methods = {
 
   // Notas
   "notes.list": (db: DatabaseSync, _c: DbContext, p: { entityType: notes.NoteEntity; entityId: string }) => notes.listNotes(db, p.entityType, p.entityId),
-  "notes.add": (db: DatabaseSync, ctx: DbContext, p: { entityType: notes.NoteEntity; entityId: string; body: string }) =>
-    notes.addNote(db, ctx, p.entityType, p.entityId, p.body),
+  "notes.add": (db: DatabaseSync, ctx: DbContext, p: { entityType: notes.NoteEntity; entityId: string; body: string; documentIds?: string[] }) =>
+    notes.addNote(db, ctx, p.entityType, p.entityId, p.body, p.documentIds),
   "notes.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: { body?: string; pinned?: boolean } }) => notes.updateNote(db, ctx, p.id, p.patch),
   "notes.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => notes.deleteNote(db, ctx, p.id),
 

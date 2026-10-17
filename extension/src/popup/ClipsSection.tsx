@@ -12,7 +12,8 @@ import { DocumentTypeSelect, errText, Section, StatusText, type Status } from ".
 export function ClipsSection({ targetId, onSent }: { targetId: string | null; onSent: () => void }) {
   const [clips, setClips] = useState<Clip[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [which, setWhich] = useState<1 | 2>(1);
+  // Transcrição é o padrão (e vem primeiro); análise comercial é a outra opção.
+  const [which, setWhich] = useState<1 | 2>(2);
   const [summary, setSummary] = useState("");
   const [ai, setAi] = useState<AiSettings | null>(null);
   const [busy, setBusy] = useState(false);
@@ -81,13 +82,14 @@ export function ClipsSection({ targetId, onSent }: { targetId: string | null; on
     setStatus({ text: `Anexando ${chosen.length} recorte(s)…`, kind: "info" });
     try {
       const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-      await createDocumentsFrom(
+      const docs = await createDocumentsFrom(
         chosen.map((c, i) => ({ file: dataUrlToFile(`data:image/png;base64,${c.base64}`, `recorte-${stamp}-${i + 1}.png`), name: `Recorte ${stamp} ${i + 1}` })),
         typeId,
         { type: "deal", id: targetId },
       );
       const text = summary.trim();
-      if (text) await call("notes.add", { entityType: "deal", entityId: targetId, body: text });
+      // A nota aponta para os recortes de onde veio (abre a prévia pela nota).
+      if (text) await call("notes.add", { entityType: "deal", entityId: targetId, body: text, documentIds: docs.ids });
       await saveClips(clips.filter((c) => !selected.has(c.id)));
       setSelected(new Set());
       setSummary("");
@@ -140,10 +142,10 @@ export function ClipsSection({ targetId, onSent }: { targetId: string | null; on
           {ai && aiConfigured(ai) ? (
             <div className="mt-3 flex items-center gap-3 text-theme-xs text-gray-600 dark:text-gray-400">
               <label className="flex items-center gap-1">
-                <input type="radio" checked={which === 1} onChange={() => setWhich(1)} /> Análise comercial
+                <input type="radio" checked={which === 2} onChange={() => setWhich(2)} /> Transcrição
               </label>
               <label className="flex items-center gap-1">
-                <input type="radio" checked={which === 2} onChange={() => setWhich(2)} /> Transcrição
+                <input type="radio" checked={which === 1} onChange={() => setWhich(1)} /> Análise comercial
               </label>
             </div>
           ) : (

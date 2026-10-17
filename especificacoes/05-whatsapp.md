@@ -42,16 +42,20 @@ estiver aberto em alguma aba, ela é ativada em vez de abrir outra.
 - **Novo recorte**: captura a aba e mostra um seletor (arraste; ESC cancela).
   O popup fecha ao clicar na página; os recortes ficam guardados até serem
   enviados (até 40).
-- **Resumir com IA**: prompt 1 (análise comercial, texto padrão do
-  wa-pipedrive) ou prompt 2 (transcrição). O texto pode ser editado.
-- **Anexar ao cartão**: cada recorte vira anexo PNG; o resumo vira nota.
+- **Resumir com IA**: **Transcrição** (prompt 2, padrão, primeira opção) ou
+  **Análise comercial** (prompt 1, texto padrão do wa-pipedrive). O texto
+  pode ser editado.
+- **Anexar ao cartão**: cada recorte vira documento do GED (PNG); o resumo
+  vira nota com referência aos recortes ("Arquivo: …", abre a prévia).
 
 ## 4. Anexar arquivos
 
 - Arquivos do computador (documentos e mídias baixados do WhatsApp), até
   25 MB cada.
 - Áudios: **Transcrever áudio** (Gemini ou OpenAI/Whisper); a transcrição vira
-  nota "Transcrição de áudio" e o áudio é anexado.
+  nota "Transcrição de áudio" e o áudio é anexado. A nota mostra o áudio
+  transcrito ("Arquivo: …"); clicar abre a prévia/download pela própria nota.
+  Se o documento for para a lixeira, some da nota.
 
 ## 5. Inteligência artificial
 
