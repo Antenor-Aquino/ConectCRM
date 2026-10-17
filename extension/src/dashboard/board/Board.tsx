@@ -302,7 +302,7 @@ export function Board({
                   {drop?.stageId === col.id && drop.beforeId === card.id && <div className="mb-2 h-1 rounded bg-brand-400" />}
                   <KanbanCard
                     card={card}
-                    type={pipeline.type}
+                    pipeline={pipeline}
                     dragging={drag?.id === card.id}
                     onOpen={() => onOpenCard(card.id)}
                     onDragStart={(e) => {

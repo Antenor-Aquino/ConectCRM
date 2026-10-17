@@ -1,6 +1,8 @@
 // Operações expostas pelo documento offscreen (dono do banco) às telas.
 // Cada entrada recebe (db, ctx, params) e devolve dados serializáveis.
 import * as activities from "../db/activities";
+import { cardHistory } from "../db/cardHistory";
+import { cardFieldValues } from "../db/cardFieldValues";
 import * as attachments from "../db/attachments";
 import * as importer from "../db/importer";
 import * as merge from "../db/merge";
@@ -59,6 +61,10 @@ export const methods = {
     migrations: many<{ name: string }>(db, "SELECT name FROM _migrations ORDER BY name").map((r) => r.name),
     pendingSync: one<{ n: number }>(db, "SELECT COUNT(*) AS n FROM change_log WHERE synced_at IS NULL")?.n ?? 0,
   }),
+  "cards.history": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    return cardHistory(db, p.id);
+  },
   "history.get": (db: DatabaseSync, ctx: DbContext, p: { table: DataTable; id: string }) => {
     if (p.table === "deal") deals.assertCardAccess(db, viewer(db, ctx), p.id);
     return rowHistory(db, p.table, p.id);
@@ -120,6 +126,19 @@ export const methods = {
   // Cartões (negócio / ticket / etapa de projeto)
   "board.get": (db: DatabaseSync, ctx: DbContext, p: { pipelineId: string } & Omit<NonNullable<Parameters<typeof deals.getBoard>[2]>, "viewer">) =>
     deals.getBoard(db, p.pipelineId, { ...p, viewer: viewer(db, ctx) }),
+  /** Prévia dos campos do cartão (Editar funil → Cartão) no cartão mais recente do funil. */
+  "cards.previewFields": (db: DatabaseSync, ctx: DbContext, p: { pipelineId: string; keys: string[] }) => {
+    const scope = deals.cardScope(db, viewer(db, ctx));
+    const card = one<{ id: string; title: string }>(
+      db,
+      `SELECT d.id, d.title FROM deal d WHERE d.pipeline_id = ? AND d.deleted_at IS NULL${scope.sql} ORDER BY d.status = 'open' DESC, d.updated_at DESC LIMIT 1`,
+      p.pipelineId,
+      ...scope.params,
+    );
+    if (!card) return null;
+    const { values } = cardFieldValues(db, p.pipelineId, [card.id], { keys: p.keys });
+    return { title: card.title, fields: values.get(card.id) ?? {} };
+  },
   "cards.get": (db: DatabaseSync, ctx: DbContext, p: Id) => deals.getCard(db, p.id, viewer(db, ctx)) ?? null,
   "cards.create": (db: DatabaseSync, ctx: DbContext, p: deals.CardInput) => {
     const v = viewer(db, ctx);

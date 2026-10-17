@@ -1,11 +1,14 @@
 // Editar funil (menu ⋯ do quadro): nome, etapas (cor, ordem, probabilidade,
-// dias para "parado"), excluir etapa movendo os cartões, arquivar o funil.
+// dias para "parado"), excluir etapa movendo os cartões, campos exibidos no
+// cartão (aba Cartão) e arquivar o funil.
 import { useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import { TaButton, TaInput, TaModal, TaSelect, badgePalette, type BadgeColor } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { Pipeline } from "../../db/pipelines";
+import { DEFAULT_CARD_FIELDS, parseCardFields } from "../../lib/cardFields";
 import { PIPELINE_TYPE_LABEL } from "../../lib/cardTypes";
+import { CardLayoutEditor } from "./CardLayoutEditor";
 import { ErrorText, Field, SectionLabel } from "../ui/form";
 
 const COLORS = Object.keys(badgePalette) as BadgeColor[];
@@ -24,10 +27,14 @@ export function PipelineSettingsModal({ pipeline, onClose, onSaved }: { pipeline
   const [original, setOriginal] = useState<{ id: string; name: string }[]>([]);
   const [moveTo, setMoveTo] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<"etapas" | "cartao">("etapas");
+  const [cardKeys, setCardKeys] = useState<string[]>([]);
 
   useEffect(() => {
     if (!pipeline) return;
     setName(pipeline.name);
+    setTab("etapas");
+    setCardKeys(parseCardFields(pipeline.card_fields, pipeline.type));
     setError(null);
     setMoveTo({});
     void call("stages.list", { pipelineId: pipeline.id }).then((list) => {
@@ -53,7 +60,8 @@ export function PipelineSettingsModal({ pipeline, onClose, onSaved }: { pipeline
   async function save() {
     setError(null);
     try {
-      await call("pipelines.update", { id: pipeline!.id, patch: { name } });
+      const isDefault = JSON.stringify(cardKeys) === JSON.stringify(DEFAULT_CARD_FIELDS[pipeline!.type]);
+      await call("pipelines.update", { id: pipeline!.id, patch: { name, cardFields: isDefault ? null : cardKeys } });
       await call("stages.save", {
         pipelineId: pipeline!.id,
         stages: stages.map((s) => ({
@@ -72,12 +80,37 @@ export function PipelineSettingsModal({ pipeline, onClose, onSaved }: { pipeline
   }
 
   return (
-    <TaModal isOpen onClose={onClose} title="Editar funil" width="max-w-2xl">
+    <TaModal isOpen onClose={onClose} title="Editar funil" width="max-w-3xl">
       <Field label="Nome do funil" required>
         <TaInput value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
       <p className="text-theme-xs text-gray-500">Tipo: {PIPELINE_TYPE_LABEL[pipeline.type]} (não pode ser alterado).</p>
 
+      <div className="mb-1 mt-4 flex gap-1 rounded-lg bg-gray-100 p-1 dark:bg-white/5">
+        {(
+          [
+            ["etapas", "Etapas"],
+            ["cartao", "Cartão"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setTab(id)}
+            className={`flex-1 rounded-md py-1.5 text-theme-sm font-medium ${tab === id ? "bg-white text-brand-600 shadow-theme-xs dark:bg-gray-900" : "text-gray-600 dark:text-gray-400"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "cartao" && (
+        <div className="mt-4">
+          <CardLayoutEditor pipeline={pipeline} keys={cardKeys} onChange={setCardKeys} />
+        </div>
+      )}
+
+      <div className={tab === "etapas" ? "" : "hidden"}>
       <SectionLabel>Etapas</SectionLabel>
       <div className="grid grid-cols-[110px_1fr_90px_90px_64px] gap-2 text-theme-xs text-gray-500">
         <span>Cor</span>
@@ -132,6 +165,8 @@ export function PipelineSettingsModal({ pipeline, onClose, onSaved }: { pipeline
           ))}
         </>
       )}
+
+      </div>
 
       <ErrorText>{error}</ErrorText>
       <div className="mt-6 flex items-center gap-2">

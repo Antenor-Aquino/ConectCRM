@@ -7,6 +7,7 @@ import { call } from "../../rpc/client";
 import type { ActivityListItem } from "../../db/activities";
 import type { CustomField, CustomValue } from "../../db/customFields";
 import type { CardDetail as CardData } from "../../db/deals";
+import type { HistoryEvent } from "../../db/cardHistory";
 import type { Pipeline, Stage } from "../../db/pipelines";
 import { CARD_TEXT } from "../../lib/cardTypes";
 import { formatCents, formatDateTime, fromDateInput, toDateInput } from "../../lib/format";
@@ -27,23 +28,6 @@ import { ActivityIcon } from "../../lib/activityIcons";
 import { ItemsEditor, type ItemDraft } from "./ItemsEditor";
 import { LostModal } from "./LostModal";
 import { createOrganizationQuick, createPersonQuick, searchOrganizations, searchPersons } from "./searchers";
-
-const FIELD_LABEL: Record<string, string> = {
-  title: "Título",
-  description: "Descrição",
-  value_cents: "Valor",
-  sla_at: "SLA",
-  start_at: "Início",
-  due_at: "Prazo",
-  person_id: "Contato",
-  organization_id: "Organização",
-  owner_id: "Responsável",
-  status: "Status",
-  stage_id: "Etapa",
-  loss_reason_id: "Motivo da perda",
-  loss_note: "Observação da perda",
-  expected_close_at: "Previsão de fechamento",
-};
 
 const STATUS_BADGE = { open: null, won: { color: "green", label: "Ganho" }, lost: { color: "red", label: "Perdido" } } as const;
 
@@ -215,6 +199,7 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
                   {card.items.length ? `${card.items.length} produto(s)` : "Adicionar produtos"}
                 </button>
               </div>
+              {card.items.length > 0 && <ItemsSummary items={card.items} onEdit={() => setItemsOpen(true)} />}
             </>
           )}
           {pipeline.type !== "comercial" && (
@@ -303,11 +288,7 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
           {tab === "tarefas" && <TasksTab cardId={cardId} onChanged={onChanged} />}
           {tab === "anexos" && <AttachmentsPanel dealId={cardId} />}
           {tab === "historico" && (
-            <HistoryTab
-              cardId={cardId}
-              stageHistory={card.stageHistory}
-              userName={(id) => users.find((u) => u.id === id)?.name ?? (id === user.id ? user.name : "Sistema")}
-            />
+            <HistoryTab cardId={cardId} stageHistory={card.stageHistory} refreshKey={card.version} />
           )}
         </div>
       </div>
@@ -331,6 +312,50 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
         }}
       />
     </Shell>
+  );
+}
+
+/** Resumo dos produtos/serviços logo abaixo do valor (clique abre o editor). */
+function ItemsSummary({ items, onEdit }: { items: CardData["items"]; onEdit: () => void }) {
+  const qty = (n: number) => n.toLocaleString("pt-BR", { maximumFractionDigits: 3 });
+  return (
+    <div className="mt-3 overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
+      <table className="w-full text-theme-xs">
+        <thead>
+          <tr className="border-b border-gray-200 bg-gray-50 text-left uppercase tracking-wide text-gray-400 dark:border-gray-800 dark:bg-white/5">
+            <th className="px-2.5 py-2 font-semibold">Produto/serviço</th>
+            <th className="px-2.5 py-2 text-right font-semibold">Qtd</th>
+            <th className="px-2.5 py-2 text-right font-semibold">Preço unit.</th>
+            <th className="px-2.5 py-2 text-right font-semibold">Desc.</th>
+            <th className="px-2.5 py-2 text-right font-semibold">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((i) => (
+            <tr key={i.id} onClick={onEdit} className="cursor-pointer border-b border-gray-100 last:border-0 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-white/5">
+              <td className="px-2.5 py-2 text-gray-800 dark:text-white/90">
+                {i.description}
+                {i.recurrence !== "avulso" && <span className="ml-1 text-gray-400">({i.recurrence})</span>}
+              </td>
+              <td className="px-2.5 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{qty(i.quantity)}</td>
+              <td className="px-2.5 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{formatCents(i.unit_price_cents)}</td>
+              <td className="px-2.5 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{i.discount_cents ? formatCents(i.discount_cents) : "—"}</td>
+              <td className="px-2.5 py-2 text-right font-medium tabular-nums text-gray-800 dark:text-white/90">{formatCents(i.total_cents)}</td>
+            </tr>
+          ))}
+        </tbody>
+        {items.length > 1 && (
+          <tfoot>
+            <tr className="border-t border-gray-200 bg-gray-50 font-semibold dark:border-gray-800 dark:bg-white/5">
+              <td className="px-2.5 py-2 text-gray-700 dark:text-gray-300" colSpan={4}>
+                Total
+              </td>
+              <td className="px-2.5 py-2 text-right tabular-nums text-gray-800 dark:text-white/90">{formatCents(items.reduce((a, i) => a + i.total_cents, 0))}</td>
+            </tr>
+          </tfoot>
+        )}
+      </table>
+    </div>
   );
 }
 
@@ -403,19 +428,11 @@ function TasksTab({ cardId, onChanged }: { cardId: string; onChanged: () => void
   );
 }
 
-function HistoryTab({
-  cardId,
-  stageHistory,
-  userName,
-}: {
-  cardId: string;
-  stageHistory: CardData["stageHistory"];
-  userName: (id: string | null) => string;
-}) {
-  const [log, setLog] = useState<{ op: string; changes: string; user_id: string | null; at: string }[]>([]);
+function HistoryTab({ cardId, stageHistory, refreshKey }: { cardId: string; stageHistory: CardData["stageHistory"]; refreshKey: unknown }) {
+  const [events, setEvents] = useState<HistoryEvent[]>([]);
   useEffect(() => {
-    void call("history.get", { table: "deal", id: cardId }).then((l) => setLog([...l].reverse()));
-  }, [cardId, stageHistory.length]);
+    void call("cards.history", { id: cardId }).then(setEvents);
+  }, [cardId, refreshKey]);
   return (
     <div>
       <SectionLabel className="mt-0">Etapas</SectionLabel>
@@ -431,20 +448,24 @@ function HistoryTab({
         ))}
       </ul>
       <SectionLabel>Alterações</SectionLabel>
-      <ul className="space-y-2">
-        {log.map((l, i) => {
-          const fields = Object.keys(JSON.parse(l.changes) as Record<string, unknown>)
-            .map((f) => FIELD_LABEL[f])
-            .filter(Boolean);
-          const what = l.op === "insert" ? "Criou" : l.op === "delete" ? "Excluiu" : l.op === "restore" ? "Restaurou" : `Alterou ${fields.join(", ") || "dados"}`;
-          return (
-            <li key={i} className="text-theme-sm text-gray-700 dark:text-gray-300">
-              <span className="font-medium">{userName(l.user_id)}</span> · {what}
-              <span className="block text-theme-xs text-gray-400">{formatDateTime(l.at)}</span>
-            </li>
-          );
-        })}
-      </ul>
+      <ol className="relative space-y-3 border-l border-gray-200 pl-4 dark:border-gray-800">
+        {events.map((e, i) => (
+          <li key={i} className="relative">
+            <span className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-brand-500 dark:border-gray-900" />
+            <p className="text-theme-xs text-gray-400">
+              <span className="font-medium text-gray-700 dark:text-gray-300">{e.userName}</span> · {formatDateTime(e.at)}
+            </p>
+            <ul className="mt-0.5 space-y-0.5">
+              {e.lines.map((line, j) => (
+                <li key={j} className="break-words text-theme-sm text-gray-700 dark:text-gray-300">
+                  {line}
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
+        {events.length === 0 && <li className="text-theme-sm text-gray-400">Nenhuma alteração registrada.</li>}
+      </ol>
     </div>
   );
 }

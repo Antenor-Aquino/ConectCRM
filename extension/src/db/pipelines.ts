@@ -1,3 +1,4 @@
+import { isCardFieldKey, MAX_CARD_FIELDS } from "../lib/cardFields";
 import { insertRow, softDelete, updateRow, type DbContext } from "./repo";
 import { many, one, withTransaction, type DatabaseSync } from "./sql";
 
@@ -19,6 +20,8 @@ export interface Pipeline {
   color: string | null;
   position: number;
   archived_at: string | null;
+  /** JSON com os campos do cartão (lib/cardFields.ts); null = padrão. */
+  card_fields: string | null;
   version: number;
 }
 
@@ -44,7 +47,7 @@ export interface NewPipeline {
 export function listPipelines(db: DatabaseSync, opts: { includeArchived?: boolean } = {}): Pipeline[] {
   return many<Pipeline>(
     db,
-    `SELECT id, name, type, icon, color, position, archived_at, version FROM pipeline
+    `SELECT id, name, type, icon, color, position, archived_at, card_fields, version FROM pipeline
      WHERE deleted_at IS NULL ${opts.includeArchived ? "" : "AND archived_at IS NULL"}
      ORDER BY position, name`,
   );
@@ -101,7 +104,7 @@ export function updatePipeline(
   db: DatabaseSync,
   ctx: DbContext,
   id: string,
-  patch: { name?: string; icon?: string | null; color?: string | null; archived?: boolean },
+  patch: { name?: string; icon?: string | null; color?: string | null; archived?: boolean; cardFields?: string[] | null },
 ): void {
   const data: Record<string, string | null> = {};
   if (patch.name !== undefined) {
@@ -112,6 +115,15 @@ export function updatePipeline(
   if (patch.icon !== undefined) data.icon = patch.icon;
   if (patch.color !== undefined) data.color = patch.color;
   if (patch.archived !== undefined) data.archived_at = patch.archived ? new Date().toISOString() : null;
+  if (patch.cardFields !== undefined) {
+    if (patch.cardFields === null) data.card_fields = null;
+    else {
+      const bad = patch.cardFields.find((k) => !isCardFieldKey(k));
+      if (bad) throw new Error(`Campo de cartão inválido: ${bad}`);
+      if (patch.cardFields.length > MAX_CARD_FIELDS) throw new Error(`No máximo ${MAX_CARD_FIELDS} campos no cartão.`);
+      data.card_fields = JSON.stringify([...new Set(patch.cardFields)]);
+    }
+  }
   updateRow(db, ctx, "pipeline", id, data);
 }
 
