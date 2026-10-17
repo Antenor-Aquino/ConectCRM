@@ -201,6 +201,20 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
   }, [request]);
 
   const type = types.find((t) => t.id === typeId);
+  // Tarefa nova: o nome começa com o tipo ("Reunião ") para o usuário completar.
+  // Trocar o tipo troca só esse começo; nome reescrito pelo usuário não muda.
+  const titlePrefix = useRef("");
+  useEffect(() => {
+    if (request.id || !type) return;
+    const next = `${type.name} `;
+    const prev = titlePrefix.current;
+    setTitle((cur) => {
+      if (!cur.trim() || cur.trim() === prev.trim()) return next;
+      if (prev && cur.startsWith(prev)) return next + cur.slice(prev.length);
+      return cur;
+    });
+    titlePrefix.current = next;
+  }, [type, request.id]);
   const isMeeting = !!type?.is_meeting && !existing?.external_event_id;
 
   useEffect(() => {

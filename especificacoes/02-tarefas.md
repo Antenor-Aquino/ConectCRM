@@ -10,6 +10,10 @@ Modal largo em **duas colunas**, botão ✕ no canto.
 **Coluna esquerda**
 - Círculo de **concluir** (marca/desmarca a tarefa como feita) + campo
   **Nome da tarefa** (título grande, obrigatório).
+- Tarefa nova: o nome já vem com o **tipo** escolhido ("Reunião ") para o
+  usuário completar ou trocar. Mudar o tipo troca só esse começo (o que foi
+  digitado depois continua); se o nome foi reescrito, não muda. Ao editar
+  uma tarefa existente o nome nunca é alterado.
 - **Add descrição...** — texto longo logo abaixo, sem borda.
 - **Documentos**: "Anexar documentos" (vários) — viram documentos do GED com
   nome e classificação, vinculados à tarefa, ao cartão, ao contato e à
