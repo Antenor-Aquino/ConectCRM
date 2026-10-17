@@ -14,6 +14,7 @@ import { formatPeriod, monthLabel, PERIOD_LABEL, periodToIso, presetPeriod, type
 import { downloadWorkbook } from "../../lib/xlsxExport";
 import { useSession } from "../session";
 import { BarChart, DataTable, ReportCard } from "./charts";
+import { errorText } from "../../lib/errors";
 
 const pct = (v: number | null) => (v == null ? "—" : `${(v * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`);
 const days = (v: number | null) => (v == null ? "—" : `${v.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} d`);
@@ -56,7 +57,7 @@ export function ReportsView() {
         setReport(r);
         setError(null);
       })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+      .catch((e: unknown) => setError(errorText(e)))
       .finally(() => setLoading(false));
   }, [period, pipelineId, owner, user.id]);
 

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Building2, User } from "lucide-react";
 import { cn } from "@tailadmin";
 import { call } from "../../rpc/client";
+import { errorText } from "../../lib/errors";
 
 async function resize(file: File, max = 256): Promise<string> {
   const bitmap = await createImageBitmap(file);
@@ -91,7 +92,7 @@ export function ImageUpload({
             setError(null);
             onChange(id);
           } catch (err) {
-            setError(err instanceof Error ? err.message : String(err));
+            setError(errorText(err));
           }
         }}
       />

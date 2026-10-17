@@ -34,3 +34,28 @@ describe("funil em lista", () => {
     expect(Object.keys(getBoard(db, pid)[0]!.cards[0]!.fields).sort()).toEqual(["contato", "valor"]); // contato sem pessoa mostra a organização
   });
 });
+
+describe("sistema em português", () => {
+  it("tipos de tarefa padrão, cores e erros do navegador traduzidos", async () => {
+    const { listActivityTypes } = await import("../src/db/activities");
+    const { COLOR_LABEL } = await import("../src/lib/colors");
+    const { translateError } = await import("../src/lib/errors");
+    const { db } = await freshDb();
+    expect(listActivityTypes(db).map((t) => t.name)).toContain("Prazo final");
+    expect(listActivityTypes(db).map((t) => t.name)).not.toContain("Deadline");
+    expect(Object.values(COLOR_LABEL)).toEqual(["Azul", "Roxo", "Verde", "Âmbar", "Vermelho", "Ciano", "Cinza"]);
+    expect(translateError("Failed to fetch")).toMatch(/Sem conexão/);
+    expect(translateError("The user did not approve access.")).toMatch(/Login cancelado/);
+    expect(translateError("Either the '<all_urls>' or 'activeTab' permission is required.")).toMatch(/O Chrome não permite/);
+    expect(translateError("Informe o nome.")).toBe("Informe o nome.");
+  });
+
+  it("migração renomeia o tipo Deadline das bases antigas", async () => {
+    const { runMigrations } = await import("../src/db/migrate");
+    const { db } = await freshDb();
+    db.run("UPDATE activity_type SET name = 'Deadline' WHERE name = 'Prazo final'");
+    db.run("DELETE FROM _migrations WHERE name = '0007_tipo_prazo_final.sql'");
+    runMigrations(db);
+    expect(db.exec("SELECT COUNT(*) FROM activity_type WHERE name = 'Prazo final'")[0]!.values[0]![0]).toBe(1);
+  });
+});

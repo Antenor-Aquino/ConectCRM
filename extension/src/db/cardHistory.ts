@@ -7,6 +7,7 @@ import { OUTCOME_TEXT, PIPELINE_TYPE_BY_KIND } from "../lib/cardTypes";
 import { formatCents, formatDateTime } from "../lib/format";
 import type { DealKind } from "./pipelines";
 import { many, type DatabaseSync } from "./sql";
+import { RECURRENCE_LABEL, type Recurrence } from "./products";
 
 export interface HistoryEvent {
   at: string;
@@ -166,6 +167,7 @@ export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
     if (field.endsWith("_cents")) return formatCents(Number(v));
     if (field === "quantity") return qty(v);
     if (field === "product_id") return name(products, v);
+    if (field === "recurrence") return RECURRENCE_LABEL[v as Recurrence] ?? String(v);
     return clip(v, 80);
   };
   const itemSummary = (r: Record<string, unknown>) =>

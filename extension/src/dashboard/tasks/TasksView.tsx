@@ -14,6 +14,7 @@ import { taskTiming } from "../../lib/taskTiming";
 import { useSession } from "../session";
 import { Avatar } from "../ui/Avatar";
 import { TaskModal, type TaskRequest } from "./TaskModal";
+import { errorText } from "../../lib/errors";
 
 type Period = "hoje" | "amanha" | "semana" | "mes" | "todas" | "personalizado" | "atrasadas" | "proximos7";
 type Status = "pendentes" | "concluidas" | "todas";
@@ -233,7 +234,7 @@ export function TasksView({
                   key={f.id}
                   type="button"
                   title={`Baixar ${f.filename}`}
-                  onClick={() => void downloadVersion(f.version_id).catch((e: unknown) => alert(e instanceof Error ? e.message : String(e)))}
+                  onClick={() => void downloadVersion(f.version_id).catch((e: unknown) => alert(errorText(e)))}
                   className="inline-flex max-w-[220px] items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-600 hover:border-brand-300 hover:text-brand-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400"
                 >
                   <Paperclip size={11} />

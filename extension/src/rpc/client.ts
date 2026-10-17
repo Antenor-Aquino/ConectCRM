@@ -31,7 +31,7 @@ export async function call<M extends MethodName>(method: M, ...args: MethodParam
   for (let attempt = 0; ; attempt++) {
     try {
       const response = (await chrome.runtime.sendMessage(request)) as RpcResponse | undefined;
-      if (!response) throw new Error("Receiving end does not exist");
+      if (!response) throw new Error("Não foi possível conectar ao banco local do CRM. Recarregue a página.");
       if (!response.ok) throw new RpcError(response.error);
       return response.result as MethodResult<M>;
     } catch (err) {

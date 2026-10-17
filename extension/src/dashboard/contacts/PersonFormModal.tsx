@@ -16,6 +16,7 @@ import { SimilarNotice, useSimilar } from "../ui/SimilarNotice";
 import { localPart, PhoneInput } from "../ui/PhoneInput";
 import { TagPicker } from "../ui/TagPicker";
 import { UserSelect } from "../ui/UserSelect";
+import { errorText } from "../../lib/errors";
 
 interface OrgLink {
   id: string;
@@ -107,7 +108,7 @@ export function PersonFormModal({
       if (orgs[0]) await call("persons.setPrimaryOrganization", { personId: id, organizationId: orgs[0].id });
       onSaved(id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     } finally {
       setSaving(false);
     }

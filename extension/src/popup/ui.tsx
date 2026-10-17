@@ -4,6 +4,7 @@ import { cn, TaSelect } from "@tailadmin";
 import { call } from "../rpc/client";
 import type { OpenCardMessage } from "../rpc/protocol";
 import type { DocumentType } from "../db/documents";
+import { errorText } from "../lib/errors";
 
 export function Section({ title, icon, children, aside }: { title: string; icon: ReactNode; children: ReactNode; aside?: ReactNode }) {
   return (
@@ -36,7 +37,7 @@ export function StatusText({ status }: { status: Status }) {
   );
 }
 
-export const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+export const errText = (e: unknown) => errorText(e);
 
 /** Abre o CRM em tela cheia (aba do navegador). Se já houver uma aba do CRM,
  * ativa ela em vez de abrir outra; com `cardId`, abre o cartão no funil dele. */

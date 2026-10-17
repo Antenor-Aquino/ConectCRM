@@ -9,6 +9,8 @@
 // - Microsoft: no app do Entra (mesmo client id do wa-pipedrive), adicionar
 //   o redirect https://<id-da-extensão>.chromiumapp.org/microsoft.
 
+import { translateError } from "./errors";
+
 export type CalendarProvider = "google" | "microsoft";
 
 export const MICROSOFT_CLIENT_ID = "a1831519-7677-413a-be79-726b20328d12";
@@ -46,10 +48,21 @@ function googleToken(interactive: boolean): Promise<string> {
   return new Promise((resolve, reject) => {
     chrome.identity.getAuthToken({ interactive }, (result) => {
       const token = typeof result === "string" ? result : (result as { token?: string } | undefined)?.token;
-      if (chrome.runtime.lastError || !token) reject(new Error(chrome.runtime.lastError?.message ?? "Conecte o Google Agenda."));
+      if (chrome.runtime.lastError || !token) reject(new Error(translateError(chrome.runtime.lastError?.message ?? "Conecte o Google Agenda.")));
       else resolve(token);
     });
   });
+}
+
+/** Erro HTTP da agenda em português (as mensagens das APIs vêm em inglês). */
+function calendarHttpError(service: string, status: number, raw: string | undefined): Error {
+  if (status === 401) return new Error(`A conexão com o ${service} expirou. Conecte de novo.`);
+  if (status === 403) return new Error(`Sem permissão no ${service}. Conecte de novo e autorize o acesso à agenda.`);
+  if (status === 404) return new Error(`Evento ou agenda não encontrado no ${service}.`);
+  if (status === 429) return new Error(`Muitas solicitações ao ${service}. Tente novamente em alguns minutos.`);
+  if (status >= 500) return new Error(`O ${service} está indisponível no momento. Tente novamente.`);
+  const pt = raw ? translateError(raw) : "";
+  return new Error(pt && pt !== raw ? pt : `Erro do ${service} (HTTP ${status}). Tente novamente.`);
 }
 
 async function gFetch<T>(url: string, init: RequestInit = {}): Promise<T> {
@@ -62,7 +75,7 @@ async function gFetch<T>(url: string, init: RequestInit = {}): Promise<T> {
     res = await go(token);
   }
   const json = (await res.json().catch(() => ({}))) as T & { error?: { message?: string } };
-  if (!res.ok) throw new Error(json.error?.message ?? `Erro HTTP ${res.status}`);
+  if (!res.ok) throw calendarHttpError("Google Agenda", res.status, json.error?.message);
   return json;
 }
 
@@ -85,7 +98,8 @@ async function msExchange(body: Record<string, string>): Promise<string> {
     body: new URLSearchParams(body),
   });
   const json = (await res.json().catch(() => ({}))) as { access_token?: string; refresh_token?: string; expires_in?: number; error?: string; error_description?: string };
-  if (!res.ok || !json.access_token) throw new Error(json.error_description ?? json.error ?? `Erro HTTP ${res.status}`);
+  // 400 com invalid_grant = sessão expirada.
+  if (!res.ok || !json.access_token) throw calendarHttpError("Outlook", res.status === 400 ? 401 : res.status, json.error);
   const tok: MsToken = { access: json.access_token, refresh: json.refresh_token, expiresAt: Date.now() + ((json.expires_in ?? 3600) - 60) * 1000 };
   await chrome.storage.local.set({ [MS_KEY]: tok });
   return tok.access;
@@ -121,13 +135,13 @@ async function microsoftToken(interactive: boolean): Promise<string> {
   const final = new URL(
     await new Promise<string>((resolve, reject) =>
       chrome.identity.launchWebAuthFlow({ url: authUrl, interactive: true }, (url) =>
-        chrome.runtime.lastError || !url ? reject(new Error(chrome.runtime.lastError?.message ?? "Login cancelado.")) : resolve(url),
+        chrome.runtime.lastError || !url ? reject(new Error(translateError(chrome.runtime.lastError?.message ?? "Login cancelado."))) : resolve(url),
       ),
     ),
   );
   if (final.searchParams.get("state") !== state) throw new Error("Falha de segurança no login Microsoft.");
   const err = final.searchParams.get("error_description") ?? final.searchParams.get("error");
-  if (err) throw new Error(err);
+  if (err) throw new Error(translateError(err));
   const code = final.searchParams.get("code");
   if (!code) throw new Error("A Microsoft não retornou o código de autorização.");
   return msExchange({ client_id: MICROSOFT_CLIENT_ID, grant_type: "authorization_code", code, redirect_uri: redirectUri, code_verifier: verifier, scope: MICROSOFT_SCOPES });
@@ -143,7 +157,7 @@ async function mFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
   if (res.status === 204) return {} as T;
   const json = (await res.json().catch(() => ({}))) as T & { error?: { message?: string } };
-  if (!res.ok) throw new Error(json.error?.message ?? `Erro HTTP ${res.status}`);
+  if (!res.ok) throw calendarHttpError("Outlook", res.status, json.error?.message);
   return json;
 }
 

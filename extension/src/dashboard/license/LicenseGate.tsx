@@ -5,6 +5,7 @@ import { AlertTriangle } from "lucide-react";
 import { TaButton } from "@tailadmin";
 import { extensionLicenseClient, inGracePeriod, type LicenseClient, type LicenseResult } from "../../lib/license";
 import { LicenseScreen } from "./LicenseScreen";
+import { errorText } from "../../lib/errors";
 
 interface LicenseCtx {
   result: LicenseResult;
@@ -68,7 +69,7 @@ export function LicenseGate({ children }: { children: ReactNode }) {
               try {
                 await chrome.tabs.create({ url: await client.billingPortalUrl() });
               } catch (e) {
-                alert(e instanceof Error ? e.message : String(e));
+                alert(errorText(e));
               }
             }}
           >

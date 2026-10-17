@@ -47,7 +47,7 @@ Modal largo em **duas colunas**, botão ✕ no canto.
 
 ## 3. Tipos de tarefa
 
-Padrão (com ícone): **Ligar, Reunião, Agendamento, Tarefa, Deadline, Almoço,
+Padrão (com ícone): **Ligar, Reunião, Agendamento, Tarefa, Prazo final, Almoço,
 E-mail**.
 
 - Cadastro em **Configurações → Tipos de tarefa** (nome, ícone, ativo,

@@ -20,6 +20,7 @@ import { TagPicker } from "../ui/TagPicker";
 import { UserSelect } from "../ui/UserSelect";
 import { ItemsEditor, itemTotal, type ItemDraft } from "./ItemsEditor";
 import { createOrganizationQuick, createPersonQuick, searchOrganizations, searchPersons } from "./searchers";
+import { errorText } from "../../lib/errors";
 
 export interface CardFormRequest {
   type: PipelineType;
@@ -149,7 +150,7 @@ export function CardFormModal({
       });
       onCreated(id, pipelineId, open);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     } finally {
       setSaving(false);
     }

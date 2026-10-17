@@ -33,6 +33,8 @@ import { taskTiming } from "../../lib/taskTiming";
 import { ItemsEditor, type ItemDraft } from "./ItemsEditor";
 import { LostModal } from "./LostModal";
 import { createOrganizationQuick, createPersonQuick, searchOrganizations, searchPersons } from "./searchers";
+import { errorText } from "../../lib/errors";
+import { RECURRENCE_LABEL, type Recurrence } from "../../db/products";
 
 
 type Tab = "notas" | "tarefas" | "documentos" | "historico";
@@ -93,7 +95,7 @@ export function CardDetail({
       await load();
       onChanged();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     }
   };
   const update = (patch: Record<string, unknown>) => run(() => call("cards.update", { id: cardId, patch }));
@@ -443,7 +445,7 @@ function ItemsSummary({ items, onEdit }: { items: CardData["items"]; onEdit: () 
             <tr key={i.id} onClick={onEdit} className="cursor-pointer border-b border-gray-100 last:border-0 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-white/5">
               <td className="px-2.5 py-2 text-gray-800 dark:text-white/90">
                 {i.description}
-                {i.recurrence !== "avulso" && <span className="ml-1 text-gray-400">({i.recurrence})</span>}
+                {i.recurrence !== "avulso" && <span className="ml-1 text-gray-400">({RECURRENCE_LABEL[i.recurrence as Recurrence] ?? i.recurrence})</span>}
               </td>
               <td className="px-2.5 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{qty(i.quantity)}</td>
               <td className="px-2.5 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{formatCents(i.unit_price_cents)}</td>

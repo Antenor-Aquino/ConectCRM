@@ -18,6 +18,7 @@ import { DocumentsPanel } from "../documents/DocumentsPanel";
 import { ChangeLogList, CustomValuesView, DrawerShell, InfoRow, RelatedCards, RelatedTasks, Tabs } from "./detailParts";
 import { MergeModal } from "./MergeModal";
 import { OrganizationFormModal } from "./OrganizationFormModal";
+import { errorText } from "../../lib/errors";
 
 type Tab = "contatos" | "negocios" | "tarefas" | "documentos" | "notas" | "historico";
 
@@ -104,7 +105,7 @@ export function OrganizationDetail({
               onChanged();
               onClose();
             } catch (e) {
-              setError(e instanceof Error ? e.message : String(e));
+              setError(errorText(e));
             }
           }}
         >

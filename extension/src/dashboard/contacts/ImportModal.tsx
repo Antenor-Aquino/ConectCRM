@@ -7,6 +7,7 @@ import { TaButton, TaModal, TaSelect } from "@tailadmin";
 import type { ImportSummary } from "../../db/importer";
 import { guessMapping, readSpreadsheet } from "../../lib/spreadsheet";
 import { ErrorText } from "../ui/form";
+import { errorText } from "../../lib/errors";
 
 export interface ImportField {
   key: string;
@@ -45,7 +46,7 @@ export function ImportModal({
       setSheet(s);
       setMapping(guessMapping(s.headers, fields));
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     }
   }
 
@@ -63,7 +64,7 @@ export function ImportModal({
       });
       setSummary(await onImport(rows));
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     } finally {
       setBusy(false);
     }

@@ -19,6 +19,7 @@ import { SimilarNotice, useSimilar } from "../ui/SimilarNotice";
 import { localPart, PhoneInput } from "../ui/PhoneInput";
 import { TagPicker } from "../ui/TagPicker";
 import { UserSelect } from "../ui/UserSelect";
+import { errorText } from "../../lib/errors";
 
 type Form = {
   name: string;
@@ -166,7 +167,7 @@ export function OrganizationFormModal({
       else id = await call("organizations.create", input);
       onSaved(id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     } finally {
       setSaving(false);
     }

@@ -4,6 +4,7 @@
 // grava uma cópia do banco na pasta escolhida.
 import { addNotification } from "./notifications";
 import { loadBackupFolderHandle, type PermissionedDirectoryHandle } from "./backupFolder";
+import { errorText } from "./errors";
 
 export type BackupFrequency = "daily" | "weekly";
 
@@ -101,7 +102,7 @@ export async function checkAutoBackup(
     await writeBackup(getBytes, handle, settings, undefined, saveDocuments);
     return { status: "done" };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorText(err);
     await addNotification({ kind: "error", title: "Backup automático falhou", message });
     return { status: "error", message };
   }

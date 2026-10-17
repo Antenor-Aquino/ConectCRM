@@ -7,6 +7,7 @@ import { createOrganization, createPerson, findDuplicatePersons, findOrganizatio
 import { listCustomFields, type CustomValue } from "./customFields";
 import type { DbContext } from "./repo";
 import { one, type DatabaseSync } from "./sql";
+import { errorText } from "../lib/errors";
 
 export interface ImportSummary {
   created: number;
@@ -58,7 +59,7 @@ export function importPersons(db: DatabaseSync, ctx: DbContext, rows: PersonImpo
       }
       summary.created++;
     } catch (e) {
-      summary.errors.push({ row: line, message: e instanceof Error ? e.message : String(e) });
+      summary.errors.push({ row: line, message: errorText(e) });
     }
   });
   return summary;
@@ -83,7 +84,7 @@ export function importOrganizations(db: DatabaseSync, ctx: DbContext, rows: Orga
       createOrganization(db, ctx, { ...input, customValues: customValuesByName(db, "organization", customByName) });
       summary.created++;
     } catch (e) {
-      summary.errors.push({ row: line, message: e instanceof Error ? e.message : String(e) });
+      summary.errors.push({ row: line, message: errorText(e) });
     }
   });
   return summary;

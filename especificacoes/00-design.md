@@ -63,3 +63,11 @@ como na gestão financeira.
 - Aparência aplicada a eles: cores, fonte, botões, inputs, badges, raios e
   sombras da gestão financeira (ex.: botão primário `#465FFF`, não o azul
   dos mockups).
+
+## Idioma
+
+Todo o sistema em português do Brasil: textos, cores (Azul, Roxo, Verde,
+Âmbar, Vermelho, Ciano, Cinza), tipos padrão ("Prazo final"), etapas
+sugeridas ("Prospecção"), datas dd/mm/aaaa e valores em R$ com milhar.
+Erros que chegam em inglês do navegador, da rede ou dos serviços externos
+(Google, Microsoft) são traduzidos (`lib/errors.ts`).

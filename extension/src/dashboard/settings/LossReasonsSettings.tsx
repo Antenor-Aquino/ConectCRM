@@ -6,6 +6,7 @@ import { TaButton, TaInput, TaPanel, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import { useSession } from "../session";
 import { Switch } from "../ui/Switch";
+import { errorText } from "../../lib/errors";
 
 export function LossReasonsSettings() {
   const { user } = useSession();
@@ -23,7 +24,7 @@ export function LossReasonsSettings() {
       await fn();
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     }
   };
   return (

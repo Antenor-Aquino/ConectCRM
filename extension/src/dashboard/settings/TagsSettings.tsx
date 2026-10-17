@@ -8,6 +8,7 @@ import { useSession } from "../session";
 import { Switch } from "../ui/Switch";
 import { TagChip } from "../ui/TagPicker";
 import { colorLabel } from "../../lib/colors";
+import { errorText } from "../../lib/errors";
 
 const ENTITY_LABEL: Record<TagEntity, string> = {
   person: "Contato",
@@ -62,7 +63,7 @@ export function TagsSettings() {
       await fn();
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     }
   };
 

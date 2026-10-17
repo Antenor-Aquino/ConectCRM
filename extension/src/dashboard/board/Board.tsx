@@ -17,6 +17,7 @@ import { TagChip } from "../ui/TagPicker";
 import { BoardList, loadListColumns, STAGE_COLUMN } from "./BoardList";
 import { useCardFieldOptions } from "./fieldOptions";
 import { KanbanCard } from "./KanbanCard";
+import { errorText } from "../../lib/errors";
 
 const VIEW_LABEL: Record<BoardView, string> = { all: "Fluxo geral", mine: "Meu fluxo", team: "Minha equipe" };
 const SORT_LABEL: Record<BoardSort, string> = {
@@ -190,7 +191,7 @@ export function Board({
       setColumns(await call("board.get", { pipelineId: pipeline.id, view, sort, status, search, ownerIds, tagIds, fieldKeys }));
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     }
   }, [pipeline.id, view, sort, status, search, ownerIds, tagIds, mode, listCols]);
 
@@ -267,7 +268,7 @@ export function Board({
     try {
       await call("cards.move", { id: d.id, stageId: target.stageId, beforeId: target.beforeId });
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorText(err));
     }
     void load();
   };

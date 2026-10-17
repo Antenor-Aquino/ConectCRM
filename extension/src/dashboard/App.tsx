@@ -34,6 +34,7 @@ import { PersonsView } from "./contacts/PersonsView";
 import { TaskModal } from "./tasks/TaskModal";
 import { TasksView } from "./tasks/TasksView";
 import { SessionProvider, useSession } from "./session";
+import { errorText } from "../lib/errors";
 
 // Menu principal (spec 01, seção 1).
 const NAV: TopNavItem[] = [
@@ -172,7 +173,7 @@ function Main() {
       setRefreshKey((k) => k + 1);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorText(err));
     }
   }, []);
 

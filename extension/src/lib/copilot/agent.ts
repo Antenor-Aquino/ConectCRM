@@ -6,6 +6,7 @@
 // só são sugeridas — quem aplica é o usuário, com um clique.
 import { AI_DEFAULT_MODELS, AI_LABELS, translateAiError, type AiProvider, type AiSettings } from "../ai";
 import { DATA_TOOLS, normalizeCard, RESPOND_TOOL, type CopilotCard, type Schema, type ToolDef } from "./tools";
+import { errorText } from "../errors";
 
 export interface CopilotMessage {
   role: "user" | "assistant";
@@ -76,7 +77,7 @@ async function runTool(execute: ToolExecutor, name: string, args: Record<string,
   try {
     return await execute(name, args ?? {});
   } catch (e) {
-    return { erro: e instanceof Error ? e.message : String(e) };
+    return { erro: errorText(e) };
   }
 }
 

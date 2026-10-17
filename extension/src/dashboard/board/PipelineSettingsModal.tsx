@@ -11,6 +11,7 @@ import { PIPELINE_TYPE_LABEL } from "../../lib/cardTypes";
 import { CardLayoutEditor } from "./CardLayoutEditor";
 import { ErrorText, Field, SectionLabel } from "../ui/form";
 import { colorLabel } from "../../lib/colors";
+import { errorText } from "../../lib/errors";
 
 const COLORS = Object.keys(badgePalette) as BadgeColor[];
 
@@ -76,7 +77,7 @@ export function PipelineSettingsModal({ pipeline, onClose, onSaved }: { pipeline
       });
       onSaved(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     }
   }
 

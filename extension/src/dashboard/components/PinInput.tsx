@@ -5,6 +5,7 @@ import { TaButton, TaInput } from "@tailadmin";
 import { call } from "../../rpc/client";
 import { extensionLicenseClient, normalizeKey } from "../../lib/license";
 import { ErrorText } from "../ui/form";
+import { errorText } from "../../lib/errors";
 
 export function PinCheck({ userId, onOk, autoFocus = true }: { userId: string; onOk: () => void; autoFocus?: boolean }) {
   const [pin, setPin] = useState("");
@@ -39,7 +40,7 @@ export function PinCheck({ userId, onOk, autoFocus = true }: { userId: string; o
       await call("users.setPin", { id: userId, pin: null });
       onOk();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     }
   }
 

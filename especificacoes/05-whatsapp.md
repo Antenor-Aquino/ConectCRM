@@ -47,8 +47,8 @@ estiver aberto em alguma aba, ela é ativada em vez de abrir outra.
 - **Novo recorte**: captura a aba e mostra um seletor (arraste; ESC cancela).
   O popup fecha ao clicar na página; os recortes ficam guardados até serem
   enviados (até 40).
-- **Resumir com IA**: **Transcrição** (prompt 2, padrão, primeira opção) ou
-  **Análise comercial** (prompt 1, texto padrão do wa-pipedrive). O texto
+- **Resumir com IA**: **Transcrição** (instrução 2, padrão, primeira opção) ou
+  **Análise comercial** (instrução 1, texto padrão do wa-pipedrive). O texto
   pode ser editado.
 - **Anexar ao cartão**: cada recorte vira documento do GED (PNG); o resumo
   vira nota com referência aos recortes ("Arquivo: …", abre a prévia).
@@ -65,7 +65,7 @@ estiver aberto em alguma aba, ela é ativada em vez de abrir outra.
 ## 5. Inteligência artificial
 
 Configurações → **Inteligência artificial**: provedor (Gemini, OpenAI, Claude,
-DeepSeek), chave, modelo (opcional), prompts 1 e 2 e **Testar conexão**. A
+DeepSeek), chave, modelo (opcional), instruções 1 e 2 da IA e **Testar conexão**. A
 chave fica só neste computador; as chamadas saem direto do navegador para o
 provedor.
 

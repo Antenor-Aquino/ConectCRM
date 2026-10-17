@@ -9,6 +9,7 @@ import { isValidPin } from "../../lib/pin";
 import { useSession } from "../session";
 import { Avatar } from "../ui/Avatar";
 import { ErrorText, Field, SectionLabel } from "../ui/form";
+import { errorText } from "../../lib/errors";
 
 const ROLE_BADGE: Record<Role, "blue" | "purple" | "slate"> = { admin: "blue", gestor: "purple", vendedor: "slate" };
 const ROLE_HELP: Record<Role, string> = {
@@ -140,7 +141,7 @@ export function UserModal({
       else if (removePin) await call("users.setPin", { id, pin: null });
       onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     }
   }
 

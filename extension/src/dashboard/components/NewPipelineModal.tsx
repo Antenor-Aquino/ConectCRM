@@ -6,11 +6,12 @@ import { TaButton, TaInput, TaModal, TaSelect, badgePalette, type BadgeColor } f
 import { call } from "../../rpc/client";
 import type { PipelineType } from "../../db/pipelines";
 import { colorLabel } from "../../lib/colors";
+import { errorText } from "../../lib/errors";
 
 const STAGE_COLORS = Object.keys(badgePalette) as BadgeColor[];
 
 const DEFAULT_STAGES: Record<PipelineType, string[]> = {
-  comercial: ["Prospect", "Contato", "Reunião", "Proposta", "Fechamento"],
+  comercial: ["Prospecção", "Contato", "Reunião", "Proposta", "Fechamento"],
   // Sem etapa "Resolvido"/"Concluído": o desfecho é marcado pelos botões do cartão.
   operacional: ["Novo ticket", "Em atendimento", "Aguardando cliente", "Em validação"],
   projeto: ["A fazer", "Em andamento", "Em revisão", "Entrega"],
@@ -58,7 +59,7 @@ export function NewPipelineModal({
       const id = await call("pipelines.create", { name, type, stages });
       onCreated(id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }

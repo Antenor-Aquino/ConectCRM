@@ -14,6 +14,8 @@ import { dataUrlBase64, fileToDataUrl } from "../../lib/files";
 import { downloadWorkbook } from "../../lib/xlsxExport";
 import { ROLE_LABEL } from "../../db/users";
 import { useSession } from "../session";
+import { errorText } from "../../lib/errors";
+import { formatDateTime } from "../../lib/format";
 
 export interface CopilotRequest {
   question: string;
@@ -84,7 +86,7 @@ export function CopilotPanel({ open, onClose, request, onOpenCard }: { open: boo
       const card = await askCopilot(settings, history, { userName: user.name, userRole: ROLE_LABEL[user.role], cardId: focusCard }, rpcExecutor);
       setEntries((cur) => [...cur, { id: crypto.randomUUID(), role: "assistant", card }]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     } finally {
       setLoading(false);
     }
@@ -124,7 +126,7 @@ export function CopilotPanel({ open, onClose, request, onOpenCard }: { open: boo
         const text = await transcribeAudio(ai!, dataUrlBase64(await fileToDataUrl(new Blob(chunks, { type: mime }))), mime, "pergunta.webm");
         await ask(text);
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        setError(errorText(e));
       } finally {
         setTranscribing(false);
       }
@@ -362,7 +364,7 @@ function ActionButton({ action, onOpenCard }: { action: CopilotAction; onOpenCar
       }
       setState("done");
     } catch (e) {
-      setState(e instanceof Error ? e.message : String(e));
+      setState(errorText(e));
     }
   };
 
@@ -381,7 +383,7 @@ function ActionButton({ action, onOpenCard }: { action: CopilotAction; onOpenCar
       >
         {done ? <Check size={14} /> : icon}
         <span className="flex-1">{done ? (action.tipo === "criar_tarefa" ? `Tarefa criada: ${action.titulo}` : "Nota adicionada ao cartão") : action.rotulo}</span>
-        {action.tipo === "criar_tarefa" && action.quando && !done && <span className="text-gray-500">{action.quando.replace("T", " ")}</span>}
+        {action.tipo === "criar_tarefa" && action.quando && !done && <span className="text-gray-500">{formatDateTime(new Date(action.quando).toISOString())}</span>}
       </button>
       {failed && <p className="mt-1 text-theme-xs text-error-600">{state}</p>}
     </div>

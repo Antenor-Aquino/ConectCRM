@@ -8,6 +8,7 @@ import { CUSTOM_FIELD_ENTITIES, CUSTOM_FIELD_TYPE_LABEL, type CustomField, type 
 import type { Pipeline } from "../../db/pipelines";
 import { useSession } from "../session";
 import { CustomFieldModal, ENTITY_LABEL } from "./CustomFieldModal";
+import { errorText } from "../../lib/errors";
 
 export function CustomFieldsSettings() {
   const { user } = useSession();
@@ -43,7 +44,7 @@ export function CustomFieldsSettings() {
       await call("customFields.delete", { id: f.id });
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     }
   };
 

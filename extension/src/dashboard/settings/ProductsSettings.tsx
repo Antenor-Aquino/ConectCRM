@@ -4,14 +4,14 @@ import { useCallback, useEffect, useState } from "react";
 import { Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { TaBadge, TaButton, TaInput, TaModal, TaPanel, TaSelect, TaTextarea, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
-import { RECURRENCES, type Product, type ProductKind, type Recurrence } from "../../db/products";
+import { RECURRENCE_LABEL, RECURRENCES, type Product, type ProductKind, type Recurrence } from "../../db/products";
 import { formatCents } from "../../lib/format";
 import { useSession } from "../session";
 import { ErrorText, Field } from "../ui/form";
 import { MoneyInput } from "../ui/MoneyInput";
 import { Switch } from "../ui/Switch";
+import { errorText } from "../../lib/errors";
 
-const RECURRENCE_LABEL: Record<Recurrence, string> = { avulso: "Avulso", mensal: "Mensal", trimestral: "Trimestral", semestral: "Semestral", anual: "Anual" };
 
 export function ProductsSettings() {
   const { user } = useSession();
@@ -103,7 +103,7 @@ export function ProductsSettings() {
                             await call("products.delete", { id: p.id });
                             await load();
                           } catch (e) {
-                            setError(e instanceof Error ? e.message : String(e));
+                            setError(errorText(e));
                           }
                         }}
                       >
@@ -163,7 +163,7 @@ function ProductModal({
       else await call("products.create", input);
       onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     }
   }
 
@@ -240,7 +240,7 @@ function CategoriesModal({ categories, onClose, onChanged }: { categories: { id:
       await fn();
       await onChanged();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     }
   };
   return (

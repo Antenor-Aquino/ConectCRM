@@ -11,6 +11,7 @@ import { clearBrowser, putInBrowser, sha256Hex } from "../lib/fileStore";
 import { methods } from "../rpc/methods";
 import type { RpcRequest, RpcResponse } from "../rpc/protocol";
 import { loadActiveEnv, loadSnapshot, saveActiveEnv, saveSnapshot } from "./storage";
+import { errorText } from "../lib/errors";
 
 interface State {
   db: DatabaseSync;
@@ -148,6 +149,6 @@ chrome.runtime.onMessage.addListener((msg: RpcRequest, _sender, sendResponse: (r
       });
   run
     .then((result) => sendResponse({ ok: true, result }))
-    .catch((err: unknown) => sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) }));
+    .catch((err: unknown) => sendResponse({ ok: false, error: errorText(err) }));
   return true;
 });

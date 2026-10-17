@@ -36,7 +36,7 @@ export function seedDemoData(db: DatabaseSync, workspaceId: string): void {
     const reasons = [createLossReason(db, ctx, "Preço"), createLossReason(db, ctx, "Escolheu concorrente"), createLossReason(db, ctx, "Sem orçamento")];
     const origem = createCustomField(db, ctx, {
       entity: "person",
-      name: "Origem do Lead",
+      name: "Origem do contato",
       fieldType: "select",
       options: [{ label: "Instagram" }, { label: "Indicação" }, { label: "Site" }],
     });
@@ -76,7 +76,7 @@ export function seedDemoData(db: DatabaseSync, workspaceId: string): void {
       name: "PowerCubus",
       type: "comercial",
       stages: [
-        { name: "Prospect", color: "red", probability: 10 },
+        { name: "Prospecção", color: "red", probability: 10 },
         { name: "Contato", color: "purple", probability: 30 },
         { name: "Reunião", color: "slate", probability: 50 },
         { name: "Pendência Pedagógica", color: "cyan", probability: 70 },

@@ -15,6 +15,7 @@ import { Switch } from "../ui/Switch";
 import { TagPicker } from "../ui/TagPicker";
 import { FileTypeIcon } from "./docUi";
 import { LinkEditor } from "./LinkEditor";
+import { errorText } from "../../lib/errors";
 
 interface Row {
   key: string;
@@ -105,7 +106,7 @@ export function UploadModal({
           const duplicates = await call("documents.bySha", { sha256: prepared.sha256 });
           setRows((r) => r.map((x) => (x.key === row.key ? { ...x, prepared, duplicates, useExisting: duplicates.length > 0 } : x)));
         })
-        .catch((e: unknown) => setRows((r) => r.map((x) => (x.key === row.key ? { ...x, error: e instanceof Error ? e.message : String(e) } : x))));
+        .catch((e: unknown) => setRows((r) => r.map((x) => (x.key === row.key ? { ...x, error: errorText(e) } : x))));
     }
   };
   const started = useRef(false);
@@ -159,7 +160,7 @@ export function UploadModal({
           try {
             transcript = await transcribeFile(r.prepared!, r.check!, ai ?? null, (step) => setSaving(`${label} (${step})…`));
           } catch (e) {
-            errors.push(`${r.useExisting ? r.duplicates[0]!.name : r.name}: ${e instanceof Error ? e.message : String(e)}`);
+            errors.push(`${r.useExisting ? r.duplicates[0]!.name : r.name}: ${errorText(e)}`);
           }
           setSaving(multiple ? `Salvando ${i + 1} de ${rows.length}…` : "Salvando…");
         }
@@ -198,7 +199,7 @@ export function UploadModal({
       if (errors.length) setDone({ ids, errors });
       else onSaved(ids);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     } finally {
       setSaving(null);
     }

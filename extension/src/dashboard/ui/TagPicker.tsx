@@ -6,6 +6,7 @@ import { call } from "../../rpc/client";
 import type { Tag, TagEntity } from "../../db/tags";
 import { Popover } from "./Popover";
 import { inputClass } from "./form";
+import { errorText } from "../../lib/errors";
 
 export function TagChip({ tag, onRemove }: { tag: Pick<Tag, "name" | "color">; onRemove?: () => void }) {
   const c = badgePalette[(tag.color as BadgeColor) ?? "slate"] ?? badgePalette.slate;
@@ -81,7 +82,7 @@ export function TagPicker({ entity, value, onChange }: { entity: TagEntity; valu
                 setText("");
                 setError(null);
               } catch (e) {
-                setError(e instanceof Error ? e.message : String(e));
+                setError(errorText(e));
               }
             }}
           >

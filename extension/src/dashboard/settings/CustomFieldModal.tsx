@@ -10,6 +10,7 @@ import type { Pipeline } from "../../db/pipelines";
 import { placeholderKeyFromName } from "../../lib/validate";
 import { ErrorText, Field, SectionLabel } from "../ui/form";
 import { Switch, SwitchRow } from "../ui/Switch";
+import { errorText } from "../../lib/errors";
 
 export const ENTITY_LABEL: Record<CustomFieldEntity, string> = {
   person: "Contato",
@@ -76,7 +77,7 @@ export function CustomFieldModal({
       else await call("customFields.create", { ...common, entity, fieldType: type });
       onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     }
   }
 

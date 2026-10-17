@@ -6,6 +6,7 @@ import { call } from "../../rpc/client";
 import type { PipelineType } from "../../db/pipelines";
 import { OUTCOME_TEXT } from "../../lib/cardTypes";
 import { ErrorText, Field } from "../ui/form";
+import { errorText } from "../../lib/errors";
 
 export function LostModal({ cardId, type, onClose, onDone }: { cardId: string | null; type: PipelineType; onClose: () => void; onDone: () => void }) {
   const t = OUTCOME_TEXT[type];
@@ -31,7 +32,7 @@ export function LostModal({ cardId, type, onClose, onDone }: { cardId: string | 
       await call("cards.setStatus", { id: cardId!, status: "lost", lossReasonId: id || null, lossNote: note });
       onDone();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     }
   }
 
