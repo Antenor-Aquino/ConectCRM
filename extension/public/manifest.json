@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ConectCRM",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "CRM local com funis, Kanban, tarefas, contatos e organizações - dados no seu computador. Integra com o WhatsApp Web.",
   "action": {
     "default_popup": "src/popup/popup.html",

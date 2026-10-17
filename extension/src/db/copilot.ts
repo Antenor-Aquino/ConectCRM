@@ -91,9 +91,9 @@ export function searchCardsForCopilot(db: DatabaseSync, viewer: Viewer | null, f
     db,
     `SELECT d.id, d.title, d.kind, d.status, d.value_cents, p.name AS pipeline, s.name AS stage, s.probability,
        pe.name AS person, o.name AS organization, u.name AS owner, d.stage_entered_at, d.closed_at,
-       (SELECT a.title FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0 ORDER BY a.due_at LIMIT 1) AS next_task,
-       (SELECT a.due_at FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0 ORDER BY a.due_at LIMIT 1) AS next_due,
-       (SELECT COUNT(*) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0 AND a.due_at < ?) AS overdue
+       (SELECT a.title FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0 ORDER BY COALESCE(a.end_at, a.due_at) LIMIT 1) AS next_task,
+       (SELECT COALESCE(a.end_at, a.due_at) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0 ORDER BY COALESCE(a.end_at, a.due_at) LIMIT 1) AS next_due,
+       (SELECT COUNT(*) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0 AND a.end_at IS NOT NULL AND a.end_at < ?) AS overdue
      FROM deal d JOIN pipeline p ON p.id = d.pipeline_id JOIN stage s ON s.id = d.stage_id
      LEFT JOIN person pe ON pe.id = d.person_id LEFT JOIN organization o ON o.id = d.organization_id
      LEFT JOIN app_user u ON u.id = d.owner_id
@@ -149,9 +149,9 @@ export function cardDigest(db: DatabaseSync, viewer: Viewer | null, id: string, 
      WHERE d.id = ?`,
     id,
   )[0]!;
-  const tasks = many<{ title: string; due_at: string; done: number; type: string; owner: string | null }>(
+  const tasks = many<{ title: string; due_at: string; end_at: string | null; done: number; type: string; owner: string | null }>(
     db,
-    `SELECT a.title, a.due_at, a.done, t.name AS type, u.name AS owner FROM activity a JOIN activity_type t ON t.id = a.type_id
+    `SELECT a.title, a.due_at, a.end_at, a.done, t.name AS type, u.name AS owner FROM activity a JOIN activity_type t ON t.id = a.type_id
      LEFT JOIN app_user u ON u.id = a.owner_id WHERE a.deal_id = ? AND a.deleted_at IS NULL ORDER BY a.done, a.due_at DESC LIMIT 20`,
     id,
   );
@@ -200,7 +200,7 @@ export function cardDigest(db: DatabaseSync, viewer: Viewer | null, id: string, 
     itens: items.map((i) => ({ descricao: i.description, quantidade: i.quantity, total: formatCents(i.total_cents), recorrencia: i.recurrence })),
     tarefasPendentes: tasks
       .filter((t) => !t.done)
-      .map((t) => ({ titulo: t.title, tipo: t.type, quando: date(t.due_at), atrasada: t.due_at < nowIso, responsavel: t.owner })),
+      .map((t) => ({ titulo: t.title, tipo: t.type, inicio: date(t.due_at), finalizacao: date(t.end_at), atrasada: !!t.end_at && t.end_at < nowIso, responsavel: t.owner })),
     tarefasConcluidasRecentes: tasks.filter((t) => t.done).slice(0, 5).map((t) => ({ titulo: t.title, tipo: t.type, quando: date(t.due_at) })),
     ultimasNotas: notes.map((n) => ({ em: date(n.created_at), autor: n.author, texto: cut(n.body, 600) })),
     etapasPercorridas: history.map((h) => ({ etapa: h.stage, entrou: date(h.entered_at), dias: days(h.entered_at, h.left_at ? new Date(h.left_at) : now) })),
@@ -270,14 +270,17 @@ export function tasksForCopilot(db: DatabaseSync, viewer: Viewer | null, f: { si
   start.setHours(0, 0, 0, 0);
   const situacao = f.situacao ?? "pendentes";
   if (situacao === "atrasadas") {
-    where.push("a.due_at < ?");
+    // Atrasada = finalização vencida (sem finalização, nunca atrasa).
+    where.push("a.end_at IS NOT NULL AND a.end_at < ?");
     params.push(now.toISOString());
   } else if (situacao === "hoje") {
-    where.push("a.due_at >= ? AND a.due_at < ?");
-    params.push(start.toISOString(), new Date(start.getTime() + DAY).toISOString());
+    where.push("((a.due_at >= ? AND a.due_at < ?) OR (a.end_at >= ? AND a.end_at < ?))");
+    const s = start.toISOString(), e = new Date(start.getTime() + DAY).toISOString();
+    params.push(s, e, s, e);
   } else if (situacao === "proximos_7_dias") {
-    where.push("a.due_at >= ? AND a.due_at < ?");
-    params.push(now.toISOString(), new Date(start.getTime() + 8 * DAY).toISOString());
+    where.push("((a.due_at >= ? AND a.due_at < ?) OR (a.end_at >= ? AND a.end_at < ?))");
+    const s = now.toISOString(), e = new Date(start.getTime() + 8 * DAY).toISOString();
+    params.push(s, e, s, e);
   }
   if (owner) {
     where.push(`a.owner_id IN (${owner.ids.map(() => "?").join(", ")})`);
@@ -288,9 +291,9 @@ export function tasksForCopilot(db: DatabaseSync, viewer: Viewer | null, f: { si
     where.push(scope.sql);
     params.push(...scope.params);
   }
-  const rows = many<{ title: string; due_at: string; type: string; owner: string | null; deal_id: string | null; deal: string | null; person: string | null }>(
+  const rows = many<{ title: string; due_at: string; end_at: string | null; type: string; owner: string | null; deal_id: string | null; deal: string | null; person: string | null }>(
     db,
-    `SELECT a.title, a.due_at, t.name AS type, u.name AS owner, d.id AS deal_id, d.title AS deal, pe.name AS person
+    `SELECT a.title, a.due_at, a.end_at, t.name AS type, u.name AS owner, d.id AS deal_id, d.title AS deal, pe.name AS person
      FROM activity a JOIN activity_type t ON t.id = a.type_id LEFT JOIN app_user u ON u.id = a.owner_id
      LEFT JOIN deal d ON d.id = a.deal_id AND d.deleted_at IS NULL LEFT JOIN person pe ON pe.id = a.person_id
      WHERE ${where.join(" AND ")} ORDER BY a.due_at`,
@@ -302,8 +305,9 @@ export function tasksForCopilot(db: DatabaseSync, viewer: Viewer | null, f: { si
     tarefas: rows.slice(0, MAX_ROWS).map((r) => ({
       titulo: r.title,
       tipo: r.type,
-      quando: date(r.due_at),
-      atrasadaHaDias: r.due_at < now.toISOString() ? days(r.due_at, now) : null,
+      inicio: date(r.due_at),
+      finalizacao: date(r.end_at),
+      atrasadaHaDias: r.end_at && r.end_at < now.toISOString() ? days(r.end_at, now) : null,
       responsavel: r.owner ?? "Sem responsável",
       cartaoId: r.deal_id,
       cartao: r.deal,

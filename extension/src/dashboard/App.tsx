@@ -129,6 +129,8 @@ function Main() {
     setTab("funis");
     select(pipelineId);
     setOpenCardId(cardId);
+    // Funil criado depois que a lista foi carregada (ex.: pelo popup): recarrega.
+    if (!pipelines.some((p) => p.id === pipelineId)) void reload();
   };
 
   const reload = useCallback(async () => {
@@ -226,6 +228,7 @@ function Main() {
             setTaskFromUrl(null);
             history.replaceState(null, "", location.pathname);
           }}
+          links={{ onOpenCard: openCardFrom, onOpenPerson: setPersonOpen, onOpenOrganization: setOrgOpen }}
         />
       ) : tab === "contatos" ? (
         <PersonsView refreshKey={contactsKey} onOpen={setPersonOpen} onNew={() => setNewPerson(true)} />

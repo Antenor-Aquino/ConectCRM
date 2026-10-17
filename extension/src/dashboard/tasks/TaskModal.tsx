@@ -1,8 +1,9 @@
-// Modal de tarefa (spec 02, mockup): esquerda = concluir + nome + descrição;
-// direita = Tipo, Responsável, Quando (duração/lembrete) e Vinculado a.
+// Modal de tarefa (spec 02, mockup): esquerda = concluir + nome + descrição,
+// campos personalizados e anexos; direita = Tipo, Responsável, Início
+// (duração/lembrete), Finalização (opcional), Vinculado a e Tags.
 // Tipos de reunião podem criar o evento no Google Agenda / Outlook.
-import { useEffect, useMemo, useState } from "react";
-import { Check, ChevronDown, Circle, Link2, Trash2, Video, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronDown, Circle, Download, Link2, Paperclip, Trash2, Video, X } from "lucide-react";
 import { TaButton, TaInput, TaModal, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { Activity, ActivityType } from "../../db/activities";
@@ -16,7 +17,10 @@ import { Combobox, type ComboItem } from "../ui/Combobox";
 import { CustomFieldsForm } from "../ui/CustomFieldsForm";
 import { ErrorText, Field } from "../ui/form";
 import { Popover } from "../ui/Popover";
-import { WhenPicker } from "./WhenPicker";
+import { EndPicker, WhenPicker } from "./WhenPicker";
+import { TagPicker } from "../ui/TagPicker";
+import type { AttachmentInfo } from "../../db/attachments";
+import { downloadDataUrl, fileToDataUrl, formatBytes, MAX_UPLOAD_BYTES } from "../../lib/files";
 
 const KIND_LABEL = { deal: "Negócio", ticket: "Ticket", project: "Projeto" } as const;
 
@@ -126,6 +130,10 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
     d.setSeconds(0, 0);
     return d;
   });
+  const [endAt, setEndAt] = useState<Date | null>(null);
+  const [tagIds, setTagIds] = useState<string[]>([]);
+  /** Arquivos escolhidos antes de salvar uma tarefa nova. */
+  const [pending, setPending] = useState<File[]>([]);
   const [duration, setDuration] = useState(5);
   const [reminder, setReminder] = useState<number | null>(5);
   const [link, setLink] = useState<ComboItem | null>(null);
@@ -176,6 +184,8 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
       setTypeId(a.type_id);
       setOwnerId(a.owner_id);
       setWhen(new Date(a.due_at));
+      setEndAt(a.end_at ? new Date(a.end_at) : null);
+      setTagIds(a.tagIds);
       setDuration(a.duration_min);
       setReminder(a.reminder_min);
       setValues(a.customValues);
@@ -231,6 +241,8 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
       typeId,
       ownerId,
       dueAt: when.toISOString(),
+      endAt: endAt ? endAt.toISOString() : null,
+      tagIds,
       durationMin: duration,
       reminderMin: reminder,
       done,
@@ -239,10 +251,19 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
       ...(request.organizationId && !link ? { organizationId: request.organizationId } : {}),
       customValues: values,
     };
+    if (endAt && endAt < when) {
+      setError("A finalização não pode ser antes do início.");
+      setSaving(false);
+      return;
+    }
     let id = request.id;
     try {
       if (id) await call("activities.update", { id, patch: input });
       else id = await call("activities.create", input);
+      for (const f of pending) {
+        if (f.size > MAX_UPLOAD_BYTES) throw new Error(`"${f.name}" passa de 25 MB.`);
+        await call("attachments.add", { entityType: "activity", entityId: id!, filename: f.name, dataUrl: await fileToDataUrl(f) });
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setSaving(false);
@@ -307,6 +328,9 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
                   <CustomFieldsForm fields={fields} values={values} onChange={setValues} />
                 </div>
               )}
+              <div className="ml-8 mt-3">
+                <TaskFiles taskId={request.id ?? null} pending={pending} onPending={setPending} />
+              </div>
               {existing?.external_event_id && (
                 <div className="ml-8 mt-3 rounded-lg bg-brand-25 p-3 text-theme-sm text-gray-700 dark:bg-brand-500/10 dark:text-gray-300">
                   Evento criado no {PROVIDER_LABEL[existing.external_provider === "microsoft" ? "microsoft" : "google"]}.
@@ -343,7 +367,7 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
                   <ChevronDown size={14} className="pointer-events-none absolute right-3 top-3 text-gray-400" />
                 </div>
               </Field>
-              <Field label="Quando">
+              <Field label="Início" hint="Padrão: o momento do cadastro. Pode ser uma data futura.">
                 <WhenPicker
                   value={when}
                   duration={duration}
@@ -356,8 +380,14 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
                   }}
                 />
               </Field>
+              <Field label="Finalização" hint="Opcional. Sem finalização, a tarefa nunca fica atrasada.">
+                <EndPicker value={endAt} start={when} onChange={setEndAt} />
+              </Field>
               <Field label="Vinculado a" hint="Opcional: negócio, ticket ou etapa de projeto.">
                 <Combobox value={link} onChange={setLink} search={searchCards} placeholder="Buscar negócio, ticket ou projeto" />
+              </Field>
+              <Field label="Tags">
+                <TagPicker entity="activity" value={tagIds} onChange={setTagIds} />
               </Field>
 
               {isMeeting && (
@@ -469,5 +499,101 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
         </>
       )}
     </TaModal>
+  );
+}
+
+/** Anexos da tarefa: na tarefa já salva vão direto; na nova, sobem ao salvar. */
+function TaskFiles({ taskId, pending, onPending }: { taskId: string | null; pending: File[]; onPending: (f: File[]) => void }) {
+  const [list, setList] = useState<AttachmentInfo[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  const load = useCallback(async () => {
+    if (taskId) setList(await call("attachments.list", { entityType: "activity", entityId: taskId }));
+  }, [taskId]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const add = async (files: File[]) => {
+    setError(null);
+    const big = files.find((f) => f.size > MAX_UPLOAD_BYTES);
+    if (big) return setError(`"${big.name}" passa de 25 MB.`);
+    if (!taskId) return onPending([...pending, ...files]);
+    setBusy(true);
+    try {
+      for (const f of files) await call("attachments.add", { entityType: "activity", entityId: taskId, filename: f.name, dataUrl: await fileToDataUrl(f) });
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="text-theme-xs font-semibold uppercase tracking-wide text-gray-400">Anexos</span>
+        <button type="button" disabled={busy} onClick={() => input.current?.click()} className="flex items-center gap-1 text-theme-xs font-medium text-brand-600 hover:underline disabled:opacity-50">
+          <Paperclip size={13} /> {busy ? "Enviando…" : "Anexar arquivos"}
+        </button>
+      </div>
+      <input
+        ref={input}
+        type="file"
+        multiple
+        hidden
+        onChange={(e) => {
+          const files = [...(e.target.files ?? [])];
+          e.target.value = "";
+          if (files.length) void add(files);
+        }}
+      />
+      <ul className="space-y-1">
+        {list.map((a) => (
+          <li key={a.id} className="flex items-center gap-2 rounded-lg bg-gray-50 px-2.5 py-1.5 text-theme-xs dark:bg-white/5">
+            <Paperclip size={13} className="text-gray-400" />
+            <span className="min-w-0 flex-1 truncate text-gray-700 dark:text-gray-300">{a.filename}</span>
+            <span className="text-gray-400">{formatBytes(a.size_bytes)}</span>
+            <button
+              type="button"
+              title="Baixar"
+              className="text-gray-400 hover:text-brand-600"
+              onClick={async () => {
+                const url = await call("attachments.get", { id: a.id });
+                if (url) downloadDataUrl(url, a.filename);
+              }}
+            >
+              <Download size={14} />
+            </button>
+            <button
+              type="button"
+              title="Excluir"
+              className="text-gray-400 hover:text-error-600"
+              onClick={async () => {
+                if (!confirm(`Excluir o anexo "${a.filename}"?`)) return;
+                await call("attachments.delete", { id: a.id });
+                await load();
+              }}
+            >
+              <Trash2 size={14} />
+            </button>
+          </li>
+        ))}
+        {pending.map((f, i) => (
+          <li key={`${f.name}-${i}`} className="flex items-center gap-2 rounded-lg border border-dashed border-gray-300 px-2.5 py-1.5 text-theme-xs dark:border-gray-700">
+            <Paperclip size={13} className="text-gray-400" />
+            <span className="min-w-0 flex-1 truncate text-gray-700 dark:text-gray-300">{f.name}</span>
+            <span className="text-gray-400">{formatBytes(f.size)} · envia ao salvar</span>
+            <button type="button" title="Remover" className="text-gray-400 hover:text-error-600" onClick={() => onPending(pending.filter((_, j) => j !== i))}>
+              <X size={14} />
+            </button>
+          </li>
+        ))}
+        {list.length === 0 && pending.length === 0 && <li className="text-theme-xs text-gray-400">Nenhum anexo.</li>}
+      </ul>
+      {error && <p className="mt-1 text-theme-xs text-error-600">{error}</p>}
+    </div>
   );
 }

@@ -7,6 +7,7 @@ import type { ActivityListItem } from "../../db/activities";
 import type { CustomField, CustomValue } from "../../db/customFields";
 import type { DataTable } from "../../db/repo";
 import { formatCents, formatDateTime } from "../../lib/format";
+import { taskTiming } from "../../lib/taskTiming";
 import { useSession } from "../session";
 import { TaskModal, type TaskRequest } from "../tasks/TaskModal";
 
@@ -123,7 +124,6 @@ export function RelatedTasks({ filter }: { filter: { personId?: string; organiza
   useEffect(() => {
     void load();
   }, [load]);
-  const now = Date.now();
   return (
     <div>
       <TaButton variant="primary" startIcon={<Plus size={15} />} onClick={() => setModal({ ...filter })}>
@@ -145,8 +145,8 @@ export function RelatedTasks({ filter }: { filter: { personId?: string; organiza
             </button>
             <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setModal({ id: t.id })}>
               <p className={cn("truncate text-theme-sm", t.done ? "text-gray-400 line-through" : "text-gray-800 dark:text-white/90")}>{t.title}</p>
-              <p className={cn("text-theme-xs", !t.done && new Date(t.due_at).getTime() < now ? "text-error-600" : "text-gray-400")}>
-                {t.type_name} · {formatDateTime(t.due_at)}
+              <p className={cn("text-theme-xs", taskTiming(t).tone === "danger" ? "text-error-600" : "text-gray-400")}>
+                {t.type_name} · {formatDateTime(t.due_at)} · {taskTiming(t).label}
                 {t.deal_title && ` · ${t.deal_title}`}
               </p>
             </button>

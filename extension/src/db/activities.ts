@@ -5,6 +5,7 @@ import { normalizeIsoDate, optionalText, requireText, ValidationError } from "..
 import { getCustomValues, setCustomValues, type CustomValue } from "./customFields";
 import { getCardRow } from "./deals";
 import { getRow, insertRow, softDelete, updateRow, type DbContext } from "./repo";
+import { getEntityTags, setEntityTags } from "./tags";
 import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
 import { getUser, teammateIds, type Viewer } from "./users";
 
@@ -67,8 +68,10 @@ export interface ActivityInput {
   typeId?: string;
   title: string;
   description?: string | null;
-  /** Padrão: agora. */
+  /** Início (coluna due_at, nome histórico). Padrão: agora; pode ser futuro. */
   dueAt?: string | null;
+  /** Finalização (prazo de entrega), opcional; não pode ser antes do início. */
+  endAt?: string | null;
   durationMin?: number;
   reminderMin?: number | null;
   done?: boolean;
@@ -78,6 +81,7 @@ export interface ActivityInput {
   personId?: string | null;
   organizationId?: string | null;
   customValues?: Record<string, CustomValue>;
+  tagIds?: string[];
 }
 
 export interface Activity {
@@ -85,7 +89,10 @@ export interface Activity {
   type_id: string;
   title: string;
   description: string | null;
+  /** Início. */
   due_at: string;
+  /** Finalização (prazo), opcional. Atrasada = pendente com finalização vencida. */
+  end_at: string | null;
   duration_min: number;
   reminder_min: number | null;
   done: number;
@@ -108,9 +115,19 @@ export interface ActivityListItem extends Activity {
   type_icon: string;
   deal_title: string | null;
   deal_kind: string | null;
+  pipeline_id: string | null;
+  pipeline_name: string | null;
   person_name: string | null;
   organization_name: string | null;
   owner_name: string | null;
+  tags: { id: string; name: string; color: string }[];
+  attachments: { id: string; filename: string; mime: string; size_bytes: number }[];
+}
+
+/** Finalização: depois do início (ou igual). */
+function checkEnd(start: string, end: string | null): string | null {
+  if (end && end < start) throw new ValidationError("A finalização não pode ser antes do início.");
+  return end;
 }
 
 function minutes(value: number | null | undefined, label: string, allowNull: boolean): number | null {
@@ -155,11 +172,13 @@ export function createActivity(db: DatabaseSync, ctx: DbContext, input: Activity
     const ownerId = input.ownerId === undefined ? ctx.userId : input.ownerId;
     if (ownerId && !getUser(db, ownerId)) throw new ValidationError("Responsável não encontrado.");
     const done = !!input.done;
+    const start = normalizeIsoDate(input.dueAt, "Início") ?? nowIso();
     const id = insertRow(db, ctx, "activity", {
       type_id: checkType(db, input.typeId ?? defaultActivityTypeId(db)),
       title: requireText(input.title, "Informe o nome da tarefa."),
       description: optionalText(input.description),
-      due_at: normalizeIsoDate(input.dueAt, "Quando") ?? nowIso(),
+      due_at: start,
+      end_at: checkEnd(start, normalizeIsoDate(input.endAt, "Finalização")),
       duration_min: minutes(input.durationMin ?? 5, "Duração", false),
       reminder_min: minutes(input.reminderMin === undefined ? 5 : input.reminderMin, "Lembrete", true),
       done: done ? 1 : 0,
@@ -171,13 +190,14 @@ export function createActivity(db: DatabaseSync, ctx: DbContext, input: Activity
       ...links(db, { dealId: input.dealId ?? null, personId: input.personId, organizationId: input.organizationId }),
     });
     setCustomValues(db, ctx, "activity", id, input.customValues ?? {}, { checkRequired: true });
+    if (input.tagIds?.length) setEntityTags(db, ctx, "activity", id, input.tagIds);
     return id;
   });
 }
 
-export function getActivity(db: DatabaseSync, id: string): (Activity & { customValues: Record<string, CustomValue> }) | undefined {
+export function getActivity(db: DatabaseSync, id: string): (Activity & { customValues: Record<string, CustomValue>; tagIds: string[] }) | undefined {
   const a = one<Activity>(db, "SELECT * FROM activity WHERE id = ? AND deleted_at IS NULL", id);
-  return a ? { ...a, customValues: getCustomValues(db, id) } : undefined;
+  return a ? { ...a, customValues: getCustomValues(db, id), tagIds: getEntityTags(db, id).map((t) => t.id) } : undefined;
 }
 
 export function updateActivity(db: DatabaseSync, ctx: DbContext, id: string, patch: Partial<ActivityInput>): void {
@@ -188,7 +208,11 @@ export function updateActivity(db: DatabaseSync, ctx: DbContext, id: string, pat
     if (patch.typeId !== undefined) data.type_id = checkType(db, patch.typeId);
     if (patch.title !== undefined) data.title = requireText(patch.title, "Informe o nome da tarefa.");
     if (patch.description !== undefined) data.description = optionalText(patch.description);
-    if (patch.dueAt !== undefined) data.due_at = normalizeIsoDate(patch.dueAt, "Quando") ?? current.due_at;
+    if (patch.dueAt !== undefined) data.due_at = normalizeIsoDate(patch.dueAt, "Início") ?? current.due_at;
+    if (patch.endAt !== undefined) data.end_at = normalizeIsoDate(patch.endAt, "Finalização");
+    if (patch.dueAt !== undefined || patch.endAt !== undefined) {
+      checkEnd(String(data.due_at ?? current.due_at), (data.end_at !== undefined ? data.end_at : current.end_at) as string | null);
+    }
     // Mudou a data ou o lembrete: o lembrete volta a valer.
     if ((data.due_at !== undefined && data.due_at !== current.due_at) || (patch.reminderMin !== undefined && patch.reminderMin !== current.reminder_min)) {
       data.reminder_sent_at = null;
@@ -205,6 +229,7 @@ export function updateActivity(db: DatabaseSync, ctx: DbContext, id: string, pat
     }
     updateRow(db, ctx, "activity", id, data);
     if (patch.customValues) setCustomValues(db, ctx, "activity", id, patch.customValues, { checkRequired: true });
+    if (patch.tagIds) setEntityTags(db, ctx, "activity", id, patch.tagIds);
   });
 }
 
@@ -236,6 +261,11 @@ export interface ActivityFilter {
 }
 
 /** Administrador vê todas; gestor, as da equipe; vendedor, as suas. Sem responsável: todos. */
+/** Pendente com finalização vencida (sem finalização, nunca atrasa). */
+export const OVERDUE = "a.done = 0 AND a.end_at IS NOT NULL AND a.end_at < ?";
+/** Fim efetivo da tarefa para filtros por período (parâmetro: agora). */
+const EFFECTIVE_END = "COALESCE(a.end_at, CASE WHEN a.done = 0 THEN MAX(a.due_at, ?) ELSE COALESCE(a.done_at, a.due_at) END)";
+
 export function activityScope(db: DatabaseSync, viewer: Viewer | null | undefined): { sql: string; params: SqlValue[] } {
   if (!viewer || viewer.role === "admin") return { sql: "", params: [] };
   const ids = viewer.role === "gestor" ? teammateIds(db, viewer.id) : [viewer.id];
@@ -252,10 +282,12 @@ function activityWhere(db: DatabaseSync, f: ActivityFilter): { sql: string; para
   const scope = activityScope(db, f.viewer);
   if (scope.sql) add(scope.sql, ...scope.params);
   if (f.search?.trim()) add("(a.title LIKE ? OR a.description LIKE ?)", `%${f.search.trim()}%`, `%${f.search.trim()}%`);
-  if (f.from) add("a.due_at >= ?", new Date(f.from).toISOString());
+  // Período: a tarefa começa antes do fim do período e termina (finalização;
+  // sem ela, pendente vale até agora, concluída até a conclusão) depois do início.
   if (f.to) add("a.due_at < ?", new Date(f.to).toISOString());
+  if (f.from) add(`${EFFECTIVE_END} >= ?`, nowIso(), new Date(f.from).toISOString());
   if (f.done !== undefined) add("a.done = ?", f.done ? 1 : 0);
-  if (f.overdue) add("a.done = 0 AND a.due_at < ?", nowIso());
+  if (f.overdue) add(OVERDUE, nowIso());
   if (f.ownerIds?.length) add(`a.owner_id IN (${f.ownerIds.map(() => "?").join(", ")})`, ...f.ownerIds);
   if (f.typeId) add("a.type_id = ?", f.typeId);
   if (f.dealId) add("a.deal_id = ?", f.dealId);
@@ -266,13 +298,15 @@ function activityWhere(db: DatabaseSync, f: ActivityFilter): { sql: string; para
 
 export function listActivities(db: DatabaseSync, f: ActivityFilter = {}): ActivityListItem[] {
   const { sql, params } = activityWhere(db, f);
-  return many<ActivityListItem>(
+  const rows = many<Omit<ActivityListItem, "tags" | "attachments">>(
     db,
     `SELECT a.*, t.name AS type_name, t.icon AS type_icon, d.title AS deal_title, d.kind AS deal_kind,
+       d.pipeline_id AS pipeline_id, pl.name AS pipeline_name,
        p.name AS person_name, o.name AS organization_name, u.name AS owner_name
      FROM activity a
      JOIN activity_type t ON t.id = a.type_id
      LEFT JOIN deal d ON d.id = a.deal_id AND d.deleted_at IS NULL
+     LEFT JOIN pipeline pl ON pl.id = d.pipeline_id
      LEFT JOIN person p ON p.id = a.person_id
      LEFT JOIN organization o ON o.id = a.organization_id
      LEFT JOIN app_user u ON u.id = a.owner_id
@@ -282,6 +316,27 @@ export function listActivities(db: DatabaseSync, f: ActivityFilter = {}): Activi
     f.limit ?? 200,
     f.offset ?? 0,
   );
+  if (!rows.length) return [];
+  // Tags e anexos de todas as tarefas da página de uma vez.
+  const ids = rows.map((r) => r.id);
+  const marks = ids.map(() => "?").join(", ");
+  const tags = many<{ entity_id: string; id: string; name: string; color: string }>(
+    db,
+    `SELECT et.entity_id, t.id, t.name, t.color FROM entity_tag et JOIN tag t ON t.id = et.tag_id AND t.deleted_at IS NULL
+     WHERE et.deleted_at IS NULL AND et.entity_id IN (${marks}) ORDER BY t.name COLLATE NOCASE`,
+    ...ids,
+  );
+  const files = many<{ entity_id: string; id: string; filename: string; mime: string; size_bytes: number }>(
+    db,
+    `SELECT entity_id, id, filename, mime, size_bytes FROM attachment
+     WHERE deleted_at IS NULL AND entity_type = 'activity' AND entity_id IN (${marks}) ORDER BY created_at`,
+    ...ids,
+  );
+  return rows.map((r) => ({
+    ...r,
+    tags: tags.filter((t) => t.entity_id === r.id).map(({ entity_id: _e, ...t }) => t),
+    attachments: files.filter((a) => a.entity_id === r.id).map(({ entity_id: _e, ...a }) => a),
+  }));
 }
 
 /** Contadores dos cartões de alerta da tela de Tarefas (pendentes). */
@@ -292,10 +347,24 @@ export function activityCounters(db: DatabaseSync, f: Omit<ActivityFilter, "from
   const in7 = new Date(startToday.getTime() + 8 * 86400_000);
   const count = (extra: string, ...p: SqlValue[]) =>
     one<{ n: number }>(db, `SELECT COUNT(*) AS n FROM activity a WHERE ${sql} AND ${extra}`, ...params, ...p)?.n ?? 0;
+  const nowIso_ = now.toISOString();
+  const notOverdue = "NOT (a.end_at IS NOT NULL AND a.end_at < ?)";
+  const touches = (from: Date, to: Date) => [
+    // end_at nulo precisa dar falso (não NULL), senão o NOT abaixo descarta a tarefa.
+    "((a.due_at >= ? AND a.due_at < ?) OR (a.end_at IS NOT NULL AND a.end_at >= ? AND a.end_at < ?))",
+    from.toISOString(),
+    to.toISOString(),
+    from.toISOString(),
+    to.toISOString(),
+  ] as const;
+  const [todaySql, ...todayP] = touches(startToday, startTomorrow);
+  const [nextSql, ...nextP] = touches(startTomorrow, in7);
   return {
-    overdue: count("a.due_at < ?", now.toISOString()),
-    today: count("a.due_at >= ? AND a.due_at < ?", startToday.toISOString(), startTomorrow.toISOString()),
-    next7: count("a.due_at >= ? AND a.due_at < ?", startTomorrow.toISOString(), in7.toISOString()),
+    overdue: count(OVERDUE.replace("a.done = 0 AND ", ""), nowIso_),
+    // Hoje: começa ou termina hoje (sem contar as atrasadas).
+    today: count(`${notOverdue} AND ${todaySql}`, nowIso_, ...todayP),
+    // Próximos 7 dias: começa ou termina de amanhã a +7, e não é de hoje.
+    next7: count(`${notOverdue} AND NOT ${todaySql} AND ${nextSql}`, nowIso_, ...todayP, ...nextP),
   };
 }
 

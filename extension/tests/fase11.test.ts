@@ -28,7 +28,7 @@ async function crm() {
   const c = createCard(db, ctx, { pipelineId: pid, title: "Renovação Antiga", ownerId: ana, valueCents: 90000 });
   setCardStatus(db, ctx, c, { status: "won" });
   addNote(db, ctx, "deal", a, "Cliente pediu desconto de 10% na proposta.");
-  const t = createActivity(db, ctx, { title: "Enviar proposta revisada", dealId: a, dueAt: ago(2), ownerId: ana });
+  const t = createActivity(db, ctx, { title: "Enviar proposta revisada", dealId: a, dueAt: ago(3), endAt: ago(2), ownerId: ana });
   const done = createActivity(db, ctx, { title: "Reunião inicial", dealId: a, dueAt: ago(5), ownerId: ana });
   setActivityDone(db, ctx, done, true);
   void s1;

@@ -11,7 +11,6 @@ import type { HistoryEvent } from "../../db/cardHistory";
 import type { Pipeline, Stage } from "../../db/pipelines";
 import { CARD_TEXT } from "../../lib/cardTypes";
 import { formatCents, formatDateTime, fromDateInput, toDateInput } from "../../lib/format";
-import { useSession } from "../session";
 import { Combobox, type ComboItem } from "../ui/Combobox";
 import { CustomFieldsForm } from "../ui/CustomFieldsForm";
 import { ErrorText, Field, SectionLabel } from "../ui/form";
@@ -25,6 +24,7 @@ import { AttachmentsPanel } from "../ui/AttachmentsPanel";
 import { NotesPanel } from "../ui/NotesPanel";
 import { TaskModal, type TaskRequest } from "../tasks/TaskModal";
 import { ActivityIcon } from "../../lib/activityIcons";
+import { taskTiming } from "../../lib/taskTiming";
 import { ItemsEditor, type ItemDraft } from "./ItemsEditor";
 import { LostModal } from "./LostModal";
 import { createOrganizationQuick, createPersonQuick, searchOrganizations, searchPersons } from "./searchers";
@@ -34,7 +34,6 @@ const STATUS_BADGE = { open: null, won: { color: "green", label: "Ganho" }, lost
 type Tab = "notas" | "tarefas" | "anexos" | "historico";
 
 export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: string; pipeline: Pipeline; onClose: () => void; onChanged: () => void }) {
-  const { users, user } = useSession();
   const text = CARD_TEXT[pipeline.type];
   const [card, setCard] = useState<CardData | null>(null);
   const [stages, setStages] = useState<Stage[]>([]);
@@ -384,7 +383,6 @@ function TasksTab({ cardId, onChanged }: { cardId: string; onChanged: () => void
     await load();
     onChanged();
   };
-  const now = Date.now();
   return (
     <div>
       <TaButton variant="primary" startIcon={<PlusCircle size={15} />} onClick={() => setModal({ dealId: cardId })}>
@@ -392,7 +390,8 @@ function TasksTab({ cardId, onChanged }: { cardId: string; onChanged: () => void
       </TaButton>
       <ul className="mt-3 divide-y divide-gray-100 dark:divide-gray-800">
         {tasks.map((t) => {
-          const overdue = !t.done && new Date(t.due_at).getTime() < now;
+          const timing = taskTiming(t);
+          const overdue = timing.tone === "danger";
           return (
             <li key={t.id} className="flex items-center gap-3 py-2">
               <button type="button" title={t.done ? "Reabrir" : "Concluir"} onClick={async () => {
@@ -405,7 +404,7 @@ function TasksTab({ cardId, onChanged }: { cardId: string; onChanged: () => void
               <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setModal({ id: t.id })}>
                 <p className={cn("truncate text-theme-sm", t.done ? "text-gray-400 line-through" : "text-gray-800 dark:text-white/90")}>{t.title}</p>
                 <p className={cn("text-theme-xs", overdue ? "text-error-600" : "text-gray-400")}>
-                  {t.type_name} · {formatDateTime(t.due_at)}
+                  {t.type_name} · {formatDateTime(t.due_at)} · {timing.label}
                   {t.owner_name && ` · ${t.owner_name}`}
                 </p>
               </button>

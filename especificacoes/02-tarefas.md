@@ -11,6 +11,9 @@ Modal largo em **duas colunas**, botão ✕ no canto.
 - Círculo de **concluir** (marca/desmarca a tarefa como feita) + campo
   **Nome da tarefa** (título grande, obrigatório).
 - **Add descrição...** — texto longo logo abaixo, sem borda.
+- **Anexos**: "Anexar arquivos" (vários). Numa tarefa nova os arquivos ficam
+  marcados "envia ao salvar" e sobem depois de salvar. Baixar e excluir na
+  própria lista. Permissão do anexo = permissão da tarefa.
 
 **Coluna direita**
 
@@ -18,8 +21,11 @@ Modal largo em **duas colunas**, botão ✕ no canto.
 |---|---|
 | **Tipo** | Lista com ícone e busca (com botão de limpar). Padrão: **Tarefa** |
 | **Responsável** | Avatar + nome. O usuário atual aparece como **"Antenor (Você)"**; os demais com o tipo: "Maria (vendedor)". Padrão: o usuário atual |
-| **Quando** | Texto por extenso: **"16 de outubro às 18:25"**. Padrão: agora. Abre o painel da seção 2 |
+| **Início** | Texto por extenso: **"16 de outubro às 18:25"**. Padrão: o momento do cadastro; pode ser alterado e pode ser futuro. Abre o painel da seção 2 |
+| **Finalização** (opcional) | Data/hora de entrega. Vazio = "Sem finalização (opcional)"; ao abrir, sugere o dia seguinte ao início às 18:00. Nunca antes do início. Sem finalização, a tarefa nunca fica atrasada |
 | **Vinculado a** (opcional) | Busca um **negócio, ticket ou etapa de projeto**. Pode ficar vazio (tarefa avulsa). Com vínculo, a tarefa herda contato e organização do cartão |
+| **Tags** | Tags próprias de tarefa (Configurações → Tags → Tarefa) |
+| **Campos personalizados** | Os criados em Configurações → Campos personalizados → Tarefa |
 
 **Rodapé:** **Salvar** (principal) · **Cancelar**.
 
@@ -55,6 +61,18 @@ E-mail**.
 
 ## 5. Lista de tarefas (menu Tarefas)
 
+- Grupos: **Atrasadas**, **Em andamento** (pendentes iniciadas antes de
+  hoje) e depois por dia de início.
+- Cada linha mostra: tags, tipo, **funil › cartão** (clicável: abre o cartão
+  no seu funil), **contato** e **organização** (clicáveis: abrem o cadastro),
+  anexos (clique baixa o arquivo).
+- À direita, o prazo: "faltam N dias", "falta 1 dia", "vence hoje",
+  "atrasada há N dias"; sem finalização: "começa em N dias", "iniciada há N
+  dias · sem prazo"; concluídas: "concluída no prazo" ou "com N dias de
+  atraso". Abaixo, "Início dd/mm hh:mm" e "Fim dd/mm hh:mm · N dias" (duração
+  total da tarefa).
+- Contadores: **atrasadas** = pendentes com finalização já passada; **hoje** e
+  **próximos 7 dias** = início ou finalização no período.
 - Filtros por período (hoje, amanhã, esta semana, atrasadas, personalizado),
   tipo, responsável e visão *Geral / Minhas / Minha equipe*.
 - Concluir direto na lista; atrasadas em destaque.
@@ -64,6 +82,10 @@ E-mail**.
 ## 6. Decisões
 
 - T1: campo "Vinculado a" opcional (negócio, ticket ou projeto).
+- T3: o antigo "Quando" virou **Início** (coluna `due_at`) e a nova coluna
+  `end_at` é a **Finalização**. Na atualização, tarefas antigas cuja data foi
+  escolhida (diferente do momento do cadastro) passam a ter essa data como
+  finalização; as criadas "agora" ficam sem finalização.
 - T2: seletor do SLA e seletor da tarefa coexistem, cada um como no mockup.
 - Permissão: administrador vê todas as tarefas; gestor, as da equipe;
   vendedor, as suas (tarefas sem responsável aparecem para todos).

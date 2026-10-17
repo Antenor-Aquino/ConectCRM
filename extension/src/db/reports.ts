@@ -356,9 +356,9 @@ function activities(db: DatabaseSync, f: ReportFilter, now: Date): ActivityRow[]
     owners = ` AND a.owner_id IN (${f.ownerIds.map(() => "?").join(", ")})`;
     params.push(...f.ownerIds);
   }
-  const rows = many<{ owner_id: string | null; done: number; due_at: string }>(
+  const rows = many<{ owner_id: string | null; done: number; due_at: string; end_at: string | null }>(
     db,
-    `SELECT a.owner_id, a.done, a.due_at FROM activity a
+    `SELECT a.owner_id, a.done, a.due_at, a.end_at FROM activity a
      WHERE a.deleted_at IS NULL AND a.due_at >= ? AND a.due_at < ?${owners}${scope.sql ? ` AND ${scope.sql}` : ""}`,
     ...params,
     ...scope.params,
@@ -371,7 +371,7 @@ function activities(db: DatabaseSync, f: ReportFilter, now: Date): ActivityRow[]
     if (a.done) r.done++;
     else {
       r.pending++;
-      if (a.due_at < nowIso) r.overdue++;
+      if (a.end_at && a.end_at < nowIso) r.overdue++;
     }
     map.set(a.owner_id, r);
   }

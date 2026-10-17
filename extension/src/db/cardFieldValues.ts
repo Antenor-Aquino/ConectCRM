@@ -39,6 +39,7 @@ interface Row {
   stage_entered_at: string;
   next_task: string | null;
   next_due: string | null;
+  next_end: string | null;
   tasks_total: number;
   tasks_done: number;
   notes_count: number;
@@ -65,8 +66,9 @@ export function cardFieldValues(
     `SELECT d.id, d.value_cents, d.person_id, d.organization_id, pe.name AS person_name, pe.phone AS person_phone, pe.email AS person_email,
        o.name AS org_name, o.city AS org_city, o.state AS org_state, o.cnpj AS org_cnpj, o.segment AS org_segment, o.phone AS org_phone,
        u.name AS owner_name, s.probability, d.expected_close_at, d.sla_at, d.start_at, d.due_at, d.description, d.origin, d.created_at, d.stage_entered_at,
-       (SELECT a.title FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0 ORDER BY a.due_at LIMIT 1) AS next_task,
-       (SELECT a.due_at FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0 ORDER BY a.due_at LIMIT 1) AS next_due,
+       (SELECT a.title FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0 ORDER BY COALESCE(a.end_at, a.due_at) LIMIT 1) AS next_task,
+       (SELECT COALESCE(a.end_at, a.due_at) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0 ORDER BY COALESCE(a.end_at, a.due_at) LIMIT 1) AS next_due,
+       (SELECT a.end_at FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0 ORDER BY COALESCE(a.end_at, a.due_at) LIMIT 1) AS next_end,
        (SELECT COUNT(*) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL) AS tasks_total,
        (SELECT COUNT(*) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 1) AS tasks_done,
        (SELECT COUNT(*) FROM note n WHERE n.entity_type = 'deal' AND n.entity_id = d.id AND n.deleted_at IS NULL) AS notes_count
@@ -170,7 +172,7 @@ export function cardFieldValues(
           break;
         }
         case "proxima_tarefa":
-          put(k, r.next_task ? `${r.next_task} · ${formatDateTime(r.next_due!)}` : null, r.next_due && r.next_due < now.toISOString() ? "danger" : undefined);
+          put(k, r.next_task ? `${r.next_task} · ${formatDateTime(r.next_due!)}` : null, r.next_end && r.next_end < now.toISOString() ? "danger" : undefined);
           break;
         case "tarefas":
           put(k, r.tasks_total ? `${r.tasks_done}/${r.tasks_total}` : null);

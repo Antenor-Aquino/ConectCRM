@@ -8,7 +8,7 @@ import { useSession } from "../session";
 import { Switch } from "../ui/Switch";
 import { TagChip } from "../ui/TagPicker";
 
-const ENTITY_LABEL: Record<TagEntity, string> = { person: "Contato", organization: "Organização", deal: "Negócio", ticket: "Ticket", project: "Projeto" };
+const ENTITY_LABEL: Record<TagEntity, string> = { person: "Contato", organization: "Organização", deal: "Negócio", ticket: "Ticket", project: "Projeto", activity: "Tarefa" };
 const COLORS = Object.keys(badgePalette) as BadgeColor[];
 
 function ColorPicker({ value, onChange }: { value: string; onChange: (c: BadgeColor) => void }) {

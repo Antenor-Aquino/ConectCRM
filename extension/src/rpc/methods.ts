@@ -46,11 +46,18 @@ function assertActivityAccess(db: DatabaseSync, ctx: DbContext, id: string): voi
   if (!ok) throw new ValidationError("Tarefa não encontrada ou sem permissão de acesso.");
 }
 
-/** Anexo de cartão: segue a permissão do cartão. */
+/** Cartão ou tarefa dono de anexos: segue a permissão dele. */
+function assertEntityAccess(db: DatabaseSync, ctx: DbContext, type: string, id: string): void {
+  if (type === "deal") deals.assertCardAccess(db, viewer(db, ctx), id);
+  else if (type === "activity") assertActivityAccess(db, ctx, id);
+  else throw new ValidationError("Tipo de anexo inválido.");
+}
+
+/** Anexo de cartão ou tarefa: segue a permissão do dono. */
 function assertAttachmentAccess(db: DatabaseSync, ctx: DbContext, id: string): void {
   const owner = attachments.attachmentOwner(db, id);
   if (!owner) throw new ValidationError("Anexo não encontrado.");
-  if (owner.entity_type === "deal" && owner.entity_id) deals.assertCardAccess(db, viewer(db, ctx), owner.entity_id);
+  if ((owner.entity_type === "deal" || owner.entity_type === "activity") && owner.entity_id) assertEntityAccess(db, ctx, owner.entity_type, owner.entity_id);
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -205,12 +212,12 @@ export const methods = {
   "cards.forEntity": (db: DatabaseSync, ctx: DbContext, p: { personId?: string; organizationId?: string }) => deals.listCardsForEntity(db, p, viewer(db, ctx)),
   "attachments.saveImage": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof attachments.saveImage>[2]) => attachments.saveImage(db, ctx, p),
   "attachments.dataUrls": (db: DatabaseSync, _c: DbContext, p: { ids: string[] }) => attachments.getDataUrls(db, p.ids),
-  "attachments.list": (db: DatabaseSync, ctx: DbContext, p: { entityType: "deal"; entityId: string }) => {
-    deals.assertCardAccess(db, viewer(db, ctx), p.entityId);
+  "attachments.list": (db: DatabaseSync, ctx: DbContext, p: { entityType: attachments.FileEntity; entityId: string }) => {
+    assertEntityAccess(db, ctx, p.entityType, p.entityId);
     return attachments.listAttachments(db, p.entityType, p.entityId);
   },
   "attachments.add": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof attachments.addFile>[2]) => {
-    deals.assertCardAccess(db, viewer(db, ctx), p.entityId);
+    assertEntityAccess(db, ctx, p.entityType, p.entityId);
     return attachments.addFile(db, ctx, p);
   },
   "attachments.get": (db: DatabaseSync, ctx: DbContext, p: Id) => {

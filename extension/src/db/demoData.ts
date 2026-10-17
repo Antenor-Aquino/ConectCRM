@@ -138,7 +138,7 @@ export function seedDemoData(db: DatabaseSync, workspaceId: string): void {
       db.run("UPDATE deal SET stage_entered_at = ?, closed_at = ? WHERE id = ?", [new Date(t - day).toISOString(), new Date(Math.min(t, Date.now())).toISOString(), id]);
     }
     for (let i = 0; i < 24; i++) {
-      const a = createActivity(db, ctx, { title: `Follow-up ${i + 1}`, dueAt: at(-3 - i * 7, 10), ownerId: owners[i % owners.length] });
+      const a = createActivity(db, ctx, { title: `Follow-up ${i + 1}`, dueAt: at(-3 - i * 7, 10), endAt: at(-1 - i * 7, 18), ownerId: owners[i % owners.length] });
       if (i % 5 !== 0) setActivityDone(db, ctx, a, true);
     }
 
@@ -150,7 +150,9 @@ export function seedDemoData(db: DatabaseSync, workspaceId: string): void {
 
     // Tarefas
     createActivity(db, ctx, { title: "Ligar para Dalliane", dealId: d1, dueAt: at(0, 10), ownerId: ana });
-    createActivity(db, ctx, { title: "Enviar proposta", dealId: d2, dueAt: at(-1, 15), ownerId: ana });
+    createActivity(db, ctx, { title: "Enviar proposta", dealId: d2, dueAt: at(-3, 9), endAt: at(-1, 15), ownerId: ana });
+    createActivity(db, ctx, { title: "Preparar apresentação da PUC", dealId: d3, dueAt: at(-2, 9), endAt: at(4, 18), ownerId: gestor });
+    createActivity(db, ctx, { title: "Revisar cadastro dos contatos", dueAt: at(-6, 9), ownerId: ana });
     createActivity(db, ctx, { title: "Reunião de apresentação", dealId: d3, dueAt: at(2, 14), durationMin: 60, ownerId: gestor });
     createActivity(db, ctx, { title: "Organizar agenda da semana", dueAt: at(1, 9), ownerId: admin });
   });

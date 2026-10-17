@@ -8,7 +8,8 @@ import type { ActivityListItem } from "../db/activities";
 import type { CardDetail } from "../db/deals";
 import type { PipelineType } from "../db/pipelines";
 import { CARD_TEXT } from "../lib/cardTypes";
-import { formatCents, formatDateTime } from "../lib/format";
+import { formatCents } from "../lib/format";
+import { taskTiming } from "../lib/taskTiming";
 import { useSession } from "../dashboard/session";
 import { Combobox, type ComboItem } from "../dashboard/ui/Combobox";
 import { errText, openCrm, Section, StatusText, type Status } from "./ui";
@@ -81,7 +82,6 @@ export function TargetSection({
     }
   };
 
-  const now = Date.now();
   const owner = users.find((u) => u.id === card?.owner_id);
 
   return (
@@ -127,7 +127,7 @@ export function TargetSection({
                     {t.done ? <CheckCircle2 size={15} /> : <Circle size={15} />}
                   </button>
                   <span className="min-w-0 flex-1 truncate text-gray-700 dark:text-gray-300">{t.title}</span>
-                  <span className={cn(new Date(t.due_at).getTime() < now ? "text-error-600" : "text-gray-400")}>{formatDateTime(t.due_at)}</span>
+                  <span className={cn(taskTiming(t).tone === "danger" ? "text-error-600" : "text-gray-400")}>{taskTiming(t).label}</span>
                 </li>
               ))}
             </ul>

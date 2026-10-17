@@ -49,8 +49,8 @@ export function getDataUrls(db: DatabaseSync, ids: string[]): Record<string, str
   return Object.fromEntries(rows.map((r) => [r.id, encodeDataUrl(r.mime, r.data)]));
 }
 
-// Anexos de cartão (negócio, ticket, etapa): arquivos do computador, mídias e
-// recortes enviados pelo popup do WhatsApp. Mesmo limite do wa-pipedrive.
+// Anexos de cartão (negócio, ticket, etapa) e de tarefa: arquivos do
+// computador, mídias e recortes do popup do WhatsApp. Mesmo limite do wa-pipedrive.
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
 
 export interface AttachmentInfo {
@@ -63,7 +63,9 @@ export interface AttachmentInfo {
   created_by_name: string | null;
 }
 
-export function addFile(db: DatabaseSync, ctx: DbContext, input: { entityType: "deal"; entityId: string; filename: string; dataUrl: string }): string {
+export type FileEntity = "deal" | "activity";
+
+export function addFile(db: DatabaseSync, ctx: DbContext, input: { entityType: FileEntity; entityId: string; filename: string; dataUrl: string }): string {
   const { mime, bytes } = decodeDataUrl(input.dataUrl);
   if (bytes.byteLength === 0) throw new ValidationError("Arquivo vazio.");
   if (bytes.byteLength > MAX_FILE_BYTES) throw new ValidationError(`"${input.filename}" passa de 25 MB.`);
