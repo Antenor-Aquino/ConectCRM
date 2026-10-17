@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Building2, CalendarDays, CircleCheck, Filter, LineChart, Settings, User, Workflow } from "lucide-react";
+import { Building2, Sparkles, CalendarDays, CircleCheck, Filter, LineChart, Settings, User, Workflow } from "lucide-react";
 import { AppLayout, TopNavBar, type TopNavItem } from "@tailadmin";
 import { call, systemCall } from "../rpc/client";
 import { checkAutoBackup, type AutoBackupCheck } from "../lib/autoBackup";
@@ -9,6 +9,7 @@ import type { QuickCreateOption } from "../lib/quickCreate";
 import { CardFormModal, type CardFormRequest } from "./cards/CardFormModal";
 import { AutoBackupPermissionModal } from "./components/AutoBackupPermissionModal";
 import { ComingSoonModal } from "./components/ComingSoonModal";
+import { COPILOT_EVENT, CopilotPanel, type CopilotRequest } from "./copilot/CopilotPanel";
 import { EnvironmentSwitch } from "./components/EnvironmentSwitch";
 import { NotificationBell } from "./components/NotificationBell";
 import { FirstRunSetup } from "./components/FirstRunSetup";
@@ -76,6 +77,17 @@ function Main() {
   const [openCardId, setOpenCardId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [comingSoon, setComingSoon] = useState<string | null>(null);
+  // Copiloto: painel lateral; pedidos de outras telas chegam por evento.
+  const [copilotOpen, setCopilotOpen] = useState(false);
+  const [copilotRequest, setCopilotRequest] = useState<CopilotRequest | null>(null);
+  useEffect(() => {
+    const onAsk = (e: Event) => {
+      setCopilotRequest((e as CustomEvent<CopilotRequest>).detail);
+      setCopilotOpen(true);
+    };
+    window.addEventListener(COPILOT_EVENT, onAsk);
+    return () => window.removeEventListener(COPILOT_EVENT, onAsk);
+  }, []);
   const [personOpen, setPersonOpen] = useState<string | null>(null);
   const [orgOpen, setOrgOpen] = useState<string | null>(null);
   const [newPerson, setNewPerson] = useState(false);
@@ -175,6 +187,13 @@ function Main() {
           actions={
             <>
               {env && <EnvironmentSwitch env={env} />}
+              <button
+                type="button"
+                onClick={() => setCopilotOpen(true)}
+                className="flex h-9 items-center gap-1.5 rounded-lg border border-brand-200 px-3 text-theme-sm font-medium text-brand-600 hover:bg-brand-50 dark:border-brand-500/30 dark:hover:bg-brand-500/10"
+              >
+                <Sparkles size={16} /> Copiloto
+              </button>
               <NotificationBell />
               <button
                 type="button"
@@ -239,6 +258,18 @@ function Main() {
         }}
       />
       <ComingSoonModal feature={comingSoon} onClose={() => setComingSoon(null)} />
+      <CopilotPanel
+        open={copilotOpen}
+        onClose={() => setCopilotOpen(false)}
+        request={copilotRequest}
+        onOpenCard={(id) => {
+          void call("cards.get", { id }).then((c) => {
+            if (!c) return;
+            setCopilotOpen(false);
+            openCardFrom(c.pipeline_id, c.id);
+          });
+        }}
+      />
       {backupPending && <AutoBackupPermissionModal handle={backupPending.handle} settings={backupPending.settings} onClose={() => setBackupPending(null)} />}
       {newTask && (
         <TaskModal

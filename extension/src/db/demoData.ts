@@ -102,6 +102,15 @@ export function seedDemoData(db: DatabaseSync, workspaceId: string): void {
     setCardStatus(db, ctx, lost, { status: "lost", lossNote: "Sem orçamento este ano" });
     setEntityTags(db, ctx, "deal", d1, [quente]);
 
+    // Abertos do mockup: há quanto tempo estão na etapa atual (2 a 40 dias),
+    // para "negócios parados" e "dias na etapa" terem o que mostrar.
+    many<{ id: string }>(db, "SELECT id FROM deal WHERE pipeline_id = ? AND status = 'open' ORDER BY rowid", power).forEach(({ id }, i) => {
+      const entered = Date.now() - (2 + ((i * 11) % 39)) * day;
+      db.run("UPDATE deal SET created_at = ?, stage_entered_at = ? WHERE id = ?", [new Date(entered - 3 * day).toISOString(), new Date(entered).toISOString(), id]);
+      db.run("UPDATE deal_stage_history SET entered_at = ? WHERE deal_id = ? AND left_at IS NULL", [new Date(entered).toISOString(), id]);
+      db.run("UPDATE deal_stage_history SET entered_at = ?, left_at = ? WHERE deal_id = ? AND left_at IS NOT NULL", [new Date(entered - 3 * day).toISOString(), new Date(entered).toISOString(), id]);
+    });
+
     // Histórico dos últimos 6 meses (para os Relatórios): negócios ganhos e
     // perdidos com datas retroativas, etapas percorridas e itens vendidos.
     const stages = listStages(db, power);

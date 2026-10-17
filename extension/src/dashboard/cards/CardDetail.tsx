@@ -1,7 +1,7 @@
 // Detalhe do cartão (Fase 4): dados editáveis, etapas, ganho/perdido,
 // notas, tarefas e histórico de alterações.
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, Circle, PlusCircle, RotateCcw, Trash2, Trophy, X, XCircle } from "lucide-react";
+import { CheckCircle2, Circle, PlusCircle, RotateCcw, Sparkles, Trash2, Trophy, X, XCircle } from "lucide-react";
 import { TaBadge, TaButton, TaInput, TaTextarea, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { ActivityListItem } from "../../db/activities";
@@ -19,6 +19,7 @@ import { SlaPicker } from "../ui/SlaPicker";
 import { stageColor } from "../ui/StageSelect";
 import { TagPicker } from "../ui/TagPicker";
 import { UserSelect } from "../ui/UserSelect";
+import { openCopilot } from "../copilot/CopilotPanel";
 import { AttachmentsPanel } from "../ui/AttachmentsPanel";
 import { NotesPanel } from "../ui/NotesPanel";
 import { TaskModal, type TaskRequest } from "../tasks/TaskModal";
@@ -169,8 +170,19 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
           </TaButton>
         )}
         <TaButton
-          variant="ghost"
           className="ml-auto"
+          startIcon={<Sparkles size={15} />}
+          onClick={() =>
+            openCopilot({
+              cardId,
+              question: `Resuma ${card.kind === "deal" ? "este negócio" : card.kind === "ticket" ? "este ticket" : "esta etapa do projeto"} e sugira o próximo passo.`,
+            })
+          }
+        >
+          Perguntar ao Copiloto
+        </TaButton>
+        <TaButton
+          variant="ghost"
           startIcon={<Trash2 size={15} />}
           onClick={() => {
             if (confirm(`Excluir este ${text.noun}?`)) void run(() => call("cards.delete", { id: cardId })).then(onClose);

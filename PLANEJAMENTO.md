@@ -1,6 +1,6 @@
 # ConectCRM — Planejamento de implementação (v4)
 
-> Status: **Fases 0 a 10 concluídas** (MVP + relatórios; branches em sequência até `fase-10-relatorios`). Próximo: Fase 11 (ZapSign, Asaas, copiloto IA).
+> Status: **Fases 0 a 11 concluídas** (Fase 11 só com o copiloto de IA; ZapSign e Asaas pendentes por decisão do cliente). Branches em sequência até `fase-11-copiloto-ia`. Próximo: Fase 12 (sincronização, futura) ou 13 (publicação).
 > v4: v1 individual (sem sincronização) com cadastro de equipes/usuários; estrutura pronta para sincronizar no futuro; "Fluxo geral" confirmado.
 
 ## 1. Visão
@@ -232,7 +232,7 @@ Fonte em `referencia/wa-pipedrive/` (será portado para TypeScript modular).
 | **8. Backup e segurança** | Backup diário, restauração, ambiente de teste |
 | **9. WhatsApp** | Popup sobre o WhatsApp Web gravando no CRM local |
 | **10. Relatórios** | Conversão do funil, previsão (valor × probabilidade), ganhos/perdidos por período/motivo/responsável/equipe, tempo por etapa, produtos vendidos, atividades por usuário; exportar Excel |
-| **11. Integrações** | ZapSign, Asaas, copiloto IA |
+| **11. Integrações** | Copiloto IA (feito); ZapSign e Asaas pendentes |
 | **12. Sincronização** (futura) | Servidor, espaço da empresa, convites, envio/recebimento de alterações, permissões no servidor |
 | **13. Publicação** | Política de privacidade, verificação OAuth, Chrome Web Store |
 
@@ -248,6 +248,7 @@ personalizados, tarefas, backup e WhatsApp).
 - `especificacoes/04-organizacoes.md` — modal de organização, CNPJ, CEP, contatos vinculados.
 - `especificacoes/05-whatsapp.md` — popup do WhatsApp (Fase 9): conversa, destino, recortes com IA, anexos, reunião.
 - `especificacoes/06-relatorios.md` — relatórios (Fase 10): filtros, indicadores, regras de cada relatório, Excel.
+- `especificacoes/07-copiloto-ia.md` — copiloto de IA (Fase 11): consultas, card de resposta, ações sugeridas, permissões.
 
 ## 11. Dúvidas
 

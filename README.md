@@ -91,3 +91,11 @@ etapa, produtos vendidos, desempenho por responsável/equipe e atividades, com
 exportação para Excel (regras em
 [`especificacoes/06-relatorios.md`](especificacoes/06-relatorios.md)). A
 probabilidade de cada etapa é definida nas configurações do funil.
+
+### Copiloto de IA
+
+Botão **Copiloto** no topo (ou **Perguntar ao Copiloto** no cartão): perguntas
+em linguagem natural sobre negócios, tarefas e vendas, respondidas com consultas
+reais ao banco local e com ações sugeridas (criar tarefa, nota) que só são
+aplicadas com um clique. Usa o provedor de **Configurações → Inteligência
+artificial** (detalhes em [`especificacoes/07-copiloto-ia.md`](especificacoes/07-copiloto-ia.md)).

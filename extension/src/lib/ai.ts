@@ -4,7 +4,7 @@
 export type AiProvider = "gemini" | "openai" | "claude" | "deepseek";
 
 export const AI_LABELS: Record<AiProvider, string> = { gemini: "Gemini", openai: "OpenAI", claude: "Claude", deepseek: "DeepSeek" };
-export const AI_DEFAULT_MODELS: Record<AiProvider, string> = { gemini: "gemini-2.5-flash", openai: "gpt-4.1-mini", claude: "claude-sonnet-4-6", deepseek: "deepseek-chat" };
+export const AI_DEFAULT_MODELS: Record<AiProvider, string> = { gemini: "gemini-2.5-flash", openai: "gpt-4.1-mini", claude: "claude-sonnet-5-5", deepseek: "deepseek-chat" };
 /** Provedores que transcrevem áudio (Gemini direto; OpenAI pelo Whisper). */
 export const AI_TRANSCRIBES: AiProvider[] = ["gemini", "openai"];
 

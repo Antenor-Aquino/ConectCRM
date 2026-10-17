@@ -5,6 +5,7 @@ import * as attachments from "../db/attachments";
 import * as importer from "../db/importer";
 import * as merge from "../db/merge";
 import * as contacts from "../db/contacts";
+import * as copilot from "../db/copilot";
 import * as cf from "../db/customFields";
 import * as deals from "../db/deals";
 import * as notes from "../db/notes";
@@ -250,6 +251,15 @@ export const methods = {
     }
     return reports.buildReport(db, { from: p.from, to: p.to, pipelineId: p.pipelineId, ownerIds, viewer: viewer(db, ctx) });
   },
+
+  // Copiloto de IA: consultas prontas, sempre com a permissão do usuário
+  "copilot.searchCards": (db: DatabaseSync, ctx: DbContext, p: copilot.CardSearch) => copilot.searchCardsForCopilot(db, viewer(db, ctx), p),
+  "copilot.card": (db: DatabaseSync, ctx: DbContext, p: Id) => copilot.cardDigest(db, viewer(db, ctx), p.id),
+  "copilot.stale": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof copilot.staleDeals>[2]) => copilot.staleDeals(db, viewer(db, ctx), p),
+  "copilot.tasks": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof copilot.tasksForCopilot>[2]) => copilot.tasksForCopilot(db, viewer(db, ctx), p),
+  "copilot.contacts": (db: DatabaseSync, ctx: DbContext, p: { texto: string }) => copilot.contactsForCopilot(db, viewer(db, ctx), p.texto),
+  "copilot.structure": (db: DatabaseSync) => copilot.crmStructure(db),
+  "copilot.summary": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof copilot.salesSummary>[2]) => copilot.salesSummary(db, viewer(db, ctx), p),
 
   // Notas
   "notes.list": (db: DatabaseSync, _c: DbContext, p: { entityType: notes.NoteEntity; entityId: string }) => notes.listNotes(db, p.entityType, p.entityId),
