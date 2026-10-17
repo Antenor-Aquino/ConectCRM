@@ -201,11 +201,13 @@ const TOMS: Tom[] = ["alerta", "positivo", "neutro"];
 const ACTIONS: ActionType[] = ["criar_tarefa", "adicionar_nota", "abrir_cartao", "criar_cartao"];
 
 /** Normaliza o que veio da IA (campos faltando, tipos trocados, excesso de itens). */
-export function normalizeCard(raw: unknown): CopilotCard {
+/** `cardId` = cartão em que o Copiloto foi aberto: vale para ações sem cartaoId. */
+export function normalizeCard(raw: unknown, cardId?: string | null): CopilotCard {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, any>;
   const strings = (v: unknown) => (Array.isArray(v) ? v.map((x) => String(x ?? "")) : []);
   const tabela =
-    r.tabela && Array.isArray(r.tabela.colunas) && Array.isArray(r.tabela.linhas) && r.tabela.colunas.length
+    // Tabela sem linhas não aparece (só o cabeçalho confunde).
+    r.tabela && Array.isArray(r.tabela.colunas) && Array.isArray(r.tabela.linhas) && r.tabela.colunas.length && r.tabela.linhas.length
       ? {
           colunas: strings(r.tabela.colunas),
           linhas: r.tabela.linhas.map((l: any) => ({
@@ -223,6 +225,7 @@ export function normalizeCard(raw: unknown): CopilotCard {
       .slice(0, 3)
       .map((i: any) => ({ texto: String(i.texto), tom: (TOMS.includes(i.tom) ? i.tom : "neutro") as Tom })),
     acoes: (Array.isArray(r.acoes) ? r.acoes : [])
+      .map((a: any) => (a && a.tipo !== "criar_cartao" && !a.cartaoId && cardId ? { ...a, cartaoId: cardId } : a))
       .filter((a: any) => ACTIONS.includes(a?.tipo) && a?.rotulo && (a.tipo === "criar_cartao" ? a.funilId && a.titulo : a.cartaoId))
       .filter((a: any) => a.tipo !== "criar_tarefa" || a.titulo)
       .filter((a: any) => a.tipo !== "adicionar_nota" || a.texto)

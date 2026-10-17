@@ -334,6 +334,8 @@ function Main() {
           open={copilotOpen}
           onClose={() => setCopilotOpen(false)}
           request={copilotRequest}
+          // Cartão aberto na tela: o Copiloto (pelo botão do topo) conversa sobre ele.
+          contextCardId={tab === "funis" ? openCardId : null}
           onOpenCard={(id) => {
             void call("cards.get", { id }).then((c) => {
               if (!c) return;

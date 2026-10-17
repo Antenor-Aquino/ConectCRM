@@ -69,3 +69,16 @@ criada para o usuário atual e vinculada ao cartão.
   criados durante a conversa entram na resposta); nunca repete uma resposta
   anterior sem consultar.
 - "Eu/meu/minhas" = o usuário atual (filtra pelo responsável).
+
+## Copiloto aberto num cartão (0.2.13)
+
+- Aberto pelo "Perguntar ao Copiloto" do cartão ou pelo botão do topo com o
+  cartão aberto (em tela cheia), a conversa se refere a esse cartão: uma
+  barra mostra "Conversa sobre o cartão X".
+- "Crie uma tarefa…", "adicione uma nota…", "resuma", "próximo passo" valem
+  para ele, a não ser que o pedido cite outro cartão, contato ou funil.
+  Ação sem cartão indicado usa o cartão aberto.
+- **Nova conversa** continua no mesmo cartão; **Geral** (na barra) volta
+  para o CRM todo.
+- Pedido de tarefa ditado ("criou a tarefa X para dia 18 às 8 horas") vira
+  a ação criar tarefa pronta; tabela sem linhas não é exibida.

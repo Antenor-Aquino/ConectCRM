@@ -50,14 +50,33 @@ function localToIso(s: string | null): string | null {
   return new Date(+m[1]!, +m[2]! - 1, +m[3]!, +(m[4] ?? 9), +(m[5] ?? 0)).toISOString();
 }
 
-export function CopilotPanel({ open, onClose, request, onOpenCard }: { open: boolean; onClose: () => void; request: CopilotRequest | null; onOpenCard: (cardId: string) => void }) {
+export function CopilotPanel({
+  open,
+  onClose,
+  request,
+  contextCardId = null,
+  onOpenCard,
+}: {
+  open: boolean;
+  onClose: () => void;
+  request: CopilotRequest | null;
+  /** Cartão aberto na tela quando o painel abre. */
+  contextCardId?: string | null;
+  onOpenCard: (cardId: string) => void;
+}) {
   const { user } = useSession();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ai, setAi] = useState<AiSettings | null>(null);
+  // Cartão em que o Copiloto foi aberto: a conversa se refere a ele.
   const [cardId, setCardId] = useState<string | null>(null);
+  const [cardTitle, setCardTitle] = useState<string | null>(null);
+  useEffect(() => {
+    setCardTitle(null);
+    if (cardId) void call("cards.get", { id: cardId }).then((c) => setCardTitle(c?.title ?? null), () => setCardTitle(null));
+  }, [cardId]);
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const recorder = useRef<MediaRecorder | null>(null);
@@ -65,7 +84,9 @@ export function CopilotPanel({ open, onClose, request, onOpenCard }: { open: boo
 
   useEffect(() => {
     if (open) void loadAiSettings().then(setAi);
-  }, [open]);
+    // Aberto com um cartão na tela (e sem conversa em andamento): conversa sobre ele.
+    if (open && contextCardId && !entries.length) setCardId(contextCardId);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
@@ -83,7 +104,8 @@ export function CopilotPanel({ open, onClose, request, onOpenCard }: { open: boo
     setLoading(true);
     const history: CopilotMessage[] = next.map((e) => (e.role === "user" ? { role: "user", content: e.text! } : { role: "assistant", content: cardToHistory(e.card!) }));
     try {
-      const card = await askCopilot(settings, history, { userName: user.name, userRole: ROLE_LABEL[user.role], cardId: focusCard }, rpcExecutor);
+      const title = focusCard ? ((await call("cards.get", { id: focusCard }).catch(() => null))?.title ?? null) : null;
+      const card = await askCopilot(settings, history, { userName: user.name, userRole: ROLE_LABEL[user.role], cardId: focusCard, cardTitle: title }, rpcExecutor);
       setEntries((cur) => [...cur, { id: crypto.randomUUID(), role: "assistant", card }]);
     } catch (e) {
       setError(errorText(e));
@@ -103,7 +125,8 @@ export function CopilotPanel({ open, onClose, request, onOpenCard }: { open: boo
     setEntries([]);
     setError(null);
     setInput("");
-    setCardId(null);
+    // A nova conversa continua no cartão aberto (o "Geral" da barra tira o cartão).
+    setCardId(contextCardId);
   };
 
   const startRecording = async () => {
@@ -162,6 +185,16 @@ export function CopilotPanel({ open, onClose, request, onOpenCard }: { open: boo
             <X size={20} />
           </button>
         </header>
+        {cardId && cardTitle && (
+          <div className="flex items-center gap-2 border-b border-gray-100 bg-brand-25 px-5 py-2 text-theme-xs text-gray-600 dark:border-gray-800 dark:bg-brand-500/10 dark:text-gray-300">
+            <span className="min-w-0 flex-1 truncate" title="Tarefas e notas pedidas nesta conversa vão para este cartão, a não ser que você cite outro.">
+              Conversa sobre o cartão <b className="text-gray-800 dark:text-white/90">{cardTitle}</b>
+            </span>
+            <button type="button" title="Conversar sobre o CRM todo" className="flex shrink-0 items-center gap-1 text-gray-500 hover:text-gray-800" onClick={() => setCardId(null)}>
+              <X size={13} /> Geral
+            </button>
+          </div>
+        )}
 
         <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
           {ai && !configured && (

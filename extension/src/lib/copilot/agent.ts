@@ -19,6 +19,8 @@ export interface CopilotContext {
   userRole: string;
   /** Cartão aberto quando a pergunta veio do detalhe do cartão. */
   cardId?: string | null;
+  /** Título do cartão aberto (para a IA e para confirmar ao usuário). */
+  cardTitle?: string | null;
   now?: Date;
 }
 
@@ -65,7 +67,14 @@ export function buildSystemPrompt(c: CopilotContext): string {
       "'Sim', 'pode', 'crie' ou um clique numa sugestão confirmam o que você ofereceu na resposta anterior.",
     "SUGESTÕES: escreva como o próximo pedido do usuário, no imperativo e sem ponto de interrogação, porque o clique envia o texto como se ele tivesse digitado " +
       "(ex.: 'Crie o cartão Conserto Gaveta Miguel no funil Casa', 'Liste minhas tarefas atrasadas'). Nunca 'Você quer…?'.",
-    c.cardId ? `CONTEXTO: o usuário está com o cartão de id ${c.cardId} aberto; quando a pergunta falar 'deste negócio', use detalhar_cartao com esse id.` : "",
+    "CRIAR TAREFA OU NOTA: pedido de tarefa (mesmo ditado como 'criou/cria a tarefa X para dia 18 às 8 horas') é ordem: entregue criar_tarefa pronta, com titulo " +
+      "e quando em AAAA-MM-DDTHH:MM (ano atual; se a data já passou, o próximo ano; sem hora, 09:00). Nota: adicionar_nota com o texto pedido. Não liste tarefas no lugar de criar.",
+    c.cardId
+      ? `CONTEXTO DO CARTÃO: o Copiloto foi aberto no cartão ${c.cardTitle ? `"${c.cardTitle}" ` : ""}(id ${c.cardId}). Tudo nesta conversa se refere a ESTE cartão, ` +
+        "a não ser que o usuário cite outro cartão, contato, organização ou funil: 'crie uma tarefa', 'adicione uma nota', 'resuma', 'próximo passo', 'deste negócio' " +
+        `valem para ele. Em criar_tarefa, adicionar_nota e abrir_cartao use cartaoId ${c.cardId} (não procure nem use outro cartão). ` +
+        "Para os dados dele, use detalhar_cartao com esse id. Perguntas claramente gerais ('minhas tarefas atrasadas de todos os negócios', 'negócios parados') valem para o CRM todo."
+      : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -160,13 +169,13 @@ async function runOpenAiLike(s: AiSettings, history: CopilotMessage[], ctx: Copi
       }
     };
     const respond = calls.find((c) => c.function.name === RESPOND_TOOL.name);
-    if (respond) return normalizeCard(parse(respond.function.arguments));
+    if (respond) return normalizeCard(parse(respond.function.arguments), ctx.cardId);
     if (!calls.length) {
       messages.push({ role: "assistant", content: msg.content ?? "" }, { role: "user", content: FORCE_RESPOND });
       const forced = await post(url, { Authorization: `Bearer ${key}` }, { model, messages, tools, tool_choice: { type: "function", function: { name: RESPOND_TOOL.name } } }, label);
       const call = forced.choices?.[0]?.message?.tool_calls?.[0];
       if (!call) throw new Error(`O ${label} não montou a resposta.`);
-      return normalizeCard(parse(call.function.arguments));
+      return normalizeCard(parse(call.function.arguments), ctx.cardId);
     }
     messages.push({ role: "assistant", content: msg.content ?? null, tool_calls: calls });
     for (const c of calls) {
@@ -191,14 +200,14 @@ async function runClaude(s: AiSettings, history: CopilotMessage[], ctx: CopilotC
     const content: any[] = json.content ?? [];
     const uses = content.filter((b) => b.type === "tool_use");
     const respond = uses.find((b) => b.name === RESPOND_TOOL.name);
-    if (respond) return normalizeCard(respond.input);
+    if (respond) return normalizeCard(respond.input, ctx.cardId);
     messages.push({ role: "assistant", content });
     if (!uses.length) {
       messages.push({ role: "user", content: FORCE_RESPOND });
       const forced = await call({ type: "tool", name: RESPOND_TOOL.name });
       const use = (forced.content ?? []).find((b: any) => b.type === "tool_use");
       if (!use) throw new Error("O Claude não montou a resposta.");
-      return normalizeCard(use.input);
+      return normalizeCard(use.input, ctx.cardId);
     }
     const results = [];
     for (const u of uses) results.push({ type: "tool_result", tool_use_id: u.id, content: stringify(await runTool(execute, u.name, u.input)) });
@@ -232,14 +241,14 @@ async function runGemini(s: AiSettings, history: CopilotMessage[], ctx: CopilotC
     if (!parts.length) throw new Error("O Gemini não retornou um resultado.");
     const fcs = parts.filter((p) => p.functionCall).map((p) => p.functionCall as { name: string; args?: Record<string, unknown> });
     const respond = fcs.find((f) => f.name === RESPOND_TOOL.name);
-    if (respond) return normalizeCard(respond.args);
+    if (respond) return normalizeCard(respond.args, ctx.cardId);
     contents.push({ role: "model", parts });
     if (!fcs.length) {
       contents.push({ role: "user", parts: [{ text: FORCE_RESPOND }] });
       const forced = await call(true);
       const fc = (forced.candidates?.[0]?.content?.parts ?? []).find((p: any) => p.functionCall)?.functionCall;
       if (!fc) throw new Error("O Gemini não montou a resposta.");
-      return normalizeCard(fc.args);
+      return normalizeCard(fc.args, ctx.cardId);
     }
     const responses = [];
     for (const f of fcs) responses.push({ functionResponse: { name: f.name, response: { result: await runTool(execute, f.name, f.args ?? {}) } } });

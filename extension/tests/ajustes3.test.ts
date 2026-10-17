@@ -105,3 +105,28 @@ describe("histórico com origem clicável", () => {
     expect(refOf("Criou o cartão")).toBeNull();
   });
 });
+
+describe("copiloto aberto num cartão", () => {
+  it("instruções citam o cartão; ações sem cartão usam o aberto; tabela vazia some", async () => {
+    const { buildSystemPrompt } = await import("../src/lib/copilot/agent");
+    const { normalizeCard } = await import("../src/lib/copilot/tools");
+    const p = buildSystemPrompt({ userName: "Antenor", userRole: "administrador", cardId: "c1", cardTitle: "Ajeitar a Gaveta de Miguel" });
+    expect(p).toMatch(/aberto no cartão "Ajeitar a Gaveta de Miguel" \(id c1\)/);
+    expect(p).toMatch(/use cartaoId c1/);
+    expect(buildSystemPrompt({ userName: "Antenor", userRole: "administrador" })).not.toMatch(/CONTEXTO DO CARTÃO/);
+    const card = normalizeCard(
+      {
+        titulo: "Tarefa",
+        tabela: { colunas: ["Título"], linhas: [] },
+        acoes: [
+          { tipo: "criar_tarefa", rotulo: "Criar tarefa", cartaoId: "", titulo: "Colar gaveta", quando: "2026-10-18T08:00" },
+          { tipo: "abrir_cartao", rotulo: "Abrir outro", cartaoId: "c2" },
+        ],
+      },
+      "c1",
+    );
+    expect(card.tabela).toBeNull();
+    expect(card.acoes.map((a) => [a.tipo, a.cartaoId])).toEqual([["criar_tarefa", "c1"], ["abrir_cartao", "c2"]]);
+    expect(normalizeCard({ acoes: [{ tipo: "criar_tarefa", rotulo: "x", cartaoId: "", titulo: "y" }] }).acoes).toEqual([]);
+  });
+});
