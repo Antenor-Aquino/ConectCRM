@@ -27,6 +27,28 @@ const SORT_LABEL: Record<BoardSort, string> = {
 const STATUS_LABEL: Record<DealStatus | "all", string> = { open: "Abertos", won: "Ganhos", lost: "Perdidos", all: "Todos" };
 const TYPE_BADGE = { comercial: "blue", operacional: "purple", projeto: "cyan" } as const;
 
+interface BoardFilter {
+  status: DealStatus | "all";
+  ownerIds: string[];
+  tagIds: string[];
+}
+const EMPTY_FILTER: BoardFilter = { status: "open", ownerIds: [], tagIds: [] };
+
+function loadFilter(key: string): BoardFilter {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return EMPTY_FILTER;
+    const f = JSON.parse(raw) as Partial<BoardFilter>;
+    return {
+      status: f.status && f.status in STATUS_LABEL ? f.status : "open",
+      ownerIds: Array.isArray(f.ownerIds) ? f.ownerIds : [],
+      tagIds: Array.isArray(f.tagIds) ? f.tagIds : [],
+    };
+  } catch {
+    return EMPTY_FILTER;
+  }
+}
+
 function usePref<T extends string>(key: string, initial: T): [T, (v: T) => void] {
   const [v, setV] = useState<T>(() => {
     try {
@@ -100,9 +122,27 @@ export function Board({
   const [search, setSearch] = useState("");
   const [view, setView] = usePref<BoardView>("conectcrm-board-view", "all");
   const [sort, setSort] = usePref<BoardSort>("conectcrm-board-sort", "recent");
-  const [status, setStatus] = useState<DealStatus | "all">("open");
-  const [ownerIds, setOwnerIds] = useState<string[]>([]);
-  const [tagIds, setTagIds] = useState<string[]>([]);
+  // Filtro lembrado por funil e usuário: ao voltar, vale o último escolhido.
+  const filterKey = `conectcrm-board-filter-${user.id}-${pipeline.id}`;
+  const [filter, setFilter] = useState<BoardFilter>(() => loadFilter(filterKey));
+  const [loadedKey, setLoadedKey] = useState(filterKey);
+  if (loadedKey !== filterKey) {
+    setLoadedKey(filterKey);
+    setFilter(loadFilter(filterKey));
+  }
+  const updateFilter = (patch: Partial<BoardFilter>) => {
+    const next = { ...filter, ...patch };
+    setFilter(next);
+    try {
+      localStorage.setItem(filterKey, JSON.stringify(next));
+    } catch {
+      /* preferência só desta tela */
+    }
+  };
+  const { status, ownerIds, tagIds } = filter;
+  const setStatus = (v: DealStatus | "all") => updateFilter({ status: v });
+  const setOwnerIds = (v: string[]) => updateFilter({ ownerIds: v });
+  const setTagIds = (v: string[]) => updateFilter({ tagIds: v });
   const [tags, setTags] = useState<Tag[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -125,12 +165,30 @@ export function Board({
     return () => clearTimeout(t);
   }, [load, refreshKey, search, user.id]);
 
+  const [tagsLoaded, setTagsLoaded] = useState(false);
   useEffect(() => {
-    void call("tags.list", { entity: kind }).then(setTags);
-    setTagIds([]);
+    void call("tags.list", { entity: kind }).then((list) => {
+      setTags(list);
+      setTagsLoaded(true);
+    });
   }, [kind]);
 
-  const filterCount = ownerIds.length + tagIds.length + (status !== "open" ? 1 : 0);
+  // Tag ou usuário salvo no filtro que deixou de existir: sai do filtro.
+  useEffect(() => {
+    if (!tagsLoaded || users.length === 0) return;
+    const keepTags = tagIds.filter((id) => tags.some((t) => t.id === id));
+    const keepOwners = ownerIds.filter((id) => users.some((u) => u.id === id));
+    if (keepTags.length !== tagIds.length || keepOwners.length !== ownerIds.length) updateFilter({ tagIds: keepTags, ownerIds: keepOwners });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tagsLoaded, tags, users, filterKey]);
+
+  // Resumo ao lado de "Filtrar": status (se não for o padrão), responsáveis e tags.
+  const filterParts = [
+    ...(status !== "open" ? [STATUS_LABEL[status]] : []),
+    ...ownerIds.map((id) => users.find((u) => u.id === id)?.name).filter((n): n is string => !!n),
+    ...tagIds.map((id) => tags.find((t) => t.id === id)?.name).filter((n): n is string => !!n),
+  ];
+  const filterCount = filterParts.length;
 
   // ----- Arrastar e soltar (HTML5) -----
   const onDragOver = (e: React.DragEvent, stageId: string) => {
@@ -230,7 +288,12 @@ export function Board({
             onClick={() => setFilterOpen((o) => !o)}
             className={cn("flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-theme-sm font-medium hover:bg-gray-100 dark:hover:bg-white/5", filterCount ? "text-brand-600" : "text-gray-700 dark:text-gray-300")}
           >
-            <Filter size={15} /> Filtrar{filterCount ? ` (${filterCount})` : ""}
+            <Filter size={15} className="shrink-0" /> Filtrar{filterCount ? ` (${filterCount})` : ""}
+            {filterCount > 0 && (
+              <span title={filterParts.join(" · ")} className="max-w-[280px] truncate font-normal text-gray-600 dark:text-gray-400">
+                {filterParts.join(" · ")}
+              </span>
+            )}
           </button>
           <Popover open={filterOpen} onClose={() => setFilterOpen(false)} className="w-72 p-4">
             <p className="mb-1.5 text-theme-xs font-semibold uppercase text-gray-400">Status</p>
@@ -263,7 +326,7 @@ export function Board({
               </>
             )}
             {filterCount > 0 && (
-              <button type="button" className="text-theme-sm text-brand-600 hover:underline" onClick={() => { setStatus("open"); setOwnerIds([]); setTagIds([]); }}>
+              <button type="button" className="text-theme-sm text-brand-600 hover:underline" onClick={() => updateFilter(EMPTY_FILTER)}>
                 Limpar filtros
               </button>
             )}

@@ -188,6 +188,10 @@ Em **Configurações → Funis** (e pelo menu ⋯ do quadro):
 - Etapas: nome, cor, ordem (arrastar), probabilidade % (comercial), prazo
   em dias para considerar o item parado.
 - Excluir etapa com itens: pede para mover os itens para outra etapa.
+- **Filtrar** do quadro (status, responsável, tags): o último filtro escolhido
+  fica salvo por funil e por usuário e volta a valer ao reabrir. Ao lado do
+  botão aparecem a quantidade e as opções ativas, ex.: "Filtrar (3) Todos ·
+  Antenor · Teste" (o status só aparece quando não é o padrão "Abertos").
 - Lista de funis (tela Funis e seletores): agrupada por categoria —
   **Comercial**, **Projeto**, **Operacional** (título em negrito com uma linha
   abaixo) — e, dentro de cada uma, por nome.
