@@ -6,6 +6,7 @@ import { MessageCircle, RefreshCw, UserPlus } from "lucide-react";
 import { TaBadge, TaButton } from "@tailadmin";
 import { call } from "../rpc/client";
 import type { PersonListItem } from "../db/contacts";
+import type { SimilarItem } from "../db/similar";
 import { formatCents } from "../lib/format";
 import { readActiveWhatsAppChat, type OpenChat } from "../lib/whatsapp";
 import { errText, Section, StatusText, type Status } from "./ui";
@@ -30,6 +31,8 @@ export function ChatSection({
 }) {
   const [chat, setChat] = useState<OpenChat | null | undefined>(undefined);
   const [matches, setMatches] = useState<PersonCards[]>([]);
+  // Telefone não cadastrado: contatos com nome parecido (pode ser a mesma pessoa).
+  const [similar, setSimilar] = useState<SimilarItem[]>([]);
   const [status, setStatus] = useState<Status>(null);
 
   const load = useCallback(async () => {
@@ -44,6 +47,7 @@ export function ChatSection({
       }
       const persons = await call("persons.findByPhone", { phone: c.phone });
       setMatches(await Promise.all(persons.map(async (person) => ({ person, cards: await listCards(person.id) }))));
+      setSimilar(!persons.length && c.name ? await call("similar.persons", { name: c.name }) : []);
       onContact(c, persons[0] ?? null);
     } catch (e) {
       setChat(null);
@@ -76,6 +80,19 @@ export function ChatSection({
     }
   };
 
+  // "É este": grava o telefone da conversa no contato parecido (anti-duplicidade).
+  const pickSimilarContact = async (p: SimilarItem) => {
+    try {
+      const current = await call("persons.get", { id: p.id });
+      if (current?.phone && !window.confirm(`${p.name} já tem o telefone ${current.phone}. Trocar por ${chat.phone}?`)) return;
+      await call("persons.update", { id: p.id, patch: { phone: chat.phone } });
+      await load();
+      setStatus({ text: `Telefone gravado em "${p.name}".`, kind: "ok" });
+    } catch (e) {
+      setStatus({ text: errText(e), kind: "err" });
+    }
+  };
+
   return (
     <Section
       title="Conversa no WhatsApp"
@@ -103,6 +120,23 @@ export function ChatSection({
               <TaButton size="sm" startIcon={<UserPlus size={14} />} onClick={() => void createContact()}>
                 Cadastrar contato
               </TaButton>
+            </div>
+          )}
+          {chat.phone && matches.length === 0 && similar.length > 0 && (
+            <div className="mt-2 rounded-lg bg-warning-50 px-3 py-2 text-theme-xs text-warning-800">
+              <p className="mb-1 font-medium">Possível duplicidade: contato com nome parecido.</p>
+              <ul className="space-y-1">
+                {similar.map((p) => (
+                  <li key={p.id} className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate">
+                      <b>{p.name}</b> · {[`${p.score}% parecido`, ...p.details].join(" · ")}
+                    </span>
+                    <button type="button" className="shrink-0 font-medium text-brand-600 hover:underline" onClick={() => void pickSimilarContact(p)}>
+                      É este
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
           {matches.map(({ person, cards }) => (

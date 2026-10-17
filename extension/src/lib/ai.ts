@@ -7,6 +7,8 @@ export const AI_LABELS: Record<AiProvider, string> = { gemini: "Gemini", openai:
 export const AI_DEFAULT_MODELS: Record<AiProvider, string> = { gemini: "gemini-2.5-flash", openai: "gpt-4.1-mini", claude: "claude-sonnet-5-5", deepseek: "deepseek-chat" };
 /** Provedores que transcrevem áudio (Gemini direto; OpenAI pelo Whisper). */
 export const AI_TRANSCRIBES: AiProvider[] = ["gemini", "openai"];
+/** Provedores que leem imagens (o DeepSeek não lê). */
+export const AI_READS_IMAGES: AiProvider[] = ["gemini", "openai", "claude"];
 
 export interface AiSettings {
   provider: AiProvider;
@@ -130,7 +132,7 @@ async function postJson(url: string, headers: Record<string, string>, body: unkn
 }
 
 /** Texto (e imagens PNG em base64) → resposta do provedor configurado. */
-export async function aiGenerate(settings: AiSettings, prompt: string, images: string[] = []): Promise<string> {
+export async function aiGenerate(settings: AiSettings, prompt: string, images: string[] = [], maxTokens = 4000): Promise<string> {
   const { prov, key, model } = resolve(settings);
   const label = AI_LABELS[prov];
   let text: unknown;
@@ -143,7 +145,7 @@ export async function aiGenerate(settings: AiSettings, prompt: string, images: s
     const json = await postJson(
       "https://api.anthropic.com/v1/messages",
       { "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-      { model, max_tokens: 4000, messages: [{ role: "user", content }] },
+      { model, max_tokens: maxTokens, messages: [{ role: "user", content }] },
       label,
     );
     text = json.content?.[0]?.text;
@@ -151,7 +153,7 @@ export async function aiGenerate(settings: AiSettings, prompt: string, images: s
     // OpenAI e DeepSeek usam o mesmo formato (Chat Completions).
     const url = prov === "openai" ? "https://api.openai.com/v1/chat/completions" : "https://api.deepseek.com/chat/completions";
     const content = [{ type: "text", text: prompt }, ...images.map((data) => ({ type: "image_url", image_url: { url: `data:image/png;base64,${data}` } }))];
-    const json = await postJson(url, { Authorization: `Bearer ${key}` }, { model, messages: [{ role: "user", content }], max_tokens: 4000 }, label);
+    const json = await postJson(url, { Authorization: `Bearer ${key}` }, { model, messages: [{ role: "user", content }], max_tokens: maxTokens }, label);
     text = json.choices?.[0]?.message?.content;
   }
   if (typeof text !== "string" || !text.trim()) throw new Error(`O ${label} não retornou um resultado.`);

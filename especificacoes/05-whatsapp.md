@@ -21,7 +21,10 @@ estiver aberto em alguma aba, ela é ativada em vez de abrir outra.
   vezes traz o celular sem o 9º dígito).
 - Contato encontrado: lista os negócios, tickets e projetos dele; um clique
   escolhe o **destino**. "+ Novo" abre o formulário de cartão já com o contato.
-- Contato não cadastrado: botão **Cadastrar contato** (nome e telefone).
+- Contato não cadastrado: botão **Cadastrar contato** (nome e telefone). Se
+  houver contato com **nome parecido** (> 70%, spec 03), mostra "Possível
+  duplicidade" com **É este**: grava o telefone da conversa no contato
+  existente (pergunta antes de trocar um telefone já gravado).
 - Telefone invisível (chats novos do WhatsApp): aviso para abrir "Dados do
   contato" e clicar em ↻.
 
@@ -36,6 +39,8 @@ estiver aberto em alguma aba, ela é ativada em vez de abrir outra.
   **Tarefa**, **Reunião** (formulário de tarefa já como reunião, com Google
   Agenda/Outlook, horários livres e convidados) e **Nota**.
 - O destino fica lembrado entre aberturas do popup.
+- Novo cartão parecido com um existente (título ou mesmo contato com cartão
+  em aberto, spec 01 §5.2): **Usar este** troca o destino para o existente.
 
 ## 3. Recortes de tela
 

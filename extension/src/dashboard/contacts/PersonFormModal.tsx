@@ -12,6 +12,7 @@ import { Combobox } from "../ui/Combobox";
 import { CustomFieldsSection } from "../ui/CustomFieldsSection";
 import { ErrorText, Field, SectionLabel } from "../ui/form";
 import { ImageUpload } from "../ui/ImageUpload";
+import { SimilarNotice, useSimilar } from "../ui/SimilarNotice";
 import { localPart, PhoneInput } from "../ui/PhoneInput";
 import { TagPicker } from "../ui/TagPicker";
 import { UserSelect } from "../ui/UserSelect";
@@ -53,6 +54,8 @@ export function PersonFormModal({
   const [dups, setDups] = useState<{ id: string; name: string; match: "email" | "phone" }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Só na criação: nome parecido com contato já cadastrado.
+  const similar = useSimilar(name, () => call("similar.persons", { name }), !personId && name.trim().length >= 3);
 
   useEffect(() => {
     void call("customFields.list", { entity: "person" }).then(setFields);
@@ -80,7 +83,8 @@ export function PersonFormModal({
     setDups(await call("persons.findDuplicates", { email, phone, phoneCountry: country, excludeId: personId ?? undefined }));
   }
 
-  async function save() {
+  async function save(force = false) {
+    if (!force && !(await similar.confirm())) return;
     setSaving(true);
     setError(null);
     const input = {
@@ -119,6 +123,12 @@ export function PersonFormModal({
           <Field label="Nome" required>
             <TaInput autoFocus={!personId} value={name} placeholder="Nome do contato" onChange={(e) => setName(e.target.value)} />
           </Field>
+          <SimilarNotice
+            state={similar}
+            openLabel="Abrir existente"
+            onOpen={onOpenExisting && ((i) => onOpenExisting(i.id))}
+            onContinue={() => void save(true)}
+          />
 
           <SectionLabel>Canais</SectionLabel>
           <div className="grid grid-cols-2 gap-3">

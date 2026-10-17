@@ -22,6 +22,19 @@ Modal com rolagem interna, botão ✕ no topo, **Salvar** fixo no rodapé.
 
 - **Anti-duplicação:** ao digitar e-mail ou celular já cadastrados, avisa e
   oferece abrir o contato existente (lógica do autocomplete do wa-pipedrive).
+- **Nome parecido (anti-duplicidade):** ao criar, compara o nome digitado
+  com os contatos visíveis para o usuário (sem acento e maiúsculas, ignora
+  "da/de/do"): **mais de 70%** de semelhança com alguma parte do nome já
+  cadastrado (ex.: "Anten" × "Antenor Aquino" = 71%; erros de digitação e
+  ordem trocada também contam). O aviso aparece enquanto digita, com
+  organização, e-mail e celular para distinguir homônimos, e os botões
+  **Abrir existente** e **Não é o mesmo, continuar**. Se salvar sem
+  confirmar, o formulário segura o "Salvar" e pergunta: abrir o existente ou
+  **Criar mesmo assim**. A criação rápida pelo campo de busca (formulários
+  de negócio/organização) pergunta se é para usar o cadastro existente.
+- **Popup do WhatsApp:** telefone da conversa não cadastrado, mas com contato
+  de nome parecido → "Possível duplicidade" com o botão **É este** (grava o
+  telefone da conversa no contato existente).
 - Contato pode ser criado pelo "+", pela lista de Contatos, pela busca de
   contato nos formulários de negócio/ticket e pelo popup do WhatsApp (já com
   nome e celular da conversa).

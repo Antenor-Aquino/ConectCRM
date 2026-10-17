@@ -316,6 +316,10 @@ function Main() {
           request={cardForm}
           pipelines={pipelines}
           onClose={() => setCardForm(null)}
+          onOpenExisting={(id, pipelineId) => {
+            setCardForm(null);
+            openCardFrom(pipelineId, id);
+          }}
           onCreated={(id, pipelineId, open) => {
             setCardForm(null);
             setTab("funis");
@@ -379,6 +383,10 @@ function Main() {
           <OrganizationFormModal
             organizationId={null}
             onClose={() => setNewOrg(false)}
+            onOpenExisting={(id) => {
+              setNewOrg(false);
+              setOrgOpen(id);
+            }}
             onSaved={(id) => {
               setNewOrg(false);
               contactsChanged();

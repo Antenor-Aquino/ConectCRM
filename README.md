@@ -108,4 +108,15 @@ aparece também no cartão, no contato e na organização. O menu **GED** busca 
 qualquer campo (inclusive no texto dos PDFs), filtra, mostra a prévia de PDFs e
 imagens, guarda versões e a trilha de auditoria. Os arquivos ficam no
 navegador ou numa pasta escolhida (detalhes em
-[`especificacoes/08-ged.md`](especificacoes/08-ged.md)).
+[`especificacoes/08-ged.md`](especificacoes/08-ged.md)). Ao enviar, cada arquivo
+pode ser **transcrito com IA** (opcional): áudio, PDF e imagem viram uma nota
+no cadastro; a janela avisa antes o que é extenso, complexo ou não dá para
+transcrever.
+
+### Cadastros duplicados
+
+Ao criar contato, organização ou cartão, o CRM procura nomes parecidos (mais
+de 70% de semelhança em alguma parte do nome, sem acento; ex.: "Anten" ×
+"Antenor Aquino") e pergunta se é para **abrir o existente** ou **criar mesmo
+assim**. No cartão também avisa quando o mesmo contato/organização já tem um
+cartão em aberto no mesmo tipo de funil.

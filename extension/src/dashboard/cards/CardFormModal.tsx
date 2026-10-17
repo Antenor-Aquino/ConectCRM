@@ -1,6 +1,6 @@
 // Formulários "Nova negociação" (comercial), "Novo ticket" (operacional) e
 // "Nova etapa" (projeto) - spec 01, seções 4, 5 e 5.1.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PlusCircle } from "lucide-react";
 import { TaButton, TaInput, TaModal, TaSelect, TaTextarea } from "@tailadmin";
 import { call } from "../../rpc/client";
@@ -13,6 +13,7 @@ import { Combobox, type ComboItem } from "../ui/Combobox";
 import { CustomFieldsForm, isProminent } from "../ui/CustomFieldsForm";
 import { ErrorText, Field, SectionLabel } from "../ui/form";
 import { MoneyInput } from "../ui/MoneyInput";
+import { SimilarNotice, useSimilar } from "../ui/SimilarNotice";
 import { SlaPicker } from "../ui/SlaPicker";
 import { StageSelect } from "../ui/StageSelect";
 import { TagPicker } from "../ui/TagPicker";
@@ -35,12 +36,17 @@ export function CardFormModal({
   pipelines,
   onClose,
   onCreated,
+  onOpenExisting,
+  openExistingLabel = "Abrir",
 }: {
   request: CardFormRequest | null;
   pipelines: Pipeline[];
   onClose: () => void;
   /** `open` = botão "Criar e abrir". */
   onCreated: (id: string, pipelineId: string, open: boolean) => void;
+  /** Cartão parecido já existente (anti-duplicidade). */
+  onOpenExisting?: (id: string, pipelineId: string) => void;
+  openExistingLabel?: string;
 }) {
   const { user } = useSession();
   const type = request?.type ?? "comercial";
@@ -66,7 +72,14 @@ export function CardFormModal({
   const [customValues, setCustomValues] = useState<Record<string, CustomValue>>({});
   const [showMore, setShowMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const pendingOpen = useRef(false);
   const [saving, setSaving] = useState(false);
+  // Título parecido no mesmo tipo, ou cartão em aberto do mesmo contato/organização.
+  const similar = useSimilar(
+    `${type}|${title}|${person?.id}|${org?.id}`,
+    () => call("similar.cards", { title, kind: text.kind, personId: person?.id, organizationId: org?.id }),
+    request !== null && (title.trim().length >= 3 || !!person || !!org),
+  );
 
   // Reinicia ao abrir.
   useEffect(() => {
@@ -109,7 +122,11 @@ export function CardFormModal({
     }
   };
 
-  async function submit(open: boolean) {
+  async function submit(open: boolean, force = false) {
+    if (!force && !(await similar.confirm())) {
+      pendingOpen.current = open;
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -239,6 +256,14 @@ export function CardFormModal({
           }
         />
       </div>
+
+      <SimilarNotice
+        state={similar}
+        openLabel={openExistingLabel}
+        onOpen={onOpenExisting && ((c) => onOpenExisting(c.id, c.pipeline_id))}
+        onContinue={() => void submit(pendingOpen.current, true)}
+        reasonText={(c) => (c.reason === "person" ? "Mesmo contato, em aberto" : c.reason === "organization" ? "Mesma organização, em aberto" : `${c.score}% parecido`)}
+      />
 
       {/* "Sempre mostrar" e obrigatórios ficam fora de "Mais detalhes" (spec 01, P2). */}
       {fields.some((f) => !f.hidden && isProminent(f)) && (

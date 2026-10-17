@@ -138,6 +138,19 @@ Sem mockup próprio; segue o padrão dos outros dois:
 Obs.: no menu "+" e no formulário, o cartão de projeto se chama
 **"Etapa"**; a coluna do quadro continua sendo a "etapa do funil".
 
+### 5.2 Cartão parecido (anti-duplicidade)
+
+Nos três formulários, o CRM avisa "Possível duplicidade" quando já existe,
+no mesmo tipo de funil e visível para o usuário:
+
+- cartão com **título parecido** (mais de 70% em alguma parte, sem acento —
+  mesma regra de contatos, spec 03); ou
+- cartão **em aberto do mesmo contato ou organização** escolhidos.
+
+Cada item mostra funil › etapa, situação, contato e organização, com o botão
+**Abrir** (no popup: **Usar este**, vira o destino). Salvar sem confirmar
+pergunta antes de criar (**Criar mesmo assim**).
+
 ## 6. Seletor de SLA (data e hora)
 
 - Campo com ícone de calendário; ao clicar abre um painel com:

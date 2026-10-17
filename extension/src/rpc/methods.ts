@@ -15,6 +15,7 @@ import * as notes from "../db/notes";
 import * as pipelines from "../db/pipelines";
 import * as products from "../db/products";
 import * as reports from "../db/reports";
+import * as similar from "../db/similar";
 import * as stages from "../db/stages";
 import { rowHistory, type DataTable, type DbContext } from "../db/repo";
 import { many, one, type DatabaseSync } from "../db/sql";
@@ -191,6 +192,9 @@ export const methods = {
   "persons.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => contacts.deletePerson(db, ctx, p.id),
   "persons.findDuplicates": (db: DatabaseSync, _c: DbContext, p: Parameters<typeof contacts.findDuplicatePersons>[1]) =>
     contacts.findDuplicatePersons(db, p),
+  "similar.persons": (db: DatabaseSync, ctx: DbContext, p: { name: string; excludeId?: string }) => similar.similarPersons(db, p, viewer(db, ctx)),
+  "similar.organizations": (db: DatabaseSync, _c: DbContext, p: { name: string; excludeId?: string }) => similar.similarOrganizations(db, p),
+  "similar.cards": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof similar.similarCards>[1]) => similar.similarCards(db, p, viewer(db, ctx)),
   "persons.setPrimaryOrganization": (db: DatabaseSync, ctx: DbContext, p: { personId: string; organizationId: string }) =>
     contacts.setPrimaryOrganization(db, ctx, p.personId, p.organizationId),
   "organizations.list": (db: DatabaseSync, _c: DbContext, p: Parameters<typeof contacts.listOrganizations>[1] = {}) => contacts.listOrganizations(db, p),

@@ -32,7 +32,11 @@ Modal com rolagem interna, botão ✕ no topo, **Salvar** fixo no rodapé.
   "Vincular ou criar organização" dos formulários de negócio/ticket/contato
   e pela consulta de CNPJ (fluxo "novo negócio a partir de CNPJ" do
   wa-pipedrive).
-- Anti-duplicação por CNPJ e por nome semelhante.
+- Anti-duplicação por CNPJ e por nome semelhante: ao criar, nome fantasia
+  ou razão social com **mais de 70%** de semelhança em alguma parte
+  (ex.: "Power Cubos" × "PowerCubus"; sufixos como Ltda/ME/S/A não contam).
+  Mesmo aviso do contato (spec 03): **Abrir existente** ou **Criar mesmo
+  assim**, com razão social, CNPJ e cidade para distinguir.
 
 ## 3. Lista e detalhe (menu Organizações)
 

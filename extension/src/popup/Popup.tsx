@@ -127,6 +127,11 @@ function Main() {
         request={cardForm}
         pipelines={pipelines}
         onClose={() => setCardForm(null)}
+        openExistingLabel="Usar este"
+        onOpenExisting={(id) => {
+          setCardForm(null);
+          setTarget(id);
+        }}
         onCreated={(id, _pipelineId, open) => {
           setCardForm(null);
           setTarget(id);

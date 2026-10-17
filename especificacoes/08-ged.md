@@ -44,6 +44,27 @@ ou organização).
 - **Arquivo repetido** (mesmo SHA-256): a janela avisa "já está no GED como
   …" e oferece **vincular o existente** (padrão) ou enviar como novo.
 
+### 2.1 Transcrição com IA (opcional, no envio)
+
+Cada arquivo da janela "Novo documento" pergunta **"Transcrever com IA?"**
+(desmarcado). O texto vira uma **nota** no cadastro de origem (ou no 1º
+vínculo: cartão, tarefa, contato, organização) com a referência ao documento
+("Arquivo: …"), e também entra na busca do GED. Antes de enviar, a janela
+diz o que esperar:
+
+| Arquivo | Como | Avisos |
+|---|---|---|
+| Áudio | Gemini ou OpenAI (Whisper) | Longo (> 20 min): pode demorar. Gemini: até 14 MB. Claude/DeepSeek: não transcrevem áudio |
+| PDF com texto | Copia o texto do próprio arquivo (sem custo de IA), página a página | Extenso (> 50 páginas): só as 50 primeiras |
+| PDF escaneado | A IA lê as páginas como imagem (3 por vez) | Complexo: tabelas, carimbos e manuscritos podem sair com erros; extenso (> 10 páginas): só as 10 primeiras. DeepSeek não lê imagens |
+| Imagem | A IA lê o texto | Complexo: fotos tortas, tabelas e manuscritos; revisar |
+| Word/Excel/PowerPoint | — | Não transcreve: "salve como PDF" |
+| Vídeo | — | Não transcreve: "envie só o áudio" |
+
+Sem IA configurada, a opção fica desabilitada com o aviso (exceto PDF com
+texto). Se a transcrição falhar (cota, chave, sem texto), o documento é
+salvo assim mesmo e a janela lista o motivo antes de fechar.
+
 ## 3. Aba "Documentos" (cartão, tarefa, contato, organização)
 
 - Lista: ícone, nome, classificação, validade, restrito, arquivo, tamanho,
@@ -120,4 +141,6 @@ ou organização).
 
 ## 9. Depois
 
-- OCR (texto de imagens e PDFs escaneados) — decisão do usuário: depois.
+- OCR automático de todas as imagens e PDFs escaneados para a busca —
+  decisão do usuário: depois (hoje só quando se pede a transcrição com IA
+  no envio, seção 2.1).
