@@ -5,8 +5,8 @@ import { requireText, ValidationError } from "../lib/validate";
 import { insertRow, softDelete, updateRow, type DbContext } from "./repo";
 import { many, one, withTransaction, type DatabaseSync } from "./sql";
 
-export type TagEntity = "person" | "organization" | "deal" | "ticket" | "project";
-export const TAG_ENTITIES: TagEntity[] = ["person", "organization", "deal", "ticket", "project"];
+export type TagEntity = "person" | "organization" | "deal" | "ticket" | "project" | "activity" | "document";
+export const TAG_ENTITIES: TagEntity[] = ["person", "organization", "deal", "ticket", "project", "activity", "document"];
 
 export interface Tag {
   id: string;

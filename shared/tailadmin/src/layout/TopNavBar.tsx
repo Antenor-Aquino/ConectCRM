@@ -19,6 +19,7 @@ export function TopNavBar({
   brandName = "ConectCRM",
   brandIcon = <Leaf size={16} />,
   beforeNavEnd,
+  actionItems = [],
 }: {
   items: TopNavItem[];
   overflowItems?: TopNavItem[];
@@ -32,8 +33,10 @@ export function TopNavBar({
   brandIcon?: ReactNode;
   /** Conteúdo logo após os itens do menu (ex.: botão "+" de cadastro rápido). */
   beforeNavEnd?: ReactNode;
+  /** Telas abertas por botões em `actions` (ex.: Configurações): só para o subtítulo. */
+  actionItems?: TopNavItem[];
 }) {
-  const active = items.find((t) => t.id === activeId) ?? overflowItems.find((t) => t.id === activeId);
+  const active = [...items, ...overflowItems, ...actionItems].find((t) => t.id === activeId);
 
   return (
     <header

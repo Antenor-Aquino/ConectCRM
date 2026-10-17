@@ -1,14 +1,20 @@
 // Anexar arquivos ao cartão (como no wa-pipedrive): documentos e mídias
-// baixados do WhatsApp; áudios podem ser transcritos pela IA (vira nota).
+// baixados do WhatsApp viram documentos do GED (nome + classificação),
+// vinculados ao cartão, ao contato e à organização dele. Áudios podem ser
+// transcritos pela IA (vira nota).
 import { useEffect, useRef, useState } from "react";
 import { Mic, Paperclip, Sparkles, Upload, X } from "lucide-react";
 import { TaButton, TaTextarea } from "@tailadmin";
 import { call } from "../rpc/client";
+import { createDocumentsFrom } from "../lib/documentFiles";
 import { AI_LABELS, AI_TRANSCRIBES, aiConfigured, loadAiSettings, transcribeAudio, type AiSettings } from "../lib/ai";
 import { dataUrlBase64, fileToDataUrl, formatBytes, isAudioFile, MAX_UPLOAD_BYTES } from "../lib/files";
-import { errText, Section, StatusText, type Status } from "./ui";
+import { DocumentTypeSelect, errText, Section, StatusText, type Status } from "./ui";
 
 interface Picked {
+  file: File;
+  /** Nome do documento no GED (começa pelo nome do arquivo). */
+  docName: string;
   name: string;
   mime: string;
   size: number;
@@ -22,6 +28,7 @@ export function FilesSection({ targetId, onSent }: { targetId: string | null; on
   const [transcript, setTranscript] = useState("");
   const [ai, setAi] = useState<AiSettings | null>(null);
   const [busy, setBusy] = useState(false);
+  const [typeId, setTypeId] = useState("");
   const [status, setStatus] = useState<Status>(null);
   const input = useRef<HTMLInputElement>(null);
 
@@ -36,7 +43,16 @@ export function FilesSection({ targetId, onSent }: { targetId: string | null; on
         setStatus({ text: `"${f.name}" passa de 25 MB e foi ignorado.`, kind: "err" });
         continue;
       }
-      next.push({ name: f.name, mime: f.type || "application/octet-stream", size: f.size, dataUrl: await fileToDataUrl(f), audio: isAudioFile(f), checked: true });
+      next.push({
+        file: f,
+        docName: f.name.replace(/\.[^.]{1,8}$/, ""),
+        name: f.name,
+        mime: f.type || "application/octet-stream",
+        size: f.size,
+        dataUrl: await fileToDataUrl(f),
+        audio: isAudioFile(f),
+        checked: true,
+      });
     }
     setFiles((cur) => [...cur, ...next]);
   };
@@ -69,12 +85,19 @@ export function FilesSection({ targetId, onSent }: { targetId: string | null; on
     setBusy(true);
     setStatus({ text: `Anexando ${chosen.length} arquivo(s)…`, kind: "info" });
     try {
-      for (const f of chosen) await call("attachments.add", { entityType: "deal", entityId: targetId, filename: f.name, dataUrl: f.dataUrl });
+      const r = await createDocumentsFrom(
+        chosen.map((f) => ({ file: f.file, name: f.docName.trim() || f.name })),
+        typeId,
+        { type: "deal", id: targetId },
+      );
       const text = transcript.trim();
       if (text) await call("notes.add", { entityType: "deal", entityId: targetId, body: `Transcrição de áudio:\n\n${text}` });
       setFiles((cur) => cur.filter((f) => !f.checked));
       setTranscript("");
-      setStatus({ text: `${chosen.length} arquivo(s) anexado(s)${text ? " + nota com a transcrição" : ""}.`, kind: "ok" });
+      setStatus({
+        text: `${r.created} documento(s) no GED${r.linked ? `, ${r.linked} já existente(s) vinculado(s)` : ""}${text ? " + nota com a transcrição" : ""}. Vinculados ao cartão, ao contato e à organização.`,
+        kind: "ok",
+      });
       onSent();
     } catch (e) {
       setStatus({ text: errText(e), kind: "err" });
@@ -108,7 +131,13 @@ export function FilesSection({ targetId, onSent }: { targetId: string | null; on
               <li key={`${f.name}-${i}`} className="flex items-center gap-2 text-theme-xs text-gray-700 dark:text-gray-300">
                 <input type="checkbox" checked={f.checked} onChange={() => setFiles((cur) => cur.map((x, j) => (j === i ? { ...x, checked: !x.checked } : x)))} />
                 {f.audio ? <Mic size={13} className="text-brand-500" /> : <Paperclip size={13} className="text-gray-400" />}
-                <span className="min-w-0 flex-1 truncate">{f.name}</span>
+                <input
+                  aria-label="Nome do documento"
+                  title={f.name}
+                  value={f.docName}
+                  onChange={(e) => setFiles((cur) => cur.map((x, j) => (j === i ? { ...x, docName: e.target.value } : x)))}
+                  className="min-w-0 flex-1 rounded border border-gray-200 px-1.5 py-0.5 dark:border-gray-700 dark:bg-gray-900"
+                />
                 <span className="text-gray-400">{formatBytes(f.size)}</span>
                 <button type="button" title="Remover" className="text-gray-400 hover:text-error-600" onClick={() => setFiles((cur) => cur.filter((_, j) => j !== i))}>
                   <X size={13} />
@@ -117,13 +146,16 @@ export function FilesSection({ targetId, onSent }: { targetId: string | null; on
             ))}
           </ul>
           {transcript && <TaTextarea className="mt-2" rows={5} value={transcript} onChange={(e) => setTranscript(e.target.value)} />}
+          <div className="mt-2">
+            <DocumentTypeSelect value={typeId} onChange={setTypeId} />
+          </div>
           <div className="mt-2 flex gap-2">
             {audios.length > 0 && canTranscribe && (
               <TaButton size="sm" disabled={busy} startIcon={<Sparkles size={14} />} onClick={() => void transcribe()}>
                 Transcrever áudio
               </TaButton>
             )}
-            <TaButton size="sm" variant="primary" disabled={busy || !chosen.length || !targetId} startIcon={<Upload size={14} />} onClick={() => void send()}>
+            <TaButton size="sm" variant="primary" disabled={busy || !chosen.length || !targetId || !typeId} startIcon={<Upload size={14} />} onClick={() => void send()}>
               Anexar ao cartão
             </TaButton>
           </div>

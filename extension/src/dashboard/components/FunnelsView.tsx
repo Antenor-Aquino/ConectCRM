@@ -4,6 +4,7 @@ import { useState } from "react";
 import { CircleDollarSign, FolderKanban, LifeBuoy, Plus } from "lucide-react";
 import { TaButton, cn } from "@tailadmin";
 import type { Pipeline, PipelineType } from "../../db/pipelines";
+import { PIPELINE_TYPE_LABEL, PIPELINE_TYPE_ORDER } from "../../lib/cardTypes";
 import { Board } from "../board/Board";
 import { FunnelStatsModal } from "../board/FunnelStatsModal";
 import { PipelineSettingsModal } from "../board/PipelineSettingsModal";
@@ -54,23 +55,32 @@ export function FunnelsView({
           {pipelines.length === 0 ? (
             <p className="text-theme-xs text-gray-500">Nenhum funil ainda.</p>
           ) : (
-            <ul className="space-y-1">
-              {pipelines.map((p) => (
-                <li key={p.id}>
-                  <button
-                    type="button"
-                    onClick={() => onSelect(p.id)}
-                    className={cn(
-                      "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-theme-sm transition-colors",
-                      p.id === selected?.id ? "bg-brand-50 font-medium text-brand-600 dark:bg-brand-500/15 dark:text-brand-400" : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/5",
-                    )}
-                  >
-                    <span className="shrink-0">{TYPE_ICON[p.type]}</span>
-                    <span className="truncate">{p.name}</span>
-                  </button>
-                </li>
+            <div className="space-y-4">
+              {PIPELINE_TYPE_ORDER.filter((t) => pipelines.some((p) => p.type === t)).map((t) => (
+                <section key={t}>
+                  <h3 className="mb-1.5 border-b border-gray-200 pb-1.5 text-theme-sm font-bold text-gray-800 dark:border-gray-700 dark:text-white/90">{PIPELINE_TYPE_LABEL[t]}</h3>
+                  <ul className="space-y-1">
+                    {pipelines
+                      .filter((p) => p.type === t)
+                      .map((p) => (
+                        <li key={p.id}>
+                          <button
+                            type="button"
+                            onClick={() => onSelect(p.id)}
+                            className={cn(
+                              "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-theme-sm transition-colors",
+                              p.id === selected?.id ? "bg-brand-50 font-medium text-brand-600 dark:bg-brand-500/15 dark:text-brand-400" : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/5",
+                            )}
+                          >
+                            <span className="shrink-0">{TYPE_ICON[p.type]}</span>
+                            <span className="truncate">{p.name}</span>
+                          </button>
+                        </li>
+                      ))}
+                  </ul>
+                </section>
               ))}
-            </ul>
+            </div>
           )}
         </aside>
       )}

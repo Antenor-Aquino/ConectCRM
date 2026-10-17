@@ -1,7 +1,8 @@
-// Arquivos guardados no banco (fotos de contato, logos; depois anexos de
-// cartões e mídias do WhatsApp). Trafegam entre telas e banco como data URL.
+// Imagens guardadas no banco (fotos de contato, logos). Trafegam entre
+// telas e banco como data URL. Anexos de cartão e tarefa viraram documentos
+// do GED (db/documents); os antigos ficam aqui só até a mudança em open.
 import { ValidationError } from "../lib/validate";
-import { insertRow, softDelete, type DbContext } from "./repo";
+import { insertRow, type DbContext } from "./repo";
 import { many, type DatabaseSync } from "./sql";
 
 const MAX_IMAGE_BYTES = 512 * 1024;
@@ -47,53 +48,4 @@ export function getDataUrls(db: DatabaseSync, ids: string[]): Record<string, str
     ...unique,
   );
   return Object.fromEntries(rows.map((r) => [r.id, encodeDataUrl(r.mime, r.data)]));
-}
-
-// Anexos de cartão (negócio, ticket, etapa): arquivos do computador, mídias e
-// recortes enviados pelo popup do WhatsApp. Mesmo limite do wa-pipedrive.
-export const MAX_FILE_BYTES = 25 * 1024 * 1024;
-
-export interface AttachmentInfo {
-  id: string;
-  filename: string;
-  mime: string;
-  size_bytes: number;
-  created_at: string;
-  created_by: string | null;
-  created_by_name: string | null;
-}
-
-export function addFile(db: DatabaseSync, ctx: DbContext, input: { entityType: "deal"; entityId: string; filename: string; dataUrl: string }): string {
-  const { mime, bytes } = decodeDataUrl(input.dataUrl);
-  if (bytes.byteLength === 0) throw new ValidationError("Arquivo vazio.");
-  if (bytes.byteLength > MAX_FILE_BYTES) throw new ValidationError(`"${input.filename}" passa de 25 MB.`);
-  const filename = input.filename.replace(/[\\/:*?"<>|]/g, "_").trim().slice(0, 160) || "arquivo";
-  return insertRow(db, ctx, "attachment", {
-    entity_type: input.entityType,
-    entity_id: input.entityId,
-    filename,
-    mime,
-    size_bytes: bytes.byteLength,
-    data: bytes,
-  });
-}
-
-export function listAttachments(db: DatabaseSync, entityType: string, entityId: string): AttachmentInfo[] {
-  return many<AttachmentInfo>(
-    db,
-    `SELECT a.id, a.filename, a.mime, a.size_bytes, a.created_at, a.created_by, u.name AS created_by_name
-     FROM attachment a LEFT JOIN app_user u ON u.id = a.created_by
-     WHERE a.deleted_at IS NULL AND a.entity_type = ? AND a.entity_id = ?
-     ORDER BY a.created_at DESC`,
-    entityType,
-    entityId,
-  );
-}
-
-export function attachmentOwner(db: DatabaseSync, id: string): { entity_type: string | null; entity_id: string | null } | undefined {
-  return many<{ entity_type: string | null; entity_id: string | null }>(db, "SELECT entity_type, entity_id FROM attachment WHERE id = ? AND deleted_at IS NULL", id)[0];
-}
-
-export function deleteAttachment(db: DatabaseSync, ctx: DbContext, id: string): void {
-  softDelete(db, ctx, "attachment", id);
 }

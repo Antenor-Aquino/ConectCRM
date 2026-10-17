@@ -3,6 +3,9 @@ import type { DealKind, PipelineType } from "../db/pipelines";
 
 export const PIPELINE_TYPE_LABEL: Record<PipelineType, string> = { comercial: "Comercial", operacional: "Operacional", projeto: "Projeto" };
 
+/** Ordem das categorias de funil nas listas (dentro de cada uma, por nome). */
+export const PIPELINE_TYPE_ORDER: PipelineType[] = ["comercial", "projeto", "operacional"];
+
 export const CARD_TEXT: Record<
   PipelineType,
   { kind: DealKind; newTitle: string; noun: string; titleLabel: string; titlePlaceholder: string; pipelineSection: string; stageLabel: string }

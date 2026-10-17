@@ -1,12 +1,16 @@
 // Menu Tarefas (spec 02, seção 5): período, alertas (atrasadas / hoje /
 // próximos 7 dias), filtros, visões Minhas / Minha equipe / Todas, lista
-// agrupada por dia e calendário do mês.
+// agrupada (atrasadas, em andamento, por dia de início) e calendário do mês.
+// Cada linha mostra tags, início/finalização com os dias que faltam, anexos
+// para baixar e atalhos clicáveis para o cartão, o contato e a organização.
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CalendarClock, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Circle, List, Plus, Search, Sun, Video } from "lucide-react";
-import { TaButton, TaSelect, cn } from "@tailadmin";
+import { AlertTriangle, Building2, CalendarClock, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Circle, Download, Filter, List, Paperclip, Plus, Search, Sun, User, Video } from "lucide-react";
+import { TaButton, TaSelect, badgePalette, cn, type BadgeColor } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { ActivityListItem, ActivityType } from "../../db/activities";
 import { ActivityIcon } from "../../lib/activityIcons";
+import { downloadVersion } from "../../lib/documentFiles";
+import { taskTiming } from "../../lib/taskTiming";
 import { useSession } from "../session";
 import { Avatar } from "../ui/Avatar";
 import { TaskModal, type TaskRequest } from "./TaskModal";
@@ -51,7 +55,25 @@ function groupLabel(d: Date, overdue: boolean): string {
   return `${WEEKDAYS[d.getDay()]}, ${pad(d.getDate())}/${pad(d.getMonth() + 1)}${d.getFullYear() !== t.getFullYear() ? `/${d.getFullYear()}` : ""}`;
 }
 
-export function TasksView({ refreshKey, initialMode, openTaskId, onOpenTaskConsumed }: { refreshKey: number; initialMode?: "lista" | "calendario"; openTaskId?: string | null; onOpenTaskConsumed?: () => void }) {
+export interface TaskLinks {
+  onOpenCard: (pipelineId: string, cardId: string) => void;
+  onOpenPerson: (id: string) => void;
+  onOpenOrganization: (id: string) => void;
+}
+
+export function TasksView({
+  refreshKey,
+  initialMode,
+  openTaskId,
+  onOpenTaskConsumed,
+  links,
+}: {
+  refreshKey: number;
+  initialMode?: "lista" | "calendario";
+  openTaskId?: string | null;
+  onOpenTaskConsumed?: () => void;
+  links: TaskLinks;
+}) {
   const { user, users } = useSession();
   const [mode, setMode] = useState<"lista" | "calendario">(initialMode ?? "lista");
   const [period, setPeriod] = useState<Period>("semana");
@@ -111,14 +133,19 @@ export function TasksView({ refreshKey, initialMode, openTaskId, onOpenTaskConsu
   };
 
   const now = Date.now();
+  const isOverdue = (a: ActivityListItem) => !a.done && !!a.end_at && new Date(a.end_at).getTime() < now;
   const groups = useMemo(() => {
     const map = new Map<string, ActivityListItem[]>();
+    const todayStart = dayStart(new Date()).getTime();
+    // Ordem fixa dos grupos: atrasadas, em andamento e depois por dia de início.
+    map.set("Atrasadas", []);
+    map.set("Em andamento", []);
     for (const a of rows) {
-      const overdue = !a.done && new Date(a.due_at).getTime() < now && period !== "hoje";
-      const key = groupLabel(new Date(a.due_at), overdue);
+      const start = new Date(a.due_at);
+      const key = isOverdue(a) ? "Atrasadas" : !a.done && start.getTime() < todayStart ? "Em andamento" : groupLabel(start, false);
       map.set(key, [...(map.get(key) ?? []), a]);
     }
-    return [...map.entries()];
+    return [...map.entries()].filter(([, items]) => items.length);
   }, [rows, period]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const alerts: { key: Period; label: string; n: number; icon: React.ReactNode; cls: string }[] = [
@@ -127,32 +154,91 @@ export function TasksView({ refreshKey, initialMode, openTaskId, onOpenTaskConsu
     { key: "proximos7", label: "Próximos 7 dias", n: counters.next7, icon: <CalendarClock size={20} />, cls: "border-warning-200 bg-warning-25 text-warning-700" },
   ];
 
+  const fmt = (iso: string) => {
+    const d = new Date(iso);
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  const TONE = { danger: "bg-error-50 text-error-700", warning: "bg-warning-50 text-warning-700", ok: "bg-success-50 text-success-700", muted: "bg-gray-100 text-gray-600 dark:bg-white/5 dark:text-gray-400" } as const;
+  const linkCls = "inline-flex max-w-[220px] items-center gap-1 truncate rounded hover:text-brand-600 hover:underline";
+
   const row = (a: ActivityListItem) => {
-    const overdue = !a.done && new Date(a.due_at).getTime() < now;
-    const d = new Date(a.due_at);
+    const timing = taskTiming(a);
     return (
-      <li key={a.id} className="flex items-center gap-3 px-2 py-2.5 hover:bg-gray-50 dark:hover:bg-white/5">
-        <button type="button" title={a.done ? "Reabrir" : "Concluir"} onClick={() => void toggle(a)} className={a.done ? "text-success-600" : "text-gray-300 hover:text-success-500"}>
+      <li key={a.id} className="flex items-start gap-3 px-2 py-2.5 hover:bg-gray-50 dark:hover:bg-white/5">
+        <button type="button" title={a.done ? "Reabrir" : "Concluir"} onClick={() => void toggle(a)} className={cn("mt-0.5", a.done ? "text-success-600" : "text-gray-300 hover:text-success-500")}>
           {a.done ? <CheckCircle2 size={20} /> : <Circle size={20} />}
         </button>
-        <span className="text-brand-500" title={a.type_name}>
+        <span className="mt-0.5 text-brand-500" title={a.type_name}>
           <ActivityIcon name={a.type_icon} />
         </span>
-        <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setModal({ id: a.id })}>
-          <span className={cn("block truncate text-theme-sm font-medium", a.done ? "text-gray-400 line-through" : "text-gray-800 dark:text-white/90")}>{a.title}</span>
-          <span className="block truncate text-theme-xs text-gray-500">
-            {[a.deal_title, a.person_name, a.organization_name].filter(Boolean).join(" · ") || a.type_name}
-          </span>
-        </button>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button type="button" className={cn("truncate text-left text-theme-sm font-medium hover:underline", a.done ? "text-gray-400 line-through" : "text-gray-800 dark:text-white/90")} onClick={() => setModal({ id: a.id })}>
+              {a.title}
+            </button>
+            {a.tags.map((t) => {
+              const c = badgePalette[t.color as BadgeColor] ?? badgePalette.slate;
+              return (
+                <span key={t.id} className="rounded-full border px-1.5 py-px text-[10px] font-medium" style={{ background: c.bg, color: c.fg, borderColor: c.border }}>
+                  {t.name}
+                </span>
+              );
+            })}
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-theme-xs text-gray-500">
+            <span>{a.type_name}</span>
+            {a.deal_id && a.pipeline_id && (
+              <button type="button" className={linkCls} title="Abrir o cartão no funil" onClick={() => links.onOpenCard(a.pipeline_id!, a.deal_id!)}>
+                <Filter size={12} /> {a.pipeline_name} › {a.deal_title}
+              </button>
+            )}
+            {a.person_id && a.person_name && (
+              <button type="button" className={linkCls} title="Abrir o contato" onClick={() => links.onOpenPerson(a.person_id!)}>
+                <User size={12} /> {a.person_name}
+              </button>
+            )}
+            {a.organization_id && a.organization_name && (
+              <button type="button" className={linkCls} title="Abrir a organização" onClick={() => links.onOpenOrganization(a.organization_id!)}>
+                <Building2 size={12} /> {a.organization_name}
+              </button>
+            )}
+          </div>
+          {a.documents.length > 0 && (
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {a.documents.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  title={`Baixar ${f.filename}`}
+                  onClick={() => void downloadVersion(f.version_id).catch((e: unknown) => alert(e instanceof Error ? e.message : String(e)))}
+                  className="inline-flex max-w-[220px] items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-600 hover:border-brand-300 hover:text-brand-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400"
+                >
+                  <Paperclip size={11} />
+                  <span className="truncate">{f.name}</span>
+                  <Download size={11} />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         {a.meeting_url && (
-          <a href={a.meeting_url} target="_blank" rel="noopener" title="Entrar na reunião" className="text-brand-500">
+          <a href={a.meeting_url} target="_blank" rel="noopener" title="Entrar na reunião" className="mt-0.5 text-brand-500">
             <Video size={16} />
           </a>
         )}
-        <span className={cn("w-24 text-right text-theme-xs", overdue ? "font-medium text-error-600" : "text-gray-500")}>
-          {period === "hoje" || groupLabel(d, false) === "Hoje" ? "" : `${pad(d.getDate())}/${pad(d.getMonth() + 1)} `}
-          {pad(d.getHours())}:{pad(d.getMinutes())}
-        </span>
+        <div className="w-44 shrink-0 text-right text-theme-xs">
+          <span className={cn("inline-block rounded-full px-2 py-0.5 font-medium", TONE[timing.tone])}>{timing.label}</span>
+          <span className="mt-0.5 block text-gray-500">
+            Início {fmt(a.due_at)}
+            {a.end_at && (
+              <>
+                <br />
+                Fim {fmt(a.end_at)}
+                {timing.span && <span className="text-gray-400"> · {timing.span}</span>}
+              </>
+            )}
+          </span>
+        </div>
         {a.owner_name && <Avatar name={a.owner_name} size={24} title={`Responsável: ${a.owner_name}`} />}
       </li>
     );
@@ -264,7 +350,7 @@ export function TasksView({ refreshKey, initialMode, openTaskId, onOpenTaskConsu
           ) : (
             groups.map(([label, items]) => (
               <section key={label} className="mb-4 last:mb-0">
-                <h3 className={cn("mb-1 px-2 text-theme-xs font-semibold uppercase", label === "Atrasadas" ? "text-error-600" : "text-gray-500")}>
+                <h3 className={cn("mb-1 px-2 text-theme-xs font-semibold uppercase", label === "Atrasadas" ? "text-error-600" : label === "Em andamento" ? "text-brand-600" : "text-gray-500")}>
                   {label} <span className="font-normal">({items.length})</span>
                 </h3>
                 <ul className="divide-y divide-gray-100 dark:divide-gray-800">{items.map(row)}</ul>
@@ -308,7 +394,7 @@ export function TasksView({ refreshKey, initialMode, openTaskId, onOpenTaskConsu
                         onClick={() => setModal({ id: a.id })}
                         className={cn(
                           "mb-0.5 flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-[11px]",
-                          a.done ? "text-gray-400 line-through" : !a.done && new Date(a.due_at).getTime() < now ? "bg-error-50 text-error-700" : "bg-brand-50 text-brand-700",
+                          a.done ? "text-gray-400 line-through" : isOverdue(a) ? "bg-error-50 text-error-700" : "bg-brand-50 text-brand-700",
                         )}
                       >
                         <ActivityIcon name={a.type_icon} size={11} />

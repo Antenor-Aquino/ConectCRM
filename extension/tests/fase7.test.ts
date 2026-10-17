@@ -58,13 +58,15 @@ describe("tarefas: permissão, contadores, busca", () => {
     const { db, ctx } = await freshDb();
     const now = new Date(2026, 9, 16, 12, 0);
     const at = (days: number, h = 15) => new Date(2026, 9, 16 + days, h, 0).toISOString();
-    createActivity(db, ctx, { title: "Atrasada", dueAt: at(-1) });
-    createActivity(db, ctx, { title: "Hoje cedo (atrasada)", dueAt: at(0, 9) });
-    createActivity(db, ctx, { title: "Hoje", dueAt: at(0) });
+    createActivity(db, ctx, { title: "Atrasada", dueAt: at(-2), endAt: at(-1) });
+    createActivity(db, ctx, { title: "Hoje cedo (atrasada)", dueAt: at(0, 8), endAt: at(0, 9) });
+    createActivity(db, ctx, { title: "Antiga sem prazo (não atrasa)", dueAt: at(-3) });
+    createActivity(db, ctx, { title: "Termina hoje", dueAt: at(-5), endAt: at(0) });
+    createActivity(db, ctx, { title: "Começa hoje", dueAt: at(0, 8) });
     createActivity(db, ctx, { title: "Amanhã", dueAt: at(1) });
-    createActivity(db, ctx, { title: "Daqui 6", dueAt: at(6) });
+    createActivity(db, ctx, { title: "Termina daqui 6", dueAt: at(-1), endAt: at(6) });
     createActivity(db, ctx, { title: "Daqui 20", dueAt: at(20) });
-    createActivity(db, ctx, { title: "Feita", dueAt: at(-1), done: true });
+    createActivity(db, ctx, { title: "Feita", dueAt: at(-2), endAt: at(-1), done: true });
     expect(activityCounters(db, {}, now)).toEqual({ overdue: 2, today: 2, next7: 2 });
   });
 

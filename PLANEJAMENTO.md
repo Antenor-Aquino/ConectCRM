@@ -249,6 +249,7 @@ personalizados, tarefas, backup e WhatsApp).
 - `especificacoes/05-whatsapp.md` — popup do WhatsApp (Fase 9): conversa, destino, recortes com IA, anexos, reunião.
 - `especificacoes/06-relatorios.md` — relatórios (Fase 10): filtros, indicadores, regras de cada relatório, Excel.
 - `especificacoes/07-copiloto-ia.md` — copiloto de IA (Fase 11): consultas, card de resposta, ações sugeridas, permissões.
+- `especificacoes/08-ged.md` — GED: documentos, classificação, vínculos automáticos, busca, prévia, versões, auditoria, armazenamento.
 
 ## 11. Dúvidas
 

@@ -7,8 +7,8 @@
 
 ## 1. Menu principal
 
-`Funis · Tarefas · Contatos · Organizações · Relatórios` + botão **"+"** ·
-Configurações · Notificações · Agenda.
+`Funis · Tarefas · Contatos · Organizações · GED · Relatórios` + botão **"+"** ·
+Copiloto · Notificações · Agenda · Configurações (engrenagem).
 
 (O antigo item "Clientes" foi dividido em **Contatos** e **Organizações**.)
 
@@ -188,6 +188,44 @@ Em **Configurações → Funis** (e pelo menu ⋯ do quadro):
 - Etapas: nome, cor, ordem (arrastar), probabilidade % (comercial), prazo
   em dias para considerar o item parado.
 - Excluir etapa com itens: pede para mover os itens para outra etapa.
+- Lista de funis (tela Funis e seletores): agrupada por categoria —
+  **Comercial**, **Projeto**, **Operacional** (título em negrito com uma linha
+  abaixo) — e, dentro de cada uma, por nome.
+
+## 10.1 Campos do cartão (por funil)
+
+Editar funil → aba **Cartão** (ajuste da avaliação 1). Cada funil escolhe
+quais campos aparecem nos seus cartões e em que ordem, com prévia ao vivo
+no cartão mais recente do funil.
+
+- O **título** aparece sempre; o **valor** fica no topo à direita e o
+  **responsável** no rodapé; os demais seguem a ordem da lista.
+- Campos disponíveis:
+  - **Negócio:** valor, produtos e serviços, probabilidade da etapa, previsão
+    de fechamento, SLA (operacional), início e prazo (projeto), descrição,
+    dias na etapa, próxima tarefa, tarefas concluídas, quantidade de notas,
+    tags, responsável, origem, criado em;
+  - **Contato:** nome, telefone, e-mail;
+  - **Organização:** nome, cidade/UF, CNPJ, segmento, telefone;
+  - **Campos personalizados** do cartão (os do funil), do contato e da
+    organização.
+- Campo sem valor não aparece no cartão. Datas vencidas (SLA, prazo,
+  previsão, próxima tarefa) ficam em vermelho.
+- Até 12 campos. **Restaurar padrão** volta ao cartão original (valor,
+  contato e responsável; no operacional, SLA; no projeto, prazo).
+
+## 10.2 Detalhe do negócio: produtos e histórico
+
+- Com produtos/serviços no negócio, o resumo aparece logo abaixo do valor:
+  produto/serviço, quantidade, preço unitário, desconto e total (com linha
+  de total quando há mais de um item). Clicar abre o editor de itens.
+- A aba **Histórico** mostra toda alteração do cartão, com quem fez, quando
+  e o valor antigo → novo: campos (valor, contato, organização,
+  responsável, datas, motivo da perda…), etapa, ganho/perdido/reaberto,
+  produtos (adicionados, alterados, removidos), tags, campos
+  personalizados, notas, anexos e tarefas (criada, concluída, remarcada,
+  excluída). Gravações do mesmo usuário em até 2 segundos aparecem como um
+  só evento (ex.: salvar produtos recalcula o valor).
 
 ## 11. Pendências
 

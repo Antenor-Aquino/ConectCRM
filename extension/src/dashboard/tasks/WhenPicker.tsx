@@ -1,7 +1,7 @@
 // "Quando" da tarefa (mockup): texto por extenso ("16 de outubro às 18:25") e
 // painel com calendário (Out 2026 ‹ ›), Hora, Duração e Lembrete em minutos.
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, HelpCircle } from "lucide-react";
+import { ChevronLeft, ChevronRight, HelpCircle, X } from "lucide-react";
 import { cn } from "@tailadmin";
 import { Popover } from "../ui/Popover";
 import { inputClass } from "../ui/form";
@@ -20,13 +20,16 @@ export function whenLabel(d: Date): string {
 
 export function WhenPicker({
   value,
-  duration,
-  reminder,
+  duration = 0,
+  reminder = null,
+  simple,
   onChange,
 }: {
   value: Date;
-  duration: number;
-  reminder: number | null;
+  duration?: number;
+  reminder?: number | null;
+  /** Só data e hora (sem duração e lembrete), ex.: finalização. */
+  simple?: boolean;
   onChange: (v: { when: Date; duration: number; reminder: number | null }) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -101,6 +104,8 @@ export function WhenPicker({
               }}
             />
           </label>
+          {!simple && (
+          <>
           <label className="flex items-center justify-between gap-3 text-theme-sm text-gray-700 dark:text-gray-300">
             Duração:
             <span className="relative w-36">
@@ -128,8 +133,39 @@ export function WhenPicker({
               <span className="pointer-events-none absolute right-3 top-2.5 text-theme-xs text-gray-400">min</span>
             </span>
           </label>
+          </>
+          )}
         </div>
       </Popover>
+    </div>
+  );
+}
+
+/** Finalização (prazo de entrega) opcional: vazio = sem prazo. */
+export function EndPicker({ value, start, onChange }: { value: Date | null; start: Date; onChange: (d: Date | null) => void }) {
+  if (!value) {
+    return (
+      <button
+        type="button"
+        className={cn(inputClass, "text-left text-gray-400")}
+        onClick={() => {
+          // Sugestão: o dia seguinte ao início, às 18h.
+          const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1, 18, 0);
+          onChange(d);
+        }}
+      >
+        Sem finalização (opcional)
+      </button>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex-1">
+        <WhenPicker value={value} simple onChange={(v) => onChange(v.when)} />
+      </div>
+      <button type="button" title="Remover a finalização" onClick={() => onChange(null)} className="text-gray-400 hover:text-error-600">
+        <X size={16} />
+      </button>
     </div>
   );
 }

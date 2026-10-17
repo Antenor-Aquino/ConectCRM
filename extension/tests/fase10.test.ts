@@ -56,7 +56,7 @@ async function scenario() {
   setDates(db, old, "2025-01-01T12:00:00.000Z", "2025-02-01T12:00:00.000Z");
   const t1 = createActivity(db, ctx, { title: "Ligar", ownerId: ana, dueAt: "2026-05-05T12:00:00.000Z" });
   setActivityDone(db, ctx, t1, true);
-  createActivity(db, ctx, { title: "Atrasada", ownerId: bruno, dueAt: "2026-05-06T12:00:00.000Z" });
+  createActivity(db, ctx, { title: "Atrasada", ownerId: bruno, dueAt: "2026-05-06T12:00:00.000Z", endAt: "2026-05-07T12:00:00.000Z" });
   return { db, ctx, admin, ana, bruno, team, pid, ids: { g1, p1, o1, o2, p2 } };
 }
 

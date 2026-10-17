@@ -1,6 +1,8 @@
 // Operações expostas pelo documento offscreen (dono do banco) às telas.
 // Cada entrada recebe (db, ctx, params) e devolve dados serializáveis.
 import * as activities from "../db/activities";
+import { cardHistory } from "../db/cardHistory";
+import { cardFieldValues } from "../db/cardFieldValues";
 import * as attachments from "../db/attachments";
 import * as importer from "../db/importer";
 import * as merge from "../db/merge";
@@ -8,6 +10,7 @@ import * as contacts from "../db/contacts";
 import * as copilot from "../db/copilot";
 import * as cf from "../db/customFields";
 import * as deals from "../db/deals";
+import * as docs from "../db/documents";
 import * as notes from "../db/notes";
 import * as pipelines from "../db/pipelines";
 import * as products from "../db/products";
@@ -44,12 +47,18 @@ function assertActivityAccess(db: DatabaseSync, ctx: DbContext, id: string): voi
   if (!ok) throw new ValidationError("Tarefa não encontrada ou sem permissão de acesso.");
 }
 
-/** Anexo de cartão: segue a permissão do cartão. */
-function assertAttachmentAccess(db: DatabaseSync, ctx: DbContext, id: string): void {
-  const owner = attachments.attachmentOwner(db, id);
-  if (!owner) throw new ValidationError("Anexo não encontrado.");
-  if (owner.entity_type === "deal" && owner.entity_id) deals.assertCardAccess(db, viewer(db, ctx), owner.entity_id);
+/** Cadastro onde se anexa ou a que se vincula um documento: segue a permissão dele. */
+function assertEntityAccess(db: DatabaseSync, ctx: DbContext, type: docs.DocLinkType, id: string): void {
+  if (type === "deal") deals.assertCardAccess(db, viewer(db, ctx), id);
+  else if (type === "activity") assertActivityAccess(db, ctx, id);
+  else if (type !== "person" && type !== "organization") throw new ValidationError("Tipo de vínculo inválido.");
 }
+
+function assertLinksAccess(db: DatabaseSync, ctx: DbContext, links: docs.DocLinkRef[] | undefined): void {
+  for (const l of links ?? []) assertEntityAccess(db, ctx, l.type, l.id);
+}
+
+const docView = (db: DatabaseSync, ctx: DbContext, id: string, opts?: { includeTrash?: boolean }) => docs.assertDocumentAccess(db, viewer(db, ctx), id, opts);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -59,6 +68,10 @@ export const methods = {
     migrations: many<{ name: string }>(db, "SELECT name FROM _migrations ORDER BY name").map((r) => r.name),
     pendingSync: one<{ n: number }>(db, "SELECT COUNT(*) AS n FROM change_log WHERE synced_at IS NULL")?.n ?? 0,
   }),
+  "cards.history": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    return cardHistory(db, p.id);
+  },
   "history.get": (db: DatabaseSync, ctx: DbContext, p: { table: DataTable; id: string }) => {
     if (p.table === "deal") deals.assertCardAccess(db, viewer(db, ctx), p.id);
     return rowHistory(db, p.table, p.id);
@@ -120,6 +133,19 @@ export const methods = {
   // Cartões (negócio / ticket / etapa de projeto)
   "board.get": (db: DatabaseSync, ctx: DbContext, p: { pipelineId: string } & Omit<NonNullable<Parameters<typeof deals.getBoard>[2]>, "viewer">) =>
     deals.getBoard(db, p.pipelineId, { ...p, viewer: viewer(db, ctx) }),
+  /** Prévia dos campos do cartão (Editar funil → Cartão) no cartão mais recente do funil. */
+  "cards.previewFields": (db: DatabaseSync, ctx: DbContext, p: { pipelineId: string; keys: string[] }) => {
+    const scope = deals.cardScope(db, viewer(db, ctx));
+    const card = one<{ id: string; title: string }>(
+      db,
+      `SELECT d.id, d.title FROM deal d WHERE d.pipeline_id = ? AND d.deleted_at IS NULL${scope.sql} ORDER BY d.status = 'open' DESC, d.updated_at DESC LIMIT 1`,
+      p.pipelineId,
+      ...scope.params,
+    );
+    if (!card) return null;
+    const { values } = cardFieldValues(db, p.pipelineId, [card.id], { keys: p.keys });
+    return { title: card.title, fields: values.get(card.id) ?? {} };
+  },
   "cards.get": (db: DatabaseSync, ctx: DbContext, p: Id) => deals.getCard(db, p.id, viewer(db, ctx)) ?? null,
   "cards.create": (db: DatabaseSync, ctx: DbContext, p: deals.CardInput) => {
     const v = viewer(db, ctx);
@@ -186,22 +212,116 @@ export const methods = {
   "cards.forEntity": (db: DatabaseSync, ctx: DbContext, p: { personId?: string; organizationId?: string }) => deals.listCardsForEntity(db, p, viewer(db, ctx)),
   "attachments.saveImage": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof attachments.saveImage>[2]) => attachments.saveImage(db, ctx, p),
   "attachments.dataUrls": (db: DatabaseSync, _c: DbContext, p: { ids: string[] }) => attachments.getDataUrls(db, p.ids),
-  "attachments.list": (db: DatabaseSync, ctx: DbContext, p: { entityType: "deal"; entityId: string }) => {
-    deals.assertCardAccess(db, viewer(db, ctx), p.entityId);
-    return attachments.listAttachments(db, p.entityType, p.entityId);
+  // GED (spec 08)
+  "documentTypes.list": (db: DatabaseSync, _c: DbContext, p: { includeInactive?: boolean } = {}) => docs.listDocumentTypes(db, p),
+  "documentTypes.create": (db: DatabaseSync, ctx: DbContext, p: docs.DocumentTypeInput) => {
+    assertRole(db, ctx, MANAGERS, "tipos de documento");
+    return docs.createDocumentType(db, ctx, p);
   },
-  "attachments.add": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof attachments.addFile>[2]) => {
-    deals.assertCardAccess(db, viewer(db, ctx), p.entityId);
-    return attachments.addFile(db, ctx, p);
+  "documentTypes.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Partial<docs.DocumentTypeInput> }) => {
+    assertRole(db, ctx, MANAGERS, "tipos de documento");
+    docs.updateDocumentType(db, ctx, p.id, p.patch);
   },
-  "attachments.get": (db: DatabaseSync, ctx: DbContext, p: Id) => {
-    assertAttachmentAccess(db, ctx, p.id);
-    return attachments.getDataUrls(db, [p.id])[p.id] ?? null;
+  "documentTypes.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    assertRole(db, ctx, MANAGERS, "tipos de documento");
+    docs.deleteDocumentType(db, ctx, p.id);
   },
-  "attachments.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
-    assertAttachmentAccess(db, ctx, p.id);
-    attachments.deleteAttachment(db, ctx, p.id);
+  "documents.list": (db: DatabaseSync, ctx: DbContext, p: Omit<docs.DocumentFilter, "viewer"> = {}) => docs.listDocuments(db, { ...p, viewer: viewer(db, ctx) }),
+  "documents.forEntity": (db: DatabaseSync, ctx: DbContext, p: { type: docs.DocLinkType; id: string }) => {
+    assertEntityAccess(db, ctx, p.type, p.id);
+    return docs.documentsFor(db, p.type, p.id, viewer(db, ctx));
   },
+  /** Vínculos automáticos de quem anexa nesta tela, com rótulos. */
+  "documents.contextLinks": (db: DatabaseSync, ctx: DbContext, p: { type: docs.DocLinkType; id: string }) => {
+    assertEntityAccess(db, ctx, p.type, p.id);
+    return docs.describeLinks(db, docs.contextLinks(db, p.type, p.id));
+  },
+  "documents.linkTargets": (db: DatabaseSync, ctx: DbContext, p: { q: string }) => docs.searchLinkTargets(db, p.q, viewer(db, ctx)),
+  "documents.create": (db: DatabaseSync, ctx: DbContext, p: docs.DocumentInput & { file: docs.FileRef }) => {
+    assertLinksAccess(db, ctx, p.links);
+    return docs.createDocument(db, ctx, p);
+  },
+  "documents.get": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    docView(db, ctx, p.id, { includeTrash: true });
+    return docs.getDocument(db, p.id) ?? null;
+  },
+  "documents.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Partial<Omit<docs.DocumentInput, "links">> }) => {
+    docView(db, ctx, p.id);
+    if (p.patch.restricted !== undefined) docs.assertDocumentOwner(db, viewer(db, ctx), p.id);
+    docs.updateDocument(db, ctx, p.id, p.patch);
+  },
+  /** Ações em lote: reclassificar. */
+  "documents.reclassify": (db: DatabaseSync, ctx: DbContext, p: { ids: string[]; typeId: string }) => {
+    for (const id of p.ids) docView(db, ctx, id);
+    for (const id of p.ids) docs.updateDocument(db, ctx, id, { typeId: p.typeId });
+  },
+  "documents.addVersion": (db: DatabaseSync, ctx: DbContext, p: Id & { file: docs.FileRef }) => {
+    docView(db, ctx, p.id);
+    return docs.addDocumentVersion(db, ctx, p.id, p.file);
+  },
+  "documents.restoreVersion": (db: DatabaseSync, ctx: DbContext, p: Id & { versionId: string }) => {
+    docView(db, ctx, p.id);
+    return docs.restoreDocumentVersion(db, ctx, p.id, p.versionId);
+  },
+  "documents.addLinks": (db: DatabaseSync, ctx: DbContext, p: { ids: string[]; links: docs.DocLinkRef[] }) => {
+    for (const id of p.ids) docView(db, ctx, id);
+    assertLinksAccess(db, ctx, p.links);
+    return p.ids.reduce((n, id) => n + docs.addDocumentLinks(db, ctx, id, p.links), 0);
+  },
+  /** "Remover deste cadastro": desfaz só este vínculo. */
+  "documents.removeLink": (db: DatabaseSync, ctx: DbContext, p: Id & { type: docs.DocLinkType; entityId: string }) => {
+    docView(db, ctx, p.id);
+    assertEntityAccess(db, ctx, p.type, p.entityId);
+    docs.removeDocumentLink(db, ctx, p.id, p.type, p.entityId);
+  },
+  "documents.trash": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => {
+    for (const id of p.ids) {
+      docView(db, ctx, id);
+      docs.assertDocumentOwner(db, viewer(db, ctx), id);
+    }
+    for (const id of p.ids) docs.trashDocument(db, ctx, id);
+  },
+  "documents.restore": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => {
+    for (const id of p.ids) {
+      docView(db, ctx, id, { includeTrash: true });
+      docs.assertDocumentOwner(db, viewer(db, ctx), id);
+    }
+    for (const id of p.ids) docs.restoreDocument(db, ctx, id);
+  },
+  /** Exclusão definitiva (administrador); devolve os arquivos a apagar. */
+  "documents.purge": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => {
+    assertRole(db, ctx, ADMIN, "a lixeira");
+    return docs.purgeDocuments(db, ctx, p.ids);
+  },
+  /** Lixeira com mais de 30 dias (rotina ao abrir o GED). */
+  "documents.purgeExpired": (db: DatabaseSync, ctx: DbContext) => docs.purgeDocuments(db, ctx, docs.expiredTrash(db)),
+  /** Onde ler o arquivo de uma versão; registra a visualização ou o download. */
+  "documents.file": (db: DatabaseSync, ctx: DbContext, p: { versionId: string; action: docs.DocumentAction | "index" }) => {
+    const f = docs.versionFile(db, p.versionId);
+    if (!f) throw new ValidationError("Arquivo não encontrado.");
+    docView(db, ctx, f.document_id, { includeTrash: true });
+    // "index" = leitura interna do texto do PDF (não entra na auditoria).
+    if (p.action !== "index") docs.logDocumentEvent(db, ctx, f.document_id, p.action, p.action === "download" ? f.filename : null);
+    const legacy = f.location === "legacy" ? (attachments.getDataUrls(db, [f.blob_id])[f.blob_id] ?? null) : null;
+    return { ...f, legacyDataUrl: legacy };
+  },
+  "documents.bySha": (db: DatabaseSync, ctx: DbContext, p: { sha256: string }) => docs.documentsBySha(db, p.sha256, viewer(db, ctx)),
+  /** O conteúdo já está guardado? (evita gravar de novo o mesmo arquivo). */
+  "documents.blob": (db: DatabaseSync, _c: DbContext, p: { sha256: string }) => docs.blobBySha(db, p.sha256) ?? null,
+  "documents.stats": (db: DatabaseSync, ctx: DbContext) => docs.documentStats(db, viewer(db, ctx)),
+  "documents.audit": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    docView(db, ctx, p.id, { includeTrash: true });
+    return docs.documentAudit(db, p.id);
+  },
+  "documents.expiring": (db: DatabaseSync, ctx: DbContext, p: { days: number }) => docs.expiringDocuments(db, p.days, viewer(db, ctx)),
+  // Manutenção do depósito de arquivos (feita pelas telas).
+  "files.inBrowser": (db: DatabaseSync) => docs.browserBlobs(db),
+  "files.setLocation": (db: DatabaseSync, ctx: DbContext, p: { blobId: string; location: "browser" | "folder"; path: string | null }) =>
+    docs.setBlobLocation(db, ctx, p.blobId, p.location, p.path),
+  "files.all": (db: DatabaseSync) => docs.allBlobs(db),
+  "files.markInBrowser": (db: DatabaseSync, ctx: DbContext, p: { sha256s: string[] }) => docs.markInBrowser(db, ctx, p.sha256s),
+  "files.pendingText": (db: DatabaseSync) => docs.pendingTextVersions(db),
+  "files.setText": (db: DatabaseSync, ctx: DbContext, p: { versionId: string; text: string | null }) => docs.setVersionText(db, ctx, p.versionId, p.text),
   "persons.findByPhone": (db: DatabaseSync, ctx: DbContext, p: { phone: string }) => contacts.findPersonsByPhone(db, p.phone, viewer(db, ctx)),
 
   // Tarefas

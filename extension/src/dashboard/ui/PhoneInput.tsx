@@ -1,5 +1,6 @@
 // Telefone com seletor de país (bandeira), padrão Brasil +55 (specs 03 e 04).
 import { cn } from "@tailadmin";
+import { formatPhone } from "../../lib/format";
 import { inputClass } from "./form";
 
 export const COUNTRIES = [
@@ -13,12 +14,7 @@ export const COUNTRIES = [
   { code: "ES", flag: "🇪🇸", dial: "+34" },
 ];
 
-/** "+5511999998888" → "(11) 99999-8888" quando for Brasil; senão devolve como está. */
-export function formatPhone(e164: string | null | undefined): string {
-  if (!e164) return "";
-  const m = e164.match(/^\+55(\d{2})(\d{4,5})(\d{4})$/);
-  return m ? `(${m[1]}) ${m[2]}-${m[3]}` : e164;
-}
+export { formatPhone } from "../../lib/format";
 
 /** Valor sem o código do país, para editar. */
 export function localPart(e164: string | null | undefined, country = "BR"): string {

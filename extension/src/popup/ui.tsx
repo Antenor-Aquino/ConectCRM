@@ -1,6 +1,8 @@
 // Peças visuais do popup (cartões de seção e mensagens de status).
-import type { ReactNode } from "react";
-import { cn } from "@tailadmin";
+import { useEffect, useState, type ReactNode } from "react";
+import { cn, TaSelect } from "@tailadmin";
+import { call } from "../rpc/client";
+import type { DocumentType } from "../db/documents";
 
 export function Section({ title, icon, children, aside }: { title: string; icon: ReactNode; children: ReactNode; aside?: ReactNode }) {
   return (
@@ -38,4 +40,28 @@ export const errText = (e: unknown) => (e instanceof Error ? e.message : String(
 export function openCrm(query = ""): void {
   void chrome.tabs.create({ url: chrome.runtime.getURL(`src/dashboard/dashboard.html${query}`) });
   window.close();
+}
+
+/** Classificação do documento (GED); `preferred` escolhe um tipo pelo nome ao abrir. */
+export function DocumentTypeSelect({ value, onChange, preferred }: { value: string; onChange: (id: string) => void; preferred?: string }) {
+  const [types, setTypes] = useState<DocumentType[]>([]);
+  useEffect(() => {
+    void call("documentTypes.list", {}).then((list) => {
+      setTypes(list);
+      const p = preferred && list.find((t) => t.name === preferred);
+      if (p && !value) onChange(p.id);
+    });
+    // Só ao abrir.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <TaSelect aria-label="Classificação" className="h-9 text-theme-xs" value={value} onChange={(e) => onChange(e.target.value)}>
+      <option value="">Classificação *</option>
+      {types.map((t) => (
+        <option key={t.id} value={t.id}>
+          {t.name}
+        </option>
+      ))}
+    </TaSelect>
+  );
 }

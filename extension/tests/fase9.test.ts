@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { addFile, listAttachments } from "../src/db/attachments";
 import { createPerson, findPersonsByPhone, phoneMatchKey } from "../src/db/contacts";
 import { createCard } from "../src/db/deals";
 import { createPipeline } from "../src/db/pipelines";
@@ -23,39 +22,6 @@ describe("telefone do WhatsApp", () => {
     expect(findPersonsByPhone(db, "+554199998888").map((p) => p.name)).toEqual(["Regina"]);
     expect(findPersonsByPhone(db, "+5541999998888").map((p) => p.name)).toEqual(["Regina"]);
     expect(findPersonsByPhone(db, "+5521911112222")).toEqual([]);
-  });
-});
-
-describe("anexos do cartão", () => {
-  it("grava, lista, baixa e exclui; aceita tipo com parâmetros", async () => {
-    const { db, ctx } = await freshDb();
-    const pid = createPipeline(db, ctx, { name: "Vendas", type: "comercial", stages: [{ name: "Prospect" }] });
-    const deal = createCard(db, ctx, { pipelineId: pid, title: "Proposta" });
-    addFile(db, ctx, { entityType: "deal", entityId: deal, filename: "proposta.pdf", dataUrl: `data:application/pdf;base64,${b64("%PDF-1.4")}` });
-    addFile(db, ctx, { entityType: "deal", entityId: deal, filename: "audio:1.ogg", dataUrl: `data:audio/ogg; codecs=opus;base64,${b64("OggS")}` });
-    const list = listAttachments(db, "deal", deal);
-    expect(list.map((a) => [a.filename, a.mime]).sort()).toEqual([
-      ["audio_1.ogg", "audio/ogg"],
-      ["proposta.pdf", "application/pdf"],
-    ]);
-    const url = methods["attachments.get"](db, ctx, { id: list.find((a) => a.mime === "application/pdf")!.id });
-    expect(url).toBe(`data:application/pdf;base64,${b64("%PDF-1.4")}`);
-    methods["attachments.delete"](db, ctx, { id: list[0]!.id });
-    expect(listAttachments(db, "deal", deal)).toHaveLength(1);
-  });
-
-  it("recusa arquivo vazio e respeita a permissão do cartão", async () => {
-    const { db, ctx } = await freshDb();
-    createUser(db, ctx, { name: "Admin", role: "admin" });
-    const ana = createUser(db, ctx, { name: "Ana", role: "vendedor" });
-    const bruno = createUser(db, ctx, { name: "Bruno", role: "vendedor" });
-    const pid = createPipeline(db, ctx, { name: "Vendas", type: "comercial", stages: [{ name: "Prospect" }] });
-    const deal = createCard(db, ctx, { pipelineId: pid, title: "Da Ana", ownerId: ana });
-    expect(() => addFile(db, ctx, { entityType: "deal", entityId: deal, filename: "x.txt", dataUrl: "data:text/plain;base64," })).toThrow(/vazio/);
-    const p = { entityType: "deal" as const, entityId: deal, filename: "x.txt", dataUrl: `data:text/plain;base64,${b64("oi")}` };
-    expect(() => methods["attachments.add"](db, { ...ctx, userId: bruno }, p)).toThrow(/permissão/);
-    const id = methods["attachments.add"](db, { ...ctx, userId: ana }, p);
-    expect(() => methods["attachments.get"](db, { ...ctx, userId: bruno }, { id })).toThrow(/permissão/);
   });
 });
 

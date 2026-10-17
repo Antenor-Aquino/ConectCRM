@@ -6,6 +6,7 @@ import { primaryOrganizationId } from "./contacts";
 import { getCustomValues, setCustomValues, type CustomValue } from "./customFields";
 import { KIND_BY_PIPELINE_TYPE, type DealKind, type PipelineType } from "./pipelines";
 import { getProduct, RECURRENCES, type Recurrence } from "./products";
+import { cardFieldValues, type CardFieldValue } from "./cardFieldValues";
 import { getRow, insertRow, softDelete, updateRow, type DbContext } from "./repo";
 import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
 import { getEntityTags, setEntityTags, type Tag } from "./tags";
@@ -433,6 +434,8 @@ export interface BoardCard {
   tasks_done: number;
   next_task_due_at: string | null;
   notes_count: number;
+  /** Campos configurados no funil (lib/cardFields), já formatados. */
+  fields: Record<string, CardFieldValue>;
 }
 
 export interface BoardColumn {
@@ -509,6 +512,8 @@ export function getBoard(
     "SELECT id, name, color FROM stage WHERE pipeline_id = ? AND deleted_at IS NULL ORDER BY position",
     pipelineId,
   );
+  const { values } = cardFieldValues(db, pipelineId, cards.map((c) => c.id));
+  for (const c of cards) c.fields = values.get(c.id) ?? {};
   return stages.map((s) => {
     const inStage = cards.filter((c) => c.stage_id === s.id).map(({ stage_id: _s, ...c }) => c);
     return { ...s, count: inStage.length, total_cents: inStage.reduce((acc, c) => acc + c.value_cents, 0), cards: inStage };

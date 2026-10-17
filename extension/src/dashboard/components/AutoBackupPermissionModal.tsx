@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Unlock } from "lucide-react";
 import { TaButton, TaModal } from "@tailadmin";
 import { writeBackup, type AutoBackupSettings } from "../../lib/autoBackup";
+import { backupDocuments } from "../../lib/documentFiles";
 import type { PermissionedDirectoryHandle } from "../../lib/backupFolder";
 import { exportDatabase } from "../settings/BackupSettings";
 
@@ -34,7 +35,7 @@ export function AutoBackupPermissionModal({ handle, settings, onClose }: { handl
                 setError("Permissão não concedida. O backup não pôde rodar.");
                 return;
               }
-              await writeBackup(exportDatabase, handle, settings);
+              await writeBackup(exportDatabase, handle, settings, undefined, backupDocuments);
               onClose();
             } catch (e) {
               setError(e instanceof Error ? e.message : String(e));

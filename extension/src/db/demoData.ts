@@ -3,7 +3,9 @@
 import { createActivity, setActivityDone } from "./activities";
 import { createOrganization, createPerson } from "./contacts";
 import { createCustomField, listCustomFields } from "./customFields";
+import { contextLinks, listDocumentTypes, localDate, seedDocumentWithBytes } from "./documents";
 import { createCard, createLossReason, moveCard, setCardStatus, setDealItems } from "./deals";
+import { makeFacadeSvg, makePdf } from "../lib/demoFiles";
 import { createPipeline, listStages } from "./pipelines";
 import { createProduct } from "./products";
 import type { DbContext } from "./repo";
@@ -138,7 +140,7 @@ export function seedDemoData(db: DatabaseSync, workspaceId: string): void {
       db.run("UPDATE deal SET stage_entered_at = ?, closed_at = ? WHERE id = ?", [new Date(t - day).toISOString(), new Date(Math.min(t, Date.now())).toISOString(), id]);
     }
     for (let i = 0; i < 24; i++) {
-      const a = createActivity(db, ctx, { title: `Follow-up ${i + 1}`, dueAt: at(-3 - i * 7, 10), ownerId: owners[i % owners.length] });
+      const a = createActivity(db, ctx, { title: `Follow-up ${i + 1}`, dueAt: at(-3 - i * 7, 10), endAt: at(-1 - i * 7, 18), ownerId: owners[i % owners.length] });
       if (i % 5 !== 0) setActivityDone(db, ctx, a, true);
     }
 
@@ -150,8 +152,69 @@ export function seedDemoData(db: DatabaseSync, workspaceId: string): void {
 
     // Tarefas
     createActivity(db, ctx, { title: "Ligar para Dalliane", dealId: d1, dueAt: at(0, 10), ownerId: ana });
-    createActivity(db, ctx, { title: "Enviar proposta", dealId: d2, dueAt: at(-1, 15), ownerId: ana });
+    createActivity(db, ctx, { title: "Enviar proposta", dealId: d2, dueAt: at(-3, 9), endAt: at(-1, 15), ownerId: ana });
+    const apresentacao = createActivity(db, ctx, { title: "Preparar apresentação da PUC", dealId: d3, dueAt: at(-2, 9), endAt: at(4, 18), ownerId: gestor });
+    createActivity(db, ctx, { title: "Revisar cadastro dos contatos", dueAt: at(-6, 9), ownerId: ana });
     createActivity(db, ctx, { title: "Reunião de apresentação", dealId: d3, dueAt: at(2, 14), durationMin: 60, ownerId: gestor });
     createActivity(db, ctx, { title: "Organizar agenda da semana", dueAt: at(1, 9), ownerId: admin });
+
+    // Documentos (GED), com os vínculos que a tela de origem criaria.
+    const types = listDocumentTypes(db);
+    const typeId = (name: string) => types.find((t) => t.name === name)!.id;
+    const inDays = (n: number) => localDate(new Date(Date.now() + n * day));
+    const assinado = createTag(db, ctx, { entity: "document", name: "Assinado", color: "green" });
+    const pdf = (title: string, lines: string[]) => ({ mime: "application/pdf", bytes: makePdf(title, lines), text: [title, ...lines].join(" ") });
+    seedDocumentWithBytes(db, ctx, {
+      name: "Proposta comercial PowerCubus - PUC-PR",
+      typeId: typeId("Proposta"),
+      docDate: inDays(-4),
+      links: contextLinks(db, "deal", d3),
+      filename: "proposta-powercubus-pucpr.pdf",
+      ...pdf("Proposta comercial PowerCubus", ["Cliente: PUC-PR (Curitiba/PR)", "Licença anual: R$ 4.800,00", "Implantação: R$ 1.500,00", "Validade da proposta: 30 dias"]),
+    });
+    seedDocumentWithBytes(db, ctx, {
+      name: "Comprovante de endereço - Mari",
+      typeId: typeId("Comprovante de endereço"),
+      docDate: inDays(-85),
+      validUntil: inDays(5),
+      links: contextLinks(db, "person", people.mari),
+      filename: "conta-de-luz-mari.pdf",
+      ...pdf("Fatura de energia elétrica", ["COPEL - Companhia Paranaense de Energia", "Titular: Mari", "Endereço: Rua Imaculada Conceição, 1155 - Curitiba/PR"]),
+    });
+    seedDocumentWithBytes(db, ctx, {
+      name: "Contrato de licença - ABMES",
+      typeId: typeId("Contrato"),
+      docDate: inDays(-20),
+      restricted: true,
+      tagIds: [assinado],
+      description: "Contrato anual com cláusula de reajuste pelo IPCA.",
+      links: contextLinks(db, "deal", d1),
+      filename: "contrato-abmes.pdf",
+      ...pdf("Contrato de licença de uso", ["Contratante: ABMES - Brasília/DF", "Vigência: 12 meses", "Reajuste anual pelo IPCA"]),
+    });
+    seedDocumentWithBytes(db, ctx, {
+      name: "Pauta da apresentação",
+      typeId: typeId("Outros"),
+      links: contextLinks(db, "activity", apresentacao),
+      filename: "pauta-apresentacao.pdf",
+      ...pdf("Pauta da apresentação - PUC-PR", ["1. Diagnóstico pedagógico", "2. Demonstração do PowerCubus", "3. Cronograma de implantação"]),
+    });
+    seedDocumentWithBytes(db, ctx, {
+      name: "Fachada da PUC-PR",
+      typeId: typeId("Foto/imagem"),
+      links: [{ type: "organization", id: orgs.puc }],
+      filename: "fachada-pucpr.svg",
+      mime: "image/svg+xml",
+      bytes: makeFacadeSvg("PUC-PR"),
+    });
+    seedDocumentWithBytes(db, ctx, {
+      name: "Certificado de regularidade - Colégio Motivo",
+      typeId: typeId("Certificado"),
+      docDate: inDays(-375),
+      validUntil: inDays(-10),
+      links: [{ type: "organization", id: orgs.motivo }],
+      filename: "certificado-motivo.pdf",
+      ...pdf("Certificado de regularidade", ["Colégio Motivo - Recife/PE", "Situação: regular"]),
+    });
   });
 }
