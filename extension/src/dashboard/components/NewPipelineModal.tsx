@@ -5,6 +5,7 @@ import { Trash2, Plus } from "lucide-react";
 import { TaButton, TaInput, TaModal, TaSelect, badgePalette, type BadgeColor } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { PipelineType } from "../../db/pipelines";
+import { colorLabel } from "../../lib/colors";
 
 const STAGE_COLORS = Object.keys(badgePalette) as BadgeColor[];
 
@@ -99,7 +100,7 @@ export function NewPipelineModal({
                 >
                   {STAGE_COLORS.map((c) => (
                     <option key={c} value={c} style={{ color: badgePalette[c].fg }}>
-                      ● {c}
+                      ● {colorLabel(c)}
                     </option>
                   ))}
                 </TaSelect>

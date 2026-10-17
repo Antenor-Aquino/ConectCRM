@@ -10,6 +10,7 @@ import { DEFAULT_CARD_FIELDS, parseCardFields } from "../../lib/cardFields";
 import { PIPELINE_TYPE_LABEL } from "../../lib/cardTypes";
 import { CardLayoutEditor } from "./CardLayoutEditor";
 import { ErrorText, Field, SectionLabel } from "../ui/form";
+import { colorLabel } from "../../lib/colors";
 
 const COLORS = Object.keys(badgePalette) as BadgeColor[];
 
@@ -124,7 +125,7 @@ export function PipelineSettingsModal({ pipeline, onClose, onSaved }: { pipeline
           <TaSelect value={s.color} onChange={(e) => set(i, { color: e.target.value })} style={{ color: badgePalette[s.color as BadgeColor]?.fg }}>
             {COLORS.map((c) => (
               <option key={c} value={c} style={{ color: badgePalette[c].fg }}>
-                ● {c}
+                ● {colorLabel(c)}
               </option>
             ))}
           </TaSelect>
