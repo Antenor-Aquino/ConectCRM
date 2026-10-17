@@ -1,6 +1,6 @@
 # ConectCRM — Planejamento de implementação (v4)
 
-> Status: **Fases 0 a 11 concluídas** (Fase 11 só com o copiloto de IA; ZapSign e Asaas pendentes por decisão do cliente). Branches em sequência até `fase-11-copiloto-ia`. Próximo: Fase 12 (sincronização, futura) ou 13 (publicação).
+> Status: **Fases 0 a 11 concluídas** (Fase 11 só com o copiloto de IA; ZapSign e Asaas pendentes por decisão do cliente). Branches em sequência até `fase-11-copiloto-ia`. Fases 12 (sincronização) e 13 (publicação) adiadas por decisão do cliente.
 > v4: v1 individual (sem sincronização) com cadastro de equipes/usuários; estrutura pronta para sincronizar no futuro; "Fluxo geral" confirmado.
 
 ## 1. Visão
