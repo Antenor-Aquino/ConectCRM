@@ -37,13 +37,22 @@ a consulta devolve as opções e o Copiloto pergunta qual é.
 
 Título, subtítulo, até 3 destaques (valor-chave em negrito; vermelho para
 risco, verde para resultado positivo), tabela quando há linhas comparáveis
-(com **Exportar Excel**), perguntas sugeridas para continuar e **ações**.
+(com **Exportar Excel**), **sugestões** para continuar e **ações**.
+
+As sugestões são escritas como o próximo pedido do usuário, no imperativo e
+sem "?" (ex.: "Crie o cartão Conserto Gaveta Miguel no funil Casa"): o
+clique envia o texto como se o usuário tivesse digitado. "Sim", "pode" ou
+"crie" confirmam o que o Copiloto ofereceu na resposta anterior.
 
 ## 4. Ações sugeridas
 
 A IA pode sugerir até 3 ações por resposta, só com cartões que vieram das
-consultas: **criar tarefa** (título e data/hora), **adicionar nota** ou
-**abrir o cartão**. Nada é gravado sem o clique do usuário; a tarefa é
+consultas: **criar tarefa** (título e data/hora), **adicionar nota**,
+**abrir o cartão** ou **criar cartão** (título, funil e etapa; depois de
+criado, o botão abre o cartão). Pedido claro de criação não vira pergunta:
+o Copiloto confere o funil/etapa e se já existe cartão parecido e entrega o
+botão pronto. A busca de cartões tolera nomes ditados com erro ("Concerto"
+acha "Conserto"). Nada é gravado sem o clique do usuário; a tarefa é
 criada para o usuário atual e vinculada ao cartão.
 
 ## 5. Permissões e privacidade

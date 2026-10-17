@@ -46,7 +46,8 @@ describe("sistema em português", () => {
     expect(Object.values(COLOR_LABEL)).toEqual(["Azul", "Roxo", "Verde", "Âmbar", "Vermelho", "Ciano", "Cinza"]);
     expect(translateError("Failed to fetch")).toMatch(/Sem conexão/);
     expect(translateError("The user did not approve access.")).toMatch(/Login cancelado/);
-    expect(translateError("Either the '<all_urls>' or 'activeTab' permission is required.")).toMatch(/O Chrome não permite/);
+    expect(translateError("Either the '<all_urls>' or 'activeTab' permission is required.")).toMatch(/não deu permissão/);
+    expect(translateError("Cannot access contents of the page.")).toMatch(/O Chrome não permite/);
     expect(translateError("Informe o nome.")).toBe("Informe o nome.");
   });
 
@@ -57,5 +58,50 @@ describe("sistema em português", () => {
     db.run("DELETE FROM _migrations WHERE name = '0007_tipo_prazo_final.sql'");
     runMigrations(db);
     expect(db.exec("SELECT COUNT(*) FROM activity_type WHERE name = 'Prazo final'")[0]!.values[0]![0]).toBe(1);
+  });
+});
+
+describe("copiloto: criar cartão e nomes ditados", () => {
+  it("busca tolera nome parecido; estrutura traz ids; ação criar_cartao é aceita", async () => {
+    const { searchCardsForCopilot, crmStructure } = await import("../src/db/copilot");
+    const { normalizeCard } = await import("../src/lib/copilot/tools");
+    const { db, ctx } = await freshDb();
+    const casa = createPipeline(db, ctx, { name: "Casa", type: "projeto", stages: [{ name: "A fazer" }, { name: "Feito" }] });
+    createCard(db, ctx, { pipelineId: casa, title: "Conserto Gaveta Miguel" });
+    const r = searchCardsForCopilot(db, null, { texto: "Concerto Gaveta de Miguel" }) as any;
+    expect(r.cartoes.map((c: any) => [c.titulo, c.nomeParecido])).toEqual([["Conserto Gaveta Miguel", true]]);
+    expect((searchCardsForCopilot(db, null, { texto: "gaveta" }) as any).cartoes[0].nomeParecido).toBeUndefined();
+    const s = crmStructure(db);
+    expect(s.funis[0]).toMatchObject({ id: casa, nome: "Casa", etapas: [{ nome: "A fazer" }, { nome: "Feito" }] });
+    expect(s.funis[0]!.etapas[0]!.id).toBeTruthy();
+    const card = normalizeCard({
+      titulo: "Criar cartão",
+      acoes: [
+        { tipo: "criar_cartao", rotulo: "Criar cartão", cartaoId: "", titulo: "Conserto", funilId: casa, etapaId: null },
+        { tipo: "criar_cartao", rotulo: "Sem funil", cartaoId: "", titulo: "X", funilId: null },
+      ],
+    });
+    expect(card.acoes).toEqual([{ tipo: "criar_cartao", rotulo: "Criar cartão", cartaoId: "", titulo: "Conserto", funilId: casa, etapaId: null, quando: null, texto: null }]);
+  });
+});
+
+describe("histórico com origem clicável", () => {
+  it("nota, tarefa e documento que ainda existem viram link; excluídos não", async () => {
+    const { cardHistory } = await import("../src/db/cardHistory");
+    const { addNote, deleteNote } = await import("../src/db/notes");
+    const { db, ctx } = await freshDb();
+    const pid = createPipeline(db, ctx, { name: "Vendas", type: "comercial", stages: [{ name: "A" }] });
+    const id = createCard(db, ctx, { pipelineId: pid, title: "Licenças" });
+    const note = addNote(db, ctx, "deal", id, "Primeira nota");
+    const gone = addNote(db, ctx, "deal", id, "Nota apagada");
+    deleteNote(db, ctx, gone);
+    const task = createActivity(db, ctx, { title: "Ligar", dealId: id });
+    db.run("UPDATE change_log SET at = strftime('%Y-%m-%dT%H:%M:%fZ', at, '-1 minute')");
+    const pairs = cardHistory(db, id).flatMap((e) => e.lines.map((l, i) => [l, e.refs[i]]));
+    const refOf = (start: string) => pairs.find(([l]) => String(l).startsWith(start))?.[1];
+    expect(refOf("Adicionou nota: \"Primeira")).toEqual({ kind: "note", id: note });
+    expect(refOf("Adicionou nota: \"Nota apagada")).toBeNull();
+    expect(refOf("Criou a tarefa")).toEqual({ kind: "activity", id: task });
+    expect(refOf("Criou o cartão")).toBeNull();
   });
 });

@@ -8,6 +8,8 @@ import { OUTCOME_TEXT, PIPELINE_TYPE_BY_KIND } from "../lib/cardTypes";
 import type { DealStatus } from "./deals";
 import type { DealKind } from "./pipelines";
 import { formatCents, formatDateTime } from "../lib/format";
+import { normalizeText } from "../lib/search";
+import { isSimilar, nameSimilarity } from "../lib/similarity";
 import { isOverdue, overdueFrom } from "../lib/taskTiming";
 import { activityScope, OVERDUE, overdueParams } from "./activities";
 import { cardScope } from "./deals";
@@ -70,10 +72,7 @@ export function searchCardsForCopilot(db: DatabaseSync, viewer: Viewer | null, f
   if (isErr(owner)) return owner;
   const where = ["d.deleted_at IS NULL"];
   const params: SqlValue[] = [];
-  if (f.texto?.trim()) {
-    where.push("(d.title LIKE ? OR pe.name LIKE ? OR o.name LIKE ?)");
-    params.push(like(f.texto), like(f.texto), like(f.texto));
-  }
+  // Texto: filtrado abaixo (sem acento e tolerante a erro de digitação/ditado).
   const status = f.status ?? "open";
   if (status !== "all") {
     where.push("d.status = ?");
@@ -88,7 +87,7 @@ export function searchCardsForCopilot(db: DatabaseSync, viewer: Viewer | null, f
     params.push(...owner.ids);
   }
   const scope = cardScope(db, viewer);
-  const rows = many<{
+  const all = many<{
     id: string; title: string; kind: DealKind; status: DealStatus; value_cents: number; pipeline: string; stage: string;
     probability: number | null; person: string | null; organization: string | null; owner: string | null; stage_entered_at: string;
     closed_at: string | null; next_task: string | null; next_due: string | null; overdue: number;
@@ -108,6 +107,14 @@ export function searchCardsForCopilot(db: DatabaseSync, viewer: Viewer | null, f
     ...params,
     ...scope.params,
   );
+  // Contém o texto (título, contato ou organização) ou título parecido (> 70%):
+  // "Concerto gaveta" acha "Conserto Gaveta Miguel". Os exatos vêm primeiro.
+  const q = f.texto?.trim() ? normalizeText(f.texto) : "";
+  const contains = (r: (typeof all)[number]) => [r.title, r.person, r.organization].some((v) => v && normalizeText(v).includes(q));
+  const exact = q ? all.filter(contains) : all;
+  const similar = q ? all.filter((r) => !contains(r) && isSimilar(nameSimilarity(f.texto!, r.title))) : [];
+  const rows = [...exact, ...similar];
+  const fuzzy = new Set(similar.map((r) => r.id));
   const limit = Math.min(Math.max(1, f.limite ?? 20), MAX_ROWS);
   return {
     total: rows.length,
@@ -129,6 +136,7 @@ export function searchCardsForCopilot(db: DatabaseSync, viewer: Viewer | null, f
       fechadoEm: date(r.closed_at),
       proximaTarefa: r.next_task ? `${r.next_task} (${date(r.next_due)})` : null,
       tarefasAtrasadas: r.overdue,
+      ...(fuzzy.has(r.id) ? { nomeParecido: true } : {}),
     })),
   };
 }
@@ -368,9 +376,9 @@ export function contactsForCopilot(db: DatabaseSync, viewer: Viewer | null, text
 /** Funis com etapas, usuários e equipes (para resolver nomes e explicar a estrutura). */
 export function crmStructure(db: DatabaseSync) {
   const pipelines = many<{ id: string; name: string; type: string }>(db, "SELECT id, name, type FROM pipeline WHERE deleted_at IS NULL AND archived_at IS NULL ORDER BY name");
-  const stages = many<{ pipeline_id: string; name: string; probability: number | null; stale_days: number | null }>(
+  const stages = many<{ id: string; pipeline_id: string; name: string; probability: number | null; stale_days: number | null }>(
     db,
-    "SELECT pipeline_id, name, probability, stale_days FROM stage WHERE deleted_at IS NULL ORDER BY position",
+    "SELECT id, pipeline_id, name, probability, stale_days FROM stage WHERE deleted_at IS NULL ORDER BY position",
   );
   const users = many<{ id: string; name: string; role: keyof typeof ROLE_LABEL }>(db, "SELECT id, name, role FROM app_user WHERE deleted_at IS NULL AND active = 1 ORDER BY name");
   const teams = many<{ id: string; name: string }>(db, "SELECT id, name FROM team WHERE deleted_at IS NULL AND active = 1 ORDER BY name");
@@ -382,9 +390,10 @@ export function crmStructure(db: DatabaseSync) {
   const types = many<{ name: string }>(db, "SELECT name FROM activity_type WHERE deleted_at IS NULL AND active = 1 ORDER BY name").map((r) => r.name);
   return {
     funis: pipelines.map((p) => ({
+      id: p.id,
       nome: p.name,
       tipo: p.type,
-      etapas: stages.filter((s) => s.pipeline_id === p.id).map((s) => ({ nome: s.name, probabilidade: s.probability, paradoApos: s.stale_days })),
+      etapas: stages.filter((s) => s.pipeline_id === p.id).map((s) => ({ id: s.id, nome: s.name, probabilidade: s.probability, paradoApos: s.stale_days })),
     })),
     usuarios: users.map((u) => ({ nome: u.name, papel: ROLE_LABEL[u.role] })),
     equipes: teams.map((t) => ({ nome: t.name, membros: members.filter((m) => m.team_id === t.id).map((m) => m.name) })),

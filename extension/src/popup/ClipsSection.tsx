@@ -9,6 +9,12 @@ import { CLIP_LAST_KEY, CLIPS_KEY, loadClips, saveClips, type Clip, type ClipRes
 import { createDocumentsFrom, dataUrlToFile } from "../lib/documentFiles";
 import { DocumentTypeSelect, errText, Section, StatusText, type Status } from "./ui";
 
+/** Mensagem do recorte feito; `full` = página que não permite selecionar a área. */
+const clipDone = (r: { count: number; full?: boolean }): Status =>
+  r.full
+    ? { text: `Nesta página o Chrome não deixa selecionar uma área (ex.: Nova guia). Guardei a tela visível inteira (${r.count}).`, kind: "info" }
+    : { text: `Recorte adicionado (${r.count}).`, kind: "ok" };
+
 export function ClipsSection({ targetId, onSent }: { targetId: string | null; onSent: () => void }) {
   const [clips, setClips] = useState<Clip[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -34,7 +40,7 @@ export function ClipsSection({ targetId, onSent }: { targetId: string | null; on
     void chrome.storage.local.get(CLIP_LAST_KEY).then((r) => {
       const last = r[CLIP_LAST_KEY] as ClipResult | undefined;
       if (!last) return;
-      if (last.ok) setStatus({ text: `Recorte adicionado (${last.count}).`, kind: "ok" });
+      if (last.ok) setStatus(clipDone(last));
       else if (last.error) setStatus({ text: last.error, kind: "err" });
       void chrome.storage.local.remove(CLIP_LAST_KEY);
     });
@@ -52,7 +58,7 @@ export function ClipsSection({ targetId, onSent }: { targetId: string | null; on
     void chrome.runtime.sendMessage({ target: "background", kind: "clip-start" }).then(
       (r: ClipResult | undefined) => {
         if (!r) return;
-        if (r.ok) setStatus({ text: `Recorte adicionado (${r.count}).`, kind: "ok" });
+        if (r.ok) setStatus(clipDone(r));
         else if (r.canceled) setStatus({ text: "Recorte cancelado.", kind: "info" });
         else if (r.error) setStatus({ text: r.error, kind: "err" });
         void chrome.storage.local.remove(CLIP_LAST_KEY);

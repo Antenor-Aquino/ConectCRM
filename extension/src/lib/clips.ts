@@ -9,7 +9,8 @@ export interface Clip {
   createdAt: number;
 }
 
-export type ClipResult = { ok: true; count: number } | { ok: false; canceled?: boolean; error?: string };
+/** full = a página não deixa selecionar a área (ex.: Nova guia do Chrome): guardou a tela visível inteira. */
+export type ClipResult = { ok: true; count: number; full?: boolean } | { ok: false; canceled?: boolean; error?: string };
 
 export const CLIPS_KEY = "conectcrm-clips";
 export const CLIP_LAST_KEY = "conectcrm-clip-last";

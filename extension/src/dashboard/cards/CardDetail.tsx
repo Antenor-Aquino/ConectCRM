@@ -8,7 +8,7 @@ import { call } from "../../rpc/client";
 import type { ActivityListItem } from "../../db/activities";
 import type { CustomField, CustomValue } from "../../db/customFields";
 import type { CardDetail as CardData } from "../../db/deals";
-import type { HistoryEvent } from "../../db/cardHistory";
+import type { HistoryEvent, HistoryRef } from "../../db/cardHistory";
 import type { Pipeline, Stage } from "../../db/pipelines";
 import { CARD_TEXT, OUTCOME_TEXT } from "../../lib/cardTypes";
 import { formatCents, formatDateTime, fromDateInput, toDateInput } from "../../lib/format";
@@ -28,6 +28,7 @@ import { openCopilot } from "../copilot/CopilotPanel";
 import { DocumentsPanel } from "../documents/DocumentsPanel";
 import { NotesPanel } from "../ui/NotesPanel";
 import { TaskModal, type TaskRequest } from "../tasks/TaskModal";
+import { DocumentViewer } from "../documents/DocumentViewer";
 import { ActivityIcon } from "../../lib/activityIcons";
 import { taskTiming } from "../../lib/taskTiming";
 import { ItemsEditor, type ItemDraft } from "./ItemsEditor";
@@ -63,6 +64,10 @@ export function CardDetail({
   const [fields, setFields] = useState<CustomField[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("notas");
+  // Origem aberta a partir do histórico.
+  const [noteFocus, setNoteFocus] = useState<string | null>(null);
+  const [taskOpen, setTaskOpen] = useState<string | null>(null);
+  const [docOpen, setDocOpen] = useState<string | null>(null);
   const [itemsOpen, setItemsOpen] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
   // Cadastro aberto a partir do nome do contato, da organização ou do responsável.
@@ -338,16 +343,19 @@ export function CardDetail({
           <div className="mb-3 flex gap-1 rounded-lg bg-gray-100 p-1 dark:bg-white/5">
             {(
               [
+                ["historico", "Histórico"],
                 ["notas", "Notas"],
                 ["tarefas", "Tarefas"],
                 ["documentos", "Documentos"],
-                ["historico", "Histórico"],
               ] as [Tab, string][]
             ).map(([id, label]) => (
               <button
                 key={id}
                 type="button"
-                onClick={() => setTab(id)}
+                onClick={() => {
+                  setTab(id);
+                  setNoteFocus(null);
+                }}
                 className={cn(
                   "flex-1 rounded-md py-1.5 text-theme-sm font-medium",
                   tab === id ? "bg-white text-brand-600 shadow-theme-xs dark:bg-gray-900" : "text-gray-600 dark:text-gray-400",
@@ -357,14 +365,38 @@ export function CardDetail({
               </button>
             ))}
           </div>
-          {tab === "notas" && <NotesPanel entityType="deal" entityId={cardId} onChanged={onChanged} />}
+          {tab === "notas" && <NotesPanel entityType="deal" entityId={cardId} onChanged={onChanged} highlightId={noteFocus} />}
           {tab === "tarefas" && <TasksTab cardId={cardId} onChanged={onChanged} />}
           {tab === "documentos" && <DocumentsPanel type="deal" id={cardId} />}
           {tab === "historico" && (
-            <HistoryTab cardId={cardId} stageHistory={card.stageHistory} refreshKey={card.version} />
+            <HistoryTab
+              cardId={cardId}
+              stageHistory={card.stageHistory}
+              refreshKey={card.version}
+              onOpen={(ref) => {
+                if (ref.kind === "note") {
+                  setNoteFocus(ref.id);
+                  setTab("notas");
+                } else if (ref.kind === "activity") setTaskOpen(ref.id);
+                else setDocOpen(ref.id);
+              }}
+            />
           )}
         </div>
       </div>
+
+      {taskOpen && (
+        <TaskModal
+          request={{ id: taskOpen }}
+          onClose={() => setTaskOpen(null)}
+          onSaved={() => {
+            setTaskOpen(null);
+            void load();
+            onChanged();
+          }}
+        />
+      )}
+      {docOpen && <DocumentViewer documentId={docOpen} onClose={() => setDocOpen(null)} />}
 
       <ItemsEditor
         open={itemsOpen}
@@ -561,7 +593,19 @@ function TasksTab({ cardId, onChanged }: { cardId: string; onChanged: () => void
   );
 }
 
-function HistoryTab({ cardId, stageHistory, refreshKey }: { cardId: string; stageHistory: CardData["stageHistory"]; refreshKey: unknown }) {
+const REF_TITLE: Record<HistoryRef["kind"], string> = { note: "Abrir a nota", activity: "Abrir a tarefa", document: "Abrir o documento" };
+
+function HistoryTab({
+  cardId,
+  stageHistory,
+  refreshKey,
+  onOpen,
+}: {
+  cardId: string;
+  stageHistory: CardData["stageHistory"];
+  refreshKey: unknown;
+  onOpen: (ref: HistoryRef) => void;
+}) {
   const [events, setEvents] = useState<HistoryEvent[]>([]);
   useEffect(() => {
     void call("cards.history", { id: cardId }).then(setEvents);
@@ -589,11 +633,20 @@ function HistoryTab({ cardId, stageHistory, refreshKey }: { cardId: string; stag
               <span className="font-medium text-gray-700 dark:text-gray-300">{e.userName}</span> · {formatDateTime(e.at)}
             </p>
             <ul className="mt-0.5 space-y-0.5">
-              {e.lines.map((line, j) => (
-                <li key={j} className="break-words text-theme-sm text-gray-700 dark:text-gray-300">
-                  {line}
-                </li>
-              ))}
+              {e.lines.map((line, j) => {
+                const ref = e.refs?.[j];
+                return (
+                  <li key={j} className="break-words text-theme-sm text-gray-700 dark:text-gray-300">
+                    {ref ? (
+                      <button type="button" title={REF_TITLE[ref.kind]} className="text-left text-brand-600 hover:underline dark:text-brand-400" onClick={() => onOpen(ref)}>
+                        {line}
+                      </button>
+                    ) : (
+                      line
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </li>
         ))}

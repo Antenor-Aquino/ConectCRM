@@ -9,11 +9,19 @@ import type { DealKind } from "./pipelines";
 import { many, type DatabaseSync } from "./sql";
 import { RECURRENCE_LABEL, type Recurrence } from "./products";
 
+/** Origem clicável de uma linha do histórico (nota, tarefa ou documento que ainda existe). */
+export interface HistoryRef {
+  kind: "note" | "activity" | "document";
+  id: string;
+}
+
 export interface HistoryEvent {
   at: string;
   userId: string | null;
   userName: string;
   lines: string[];
+  /** Mesma posição de `lines`: a origem da linha (null = só texto). */
+  refs: (HistoryRef | null)[];
 }
 
 interface LogRow {
@@ -255,15 +263,31 @@ export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
     return [];
   }
 
+  // O que ainda existe pode ser aberto a partir do histórico.
+  const alive = (table: string) => new Set(many<{ id: string }>(db, `SELECT id FROM ${table} WHERE deleted_at IS NULL`).map((r) => r.id));
+  const liveNotes = alive("note");
+  const liveTasks = alive("activity");
+  const liveDocs = new Set(many<{ id: string }>(db, "SELECT id FROM document WHERE deleted_at IS NULL AND purged_at IS NULL").map((r) => r.id));
+  const refOf = (l: LogRow): HistoryRef | null => {
+    if (l.table_name === "note" && liveNotes.has(l.row_id)) return { kind: "note", id: l.row_id };
+    if (l.table_name === "activity" && liveTasks.has(l.row_id)) return { kind: "activity", id: l.row_id };
+    const docId = l.table_name === "document_link" ? String(state.get(l.row_id)?.document_id ?? "") : "";
+    if (docId && liveDocs.has(docId)) return { kind: "document", id: docId };
+    return null;
+  };
+
   const events: HistoryEvent[] = [];
   for (const l of logs) {
     const lines = describe(l);
     if (!lines.length) continue;
+    const ref = refOf(l);
+    const refs = lines.map(() => ref);
     const last = events.at(-1);
     if (last && last.userId === l.user_id && new Date(l.at).getTime() - new Date(last.at).getTime() <= WINDOW_MS) {
       last.lines.push(...lines);
+      last.refs.push(...refs);
     } else {
-      events.push({ at: l.at, userId: l.user_id, userName: l.user_id ? (users.get(l.user_id) ?? "Usuário removido") : "Sistema", lines });
+      events.push({ at: l.at, userId: l.user_id, userName: l.user_id ? (users.get(l.user_id) ?? "Usuário removido") : "Sistema", lines, refs });
     }
   }
   return events.reverse();

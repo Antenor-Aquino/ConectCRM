@@ -294,6 +294,10 @@ no cartão mais recente do funil.
 - Com produtos/serviços no negócio, o resumo aparece logo abaixo do valor:
   produto/serviço, quantidade, preço unitário, desconto e total (com linha
   de total quando há mais de um item). Clicar abre o editor de itens.
+- Abas do detalhe: **Histórico**, Notas, Tarefas e Documentos (o cartão
+  abre em Notas). No histórico, as linhas de **nota, tarefa e documento**
+  que ainda existem são links: a nota abre na aba Notas destacada, a tarefa
+  no formulário e o documento na prévia do GED.
 - A aba **Histórico** mostra toda alteração do cartão, com quem fez, quando
   e o valor antigo → novo: campos (valor, contato, organização,
   responsável, datas, motivo da perda…), etapa, ganho/perdido/reaberto,

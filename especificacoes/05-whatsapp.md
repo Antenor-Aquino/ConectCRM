@@ -46,7 +46,9 @@ estiver aberto em alguma aba, ela é ativada em vez de abrir outra.
 
 - **Novo recorte**: captura a aba e mostra um seletor (arraste; ESC cancela).
   O popup fecha ao clicar na página; os recortes ficam guardados até serem
-  enviados (até 40).
+  enviados (até 40). Em páginas onde o Chrome não deixa extensões
+  desenharem o seletor (Nova guia, páginas internas, loja de extensões), a
+  tela visível inteira é guardada como recorte, com aviso.
 - **Resumir com IA**: **Transcrição** (instrução 2, padrão, primeira opção) ou
   **Análise comercial** (instrução 1, texto padrão do wa-pipedrive). O texto
   pode ser editado.

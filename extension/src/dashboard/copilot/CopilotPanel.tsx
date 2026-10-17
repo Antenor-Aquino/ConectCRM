@@ -3,7 +3,7 @@
 // "Nova conversa" recomeça do zero. As ações sugeridas só são aplicadas
 // quando o usuário clica.
 import { useEffect, useRef, useState } from "react";
-import { Check, Download, ExternalLink, Mic, NotebookPen, Send, Sparkles, Square, SquarePen, X, ListPlus } from "lucide-react";
+import { Check, Download, ExternalLink, Mic, NotebookPen, Send, Sparkles, Square, SquarePen, X, ListPlus, SquarePlus } from "lucide-react";
 import { TaButton, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import { AI_LABELS, AI_TRANSCRIBES, aiConfigured, loadAiSettings, transcribeAudio, type AiSettings } from "../../lib/ai";
@@ -350,13 +350,28 @@ function CardView({ card, disabled, onAsk, onOpenCard }: { card: CopilotCard; di
 function ActionButton({ action, onOpenCard }: { action: CopilotAction; onOpenCard: (id: string) => void }) {
   const { user } = useSession();
   const [state, setState] = useState<"idle" | "busy" | "done" | string>("idle");
-  const icon = action.tipo === "criar_tarefa" ? <ListPlus size={14} /> : action.tipo === "adicionar_nota" ? <NotebookPen size={14} /> : <ExternalLink size={14} />;
+  const [created, setCreated] = useState<string | null>(null);
+  const icon =
+    action.tipo === "criar_tarefa" ? (
+      <ListPlus size={14} />
+    ) : action.tipo === "adicionar_nota" ? (
+      <NotebookPen size={14} />
+    ) : action.tipo === "criar_cartao" ? (
+      <SquarePlus size={14} />
+    ) : (
+      <ExternalLink size={14} />
+    );
 
   const apply = async () => {
     if (action.tipo === "abrir_cartao") return onOpenCard(action.cartaoId);
+    // Cartão já criado: o botão passa a abri-lo.
+    if (created) return onOpenCard(created);
     setState("busy");
     try {
-      if (action.tipo === "criar_tarefa") {
+      if (action.tipo === "criar_cartao") {
+        const id = await call("cards.create", { pipelineId: action.funilId!, stageId: action.etapaId ?? undefined, title: action.titulo!, ownerId: user.id });
+        setCreated(id);
+      } else if (action.tipo === "criar_tarefa") {
         const dueAt = localToIso(action.quando);
         await call("activities.create", { title: action.titulo!, dealId: action.cartaoId, ownerId: user.id, ...(dueAt ? { dueAt } : {}) });
       } else {
@@ -374,7 +389,7 @@ function ActionButton({ action, onOpenCard }: { action: CopilotAction; onOpenCar
     <div>
       <button
         type="button"
-        disabled={state === "busy" || done}
+        disabled={state === "busy" || (done && !created)}
         onClick={() => void apply()}
         className={cn(
           "flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-theme-xs font-medium",
@@ -382,7 +397,15 @@ function ActionButton({ action, onOpenCard }: { action: CopilotAction; onOpenCar
         )}
       >
         {done ? <Check size={14} /> : icon}
-        <span className="flex-1">{done ? (action.tipo === "criar_tarefa" ? `Tarefa criada: ${action.titulo}` : "Nota adicionada ao cartão") : action.rotulo}</span>
+        <span className="flex-1">
+          {done
+            ? action.tipo === "criar_cartao"
+              ? `Cartão criado: ${action.titulo} — clique para abrir`
+              : action.tipo === "criar_tarefa"
+                ? `Tarefa criada: ${action.titulo}`
+                : "Nota adicionada ao cartão"
+            : action.rotulo}
+        </span>
         {action.tipo === "criar_tarefa" && action.quando && !done && <span className="text-gray-500">{formatDateTime(new Date(action.quando).toISOString())}</span>}
       </button>
       {failed && <p className="mt-1 text-theme-xs text-error-600">{state}</p>}
