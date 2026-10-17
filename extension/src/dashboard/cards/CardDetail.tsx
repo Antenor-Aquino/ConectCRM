@@ -1,7 +1,8 @@
-// Detalhe do cartão (Fase 4): dados editáveis, etapas, ganho/perdido,
+// Detalhe do cartão (Fase 4): dados editáveis, etapas, desfecho (ganho/perdido,
+// resolvido/não resolvido, concluído/não concluído conforme o tipo),
 // notas, tarefas e histórico de alterações.
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, Circle, PlusCircle, RotateCcw, Sparkles, Trash2, Trophy, X, XCircle } from "lucide-react";
+import { Check, CheckCircle2, Circle, PlusCircle, RotateCcw, Sparkles, Trash2, Trophy, X, XCircle } from "lucide-react";
 import { TaBadge, TaButton, TaInput, TaTextarea, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { ActivityListItem } from "../../db/activities";
@@ -9,7 +10,7 @@ import type { CustomField, CustomValue } from "../../db/customFields";
 import type { CardDetail as CardData } from "../../db/deals";
 import type { HistoryEvent } from "../../db/cardHistory";
 import type { Pipeline, Stage } from "../../db/pipelines";
-import { CARD_TEXT } from "../../lib/cardTypes";
+import { CARD_TEXT, OUTCOME_TEXT } from "../../lib/cardTypes";
 import { formatCents, formatDateTime, fromDateInput, toDateInput } from "../../lib/format";
 import { Combobox, type ComboItem } from "../ui/Combobox";
 import { CustomFieldsForm } from "../ui/CustomFieldsForm";
@@ -29,7 +30,6 @@ import { ItemsEditor, type ItemDraft } from "./ItemsEditor";
 import { LostModal } from "./LostModal";
 import { createOrganizationQuick, createPersonQuick, searchOrganizations, searchPersons } from "./searchers";
 
-const STATUS_BADGE = { open: null, won: { color: "green", label: "Ganho" }, lost: { color: "red", label: "Perdido" } } as const;
 
 type Tab = "notas" | "tarefas" | "documentos" | "historico";
 
@@ -82,7 +82,8 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
     );
   }
 
-  const status = STATUS_BADGE[card.status];
+  const outcome = OUTCOME_TEXT[pipeline.type];
+  const status = card.status === "open" ? null : { color: card.status === "won" ? ("green" as const) : ("red" as const), label: outcome[card.status] };
   const person: ComboItem | null = card.person_id ? { id: card.person_id, label: card.person_name ?? "" } : null;
   const org: ComboItem | null = card.organization_id ? { id: card.organization_id, label: card.organization_name ?? "" } : null;
   const items: ItemDraft[] = card.items.map((i) => ({
@@ -138,13 +139,13 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
           <>
             <TaButton
               className="!bg-success-600 !text-white !ring-0 hover:!bg-success-700"
-              startIcon={<Trophy size={15} />}
+              startIcon={pipeline.type === "comercial" ? <Trophy size={15} /> : <CheckCircle2 size={15} />}
               onClick={() => void run(() => call("cards.setStatus", { id: cardId, status: "won" }))}
             >
-              Ganho
+              {outcome.won}
             </TaButton>
             <TaButton variant="danger" startIcon={<XCircle size={15} />} onClick={() => setLostOpen(true)}>
-              Perdido
+              {outcome.lost}
             </TaButton>
           </>
         ) : (
@@ -174,8 +175,28 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
           Excluir
         </TaButton>
       </div>
-      {card.status === "lost" && (card.loss_note || card.loss_reason_id) && (
-        <p className="mb-4 rounded-lg bg-error-50 px-3 py-2 text-theme-sm text-error-700">Perdido{card.loss_note ? `: ${card.loss_note}` : ""}</p>
+      {card.status !== "open" && (
+        // Faixa do desfecho: verde (ganho/resolvido/concluído) ou vermelha (perdido/não…), com data e motivo.
+        <div
+          className={cn(
+            "mb-4 flex items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-theme-sm",
+            card.status === "won" ? "border-success-200 bg-success-50 text-success-800" : "border-error-200 bg-error-50 text-error-800",
+          )}
+        >
+          <span className={cn("mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white", card.status === "won" ? "bg-success-500" : "bg-error-500")}>
+            {card.status === "won" ? <Check size={13} strokeWidth={3} /> : <X size={13} strokeWidth={3} />}
+          </span>
+          <span>
+            <b>{outcome[card.status]}</b>
+            {card.closed_at && ` em ${formatDateTime(card.closed_at)}`}
+            {card.status === "lost" && card.loss_reason_name && (
+              <span className="block">
+                {outcome.lossReason}: {card.loss_reason_name}
+              </span>
+            )}
+            {card.status === "lost" && card.loss_note && <span className="block">{card.loss_note}</span>}
+          </span>
+        </div>
       )}
       <ErrorText>{error}</ErrorText>
 
@@ -303,6 +324,7 @@ export function CardDetail({ cardId, pipeline, onClose, onChanged }: { cardId: s
       />
       <LostModal
         cardId={lostOpen ? cardId : null}
+        type={pipeline.type}
         onClose={() => setLostOpen(false)}
         onDone={() => {
           setLostOpen(false);

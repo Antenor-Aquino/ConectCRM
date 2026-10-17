@@ -8,7 +8,7 @@ import { call } from "../../rpc/client";
 import type { Report } from "../../db/reports";
 import type { Pipeline } from "../../db/pipelines";
 import type { Team } from "../../db/users";
-import { PIPELINE_TYPE_LABEL, PIPELINE_TYPE_ORDER } from "../../lib/cardTypes";
+import { OUTCOME_TEXT, PIPELINE_TYPE_LABEL, PIPELINE_TYPE_ORDER, type OutcomeText } from "../../lib/cardTypes";
 import { formatCents } from "../../lib/format";
 import { formatPeriod, monthLabel, PERIOD_LABEL, periodToIso, presetPeriod, type Period, type PeriodPreset } from "../../lib/period";
 import { downloadWorkbook } from "../../lib/xlsxExport";
@@ -23,6 +23,8 @@ const moneyAxis = (reais: number) =>
   reais >= 1_000_000 ? `R$ ${(reais / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mi` : reais >= 1000 ? `R$ ${(reais / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mil` : `R$ ${reais.toLocaleString("pt-BR")}`;
 const moneyTip = (reais: number) => formatCents(Math.round(reais * 100));
 const int = (v: number) => v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+
+const pct1 = (v: number | null) => (v == null ? null : Math.round(v * 1000) / 10);
 
 export function ReportsView() {
   const { user, users } = useSession();
@@ -73,6 +75,8 @@ export function ReportsView() {
     try {
       const r = report;
       const s = r.summary;
+      const t = OUTCOME_TEXT[r.pipelineType];
+      const sales = r.pipelineType === "comercial";
       await downloadWorkbook(`conectcrm-relatorios-${period.start}-a-${period.end}.xlsx`, [
         {
           name: "Resumo",
@@ -80,27 +84,37 @@ export function ReportsView() {
             ["Relatórios ConectCRM", scopeLabel],
             [],
             ["Indicador", "Valor"],
-            ["Ganhos (qtd.)", s.won.count],
-            ["Ganhos (R$)", s.won.valueCents / 100],
-            ["Perdidos (qtd.)", s.lost.count],
-            ["Perdidos (R$)", s.lost.valueCents / 100],
-            ["Taxa de conversão (%)", s.winRate == null ? null : Math.round(s.winRate * 1000) / 10],
-            ["Ticket médio (R$)", s.avgTicketCents == null ? null : s.avgTicketCents / 100],
-            ["Ciclo médio até o ganho (dias)", s.avgCycleDays == null ? null : Math.round(s.avgCycleDays * 10) / 10],
+            [`${t.wonPlural} (qtd.)`, s.won.count],
+            ...(sales ? [[`${t.wonPlural} (R$)`, s.won.valueCents / 100]] : []),
+            [`${t.lostPlural} (qtd.)`, s.lost.count],
+            ...(sales ? [[`${t.lostPlural} (R$)`, s.lost.valueCents / 100]] : []),
+            [`${t.rate} (%)`, s.winRate == null ? null : Math.round(s.winRate * 1000) / 10],
+            ...(sales ? [["Ticket médio (R$)", s.avgTicketCents == null ? null : s.avgTicketCents / 100]] : []),
+            [`Ciclo médio ${t.cycle} (dias)`, s.avgCycleDays == null ? null : Math.round(s.avgCycleDays * 10) / 10],
             ["Criados no período", s.created],
             ["Em aberto (qtd.)", s.open.count],
-            ["Em aberto (R$)", s.open.valueCents / 100],
-            ["Previsão ponderada (R$)", s.weightedCents / 100],
+            ...(sales
+              ? [
+                  ["Em aberto (R$)", s.open.valueCents / 100],
+                  ["Previsão ponderada (R$)", s.weightedCents / 100],
+                ]
+              : []),
           ],
         },
         {
-          name: "Ganhos e perdidos por mês",
-          rows: [["Mês", "Ganhos", "Ganhos (R$)", "Perdidos", "Perdidos (R$)"], ...r.months.map((m) => [monthLabel(m.month), m.won, m.wonValueCents / 100, m.lost, m.lostValueCents / 100])],
+          name: `${t.wonPlural} e ${t.lostPlural.toLowerCase()} por mês`.slice(0, 31),
+          rows: sales
+            ? [["Mês", t.wonPlural, `${t.wonPlural} (R$)`, t.lostPlural, `${t.lostPlural} (R$)`], ...r.months.map((m) => [monthLabel(m.month), m.won, m.wonValueCents / 100, m.lost, m.lostValueCents / 100])]
+            : [["Mês", t.wonPlural, t.lostPlural], ...r.months.map((m) => [monthLabel(m.month), m.won, m.lost])],
         },
-        {
-          name: "Previsão",
-          rows: [["Funil", "Etapa", "Probabilidade (%)", "Cartões", "Valor (R$)", "Ponderado (R$)"], ...r.forecast.map((f) => [f.pipelineName, f.stageName, f.probability, f.count, f.valueCents / 100, f.weightedCents / 100])],
-        },
+        ...(sales
+          ? [
+              {
+                name: "Previsão",
+                rows: [["Funil", "Etapa", "Probabilidade (%)", "Cartões", "Valor (R$)", "Ponderado (R$)"], ...r.forecast.map((f) => [f.pipelineName, f.stageName, f.probability, f.count, f.valueCents / 100, f.weightedCents / 100])],
+              },
+            ]
+          : []),
         ...(r.funnel
           ? [{ name: "Conversão do funil", rows: [["Etapa", "Chegaram", "% da etapa anterior"], ...r.funnel.map((f) => [f.name, f.reached, f.fromPrevious == null ? null : Math.round(f.fromPrevious * 1000) / 10])] }]
           : []),
@@ -115,22 +129,41 @@ export function ReportsView() {
               },
             ]
           : []),
-        { name: "Motivos de perda", rows: [["Motivo", "Quantidade", "Valor (R$)"], ...r.lossReasons.map((l) => [l.reason, l.count, l.valueCents / 100])] },
+        {
+          name: sales ? "Motivos de perda" : "Motivos",
+          rows: sales
+            ? [["Motivo", "Quantidade", "Valor (R$)"], ...r.lossReasons.map((l) => [l.reason, l.count, l.valueCents / 100])]
+            : [["Motivo", "Quantidade"], ...r.lossReasons.map((l) => [l.reason, l.count])],
+        },
         {
           name: "Responsáveis",
           rows: [
-            ["Responsável", "Ganhos", "Ganhos (R$)", "Perdidos", "Conversão (%)", "Abertos", "Abertos (R$)", "Ponderado (R$)", "Tarefas concluídas"],
-            ...r.owners.map((o) => [o.name, o.won, o.wonValueCents / 100, o.lost, o.winRate == null ? null : Math.round(o.winRate * 1000) / 10, o.open, o.openValueCents / 100, o.weightedCents / 100, o.activitiesDone]),
+            sales
+              ? ["Responsável", t.wonPlural, `${t.wonPlural} (R$)`, t.lostPlural, `${t.rate} (%)`, "Abertos", "Abertos (R$)", "Ponderado (R$)", "Tarefas concluídas"]
+              : ["Responsável", t.wonPlural, t.lostPlural, `${t.rate} (%)`, "Abertos", "Tarefas concluídas"],
+            ...r.owners.map((o) =>
+              sales
+                ? [o.name, o.won, o.wonValueCents / 100, o.lost, pct1(o.winRate), o.open, o.openValueCents / 100, o.weightedCents / 100, o.activitiesDone]
+                : [o.name, o.won, o.lost, pct1(o.winRate), o.open, o.activitiesDone],
+            ),
           ],
         },
         {
           name: "Equipes",
           rows: [
-            ["Equipe", "Ganhos", "Ganhos (R$)", "Perdidos", "Conversão (%)", "Abertos", "Abertos (R$)", "Ponderado (R$)"],
-            ...r.teams.map((t) => [t.name, t.won, t.wonValueCents / 100, t.lost, t.winRate == null ? null : Math.round(t.winRate * 1000) / 10, t.open, t.openValueCents / 100, t.weightedCents / 100]),
+            sales
+              ? ["Equipe", t.wonPlural, `${t.wonPlural} (R$)`, t.lostPlural, `${t.rate} (%)`, "Abertos", "Abertos (R$)", "Ponderado (R$)"]
+              : ["Equipe", t.wonPlural, t.lostPlural, `${t.rate} (%)`, "Abertos"],
+            ...r.teams.map((x) =>
+              sales
+                ? [x.name, x.won, x.wonValueCents / 100, x.lost, pct1(x.winRate), x.open, x.openValueCents / 100, x.weightedCents / 100]
+                : [x.name, x.won, x.lost, pct1(x.winRate), x.open],
+            ),
           ],
         },
-        { name: "Produtos vendidos", rows: [["Produto/serviço", "Quantidade", "Total (R$)", "Negócios"], ...r.products.map((p) => [p.name, p.quantity, p.totalCents / 100, p.deals])] },
+        ...(sales
+          ? [{ name: "Produtos vendidos", rows: [["Produto/serviço", "Quantidade", "Total (R$)", "Negócios"], ...r.products.map((p) => [p.name, p.quantity, p.totalCents / 100, p.deals])] }]
+          : []),
         { name: "Atividades", rows: [["Responsável", "No período", "Concluídas", "Pendentes", "Atrasadas"], ...r.activities.map((a) => [a.name, a.total, a.done, a.pending, a.overdue])] },
       ]);
     } finally {
@@ -231,11 +264,12 @@ export function ReportsView() {
           <Tiles r={report} />
           <div className="grid gap-5 xl:grid-cols-2">
             <MonthsCard r={report} />
-            <ForecastCard r={report} />
+            {/* Previsão e produtos só fazem sentido em vendas (funis comerciais). */}
+            {report.pipelineType === "comercial" && <ForecastCard r={report} />}
             <FunnelCard r={report} empty={report.funnel ? null : needPipeline} />
             <StageTimeCard r={report} empty={report.stageTime ? null : needPipeline} />
             <LossCard r={report} />
-            <ProductsCard r={report} />
+            {report.pipelineType === "comercial" && <ProductsCard r={report} />}
           </div>
           <OwnersCard r={report} />
           {report.teams.length > 0 && user.role !== "vendedor" && <TeamsCard r={report} />}
@@ -259,16 +293,33 @@ function Tile({ label, value, detail, icon, tone }: { label: string; value: stri
   );
 }
 
+/** Termos do desfecho e se o relatório é de vendas (valores em R$). */
+const termsOf = (r: Report): { t: OutcomeText; sales: boolean } => ({ t: OUTCOME_TEXT[r.pipelineType], sales: r.pipelineType === "comercial" });
+
 function Tiles({ r }: { r: Report }) {
   const s = r.summary;
+  const { t, sales } = termsOf(r);
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <Tile label="Ganhos" icon={<CheckCircle2 size={14} />} tone="good" value={money(s.won.valueCents)} detail={`${s.won.count} fechado(s) no período`} />
-      <Tile label="Perdidos" icon={<XCircle size={14} />} tone="bad" value={money(s.lost.valueCents)} detail={`${s.lost.count} no período`} />
-      <Tile label="Taxa de conversão" value={pct(s.winRate)} detail="ganhos ÷ (ganhos + perdidos)" />
-      <Tile label="Ticket médio" value={s.avgTicketCents == null ? "—" : money(s.avgTicketCents)} detail={`ciclo médio ${days(s.avgCycleDays)}`} />
-      <Tile label="Em aberto" value={money(s.open.valueCents)} detail={`${s.open.count} cartão(ões) hoje`} />
-      <Tile label="Previsão ponderada" value={money(s.weightedCents)} detail="valor × probabilidade da etapa" />
+      {sales ? (
+        <>
+          <Tile label={t.wonPlural} icon={<CheckCircle2 size={14} />} tone="good" value={money(s.won.valueCents)} detail={`${s.won.count} fechado(s) no período`} />
+          <Tile label={t.lostPlural} icon={<XCircle size={14} />} tone="bad" value={money(s.lost.valueCents)} detail={`${s.lost.count} no período`} />
+        </>
+      ) : (
+        <>
+          <Tile label={t.wonPlural} icon={<CheckCircle2 size={14} />} tone="good" value={int(s.won.count)} detail="no período" />
+          <Tile label={t.lostPlural} icon={<XCircle size={14} />} tone="bad" value={int(s.lost.count)} detail="no período" />
+        </>
+      )}
+      <Tile label={t.rate} value={pct(s.winRate)} detail={t.rateDetail} />
+      {sales ? (
+        <Tile label="Ticket médio" value={s.avgTicketCents == null ? "—" : money(s.avgTicketCents)} detail={`ciclo médio ${days(s.avgCycleDays)}`} />
+      ) : (
+        <Tile label="Tempo médio" value={days(s.avgCycleDays)} detail={`da criação ${t.cycle}`} />
+      )}
+      <Tile label="Em aberto" value={sales ? money(s.open.valueCents) : int(s.open.count)} detail={sales ? `${s.open.count} cartão(ões) hoje` : "cartão(ões) hoje"} />
+      {sales && <Tile label="Previsão ponderada" value={money(s.weightedCents)} detail="valor × probabilidade da etapa" />}
       <Tile label="Criados no período" value={int(s.created)} />
       <Tile label="Tarefas concluídas" value={int(r.activities.reduce((a, x) => a + x.done, 0))} detail={`${int(r.activities.reduce((a, x) => a + x.overdue, 0))} atrasada(s)`} />
     </div>
@@ -276,27 +327,40 @@ function Tiles({ r }: { r: Report }) {
 }
 
 function MonthsCard({ r }: { r: Report }) {
+  const { t, sales } = termsOf(r);
+  const title = `${t.wonPlural} e ${t.lostPlural.toLowerCase()} por mês`;
   return (
     <ReportCard
-      title="Ganhos e perdidos por mês"
-      subtitle="Valor dos cartões fechados em cada mês"
+      title={title}
+      subtitle={sales ? "Valor dos cartões fechados em cada mês" : "Cartões fechados em cada mês"}
       chart={
         <BarChart
-          label="Ganhos e perdidos por mês"
+          label={title}
           labels={r.months.map((m) => monthLabel(m.month))}
-          series={[
-            { label: "Ganhos", data: r.months.map((m) => m.wonValueCents / 100) },
-            { label: "Perdidos", data: r.months.map((m) => m.lostValueCents / 100) },
-          ]}
-          format={moneyAxis}
-          tooltipFormat={moneyTip}
+          series={
+            sales
+              ? [
+                  { label: t.wonPlural, data: r.months.map((m) => m.wonValueCents / 100) },
+                  { label: t.lostPlural, data: r.months.map((m) => m.lostValueCents / 100) },
+                ]
+              : [
+                  { label: t.wonPlural, data: r.months.map((m) => m.won) },
+                  { label: t.lostPlural, data: r.months.map((m) => m.lost) },
+                ]
+          }
+          format={sales ? moneyAxis : int}
+          tooltipFormat={sales ? moneyTip : undefined}
         />
       }
       table={
-        <DataTable
-          headers={["Mês", "Ganhos", "Valor", "Perdidos", "Valor"]}
-          rows={r.months.map((m) => [monthLabel(m.month), m.won, money(m.wonValueCents), m.lost, money(m.lostValueCents)])}
-        />
+        sales ? (
+          <DataTable
+            headers={["Mês", t.wonPlural, "Valor", t.lostPlural, "Valor"]}
+            rows={r.months.map((m) => [monthLabel(m.month), m.won, money(m.wonValueCents), m.lost, money(m.lostValueCents)])}
+          />
+        ) : (
+          <DataTable headers={["Mês", t.wonPlural, t.lostPlural]} rows={r.months.map((m) => [monthLabel(m.month), m.won, m.lost])} />
+        )
       }
     />
   );
@@ -373,13 +437,21 @@ function StageTimeCard({ r, empty }: { r: Report; empty: string | null }) {
 }
 
 function LossCard({ r }: { r: Report }) {
+  const { t, sales } = termsOf(r);
+  const title = sales ? "Motivos de perda" : `Motivos (${t.lost.toLowerCase()})`;
   return (
     <ReportCard
-      title="Motivos de perda"
-      subtitle="Cartões perdidos no período"
-      empty={r.lossReasons.length ? null : "Nenhuma perda no período."}
-      chart={<BarChart horizontal label="Motivos de perda" labels={r.lossReasons.map((l) => l.reason)} series={[{ label: "Perdidos", data: r.lossReasons.map((l) => l.count) }]} format={int} />}
-      table={<DataTable headers={["Motivo", "Quantidade", "Valor"]} rows={r.lossReasons.map((l) => [l.reason, l.count, money(l.valueCents)])} />}
+      title={title}
+      subtitle={`Cartões ${t.lostPlural.toLowerCase()} no período`}
+      empty={r.lossReasons.length ? null : sales ? "Nenhuma perda no período." : `Nenhum cartão ${t.lost.toLowerCase()} no período.`}
+      chart={<BarChart horizontal label={title} labels={r.lossReasons.map((l) => l.reason)} series={[{ label: t.lostPlural, data: r.lossReasons.map((l) => l.count) }]} format={int} />}
+      table={
+        sales ? (
+          <DataTable headers={["Motivo", "Quantidade", "Valor"]} rows={r.lossReasons.map((l) => [l.reason, l.count, money(l.valueCents)])} />
+        ) : (
+          <DataTable headers={["Motivo", "Quantidade"]} rows={r.lossReasons.map((l) => [l.reason, l.count])} />
+        )
+      }
     />
   );
 }
@@ -399,15 +471,23 @@ function ProductsCard({ r }: { r: Report }) {
 }
 
 function OwnersCard({ r }: { r: Report }) {
+  const { t, sales } = termsOf(r);
   return (
     <ReportCard
       title="Desempenho por responsável"
-      subtitle="Ganhos e perdas no período; abertos e previsão de hoje"
+      subtitle={sales ? "Ganhos e perdas no período; abertos e previsão de hoje" : `${t.wonPlural} e ${t.lostPlural.toLowerCase()} no período; abertos hoje`}
       table={
-        <DataTable
-          headers={["Responsável", "Ganhos", "Valor ganho", "Perdidos", "Conversão", "Abertos", "Em aberto", "Ponderado", "Tarefas feitas"]}
-          rows={r.owners.map((o) => [o.name, o.won, money(o.wonValueCents), o.lost, pct(o.winRate), o.open, money(o.openValueCents), money(o.weightedCents), o.activitiesDone])}
-        />
+        sales ? (
+          <DataTable
+            headers={["Responsável", t.wonPlural, "Valor ganho", t.lostPlural, "Conversão", "Abertos", "Em aberto", "Ponderado", "Tarefas feitas"]}
+            rows={r.owners.map((o) => [o.name, o.won, money(o.wonValueCents), o.lost, pct(o.winRate), o.open, money(o.openValueCents), money(o.weightedCents), o.activitiesDone])}
+          />
+        ) : (
+          <DataTable
+            headers={["Responsável", t.wonPlural, t.lostPlural, t.rate, "Abertos", "Tarefas feitas"]}
+            rows={r.owners.map((o) => [o.name, o.won, o.lost, pct(o.winRate), o.open, o.activitiesDone])}
+          />
+        )
       }
     />
   );
@@ -419,10 +499,17 @@ function TeamsCard({ r }: { r: Report }) {
       title="Desempenho por equipe"
       subtitle="Soma dos membros (quem está em duas equipes conta nas duas)"
       table={
-        <DataTable
-          headers={["Equipe", "Ganhos", "Valor ganho", "Perdidos", "Conversão", "Abertos", "Em aberto", "Ponderado"]}
-          rows={r.teams.map((t) => [t.name, t.won, money(t.wonValueCents), t.lost, pct(t.winRate), t.open, money(t.openValueCents), money(t.weightedCents)])}
-        />
+        termsOf(r).sales ? (
+          <DataTable
+            headers={["Equipe", "Ganhos", "Valor ganho", "Perdidos", "Conversão", "Abertos", "Em aberto", "Ponderado"]}
+            rows={r.teams.map((t) => [t.name, t.won, money(t.wonValueCents), t.lost, pct(t.winRate), t.open, money(t.openValueCents), money(t.weightedCents)])}
+          />
+        ) : (
+          <DataTable
+            headers={["Equipe", termsOf(r).t.wonPlural, termsOf(r).t.lostPlural, termsOf(r).t.rate, "Abertos"]}
+            rows={r.teams.map((x) => [x.name, x.won, x.lost, pct(x.winRate), x.open])}
+          />
+        )
       }
     />
   );

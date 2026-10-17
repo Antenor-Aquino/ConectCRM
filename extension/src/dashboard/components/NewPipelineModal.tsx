@@ -10,8 +10,9 @@ const STAGE_COLORS = Object.keys(badgePalette) as BadgeColor[];
 
 const DEFAULT_STAGES: Record<PipelineType, string[]> = {
   comercial: ["Prospect", "Contato", "Reunião", "Proposta", "Fechamento"],
-  operacional: ["Novo ticket", "Em atendimento", "Aguardando cliente", "Resolvido"],
-  projeto: ["A fazer", "Em andamento", "Em revisão", "Concluído"],
+  // Sem etapa "Resolvido"/"Concluído": o desfecho é marcado pelos botões do cartão.
+  operacional: ["Novo ticket", "Em atendimento", "Aguardando cliente", "Em validação"],
+  projeto: ["A fazer", "Em andamento", "Em revisão", "Entrega"],
 };
 
 interface DraftStage {

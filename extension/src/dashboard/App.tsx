@@ -221,9 +221,11 @@ function Main() {
                 <button
                   type="button"
                   onClick={() => setCopilotOpen(true)}
+                  title="Copiloto"
+                  aria-label="Copiloto"
                   className="flex h-9 items-center gap-1.5 rounded-lg border border-brand-200 px-3 text-theme-sm font-medium text-brand-600 hover:bg-brand-50 dark:border-brand-500/30 dark:hover:bg-brand-500/10"
                 >
-                  <Sparkles size={16} /> Copiloto
+                  <Sparkles size={16} /> <span className="hidden 2xl:inline">Copiloto</span>
                 </button>
                 <NotificationBell />
                 <button

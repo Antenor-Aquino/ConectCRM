@@ -1,5 +1,6 @@
 // Negócio de destino (como no wa-pipedrive): busca e escolha do cartão, resumo,
 // tarefas em aberto e ações rápidas (novo cartão, tarefa, reunião, nota).
+import { OUTCOME_TEXT, PIPELINE_TYPE_BY_KIND } from "../lib/cardTypes";
 import { useCallback, useEffect, useState } from "react";
 import { CalendarPlus, CheckCircle2, Circle, ExternalLink, ListPlus, NotebookPen, Plus, Target, X } from "lucide-react";
 import { TaBadge, TaButton, TaTextarea, cn } from "@tailadmin";
@@ -94,7 +95,7 @@ export function TargetSection({
             <div className="min-w-0 flex-1">
               <p className="flex items-center gap-1.5 text-theme-sm font-semibold text-gray-800 dark:text-white/90">
                 <span className="truncate">{card.title}</span>
-                {card.status !== "open" && <TaBadge color={card.status === "won" ? "green" : "red"} label={card.status === "won" ? "Ganho" : "Perdido"} />}
+                {card.status !== "open" && <TaBadge color={card.status === "won" ? "green" : "red"} label={OUTCOME_TEXT[PIPELINE_TYPE_BY_KIND[card.kind]][card.status]} />}
               </p>
               <p className="truncate text-theme-xs text-gray-500">
                 {KIND[card.kind]} · {pipelineName} › {stageName}

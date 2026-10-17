@@ -4,6 +4,9 @@
 // usuário (mesmas regras do quadro e das tarefas). Nomes de funil e de
 // responsável são resolvidos aqui; sem correspondência, a resposta traz as
 // opções existentes em vez de adivinhar.
+import { OUTCOME_TEXT, PIPELINE_TYPE_BY_KIND } from "../lib/cardTypes";
+import type { DealStatus } from "./deals";
+import type { DealKind } from "./pipelines";
 import { formatCents, formatDateTime } from "../lib/format";
 import { activityScope } from "./activities";
 import { cardScope } from "./deals";
@@ -14,7 +17,8 @@ import { ROLE_LABEL, type Viewer } from "./users";
 const DAY = 86_400_000;
 const MAX_ROWS = 30;
 const KIND = { deal: "negócio", ticket: "ticket", project: "etapa de projeto" } as const;
-const STATUS = { open: "aberto", won: "ganho", lost: "perdido" } as const;
+/** Situação com o termo do tipo: ganho/perdido, resolvido/não resolvido, concluído/não concluído. */
+const statusText = (kind: DealKind, status: "open" | "won" | "lost") => (status === "open" ? "aberto" : OUTCOME_TEXT[PIPELINE_TYPE_BY_KIND[kind]][status].toLowerCase());
 
 const days = (iso: string | null, now: Date) => (iso ? Math.max(0, Math.floor((now.getTime() - new Date(iso).getTime()) / DAY)) : null);
 const date = (iso: string | null) => (iso ? formatDateTime(iso) : null);
@@ -84,7 +88,7 @@ export function searchCardsForCopilot(db: DatabaseSync, viewer: Viewer | null, f
   }
   const scope = cardScope(db, viewer);
   const rows = many<{
-    id: string; title: string; kind: keyof typeof KIND; status: keyof typeof STATUS; value_cents: number; pipeline: string; stage: string;
+    id: string; title: string; kind: DealKind; status: DealStatus; value_cents: number; pipeline: string; stage: string;
     probability: number | null; person: string | null; organization: string | null; owner: string | null; stage_entered_at: string;
     closed_at: string | null; next_task: string | null; next_due: string | null; overdue: number;
   }>(
@@ -112,7 +116,7 @@ export function searchCardsForCopilot(db: DatabaseSync, viewer: Viewer | null, f
       id: r.id,
       titulo: r.title,
       tipo: KIND[r.kind],
-      status: STATUS[r.status],
+      status: statusText(r.kind, r.status),
       funil: r.pipeline,
       etapa: r.stage,
       probabilidade: r.probability == null ? null : `${r.probability}%`,
@@ -134,7 +138,7 @@ export function cardDigest(db: DatabaseSync, viewer: Viewer | null, id: string, 
   const ok = many(db, `SELECT 1 FROM deal d WHERE d.id = ? AND d.deleted_at IS NULL${scope.sql}`, id, ...scope.params).length > 0;
   if (!ok) return { erro: "Cartão não encontrado ou sem permissão de acesso. Use buscar_cartoes para achar o id certo." };
   const base = many<{
-    title: string; kind: keyof typeof KIND; status: keyof typeof STATUS; value_cents: number; description: string | null; pipeline: string; stage: string;
+    title: string; kind: DealKind; status: DealStatus; value_cents: number; description: string | null; pipeline: string; stage: string;
     probability: number | null; person: string | null; person_phone: string | null; person_email: string | null; organization: string | null;
     owner: string | null; created_at: string; stage_entered_at: string; closed_at: string | null; expected_close_at: string | null;
     sla_at: string | null; due_at: string | null; origin: string | null; loss_reason: string | null; loss_note: string | null;
@@ -183,7 +187,7 @@ export function cardDigest(db: DatabaseSync, viewer: Viewer | null, id: string, 
     id,
     titulo: base.title,
     tipo: KIND[base.kind],
-    status: STATUS[base.status],
+    status: statusText(base.kind, base.status),
     funil: base.pipeline,
     etapa: base.stage,
     probabilidade: base.probability == null ? null : `${base.probability}%`,
@@ -409,6 +413,12 @@ export function salesSummary(db: DatabaseSync, viewer: Viewer | null, f: { de: s
   return {
     periodo: `${f.de} a ${f.ate}`,
     funil: f.funil ? (pipe!.ids.length > 1 ? "primeiro funil com esse nome" : f.funil) : "todos os funis comerciais",
+    // Nos funis operacionais e de projeto "ganhos/perdidos" se chamam resolvidos/não resolvidos ou concluídos/não concluídos.
+    termos: {
+      ganhos: OUTCOME_TEXT[r.pipelineType].wonPlural,
+      perdidos: OUTCOME_TEXT[r.pipelineType].lostPlural,
+      taxaDeConversao: OUTCOME_TEXT[r.pipelineType].rate,
+    },
     ganhos: { quantidade: s.won.count, valor: formatCents(s.won.valueCents) },
     perdidos: { quantidade: s.lost.count, valor: formatCents(s.lost.valueCents) },
     taxaDeConversao: pctx(s.winRate),

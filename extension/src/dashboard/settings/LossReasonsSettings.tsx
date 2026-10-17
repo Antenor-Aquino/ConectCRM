@@ -1,4 +1,5 @@
-// Configurações → Motivos de perda (usados ao marcar um negócio como perdido).
+// Configurações → Motivos de perda (usados ao marcar um cartão como perdido,
+// não resolvido ou não concluído).
 import { useCallback, useEffect, useState } from "react";
 import { Plus } from "lucide-react";
 import { TaButton, TaInput, TaPanel, cn } from "@tailadmin";
@@ -26,7 +27,7 @@ export function LossReasonsSettings() {
     }
   };
   return (
-    <TaPanel title="Motivos de perda" subtitle="Aparecem ao marcar um negócio como perdido e nos relatórios.">
+    <TaPanel title="Motivos de perda" subtitle="Aparecem ao marcar um negócio como perdido, um ticket como não resolvido ou uma etapa de projeto como não concluída, e nos relatórios.">
       <div className="mb-4 flex max-w-md gap-2">
         <TaInput placeholder="Novo motivo (ex.: Preço)" value={name} onChange={(e) => setName(e.target.value)} />
         <TaButton variant="primary" startIcon={<Plus size={15} />} disabled={!name.trim()} onClick={() => void run(async () => {

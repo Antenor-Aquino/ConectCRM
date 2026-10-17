@@ -29,7 +29,9 @@ export const DATA_TOOLS: ToolDef[] = [
       type: "object",
       properties: {
         texto: str("Parte do título, do contato ou da organização (opcional)"),
-        status: str("Situação; padrão: open", { enum: ["open", "won", "lost", "all"] }),
+        status: str("Situação; padrão: open. won = ganho (comercial), resolvido (operacional) ou concluído (projeto); lost = perdido, não resolvido ou não concluído", {
+          enum: ["open", "won", "lost", "all"],
+        }),
         funil: str("Nome (ou parte) do funil (opcional)"),
         responsavel: str("Nome (ou parte) do usuário ou da equipe (opcional)"),
         limite: { type: "integer", description: "Máximo de cartões (1 a 30; padrão 20)" },

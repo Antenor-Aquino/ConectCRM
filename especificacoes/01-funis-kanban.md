@@ -32,6 +32,31 @@ herdado do funil e colunas específicas (`value`, `description`, `sla_at`,
 preenchidas conforme o tipo. Assim o Kanban, filtros, histórico, tarefas e
 relatórios funcionam igual para todos os tipos.
 
+### 2.1 Desfecho do cartão
+
+No banco o status é sempre `open` / `won` / `lost`; só os termos mudam:
+
+| Tipo | Positivo (verde) | Negativo (vermelho) |
+|---|---|---|
+| Comercial | **Ganho** | **Perdido** |
+| Operacional | **Resolvido** | **Não resolvido** |
+| Projeto | **Concluído** | **Não concluído** |
+
+- Cartão fechado no quadro: fundo e borda verdes ou vermelhos, canto dobrado
+  com ✓ / ✕, título na mesma cor e etiqueta "Ganho em 15/10/2026" (ou o termo
+  do tipo) no rodapé.
+- Detalhe: botões com os termos do tipo e faixa verde/vermelha com data,
+  motivo e observação.
+- Os mesmos termos valem no filtro do quadro ("Resolvidos", "Não
+  concluídos"…), nos indicadores do funil, no histórico ("Marcou como
+  resolvido"), nas fichas de contato/organização, no popup do WhatsApp, no
+  copiloto e nos relatórios (ver spec 06).
+- Os motivos (Configurações → Motivos de perda) são os mesmos para os três
+  tipos.
+- Etapas sugeridas para funis novos não terminam em "Resolvido"/"Concluído"
+  (o desfecho é marcado pelos botões): operacional termina em "Em
+  validação", projeto em "Entrega".
+
 ## 3. Botão "+" (cadastro rápido)
 
 Menu suspenso com as opções abaixo. As opções de item de funil **só aparecem

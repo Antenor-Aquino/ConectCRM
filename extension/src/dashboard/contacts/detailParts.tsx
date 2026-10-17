@@ -6,6 +6,7 @@ import { call } from "../../rpc/client";
 import type { ActivityListItem } from "../../db/activities";
 import type { CustomField, CustomValue } from "../../db/customFields";
 import { DocumentFieldView } from "../documents/DocumentField";
+import { OUTCOME_TEXT, PIPELINE_TYPE_BY_KIND } from "../../lib/cardTypes";
 import type { DataTable } from "../../db/repo";
 import { formatCents, formatDateTime } from "../../lib/format";
 import { taskTiming } from "../../lib/taskTiming";
@@ -86,7 +87,6 @@ export function CustomValuesView({ fields, values }: { fields: CustomField[]; va
 }
 
 const KIND_LABEL = { deal: "Negócio", ticket: "Ticket", project: "Projeto" } as const;
-const STATUS = { won: { color: "green", label: "Ganho" }, lost: { color: "red", label: "Perdido" } } as const;
 
 export function RelatedCards({ filter, onOpenCard }: { filter: { personId?: string; organizationId?: string }; onOpenCard: (pipelineId: string, cardId: string) => void }) {
   const [cards, setCards] = useState<Awaited<ReturnType<typeof loadCards>>>([]);
@@ -106,7 +106,7 @@ export function RelatedCards({ filter, onOpenCard }: { filter: { personId?: stri
                 {KIND_LABEL[c.kind]} · {c.pipeline_name} · {c.stage_name}
               </span>
             </span>
-            {c.status !== "open" && <TaBadge color={STATUS[c.status].color} label={STATUS[c.status].label} />}
+            {c.status !== "open" && <TaBadge color={c.status === "won" ? "green" : "red"} label={OUTCOME_TEXT[PIPELINE_TYPE_BY_KIND[c.kind]][c.status]} />}
             {c.kind === "deal" && <span className="text-theme-sm font-semibold text-gray-800 dark:text-white/90">{formatCents(c.value_cents)}</span>}
           </button>
         </li>

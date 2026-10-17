@@ -6,9 +6,9 @@ import { BarChart3, ChevronDown, Filter, MoreHorizontal, PanelLeft, Plus, Search
 import { TaBadge, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { BoardColumn, BoardSort, BoardView, DealStatus } from "../../db/deals";
-import type { Pipeline } from "../../db/pipelines";
+import type { Pipeline, PipelineType } from "../../db/pipelines";
 import type { Tag } from "../../db/tags";
-import { CARD_TEXT, PIPELINE_TYPE_LABEL } from "../../lib/cardTypes";
+import { CARD_TEXT, OUTCOME_TEXT, PIPELINE_TYPE_LABEL } from "../../lib/cardTypes";
 import { formatCents } from "../../lib/format";
 import { useSession } from "../session";
 import { Popover } from "../ui/Popover";
@@ -25,6 +25,12 @@ const SORT_LABEL: Record<BoardSort, string> = {
   title: "Nome (A–Z)",
 };
 const STATUS_LABEL: Record<DealStatus | "all", string> = { open: "Abertos", won: "Ganhos", lost: "Perdidos", all: "Todos" };
+/** Status do filtro com os termos do tipo de funil (Ganhos / Resolvidos / Concluídos...). */
+const statusLabels = (type: PipelineType): Record<DealStatus | "all", string> => ({
+  ...STATUS_LABEL,
+  won: OUTCOME_TEXT[type].wonPlural,
+  lost: OUTCOME_TEXT[type].lostPlural,
+});
 const TYPE_BADGE = { comercial: "blue", operacional: "purple", projeto: "cyan" } as const;
 
 interface BoardFilter {
@@ -184,7 +190,7 @@ export function Board({
 
   // Resumo ao lado de "Filtrar": status (se não for o padrão), responsáveis e tags.
   const filterParts = [
-    ...(status !== "open" ? [STATUS_LABEL[status]] : []),
+    ...(status !== "open" ? [statusLabels(pipeline.type)[status]] : []),
     ...ownerIds.map((id) => users.find((u) => u.id === id)?.name).filter((n): n is string => !!n),
     ...tagIds.map((id) => tags.find((t) => t.id === id)?.name).filter((n): n is string => !!n),
   ];
@@ -300,7 +306,7 @@ export function Board({
             <div className="mb-3 flex flex-wrap gap-1">
               {(Object.keys(STATUS_LABEL) as (DealStatus | "all")[]).map((s) => (
                 <button key={s} type="button" onClick={() => setStatus(s)} className={cn("rounded-full px-2.5 py-1 text-theme-xs", status === s ? "bg-brand-500 text-white" : "bg-gray-100 text-gray-700 dark:bg-white/5 dark:text-gray-300")}>
-                  {STATUS_LABEL[s]}
+                  {statusLabels(pipeline.type)[s]}
                 </button>
               ))}
             </div>

@@ -2,12 +2,14 @@
 // funil (Editar funil → Cartão), na ordem escolhida. O valor fica no topo e
 // o responsável no rodapé, como no mockup.
 import type { ReactNode } from "react";
-import { Building2, CalendarClock, CheckSquare, Clock, FileText, Mail, MapPin, NotebookText, Package, Percent, Phone, Tag as TagIcon } from "lucide-react";
+import { Building2, CalendarClock, Check, CheckSquare, Clock, FileText, Mail, MapPin, NotebookText, Package, Percent, Phone, Tag as TagIcon, X } from "lucide-react";
 import { badgePalette, cn, type BadgeColor } from "@tailadmin";
 import type { BoardCard } from "../../db/deals";
 import type { CardFieldValue } from "../../db/cardFieldValues";
 import type { Pipeline } from "../../db/pipelines";
 import { parseCardFields } from "../../lib/cardFields";
+import { outcomeLabel } from "../../lib/cardTypes";
+import { formatDate } from "../../lib/format";
 import { Avatar } from "../ui/Avatar";
 
 /** Rótulo curto antes do valor (vazio = só ícone). */
@@ -48,8 +50,15 @@ const ICON: Record<string, ReactNode> = {
   criado_em: <CalendarClock size={13} />,
 };
 
+/** Desfecho do cartão: verde (ganho/resolvido/concluído) ou vermelho (perdido/não…). */
+export interface CardOutcome {
+  won: boolean;
+  label: string;
+  closedAt: string | null;
+}
+
 /** Corpo do cartão a partir dos campos; usado no quadro e na prévia da configuração. */
-export function CardFields({ title, keys, fields, closed }: { title: string; keys: string[]; fields: Record<string, CardFieldValue>; closed?: boolean }) {
+export function CardFields({ title, keys, fields, outcome }: { title: string; keys: string[]; fields: Record<string, CardFieldValue>; outcome?: CardOutcome | null }) {
   const text = (k: string) => {
     const v = fields[k];
     return v && "text" in v ? v : null;
@@ -58,8 +67,17 @@ export function CardFields({ title, keys, fields, closed }: { title: string; key
   const owner = keys.includes("responsavel") ? text("responsavel") : null;
   return (
     <>
-      <div className="flex items-start gap-2">
-        <span className={cn("min-w-0 flex-1 break-words text-theme-sm font-medium text-brand-600 dark:text-brand-400", closed && "opacity-70")}>{title}</span>
+      <div className={cn("flex items-start gap-2", outcome && "pr-5")}>
+        <span
+          className={cn(
+            "min-w-0 flex-1 break-words text-theme-sm font-medium",
+            !outcome && "text-brand-600 dark:text-brand-400",
+            outcome?.won && "text-success-700 dark:text-success-400",
+            outcome && !outcome.won && "text-error-700 dark:text-error-400",
+          )}
+        >
+          {title}
+        </span>
         {value && <span className="shrink-0 text-theme-sm font-semibold text-gray-800 dark:text-white/90">{value.text}</span>}
       </div>
       {keys
@@ -100,9 +118,23 @@ export function CardFields({ title, keys, fields, closed }: { title: string; key
             </div>
           );
         })}
-      {owner && (
-        <div className="mt-2.5 flex justify-end">
-          <Avatar name={owner.text} size={24} title={`Responsável: ${owner.text}`} />
+      {(owner || outcome) && (
+        <div className="mt-2.5 flex items-center justify-between gap-2">
+          {outcome ? (
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                outcome.won ? "bg-success-100 text-success-700 dark:bg-success-500/20 dark:text-success-400" : "bg-error-100 text-error-700 dark:bg-error-500/20 dark:text-error-400",
+              )}
+            >
+              {outcome.won ? <Check size={12} strokeWidth={3} /> : <X size={12} strokeWidth={3} />}
+              {outcome.label}
+              {outcome.closedAt && <span className="font-normal opacity-80">em {formatDate(outcome.closedAt)}</span>}
+            </span>
+          ) : (
+            <span />
+          )}
+          {owner && <Avatar name={owner.text} size={24} title={`Responsável: ${owner.text}`} />}
         </div>
       )}
     </>
@@ -124,21 +156,35 @@ export function KanbanCard({
   onDragStart: (e: React.DragEvent) => void;
   onDragEnd: () => void;
 }) {
+  const label = outcomeLabel(pipeline.type, card.status);
+  const outcome: CardOutcome | null = label ? { won: card.status === "won", label, closedAt: card.closed_at } : null;
   return (
     <div
       draggable
       data-card-id={card.id}
+      title={outcome ? `${outcome.label}${outcome.closedAt ? ` em ${formatDate(outcome.closedAt)}` : ""}` : undefined}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onClick={onOpen}
       className={cn(
-        "cursor-pointer rounded-xl border border-gray-200 bg-white p-3.5 shadow-theme-xs transition hover:shadow-theme-sm dark:border-gray-800 dark:bg-gray-900",
+        "relative cursor-pointer overflow-hidden rounded-xl border p-3.5 shadow-theme-xs transition hover:shadow-theme-sm",
         dragging && "opacity-40",
-        card.status === "lost" && "bg-error-25 dark:bg-error-500/10",
-        card.status === "won" && "bg-success-25 dark:bg-success-500/10",
+        card.status === "open" && "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900",
+        card.status === "won" && "border-success-300 bg-success-50 dark:border-success-500/40 dark:bg-success-500/10",
+        card.status === "lost" && "border-error-300 bg-error-50 dark:border-error-500/40 dark:bg-error-500/10",
       )}
     >
-      <CardFields title={card.title} keys={parseCardFields(pipeline.card_fields, pipeline.type)} fields={card.fields} closed={card.status !== "open"} />
+      {outcome && (
+        // Canto dobrado com ✓ / ✕ (como nos CRMs de referência).
+        <span
+          aria-hidden
+          className={cn("absolute right-0 top-0 h-9 w-9 text-white", outcome.won ? "bg-success-500" : "bg-error-500")}
+          style={{ clipPath: "polygon(0 0, 100% 0, 100% 100%)" }}
+        >
+          {outcome.won ? <Check size={14} strokeWidth={3} className="absolute right-1 top-1" /> : <X size={14} strokeWidth={3} className="absolute right-1 top-1" />}
+        </span>
+      )}
+      <CardFields title={card.title} keys={parseCardFields(pipeline.card_fields, pipeline.type)} fields={card.fields} outcome={outcome} />
     </div>
   );
 }

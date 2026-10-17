@@ -3,7 +3,9 @@
 // anexos e tarefas) e descreve cada alteração em português, com o valor
 // antigo e o novo. Gravações do mesmo usuário em até 2 segundos viram um só
 // evento (ex.: salvar produtos também atualiza o valor do negócio).
+import { OUTCOME_TEXT, PIPELINE_TYPE_BY_KIND } from "../lib/cardTypes";
 import { formatCents, formatDateTime } from "../lib/format";
+import type { DealKind } from "./pipelines";
 import { many, type DatabaseSync } from "./sql";
 
 export interface HistoryEvent {
@@ -52,7 +54,7 @@ const ITEM_FIELDS: Record<string, string> = {
   recurrence: "Recorrência",
   product_id: "Produto",
 };
-const STATUS: Record<string, string> = { open: "aberto", won: "ganho", lost: "perdido" };
+
 const WINDOW_MS = 2000;
 
 const clip = (s: unknown, n = 120) => {
@@ -108,6 +110,11 @@ export function formatCustomRaw(
 }
 
 export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
+  // Termos do desfecho conforme o tipo do funil (ganho, resolvido, concluído...).
+  const kind = many<{ kind: DealKind }>(db, "SELECT kind FROM deal WHERE id = ?", cardId)[0]?.kind ?? "deal";
+  const outcome = OUTCOME_TEXT[PIPELINE_TYPE_BY_KIND[kind]];
+  const dealFields = { ...DEAL_FIELDS, loss_reason_id: outcome.lossReason, loss_note: outcome.lossNote };
+  const statusName: Record<string, string> = { open: "aberto", won: outcome.won.toLowerCase(), lost: outcome.lost.toLowerCase() };
   const users = lookup(db, "app_user");
   const stages = lookup(db, "stage");
   const persons = lookup(db, "person");
@@ -182,9 +189,9 @@ export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
       if (ch.stage_id) out.push(`Moveu de etapa: ${name(stages, ch.stage_id[0])} → ${name(stages, ch.stage_id[1])}`);
       if (ch.status) {
         const [a, b] = ch.status as [string, string];
-        out.push(b === "won" ? "Marcou como ganho" : b === "lost" ? "Marcou como perdido" : `Reabriu (estava ${STATUS[a] ?? a})`);
+        out.push(b === "won" ? outcome.markedWon : b === "lost" ? outcome.markedLost : `Reabriu (estava ${statusName[a] ?? a})`);
       }
-      out.push(...fieldChanges(ch, DEAL_FIELDS, fmtDeal, DEAL_SKIP));
+      out.push(...fieldChanges(ch, dealFields, fmtDeal, DEAL_SKIP));
       return out;
     }
     if (t === "deal_item") {

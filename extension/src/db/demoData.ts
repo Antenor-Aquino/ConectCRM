@@ -145,9 +145,9 @@ export function seedDemoData(db: DatabaseSync, workspaceId: string): void {
     }
 
     // Funis operacional e de projeto
-    const suporte = createPipeline(db, ctx, { name: "Suporte", type: "operacional", stages: [{ name: "Novo ticket", color: "red" }, { name: "Em atendimento", color: "amber" }, { name: "Resolvido", color: "green" }] });
+    const suporte = createPipeline(db, ctx, { name: "Suporte", type: "operacional", stages: [{ name: "Novo ticket", color: "red" }, { name: "Em atendimento", color: "amber" }, { name: "Aguardando cliente", color: "blue" }] });
     createCard(db, ctx, { pipelineId: suporte, title: "Falha no acesso do cliente", description: "Usuário não consegue entrar no portal.", slaAt: at(1, 17), personId: people.mari, ownerId: gestor });
-    const projeto = createPipeline(db, ctx, { name: "Implantação PUC-PR", type: "projeto", stages: [{ name: "A fazer" }, { name: "Em andamento", color: "blue" }, { name: "Concluído", color: "green" }] });
+    const projeto = createPipeline(db, ctx, { name: "Implantação PUC-PR", type: "projeto", stages: [{ name: "A fazer" }, { name: "Em andamento", color: "blue" }, { name: "Em revisão", color: "amber" }] });
     createCard(db, ctx, { pipelineId: projeto, title: "Treinamento dos coordenadores", startAt: at(3, 9), dueAt: at(10, 18), organizationId: orgs.puc, ownerId: gestor });
 
     // Tarefas

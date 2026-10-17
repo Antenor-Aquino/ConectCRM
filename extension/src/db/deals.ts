@@ -93,6 +93,7 @@ export interface DealItem {
 export interface CardDetail extends Card {
   person_name: string | null;
   organization_name: string | null;
+  loss_reason_name: string | null;
   items: DealItem[];
   tags: Tag[];
   customValues: Record<string, CustomValue>;
@@ -390,11 +391,13 @@ export function setDealItems(db: DatabaseSync, ctx: DbContext, dealId: string, i
 export function getCard(db: DatabaseSync, id: string, viewer?: Viewer | null): CardDetail | undefined {
   const card = getCardRow(db, id);
   if (!card || !canAccessCard(db, viewer, id)) return undefined;
-  const names = one<{ person_name: string | null; organization_name: string | null }>(
+  const names = one<{ person_name: string | null; organization_name: string | null; loss_reason_name: string | null }>(
     db,
-    `SELECT (SELECT name FROM person WHERE id = ?) AS person_name, (SELECT name FROM organization WHERE id = ?) AS organization_name`,
+    `SELECT (SELECT name FROM person WHERE id = ?) AS person_name, (SELECT name FROM organization WHERE id = ?) AS organization_name,
+       (SELECT name FROM loss_reason WHERE id = ?) AS loss_reason_name`,
     card.person_id,
     card.organization_id,
+    card.loss_reason_id,
   )!;
   return {
     ...card,
@@ -430,6 +433,7 @@ export interface BoardCard {
   stage_entered_at: string;
   created_at: string;
   updated_at: string;
+  closed_at: string | null;
   tasks_total: number;
   tasks_done: number;
   next_task_due_at: string | null;
@@ -493,7 +497,7 @@ export function getBoard(
   const cards = many<BoardCard & { stage_id: string }>(
     db,
     `SELECT d.id, d.stage_id, d.title, d.value_cents, d.status, d.person_id, p.name AS person_name, o.name AS organization_name,
-       d.owner_id, u.name AS owner_name, d.sla_at, d.due_at, d.position, d.stage_entered_at, d.created_at, d.updated_at,
+       d.owner_id, u.name AS owner_name, d.sla_at, d.due_at, d.position, d.stage_entered_at, d.created_at, d.updated_at, d.closed_at,
        (SELECT COUNT(*) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL) AS tasks_total,
        (SELECT COUNT(*) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 1) AS tasks_done,
        (SELECT MIN(a.due_at) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0) AS next_task_due_at,
