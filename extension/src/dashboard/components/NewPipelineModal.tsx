@@ -96,7 +96,7 @@ export function NewPipelineModal({
                 <TaSelect
                   value={s.color}
                   onChange={(e) => updateStage(i, { color: e.target.value as BadgeColor })}
-                  className="w-28 shrink-0"
+                  className="w-32 shrink-0"
                   style={{ color: badgePalette[s.color].fg }}
                 >
                   {STAGE_COLORS.map((c) => (
