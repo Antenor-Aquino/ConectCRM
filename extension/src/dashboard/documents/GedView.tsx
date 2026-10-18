@@ -267,7 +267,8 @@ export function GedView() {
           value: String(stats.soon),
           icon: <CalendarClock size={18} />,
           active: filter.validity === "soon",
-          onClick: () => set({ validity: "soon", trash: false }),
+          // Clicar de novo no cartão marcado desliga o filtro (os outros continuam).
+          onClick: () => set({ validity: filter.validity === "soon" ? undefined : "soon", trash: false }),
           tone: "text-warning-600",
         },
         {
@@ -275,7 +276,7 @@ export function GedView() {
           value: String(stats.expired),
           icon: <AlertTriangle size={18} />,
           active: filter.validity === "expired",
-          onClick: () => set({ validity: "expired", trash: false }),
+          onClick: () => set({ validity: filter.validity === "expired" ? undefined : "expired", trash: false }),
           tone: "text-error-600",
         },
         {
@@ -283,7 +284,7 @@ export function GedView() {
           value: String(stats.unclassified),
           icon: <FileQuestion size={18} />,
           active: filter.typeId === "none",
-          onClick: () => set({ typeId: "none", trash: false }),
+          onClick: () => set({ typeId: filter.typeId === "none" ? undefined : "none", trash: false }),
           tone: "text-gray-600",
         },
         {
@@ -291,7 +292,7 @@ export function GedView() {
           value: String(stats.unlinked),
           icon: <Unlink size={18} />,
           active: !!filter.unlinked,
-          onClick: () => set({ unlinked: true, trash: false }),
+          onClick: () => set({ unlinked: filter.unlinked ? undefined : true, trash: false }),
           tone: "text-gray-600",
         },
         {
@@ -313,6 +314,8 @@ export function GedView() {
             key={c.label}
             type="button"
             onClick={c.onClick}
+            aria-pressed={c.active}
+            title={c.active && c.label !== "Documentos" ? "Clique para tirar este filtro" : undefined}
             className={cn(
               "flex items-center gap-3 rounded-2xl border bg-white px-4 py-3 text-left shadow-theme-xs dark:bg-gray-900",
               c.active ? "border-brand-500 ring-1 ring-brand-500" : "border-gray-200 hover:border-gray-300 dark:border-gray-800",
