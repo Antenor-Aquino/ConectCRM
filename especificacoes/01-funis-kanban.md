@@ -460,8 +460,12 @@ no cartão mais recente do funil.
   selecionados).
 - **Arquivar** (também no detalhe do cartão): o cartão sai do quadro e da
   lista, mas continua nos relatórios, na busca e na ficha do contato; o
-  filtro de situação ganhou **Arquivados**. O detalhe mostra a faixa
-  "Arquivado em …" e o botão **Desarquivar**. O histórico registra.
+  filtro de situação ganhou **Arquivados** (só eles) e **Todos** passa a
+  incluí-los. O cartão arquivado aparece em **amarelo** com uma tarja no
+  canto superior direito com o símbolo de arquivo (no lugar do canto de
+  ganho/perdido; a dica mostra a data). Na lista, a linha fica amarela com
+  o selo "Arquivado". O detalhe mostra a faixa amarela "Arquivado em …" e o
+  botão **Desarquivar**. O histórico registra.
 
 ## 10.1.4 Vários contatos no cartão (0.2.37)
 

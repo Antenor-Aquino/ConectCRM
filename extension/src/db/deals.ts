@@ -629,7 +629,9 @@ function boardWhere(db: DatabaseSync, pipelineId: string, opts: BoardFilterOpts)
   const where = ["d.pipeline_id = ?", "d.deleted_at IS NULL"];
   const params: SqlValue[] = [pipelineId];
   const status = opts.status ?? "open";
-  where.push(status === "archived" ? "d.archived_at IS NOT NULL" : "d.archived_at IS NULL");
+  // "Todos" mostra também os arquivados (sinalizados em amarelo); "Arquivados", só eles.
+  if (status === "archived") where.push("d.archived_at IS NOT NULL");
+  else if (status !== "all") where.push("d.archived_at IS NULL");
   if (status !== "all" && status !== "archived") {
     where.push("d.status = ?");
     params.push(status);

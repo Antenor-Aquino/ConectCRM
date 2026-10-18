@@ -106,6 +106,10 @@ describe("ações em lote", () => {
     bulkCards(db, actx, getViewer(db, admin), [a], { type: "archive" });
     expect(getBoard(db, p)[0]!.cards.map((c) => c.title)).toEqual(["B"]);
     expect(getBoard(db, p, { status: "archived" })[0]!.cards.map((c) => c.title)).toEqual(["A"]);
+    expect(getBoard(db, p, { status: "all" })[0]!.cards.map((c) => [c.title, !!c.archived_at]).sort()).toEqual([
+      ["A", true],
+      ["B", false],
+    ]);
     expect(cardHistory(db, a).flatMap((h) => h.lines)).toContain("Arquivou o cartão");
     setCardArchived(db, actx, a, false);
     expect(getBoard(db, p)[0]!.cards).toHaveLength(2);

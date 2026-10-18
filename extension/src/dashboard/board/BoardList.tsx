@@ -2,7 +2,7 @@
 // colunas escolhidas pelo usuário (Personalizar colunas), ordenação pelo
 // cabeçalho e total no rodapé. Usa os mesmos filtros do quadro.
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowDownUp, ArrowUp, Check, Settings2, X } from "lucide-react";
+import { Archive, ArrowDown, ArrowDownUp, ArrowUp, Check, Settings2, X } from "lucide-react";
 import { badgePalette, cn, TaButton, type BadgeColor } from "@tailadmin";
 import type { CardFieldValue } from "../../db/cardFieldValues";
 import type { BoardCard, BoardColumn } from "../../db/deals";
@@ -162,7 +162,12 @@ export function BoardList({
             {sorted.map((r) => (
               <tr
                 key={r.id}
-                className={cn("group cursor-pointer", selected.has(r.id) && "[&>td]:!bg-brand-25 dark:[&>td]:!bg-brand-500/10")}
+                className={cn(
+                  "group cursor-pointer",
+                  r.archived_at && "[&>td]:!bg-warning-50 dark:[&>td]:!bg-warning-500/10",
+                  selected.has(r.id) && "[&>td]:!bg-brand-25 dark:[&>td]:!bg-brand-500/10",
+                )}
+                data-archived={r.archived_at ? true : undefined}
                 onClick={() => (selected.size ? onToggleSelect(r.id) : onOpenCard(r.id))}
               >
                 <td className="sticky left-0 w-9 border-b border-gray-100 bg-white pl-3 group-hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:group-hover:bg-gray-800">
@@ -196,6 +201,11 @@ export function BoardList({
                         )}
                       >
                         {outcome[r.status]}
+                      </span>
+                    )}
+                    {r.archived_at && (
+                      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning-100 px-1.5 py-px text-[10px] font-medium text-warning-800" title="Arquivado">
+                        <Archive size={10} /> Arquivado
                       </span>
                     )}
                   </div>

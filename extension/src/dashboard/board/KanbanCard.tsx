@@ -2,7 +2,7 @@
 // funil (Editar funil → Cartão), na ordem escolhida. O valor fica no topo e
 // o responsável no rodapé, como no mockup.
 import type { ReactNode } from "react";
-import { Building2, CalendarClock, Check, CheckSquare, Clock, FileText, Mail, MapPin, NotebookText, Package, Percent, Phone, Tag as TagIcon, X } from "lucide-react";
+import { Archive, Building2, CalendarClock, Check, CheckSquare, Clock, FileText, Mail, MapPin, NotebookText, Package, Percent, Phone, Tag as TagIcon, X } from "lucide-react";
 import { badgePalette, cn, type BadgeColor } from "@tailadmin";
 import type { BoardCard } from "../../db/deals";
 import type { CardFieldValue } from "../../db/cardFieldValues";
@@ -65,12 +65,15 @@ export function CardFields({
   keys,
   fields,
   outcome,
+  archived,
   indicator,
 }: {
   title: string;
   keys: string[];
   fields: Record<string, CardFieldValue>;
   outcome?: CardOutcome | null;
+  /** Arquivado: espaço para a tarja e título em âmbar. */
+  archived?: boolean;
   /** Indicador de atividades (cartões em aberto do quadro). */
   indicator?: React.ReactNode;
 }) {
@@ -82,13 +85,14 @@ export function CardFields({
   const owner = keys.includes("responsavel") ? text("responsavel") : null;
   return (
     <>
-      <div className={cn("flex items-start gap-2", outcome && "pr-5")}>
+      <div className={cn("flex items-start gap-2", (outcome || archived) && "pr-5")}>
         <span
           className={cn(
             "min-w-0 flex-1 break-words text-theme-sm font-medium",
-            !outcome && "text-brand-600 dark:text-brand-400",
-            outcome?.won && "text-success-700 dark:text-success-400",
-            outcome && !outcome.won && "text-error-700 dark:text-error-400",
+            archived && "text-warning-800 dark:text-warning-300",
+            !archived && !outcome && "text-brand-600 dark:text-brand-400",
+            !archived && outcome?.won && "text-success-700 dark:text-success-400",
+            !archived && outcome && !outcome.won && "text-error-700 dark:text-error-400",
           )}
         >
           {title}
@@ -199,11 +203,16 @@ export function KanbanCard({
 }) {
   const label = outcomeLabel(pipeline.type, card.status);
   const outcome: CardOutcome | null = label ? { won: card.status === "won", label, closedAt: card.closed_at } : null;
+  const archived = !!card.archived_at;
+  const tip = [archived ? `Arquivado em ${formatDate(card.archived_at)}` : "", outcome ? `${outcome.label}${outcome.closedAt ? ` em ${formatDate(outcome.closedAt)}` : ""}` : ""]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <div
       draggable
       data-card-id={card.id}
-      title={outcome ? `${outcome.label}${outcome.closedAt ? ` em ${formatDate(outcome.closedAt)}` : ""}` : undefined}
+      title={tip || undefined}
+      data-archived={archived || undefined}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onClick={selecting && onToggleSelect ? onToggleSelect : onOpen}
@@ -211,9 +220,11 @@ export function KanbanCard({
         "group relative cursor-pointer overflow-hidden rounded-xl border p-3.5 shadow-theme-xs transition hover:shadow-theme-sm",
         selecting && "pl-9",
         dragging && "opacity-40",
-        card.status === "open" && "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900",
-        card.status === "won" && "border-success-300 bg-success-50 dark:border-success-500/40 dark:bg-success-500/10",
-        card.status === "lost" && "border-error-300 bg-error-50 dark:border-error-500/40 dark:bg-error-500/10",
+        // Arquivado: amarelo, por cima da cor do desfecho.
+        archived && "border-warning-300 bg-warning-50 dark:border-warning-500/40 dark:bg-warning-500/10",
+        !archived && card.status === "open" && "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900",
+        !archived && card.status === "won" && "border-success-300 bg-success-50 dark:border-success-500/40 dark:bg-success-500/10",
+        !archived && card.status === "lost" && "border-error-300 bg-error-50 dark:border-error-500/40 dark:bg-error-500/10",
         selected && "!border-brand-400 outline outline-2 outline-brand-300",
       )}
     >
@@ -228,7 +239,12 @@ export function KanbanCard({
           className={cn("absolute left-3 top-3.5 z-10 h-4 w-4 cursor-pointer accent-brand-500", !selecting && "opacity-0 group-hover:opacity-100")}
         />
       )}
-      {outcome && (
+      {archived ? (
+        // Tarja no canto com o símbolo de arquivo.
+        <span aria-label="Arquivado" className="absolute right-0 top-0 h-9 w-9 bg-warning-500 text-white" style={{ clipPath: "polygon(0 0, 100% 0, 100% 100%)" }}>
+          <Archive size={13} strokeWidth={2.5} className="absolute right-1 top-1" />
+        </span>
+      ) : outcome && (
         // Canto dobrado com ✓ / ✕ (como nos CRMs de referência).
         <span
           aria-hidden
@@ -243,6 +259,7 @@ export function KanbanCard({
         keys={parseCardFields(pipeline.card_fields, pipeline.type)}
         fields={card.fields}
         outcome={outcome}
+        archived={archived}
         indicator={
           card.status === "open" && onOpenActivity && onNewActivity ? (
             <ActivityIndicator card={card} onOpenActivity={onOpenActivity} onNewActivity={onNewActivity} onChanged={onChanged ?? (() => undefined)} />

@@ -274,7 +274,7 @@ export function CardDetail({
         </TaButton>
       </div>
       {card.archived_at && (
-        <p className="mb-4 flex items-center gap-2 rounded-lg bg-gray-100 px-3 py-2 text-theme-sm text-gray-700 dark:bg-white/5 dark:text-gray-300" data-archived>
+        <p className="mb-4 flex items-center gap-2 rounded-lg border border-warning-300 bg-warning-50 px-3 py-2 text-theme-sm text-warning-800 dark:border-warning-500/40 dark:bg-warning-500/10 dark:text-warning-300" data-archived>
           <Archive size={15} /> Arquivado em {formatDateTime(card.archived_at)}: não aparece no quadro (filtro “Arquivados” mostra).
         </p>
       )}
