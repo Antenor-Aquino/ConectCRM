@@ -374,6 +374,45 @@ no cartão mais recente do funil.
   histórico registra "Mudou de funil: Vendas › Proposta → Parcerias › Proposta"
   (com "(agora ticket)" quando o tipo muda).
 
+## 10.1.2 Importar cartões por planilha (de-para)
+
+- No quadro, **⋯ → Importar planilha…** importa cartões (negócios, tickets ou
+  etapas de projeto) de um Excel (.xlsx) ou CSV para o funil aberto. A
+  primeira linha tem os nomes das colunas. **Baixar planilha modelo** gera um
+  .xlsx com as colunas do funil, incluindo os campos personalizados.
+- **1. De-para das colunas**: para cada campo do cartão (nome, etapa,
+  situação, valor, responsável, contato, e-mail e celular do contato,
+  organização, previsão de fechamento / SLA / início e prazo conforme o tipo,
+  origem, tags, descrição e os campos personalizados do funil) o usuário
+  escolhe a coluna da planilha. O sistema sugere pelo cabeçalho, sem
+  diferença de acento/maiúsculas ("Negócio", "Fase", "Vendedor", "Cliente",
+  "Empresa"...), e mostra o valor da primeira linha como exemplo. Só o nome é
+  obrigatório, além dos campos personalizados obrigatórios.
+- **2. De-para dos valores**: para as colunas de etapa, situação,
+  responsável e campos de lista/múltipla escolha, cada valor diferente da
+  planilha aparece com o número de linhas e o destino escolhido. O destino é
+  sugerido pelo nome (etapa de mesmo nome; "Ganho/Vendido/Fechado",
+  "Perdido/Cancelado", "Resolvido", "Em andamento"...; usuário pelo nome ou
+  e-mail; opção pelo rótulo). Valores não reconhecidos ficam destacados e
+  vão para o padrão: a etapa escolhida em "Etapa para linhas sem etapa"
+  (primeira etapa), Aberto, quem importa, ou campo vazio.
+- Cada linha é gravada por inteiro ou nada (transação):
+  - contato achado pelo e-mail ou celular, depois pelo nome; se não existir,
+    é criado. Organização achada pelo nome ou criada, e vinculada ao contato;
+  - tags separadas por ";" ou ","; as que não existem são criadas no tipo do
+    cartão;
+  - valores como "R$ 1.500,00", "1500,5" ou "1,500.00"; datas em dd/mm/aaaa
+    (ou datas do próprio Excel); no CSV o texto é lido como está (01/02/2026 é
+    1º de fevereiro);
+  - responsável respeita as permissões (vendedor só a si, gestor à equipe);
+  - situação Ganho/Perdido grava o desfecho sem motivo; tickets recebem o
+    número sequencial normalmente.
+- Por padrão, linhas cujo nome já existe no funil (inclusive repetidas na
+  própria planilha) são **ignoradas**; a opção pode ser desmarcada.
+- Importa em lotes de 200 com o progresso na tela. O resumo mostra quantos
+  cartões foram criados, os ignorados e os erros com o **número da linha** da
+  planilha e o motivo.
+
 ## 10.2 Detalhe do negócio: produtos e histórico
 
 - Com produtos/serviços no negócio, o resumo aparece logo abaixo do valor:

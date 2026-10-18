@@ -7,6 +7,7 @@ import { cardHistory } from "../db/cardHistory";
 import { cardFieldValues } from "../db/cardFieldValues";
 import * as attachments from "../db/attachments";
 import * as importer from "../db/importer";
+import * as cardImporter from "../db/cardImporter";
 import * as merge from "../db/merge";
 import * as contacts from "../db/contacts";
 import * as copilot from "../db/copilot";
@@ -156,6 +157,10 @@ export const methods = {
     const v = viewer(db, ctx);
     deals.assertCanAssign(db, v, p.ownerId === undefined ? ctx.userId : p.ownerId);
     return deals.createCard(db, ctx, p);
+  },
+  "cards.import": (db: DatabaseSync, ctx: DbContext, p: cardImporter.CardImportInput) => {
+    const v = viewer(db, ctx);
+    return cardImporter.importCards(db, ctx, p, (ownerId) => deals.assertCanAssign(db, v, ownerId));
   },
   "cards.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Parameters<typeof deals.updateCard>[3] }) => {
     const v = viewer(db, ctx);

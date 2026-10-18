@@ -33,6 +33,7 @@ import { useCardFieldOptions } from "./fieldOptions";
 import { KanbanCard } from "./KanbanCard";
 import { errorText } from "../../lib/errors";
 import { TaskModal, type TaskRequest } from "../tasks/TaskModal";
+import { CardImportModal } from "./CardImportModal";
 
 const VIEW_LABEL: Record<BoardView, string> = { all: "Fluxo geral", mine: "Meu fluxo", team: "Minha equipe" };
 const SORT_LABEL: Record<BoardSort, string> = {
@@ -247,6 +248,7 @@ export function Board({
   const [hiddenByFilter, setHiddenByFilter] = useState(0);
   const [filterOpen, setFilterOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [drag, setDrag] = useState<{ id: string; from: string } | null>(null);
   const [drop, setDrop] = useState<{ stageId: string; beforeId: string | null } | null>(null);
@@ -405,6 +407,16 @@ export function Board({
                 }}
               >
                 Editar funil e etapas
+              </button>
+              <button
+                type="button"
+                className="block w-full px-3.5 py-2 text-left text-theme-sm text-gray-700 hover:bg-gray-50 dark:text-gray-300"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setImporting(true);
+                }}
+              >
+                Importar planilha…
               </button>
             </Popover>
           </div>
@@ -628,6 +640,7 @@ export function Board({
           )}
         </div>
       )}
+      {importing && <CardImportModal pipeline={pipeline} onClose={() => setImporting(false)} onImported={() => void load()} />}
       {activityModal && (
         <TaskModal
           request={activityModal}
