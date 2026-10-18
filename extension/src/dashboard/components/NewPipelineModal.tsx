@@ -7,6 +7,7 @@ import { call } from "../../rpc/client";
 import type { PipelineType } from "../../db/pipelines";
 import { colorLabel } from "../../lib/colors";
 import { errorText } from "../../lib/errors";
+import { StagesPreview } from "../ui/StageSelect";
 
 const STAGE_COLORS = Object.keys(badgePalette) as BadgeColor[];
 
@@ -126,6 +127,7 @@ export function NewPipelineModal({
           >
             Adicionar etapa
           </TaButton>
+          <StagesPreview stages={stages} />
         </div>
         {error && <p className="text-theme-sm text-error-600">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">

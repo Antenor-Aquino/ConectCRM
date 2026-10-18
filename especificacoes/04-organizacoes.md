@@ -43,7 +43,7 @@ Modal com rolagem interna, botão ✕ no topo, **Salvar** fixo no rodapé.
 - Lista com busca, filtros (segmento, cidade/estado, responsável, tags,
   campos personalizados), colunas configuráveis, importar/exportar
   Excel/CSV.
-- Detalhe: dados da Receita, contatos, negócios/tickets, tarefas, notas e
+- Detalhe: dados da Receita, contatos, negócios/tickets, atividades, notas e
   histórico de alterações.
 - Mesclar organizações duplicadas.
 

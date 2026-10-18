@@ -19,7 +19,7 @@ export const DOC_NAV_EVENT = "conectcrm:documento-navegou";
 export const DocumentNavProvider = NavContext.Provider;
 export const useDocumentNav = () => useContext(NavContext);
 
-export const LINK_TYPE_LABEL: Record<DocLinkType, string> = { deal: "Cartão", activity: "Tarefa", person: "Contato", organization: "Organização" };
+export const LINK_TYPE_LABEL: Record<DocLinkType, string> = { deal: "Cartão", activity: "Atividade", person: "Contato", organization: "Organização" };
 
 export function LinkIcon({ type, size = 13 }: { type: DocLinkType; size?: number }) {
   if (type === "deal") return <Filter size={size} />;

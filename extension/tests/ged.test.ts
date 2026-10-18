@@ -1,5 +1,3 @@
-import initSqlJs from "sql.js";
-import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 import { createActivity } from "../src/db/activities";
 import { bootstrap } from "../src/db/bootstrap";
@@ -12,9 +10,9 @@ import { createPipeline, listPipelines } from "../src/db/pipelines";
 import { createTag } from "../src/db/tags";
 import { createUser } from "../src/db/users";
 import { methods } from "../src/rpc/methods";
-import { freshDb } from "./helpers";
+import { freshDb, emptyDb } from "./helpers";
+import type { DatabaseSync } from "../src/db/sql";
 
-const require = createRequire(import.meta.url);
 let n = 0;
 /** Arquivo fictício (o conteúdo fica fora do banco; aqui só o registro). */
 const file = (filename: string, mime = "application/pdf", extra: Partial<docs.FileRef> = {}): docs.FileRef => ({
@@ -333,7 +331,10 @@ describe("GED: tipos de documento e campo personalizado", () => {
     expect(docs.getDocument(db, id)!.type_id).toBeNull();
     expect(docs.listDocuments(db, { typeId: "none" }).items.map((d) => d.id)).toEqual([id]);
     expect(docs.listDocuments(db, { search: "nao classificado" }).items.map((d) => d.id)).toEqual([id]);
-    expect(() => methods["documentTypes.create"](db, as(ctx, createUser(db, ctx, { name: "Vera", role: "vendedor" })), { name: "X" })).toThrow(/permissão/);
+    // Vendedor cria classificação nova ao digitar; editar/excluir continua com gestores.
+    const vera = as(ctx, createUser(db, ctx, { name: "Vera", role: "vendedor" }));
+    const nova = methods["documentTypes.create"](db, vera, { name: "Nota de débito" });
+    expect(() => methods["documentTypes.update"](db, vera, { id: nova, patch: { name: "Y" } })).toThrow(/permissão/);
     void type;
   });
 
@@ -366,8 +367,7 @@ describe("funis por categoria", () => {
 
 describe("GED: migração dos anexos antigos", () => {
   it("anexos de cartão e tarefa viram documentos não classificados, com os vínculos da tela; o conteúdo sai do banco", async () => {
-    const SQL = await initSqlJs({ locateFile: () => require.resolve("sql.js/dist/sql-wasm.wasm") });
-    const db = new SQL.Database();
+    const db = await emptyDb();
     db.exec("PRAGMA foreign_keys = ON");
     db.exec("CREATE TABLE _migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL);");
     for (const m of MIGRATIONS.filter((x) => x.name < "0005")) {
@@ -431,7 +431,7 @@ describe("GED: migração dos anexos antigos", () => {
 });
 
 /** Base criada antes do GED (bootstrap atual também criaria os tipos). */
-function bootstrapOld(db: import("sql.js").Database): string {
+function bootstrapOld(db: DatabaseSync): string {
   const ws = "ws-antigo";
   db.run("INSERT INTO workspace (id, name, created_at, updated_at) VALUES (?, 'W', 'x', 'x')", [ws]);
   db.run("INSERT INTO activity_type (id, workspace_id, name, icon, created_at, updated_at) VALUES ('tt', ?, 'Tarefa', 'timer', 'x', 'x')", [ws]);

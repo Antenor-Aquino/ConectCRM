@@ -15,6 +15,7 @@ import {
   saveAiSettings,
   type AiProvider,
   type AiSettings as Settings,
+  listModels,
 } from "../../lib/ai";
 import { Field } from "../ui/form";
 import { errorText } from "../../lib/errors";
@@ -33,6 +34,7 @@ export function AiSettings() {
   const [showKey, setShowKey] = useState(false);
   const [msg, setMsg] = useState<Msg>(null);
   const [busy, setBusy] = useState(false);
+  const [models, setModels] = useState<string[]>([]);
 
   useEffect(() => {
     void loadAiSettings().then(setS);
@@ -42,6 +44,7 @@ export function AiSettings() {
   const set = (patch: Partial<Settings>) => {
     setS({ ...s, ...patch });
     setMsg(null);
+    if (patch.provider) setModels([]);
   };
 
   const save = async () => {
@@ -52,12 +55,23 @@ export function AiSettings() {
   const test = async () => {
     setBusy(true);
     setMsg(null);
+    // Modelos da chave: viram sugestões no campo Modelo.
+    const available = listModels(s).catch(() => [] as string[]);
+    void available.then(setModels);
     try {
       await saveAiSettings(s);
       const answer = await aiGenerate(s, "Responda apenas: OK");
       setMsg({ text: `Conexão com o ${AI_LABELS[prov]} funcionando (resposta: "${answer.slice(0, 40)}").`, kind: "ok" });
     } catch (e) {
-      setMsg({ text: errorText(e), kind: "err" });
+      let text = errorText(e);
+      const model = s.models[prov]?.trim() || AI_DEFAULT_MODELS[prov];
+      if (/não encontrado/.test(text)) {
+        const list = await available;
+        text = list.length
+          ? `O modelo "${model}" não existe ou não está liberado para esta chave. Modelos disponíveis: ${list.slice(0, 12).join(", ")}${list.length > 12 ? "…" : ""}. Escolha um no campo Modelo.`
+          : `O modelo "${model}" não existe ou não está liberado para esta chave. Confira o nome exato no site do ${AI_LABELS[prov]} ou deixe o campo em branco para usar o padrão.`;
+      }
+      setMsg({ text, kind: "err" });
     } finally {
       setBusy(false);
     }
@@ -77,7 +91,17 @@ export function AiSettings() {
             </TaSelect>
           </Field>
           <Field label="Modelo" hint={`Em branco usa o padrão: ${AI_DEFAULT_MODELS[prov]}`}>
-            <TaInput value={s.models[prov] ?? ""} placeholder={AI_DEFAULT_MODELS[prov]} onChange={(e) => set({ models: { ...s.models, [prov]: e.target.value } })} />
+            <TaInput
+              list="conectcrm-ai-models"
+              value={s.models[prov] ?? ""}
+              placeholder={AI_DEFAULT_MODELS[prov]}
+              onChange={(e) => set({ models: { ...s.models, [prov]: e.target.value.trim() } })}
+            />
+            <datalist id="conectcrm-ai-models">
+              {models.map((m) => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
           </Field>
         </div>
         <Field label={`Chave de API do ${AI_LABELS[prov]}`} hint={`Gere em ${KEY_HELP[prov]}`}>

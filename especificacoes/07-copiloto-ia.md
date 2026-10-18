@@ -22,13 +22,13 @@ devolvem os valores já formatados; a IA só organiza esses números num card.
 
 | Consulta | O que devolve |
 |---|---|
-| buscar_cartoes | Cartões por texto/situação/funil/responsável: etapa, valor, contato, dias na etapa, próxima tarefa, atrasadas, total e soma |
-| detalhar_cartao | Um cartão: contato, itens, tarefas pendentes e concluídas, últimas notas, etapas percorridas com dias |
+| buscar_cartoes | Cartões por texto/situação/funil/responsável: etapa, valor, contato, dias na etapa, próxima atividade, atrasadas, total e soma |
+| detalhar_cartao | Um cartão: contato, itens, atividades pendentes e concluídas, últimas notas, etapas percorridas com dias |
 | resumo_comercial | Indicadores de um período (mesmos números da tela Relatórios) |
 | listar_tarefas | Atrasadas (finalização vencida ou, sem finalização, início antes de hoje; da mais atrasada para a menos), de hoje, próximos 7 dias ou pendentes |
-| negocios_parados | Abertos sem movimento (etapa, tarefa concluída ou nota) além do limite da etapa (ou 14 dias, ou o informado) |
+| negocios_parados | Abertos sem movimento (etapa, atividade concluída ou nota) além do limite da etapa (ou 14 dias, ou o informado) |
 | buscar_contatos | Pessoas e organizações por nome, e-mail ou telefone, com os cartões abertos |
-| estrutura_do_crm | Funis e etapas, usuários, equipes, motivos de perda, tipos de tarefa |
+| estrutura_do_crm | Funis e etapas, usuários, equipes, motivos de perda, tipos de atividade |
 
 Nomes de funil, usuário ou equipe aceitam parte do nome; sem correspondência,
 a consulta devolve as opções e o Copiloto pergunta qual é.
@@ -47,12 +47,12 @@ clique envia o texto como se o usuário tivesse digitado. "Sim", "pode" ou
 ## 4. Ações sugeridas
 
 A IA pode sugerir até 3 ações por resposta, só com cartões que vieram das
-consultas: **criar tarefa** (título e data/hora), **adicionar nota**,
+consultas: **criar atividade** (título e data/hora), **adicionar nota**,
 **abrir o cartão** ou **criar cartão** (título, funil e etapa; depois de
 criado, o botão abre o cartão). Pedido claro de criação não vira pergunta:
 o Copiloto confere o funil/etapa e se já existe cartão parecido e entrega o
 botão pronto. A busca de cartões tolera nomes ditados com erro ("Concerto"
-acha "Conserto"). Nada é gravado sem o clique do usuário; a tarefa é
+acha "Conserto"). Nada é gravado sem o clique do usuário; a atividade é
 criada para o usuário atual e vinculada ao cartão.
 
 ## 5. Permissões e privacidade
@@ -65,7 +65,27 @@ criada para o usuário atual e vinculada ao cartão.
 
 ## Ajustes (0.2.9)
 
-- A cada pergunta o Copiloto consulta o CRM de novo (tarefas e negócios
+- A cada pergunta o Copiloto consulta o CRM de novo (atividades e negócios
   criados durante a conversa entram na resposta); nunca repete uma resposta
   anterior sem consultar.
 - "Eu/meu/minhas" = o usuário atual (filtra pelo responsável).
+
+## Copiloto aberto num cartão (0.2.13)
+
+- Aberto pelo "Perguntar ao Copiloto" do cartão ou pelo botão do topo com o
+  cartão aberto (em tela cheia), a conversa se refere a esse cartão: uma
+  barra mostra "Conversa sobre o cartão X".
+- "Crie uma atividade…", "adicione uma nota…", "resuma", "próximo passo" valem
+  para ele, a não ser que o pedido cite outro cartão, contato ou funil.
+  Ação sem cartão indicado usa o cartão aberto.
+- **Nova conversa** continua no mesmo cartão; **Geral** (na barra) volta
+  para o CRM todo.
+- Pedido de atividade ditado ("criou a atividade X para dia 18 às 8 horas") vira
+  a ação criar atividade pronta; tabela sem linhas não é exibida.
+
+## Modelos com raciocínio (0.2.16)
+
+- Alguns modelos (ex.: gpt-5.6-sol) recusam ferramentas no Chat Completions
+  com o raciocínio ligado ("Function tools with reasoning_effort are not
+  supported…"). O Copiloto repete o pedido com `reasoning_effort: "none"`
+  e lembra o modelo para os próximos pedidos.

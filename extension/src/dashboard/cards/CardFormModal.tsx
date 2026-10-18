@@ -136,8 +136,8 @@ export function CardFormModal({
         stageId: stageId ?? undefined,
         title,
         description: type === "comercial" ? undefined : description,
-        valueCents: type === "comercial" && items.length === 0 ? valueCents : undefined,
-        items: type === "comercial" && items.length ? items : undefined,
+        valueCents: items.length === 0 && valueCents ? valueCents : undefined,
+        items: items.length ? items : undefined,
         slaAt: type === "operacional" ? slaAt : undefined,
         startAt: type === "projeto" ? fromDateInput(startDate) : undefined,
         dueAt: type === "projeto" ? fromDateInput(dueDate) : undefined,
@@ -164,7 +164,8 @@ export function CardFormModal({
         <TaInput autoFocus value={title} placeholder={text.titlePlaceholder} onChange={(e) => setTitle(e.target.value)} />
       </Field>
 
-      {type === "comercial" && (
+      {/* Valor e produtos/serviços em todos os tipos de funil. */}
+      {
         <>
           <SectionLabel>Valor</SectionLabel>
           <div className="flex items-center gap-3">
@@ -177,19 +178,28 @@ export function CardFormModal({
                 <MoneyInput value={valueCents} onChange={setValueCents} />
               )}
             </div>
-            <button type="button" className="flex items-center gap-1.5 text-theme-sm font-medium text-brand-600 hover:underline" onClick={() => setItemsOpen(true)}>
+            <button
+              type="button"
+              className="flex items-center gap-1.5 text-theme-sm font-medium text-brand-600 hover:underline"
+              onClick={() => setItemsOpen(true)}
+            >
               <PlusCircle size={16} />
-              {items.length ? `${items.length} produto(s) — editar` : "Adicionar produtos"}
+              {items.length ? `${items.length} produto(s) — editar` : "Adicionar"}
             </button>
           </div>
         </>
-      )}
+      }
 
       {type === "operacional" && (
         <>
           <SectionLabel>Ticket</SectionLabel>
           <Field label="Descrição">
-            <TaTextarea rows={3} placeholder="Descreva o problema, solicitação ou contexto do ticket" value={description} onChange={(e) => setDescription(e.target.value)} />
+            <TaTextarea
+              rows={3}
+              placeholder="Descreva o problema, solicitação ou contexto do ticket"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
           </Field>
           <Field label="SLA">
             <SlaPicker value={slaAt} onChange={setSlaAt} />
@@ -263,7 +273,9 @@ export function CardFormModal({
         openLabel={openExistingLabel}
         onOpen={onOpenExisting && ((c) => onOpenExisting(c.id, c.pipeline_id))}
         onContinue={() => void submit(pendingOpen.current, true)}
-        reasonText={(c) => (c.reason === "person" ? "Mesmo contato, em aberto" : c.reason === "organization" ? "Mesma organização, em aberto" : `${c.score}% parecido`)}
+        reasonText={(c) =>
+          c.reason === "person" ? "Mesmo contato, em aberto" : c.reason === "organization" ? "Mesma organização, em aberto" : `${c.score}% parecido`
+        }
       />
 
       {/* "Sempre mostrar" e obrigatórios ficam fora de "Mais detalhes" (spec 01, P2). */}
@@ -282,7 +294,11 @@ export function CardFormModal({
           <CustomFieldsForm fields={fields.filter((f) => !isProminent(f))} values={customValues} onChange={setCustomValues} />
         </>
       ) : (
-        <button type="button" className="mt-2 flex items-center gap-1.5 text-theme-sm font-medium text-brand-600 hover:underline" onClick={() => setShowMore(true)}>
+        <button
+          type="button"
+          className="mt-2 flex items-center gap-1.5 text-theme-sm font-medium text-brand-600 hover:underline"
+          onClick={() => setShowMore(true)}
+        >
           <PlusCircle size={16} /> Mais detalhes (responsável, tags e campos personalizados)
         </button>
       )}

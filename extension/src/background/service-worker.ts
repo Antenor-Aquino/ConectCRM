@@ -80,11 +80,11 @@ async function checkReminders(): Promise<void> {
       type: "basic",
       iconUrl: chrome.runtime.getURL("icons/icon128.png"),
       title: `Lembrete: ${a.title}`,
-      message: `Tarefa às ${when}${a.meeting_url ? " · reunião online" : ""}`,
+      message: `Atividade às ${when}${a.meeting_url ? " · reunião online" : ""}`,
       priority: 2,
       requireInteraction: true,
     });
-    await addNotification({ kind: "info", title: `Lembrete: ${a.title}`, message: `Tarefa às ${when}${a.meeting_url ? " · reunião online" : ""}` });
+    await addNotification({ kind: "info", title: `Lembrete: ${a.title}`, message: `Atividade às ${when}${a.meeting_url ? " · reunião online" : ""}` });
   }
   await rpc("activities.markReminded", { ids: due.map((a) => a.id) }, userId);
 }

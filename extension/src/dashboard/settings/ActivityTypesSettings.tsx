@@ -67,7 +67,7 @@ export function ActivityTypesSettings() {
   };
 
   return (
-    <TaPanel title="Tipos de tarefa" subtitle="Tipos marcados como reunião podem criar o evento no Google Agenda ou Outlook.">
+    <TaPanel title="Tipos de atividade" subtitle="Tipos marcados como reunião podem criar o evento no Google Agenda ou Outlook.">
       {canEdit && (
         <div className="mb-4 flex max-w-lg items-center gap-2">
           <IconPicker value={icon} onChange={setIcon} />

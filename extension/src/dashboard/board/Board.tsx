@@ -2,7 +2,21 @@
 // Fluxo geral / Meu fluxo / Minha equipe, ordenação, colunas com quantidade
 // e soma, "+" tracejado por coluna e arrastar cartões entre etapas.
 import { useCallback, useEffect, useState } from "react";
-import { BarChart3, ChevronDown, Columns3, Filter, List, MoreHorizontal, PanelLeft, Plus, Search } from "lucide-react";
+import {
+  BarChart3,
+  ChevronDown,
+  ChevronLeft,
+  Columns3,
+  Filter,
+  FoldHorizontal,
+  List,
+  MoreHorizontal,
+  MoreVertical,
+  PanelLeft,
+  Plus,
+  Search,
+  UnfoldHorizontal,
+} from "lucide-react";
 import { TaBadge, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { BoardColumn, BoardSort, BoardView, DealStatus } from "../../db/deals";
@@ -12,12 +26,13 @@ import { CARD_TEXT, OUTCOME_TEXT, PIPELINE_TYPE_LABEL } from "../../lib/cardType
 import { formatCents } from "../../lib/format";
 import { useSession } from "../session";
 import { Popover } from "../ui/Popover";
-import { StageDot } from "../ui/StageSelect";
+import { StagePill } from "../ui/StageSelect";
 import { TagChip } from "../ui/TagPicker";
 import { BoardList, loadListColumns, STAGE_COLUMN } from "./BoardList";
 import { useCardFieldOptions } from "./fieldOptions";
 import { KanbanCard } from "./KanbanCard";
 import { errorText } from "../../lib/errors";
+import { TaskModal, type TaskRequest } from "../tasks/TaskModal";
 
 const VIEW_LABEL: Record<BoardView, string> = { all: "Fluxo geral", mine: "Meu fluxo", team: "Minha equipe" };
 const SORT_LABEL: Record<BoardSort, string> = {
@@ -156,6 +171,40 @@ export function Board({
     }
   };
   const fieldOptions = useCardFieldOptions(pipeline);
+  // Atividade aberta (ou nova) pelo indicador do cartão.
+  const [activityModal, setActivityModal] = useState<TaskRequest | null>(null);
+  // Etapas recolhidas (coluna estreita), lembradas por funil e usuário.
+  const collapsedKey = `conectcrm-board-collapsed-${user.id}-${pipeline.id}`;
+  const readCollapsed = () => {
+    try {
+      const v = JSON.parse(localStorage.getItem(collapsedKey) ?? "[]") as unknown;
+      return new Set(Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+    } catch {
+      return new Set<string>();
+    }
+  };
+  const [collapsed, setCollapsedState] = useState<Set<string>>(readCollapsed);
+  const [collapsedLoadedKey, setCollapsedLoadedKey] = useState(collapsedKey);
+  if (collapsedLoadedKey !== collapsedKey) {
+    setCollapsedLoadedKey(collapsedKey);
+    setCollapsedState(readCollapsed());
+  }
+  const setCollapsed = (next: Set<string>) => {
+    setCollapsedState(next);
+    try {
+      localStorage.setItem(collapsedKey, JSON.stringify([...next]));
+    } catch {
+      /* preferência só desta tela */
+    }
+  };
+  const toggleStage = (id: string) => {
+    const next = new Set(collapsed);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setCollapsed(next);
+  };
+  // Com alguma etapa recolhida, o botão geral expande todas; sem nenhuma, recolhe todas.
+  const anyCollapsed = columns.some((c) => collapsed.has(c.id));
   // Filtro lembrado por funil e usuário: ao voltar, vale o último escolhido.
   const filterKey = `conectcrm-board-filter-${user.id}-${pipeline.id}`;
   const [filter, setFilter] = useState<BoardFilter>(() => loadFilter(filterKey));
@@ -420,6 +469,17 @@ export function Board({
           </Popover>
         </div>
         <div className="ml-auto flex items-center gap-1">
+          {mode === "kanban" && columns.length > 0 && (
+            <button
+              type="button"
+              title={anyCollapsed ? "Expandir todas as etapas" : "Recolher todas as etapas (depois expanda só as que precisar)"}
+              onClick={() => setCollapsed(anyCollapsed ? new Set() : new Set(columns.map((c) => c.id)))}
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-theme-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/5"
+            >
+              {anyCollapsed ? <UnfoldHorizontal size={15} /> : <FoldHorizontal size={15} />}
+              {anyCollapsed ? "Expandir etapas" : "Recolher etapas"}
+            </button>
+          )}
           <Menu value={view} labels={VIEW_LABEL} onChange={setView} />
           <Menu value={sort} labels={SORT_LABEL} onChange={setSort} />
         </div>
@@ -432,60 +492,116 @@ export function Board({
       ) : (
         /* Colunas */
         <div className="flex min-h-[60vh] flex-1 gap-4 overflow-x-auto pb-3 custom-scrollbar">
-          {columns.map((col) => (
-            <div
-              key={col.id}
-              onDragOver={(e) => onDragOver(e, col.id)}
-              onDragLeave={(e) => {
-                if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDrop(null);
-              }}
-              onDrop={(e) => void onDrop(e)}
-              className={cn(
-                "flex w-[300px] shrink-0 flex-col rounded-xl bg-gray-50 p-3 transition-colors dark:bg-white/[0.03]",
-                drop?.stageId === col.id && "bg-brand-25 ring-2 ring-brand-200 dark:bg-brand-500/10",
-              )}
-            >
-              <div className="mb-0.5 flex items-center gap-2 px-1">
-                <StageDot color={col.color} />
-                <span className="truncate text-theme-sm font-semibold text-gray-800 dark:text-white/90">{col.name}</span>
-                <span className="text-theme-xs text-gray-400">{col.count}</span>
+          {columns.map((col) =>
+            collapsed.has(col.id) ? (
+              // Etapa recolhida: coluna estreita com o nome na vertical; aceita cartões arrastados.
+              <button
+                key={col.id}
+                type="button"
+                title={`Expandir ${col.name}`}
+                onClick={() => toggleStage(col.id)}
+                onDragOver={(e) => onDragOver(e, col.id)}
+                onDragLeave={() => setDrop(null)}
+                onDrop={(e) => void onDrop(e)}
+                className={cn(
+                  "flex shrink-0 flex-col items-center gap-2.5 rounded-xl bg-gray-50 px-3 py-3 hover:bg-gray-100 dark:bg-white/[0.03] dark:hover:bg-white/5",
+                  drop?.stageId === col.id && "bg-brand-25 ring-2 ring-brand-200 dark:bg-brand-500/10",
+                )}
+              >
+                <StagePill name={col.name} color={col.color} vertical />
+                <span className="text-theme-xs font-bold text-gray-700 dark:text-gray-300">{col.count}</span>
+                {/* Valor total da etapa (na vertical para caber na coluna estreita). */}
+                {col.total_cents > 0 && <span className="text-theme-xs font-bold text-gray-700 [writing-mode:vertical-rl] dark:text-gray-300">{formatCents(col.total_cents)}</span>}
+              </button>
+            ) : (
+              <div
+                key={col.id}
+                onDragOver={(e) => onDragOver(e, col.id)}
+                onDragLeave={(e) => {
+                  if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDrop(null);
+                }}
+                onDrop={(e) => void onDrop(e)}
+                className={cn(
+                  "flex w-[300px] shrink-0 flex-col rounded-xl bg-gray-50 p-3 transition-colors dark:bg-white/[0.03]",
+                  drop?.stageId === col.id && "bg-brand-25 ring-2 ring-brand-200 dark:bg-brand-500/10",
+                )}
+              >
+                <div className="mb-0.5 flex items-center gap-2 px-1">
+                  <StagePill name={col.name} color={col.color} className="min-w-0" />
+                  <span className="text-theme-xs font-bold text-gray-700 dark:text-gray-300">{col.count}</span>
+                  <span className="ml-auto flex shrink-0 items-center gap-0.5">
+                    <button
+                      type="button"
+                      title="Editar funil e etapas"
+                      onClick={onEditPipeline}
+                      className="flex h-6 w-6 items-center justify-center rounded-md text-gray-400 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-white/10"
+                    >
+                      <MoreVertical size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      title="Recolher etapa"
+                      onClick={() => toggleStage(col.id)}
+                      className="flex h-6 w-6 items-center justify-center rounded-md text-gray-400 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-white/10"
+                    >
+                      <ChevronLeft size={15} />
+                    </button>
+                  </span>
+                </div>
+                {/* Valor da etapa: sempre no comercial; nos outros tipos quando há produtos/valor. */}
+                {pipeline.type === "comercial" || col.total_cents > 0 ? (
+                  <div className="mb-3 mt-1.5 px-1 text-theme-xs font-bold text-gray-700 dark:text-gray-300">{formatCents(col.total_cents)}</div>
+                ) : (
+                  <div className="mb-2" />
+                )}
+                <div className="flex flex-1 flex-col gap-2.5">
+                  {col.cards.map((card) => (
+                    <div key={card.id}>
+                      {drop?.stageId === col.id && drop.beforeId === card.id && <div className="mb-2 h-1 rounded bg-brand-400" />}
+                      <KanbanCard
+                        card={card}
+                        pipeline={pipeline}
+                        onOpenActivity={(id) => setActivityModal({ id })}
+                        onNewActivity={() => setActivityModal({ dealId: card.id })}
+                        onChanged={() => void load()}
+                        dragging={drag?.id === card.id}
+                        onOpen={() => onOpenCard(card.id)}
+                        onDragStart={(e) => {
+                          e.dataTransfer.effectAllowed = "move";
+                          e.dataTransfer.setData("text/plain", card.id);
+                          setDrag({ id: card.id, from: col.id });
+                        }}
+                        onDragEnd={() => {
+                          setDrag(null);
+                          setDrop(null);
+                        }}
+                      />
+                    </div>
+                  ))}
+                  {sort === "manual" && drop?.stageId === col.id && drop.beforeId === null && drag && <div className="h-1 rounded bg-brand-400" />}
+                  <button
+                    type="button"
+                    title={`Novo ${CARD_TEXT[pipeline.type].noun} em ${col.name}`}
+                    onClick={() => onCreateCard(col.id)}
+                    className="flex h-10 shrink-0 items-center justify-center rounded-lg border border-dashed border-gray-300 text-gray-400 hover:border-brand-300 hover:text-brand-500 dark:border-gray-700"
+                  >
+                    <Plus size={16} />
+                  </button>
+                </div>
               </div>
-              {pipeline.type === "comercial" && <div className="mb-3 px-1 text-theme-xs text-gray-500">{formatCents(col.total_cents)}</div>}
-              {pipeline.type !== "comercial" && <div className="mb-2" />}
-              <div className="flex flex-1 flex-col gap-2.5">
-                {col.cards.map((card) => (
-                  <div key={card.id}>
-                    {drop?.stageId === col.id && drop.beforeId === card.id && <div className="mb-2 h-1 rounded bg-brand-400" />}
-                    <KanbanCard
-                      card={card}
-                      pipeline={pipeline}
-                      dragging={drag?.id === card.id}
-                      onOpen={() => onOpenCard(card.id)}
-                      onDragStart={(e) => {
-                        e.dataTransfer.effectAllowed = "move";
-                        e.dataTransfer.setData("text/plain", card.id);
-                        setDrag({ id: card.id, from: col.id });
-                      }}
-                      onDragEnd={() => {
-                        setDrag(null);
-                        setDrop(null);
-                      }}
-                    />
-                  </div>
-                ))}
-                {sort === "manual" && drop?.stageId === col.id && drop.beforeId === null && drag && <div className="h-1 rounded bg-brand-400" />}
-                <button
-                  type="button"
-                  title={`Novo ${CARD_TEXT[pipeline.type].noun} em ${col.name}`}
-                  onClick={() => onCreateCard(col.id)}
-                  className="flex h-10 shrink-0 items-center justify-center rounded-lg border border-dashed border-gray-300 text-gray-400 hover:border-brand-300 hover:text-brand-500 dark:border-gray-700"
-                >
-                  <Plus size={16} />
-                </button>
-              </div>
-            </div>
-          ))}
+            ),
+          )}
         </div>
+      )}
+      {activityModal && (
+        <TaskModal
+          request={activityModal}
+          onClose={() => setActivityModal(null)}
+          onSaved={() => {
+            setActivityModal(null);
+            void load();
+          }}
+        />
       )}
     </section>
   );

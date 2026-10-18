@@ -25,7 +25,7 @@ export function MergeModal({
   return (
     <TaModal isOpen onClose={onClose} title={`Mesclar ${noun}`}>
       <p className="mb-3 text-theme-sm text-gray-600 dark:text-gray-300">
-        Escolha o cadastro duplicado. Negócios, tarefas, notas, vínculos, tags e campos dele passam para <b>{keepName}</b>, e o duplicado vai para a lixeira.
+        Escolha o cadastro duplicado. Negócios, atividades, notas, vínculos, tags e campos dele passam para <b>{keepName}</b>, e o duplicado vai para a lixeira.
       </p>
       <Combobox value={other} onChange={setOther} search={async (t) => (await search(t)).filter((i) => i.id !== keepId)} placeholder={`Buscar ${noun} duplicado`} />
       <ErrorText>{error}</ErrorText>

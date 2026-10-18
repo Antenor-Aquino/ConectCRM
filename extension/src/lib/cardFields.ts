@@ -14,8 +14,8 @@ export interface BuiltinCardField {
 }
 
 export const BUILTIN_CARD_FIELDS: BuiltinCardField[] = [
-  { key: "valor", label: "Valor", group: "Negócio", types: ["comercial"] },
-  { key: "produtos", label: "Produtos e serviços", group: "Negócio", types: ["comercial"] },
+  { key: "valor", label: "Valor", group: "Negócio" },
+  { key: "produtos", label: "Produtos e serviços", group: "Negócio" },
   { key: "probabilidade", label: "Probabilidade da etapa", group: "Negócio", types: ["comercial"] },
   { key: "previsao_fechamento", label: "Previsão de fechamento", group: "Negócio", types: ["comercial"] },
   { key: "sla", label: "SLA", group: "Negócio", types: ["operacional"] },
@@ -23,8 +23,8 @@ export const BUILTIN_CARD_FIELDS: BuiltinCardField[] = [
   { key: "prazo", label: "Prazo", group: "Negócio", types: ["projeto"] },
   { key: "descricao", label: "Descrição", group: "Negócio", types: ["operacional", "projeto"] },
   { key: "etapa_dias", label: "Dias na etapa", group: "Negócio" },
-  { key: "proxima_tarefa", label: "Próxima tarefa", group: "Negócio" },
-  { key: "tarefas", label: "Tarefas concluídas", group: "Negócio" },
+  { key: "proxima_tarefa", label: "Próxima atividade", group: "Negócio" },
+  { key: "tarefas", label: "Atividades concluídas", group: "Negócio" },
   { key: "notas", label: "Quantidade de notas", group: "Negócio" },
   { key: "tags", label: "Tags", group: "Negócio" },
   { key: "responsavel", label: "Responsável", group: "Negócio" },

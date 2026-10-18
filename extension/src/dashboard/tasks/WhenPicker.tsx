@@ -116,7 +116,7 @@ export function WhenPicker({
           <label className="flex items-center justify-between gap-3 text-theme-sm text-gray-700 dark:text-gray-300">
             <span className="flex items-center gap-1">
               Lembrete
-              <span title="Minutos antes da tarefa para o Chrome avisar. Deixe vazio para não lembrar." className="cursor-help text-gray-400">
+              <span title="Minutos antes da atividade para o Chrome avisar. Deixe vazio para não lembrar." className="cursor-help text-gray-400">
                 <HelpCircle size={13} />
               </span>
               :

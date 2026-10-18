@@ -101,7 +101,66 @@ describe("histórico com origem clicável", () => {
     const refOf = (start: string) => pairs.find(([l]) => String(l).startsWith(start))?.[1];
     expect(refOf("Adicionou nota: \"Primeira")).toEqual({ kind: "note", id: note });
     expect(refOf("Adicionou nota: \"Nota apagada")).toBeNull();
-    expect(refOf("Criou a tarefa")).toEqual({ kind: "activity", id: task });
+    expect(refOf("Criou a atividade")).toEqual({ kind: "activity", id: task });
     expect(refOf("Criou o cartão")).toBeNull();
+  });
+});
+
+describe("copiloto aberto num cartão", () => {
+  it("instruções citam o cartão; ações sem cartão usam o aberto; tabela vazia some", async () => {
+    const { buildSystemPrompt } = await import("../src/lib/copilot/agent");
+    const { normalizeCard } = await import("../src/lib/copilot/tools");
+    const p = buildSystemPrompt({ userName: "Antenor", userRole: "administrador", cardId: "c1", cardTitle: "Ajeitar a Gaveta de Miguel" });
+    expect(p).toMatch(/aberto no cartão "Ajeitar a Gaveta de Miguel" \(id c1\)/);
+    expect(p).toMatch(/use cartaoId c1/);
+    expect(buildSystemPrompt({ userName: "Antenor", userRole: "administrador" })).not.toMatch(/CONTEXTO DO CARTÃO/);
+    const card = normalizeCard(
+      {
+        titulo: "Tarefa",
+        tabela: { colunas: ["Título"], linhas: [] },
+        acoes: [
+          { tipo: "criar_tarefa", rotulo: "Criar tarefa", cartaoId: "", titulo: "Colar gaveta", quando: "2026-10-18T08:00" },
+          { tipo: "abrir_cartao", rotulo: "Abrir outro", cartaoId: "c2" },
+        ],
+      },
+      "c1",
+    );
+    expect(card.tabela).toBeNull();
+    expect(card.acoes.map((a) => [a.tipo, a.cartaoId])).toEqual([["criar_tarefa", "c1"], ["abrir_cartao", "c2"]]);
+    expect(normalizeCard({ acoes: [{ tipo: "criar_tarefa", rotulo: "x", cartaoId: "", titulo: "y" }] }).acoes).toEqual([]);
+  });
+});
+
+describe("erros da IA", () => {
+  it("parâmetro recusado não vira 'modelo não encontrado'", async () => {
+    const { translateAiError } = await import("../src/lib/ai");
+    const msg = "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.";
+    expect(translateAiError("OpenAI", msg, 400)).toMatch(/recusou um parâmetro/);
+    expect(translateAiError("OpenAI", "The model `gpt-x` does not exist or you do not have access to it.", 404)).toMatch(/não encontrado/);
+  });
+});
+
+describe("copiloto com modelo de raciocínio da OpenAI", () => {
+  it("repete com reasoning_effort 'none' quando o modelo exige e lembra para os próximos envios", async () => {
+    const { askCopilot } = await import("../src/lib/copilot/agent");
+    const bodies: any[] = [];
+    const reply = { choices: [{ message: { content: null, tool_calls: [{ id: "t", function: { name: "responder", arguments: JSON.stringify({ titulo: "Ok", acoes: [], sugestoes: [] }) } }] } }] };
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      const b = JSON.parse(String(init.body));
+      bodies.push(b);
+      if (b.reasoning_effort !== "none")
+        return new Response(
+          JSON.stringify({ error: { message: "Function tools with reasoning_effort are not supported for gpt-5.6-sol in /v1/chat/completions. To use function tools, use /v1/responses or set reasoning_effort to 'none'." } }),
+          { status: 400 },
+        );
+      return new Response(JSON.stringify(reply), { status: 200 });
+    }) as typeof fetch;
+    const s = { provider: "openai" as const, keys: { openai: "k" }, models: { openai: "gpt-5.6-sol" }, prompt1: "", prompt2: "" };
+    const ctx = { userName: "Antenor", userRole: "administrador" };
+    expect((await askCopilot(s, [{ role: "user", content: "Resuma" }], ctx, async () => ({}))).titulo).toBe("Ok");
+    expect(bodies.map((b) => b.reasoning_effort ?? "-")).toEqual(["-", "none"]);
+    await askCopilot(s, [{ role: "user", content: "De novo" }], ctx, async () => ({}));
+    expect(bodies.at(-1).reasoning_effort).toBe("none"); // já vai direto
+    expect(bodies).toHaveLength(3);
   });
 });

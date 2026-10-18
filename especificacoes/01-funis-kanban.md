@@ -7,7 +7,7 @@
 
 ## 1. Menu principal
 
-`Funis · Tarefas · Contatos · Organizações · GED · Relatórios` + botão **"+"** ·
+`Funis · Atividades · Contatos · Organizações · GED · Relatórios` + botão **"+"** ·
 Copiloto · Notificações · Agenda · Configurações (engrenagem).
 
 (O antigo item "Clientes" foi dividido em **Contatos** e **Organizações**.)
@@ -29,7 +29,7 @@ responsável, tags, campos personalizados.
 Modelo de dados: uma única tabela de itens do Kanban (`deals`), com o tipo
 herdado do funil e colunas específicas (`value`, `description`, `sla_at`,
 `start_at`, `due_at`)
-preenchidas conforme o tipo. Assim o Kanban, filtros, histórico, tarefas e
+preenchidas conforme o tipo. Assim o Kanban, filtros, histórico, atividades e
 relatórios funcionam igual para todos os tipos.
 
 ### 2.1 Desfecho do cartão
@@ -59,12 +59,17 @@ No banco o status é sempre `open` / `won` / `lost`; só os termos mudam:
 
 ## 3. Botão "+" (cadastro rápido)
 
+Os cartões aparecem com o tipo do funil: **Negócio (Comercial)**, **Ticket
+(Operacional)** e **Etapa (Projeto)**. Os três tipos têm **Valor** e
+**produtos/serviços** no mesmo padrão do negócio (com produtos, o valor é a
+soma); os campos Valor e Produtos também podem ir para o cartão do quadro.
+
 Menu suspenso com as opções abaixo. As opções de item de funil **só aparecem
 se existir pelo menos um funil ativo daquele tipo**.
 
 | Opção | Aparece quando |
 |---|---|
-| Tarefa | sempre |
+| Atividade | sempre |
 | Contato | sempre |
 | Organização | sempre |
 | Negócio | existe funil **Comercial** |
@@ -72,8 +77,8 @@ se existir pelo menos um funil ativo daquele tipo**.
 | Etapa (cartão de projeto) | existe funil **Projeto** |
 
 Exemplos:
-- Só funis comerciais → Tarefa, Contato, Organização, Negócio.
-- Comercial + Operacional → Tarefa, Contato, Organização, Negócio, Ticket.
+- Só funis comerciais → Atividade, Contato, Organização, Negócio.
+- Comercial + Operacional → Atividade, Contato, Organização, Negócio, Ticket.
 
 Comportamento:
 - Se o usuário está com um funil aberto, o formulário já vem com **esse funil
@@ -90,7 +95,7 @@ Modal com rolagem interna, botão ✕ no topo.
 |---|---|---|
 | — | **Nome da negociação** * | Placeholder "Ex.: Proposta de licenças 2026" |
 | VALOR | Valor (R$) | Máscara de moeda pt-BR, padrão R$ 0,00 |
-| | **+ Adicionar produtos** | Abre a seleção de produtos/serviços (quantidade, preço, desconto). Com produtos, o valor passa a ser a soma dos itens (editável manualmente se o usuário desvincular) |
+| | **+ Adicionar** | Abre a seleção de produtos/serviços (quantidade, preço, desconto). Com produtos, o valor passa a ser a soma dos itens (editável manualmente se o usuário desvincular) |
 | FUNIL | Funil | Lista **somente funis Comerciais** |
 | | **Etapa** * | Etapas do funil escolhido, com a bolinha de cor; muda ao trocar o funil |
 | RELACIONAMENTO | Contato | Busca por **nome, telefone ou e-mail**; opção de criar novo contato a partir da busca |
@@ -129,7 +134,7 @@ Sem mockup próprio; segue o padrão dos outros dois:
 |---|---|---|
 | — | **Título** * | |
 | PROJETO | Descrição | Texto longo |
-| | Início / Prazo | Datas (seletor da tarefa) |
+| | Início / Prazo | Datas (seletor da atividade) |
 | FUNIL DE PROJETO | Funil | Lista **somente funis de Projeto** |
 | | **Etapa** * | Coluna do funil, com bolinha de cor |
 | RELACIONAMENTO | Contato / Organização | Igual à negociação |
@@ -162,7 +167,7 @@ pergunta antes de criar (**Criar mesmo assim**).
     escolher a data).
 - Exibição no campo: `dd/mm/aaaa hh:mm`, fuso local.
 - Também é possível digitar a data/hora direto no campo.
-- **Decisão:** o SLA usa este seletor; tarefas usam o seletor próprio
+- **Decisão:** o SLA usa este seletor; atividades usam o seletor próprio
   (spec 02). Os dois coexistem.
 
 ## 7. Responsável
@@ -174,6 +179,41 @@ pergunta antes de criar (**Criar mesmo assim**).
 - Padrão: o usuário atual.
 - Usuários inativos não aparecem para novos registros (mas continuam nos
   registros antigos).
+
+### 6.0 Cabeçalho das etapas e recolher
+
+- O nome da etapa aparece numa "pílula" na cor da etapa (texto branco),
+  com a quantidade ao lado e o valor total abaixo. No topo da coluna: **⋮**
+  abre "Editar funil e etapas" e **‹** recolhe a etapa.
+- Em "Novo funil" e "Editar funil", a **Prévia no quadro** mostra os nomes
+  com as cores escolhidas antes de salvar.
+- Etapa recolhida mostra nome, quantidade e **valor total** (na vertical),
+  numa coluna da largura do texto (não uma faixa larga).
+- A pílula tem folga nas laterais; quantidade de cartões e valor em negrito.
+
+- Cada coluna do quadro tem o botão **‹ Recolher etapa** no topo: a etapa
+  vira uma coluna estreita com o nome na vertical e a quantidade; clicar
+  nela expande. Dá para arrastar um cartão para uma etapa recolhida.
+- Na linha da pesquisa, **Recolher etapas** recolhe todas (para expandir só
+  as necessárias); com alguma recolhida, o botão vira **Expandir etapas**.
+- As etapas recolhidas ficam lembradas por funil e usuário.
+
+### 6.0.1 Indicador de atividades no cartão
+
+No rodapé de cada cartão em aberto, ao lado do responsável:
+
+| Cor | Situação |
+|---|---|
+| Vermelho (‹) | Alguma atividade pendente **atrasada** |
+| Verde (›) | Atividade para **hoje** (sem atrasadas) |
+| Cinza (›) | Só atividades **futuras** |
+| Amarelo (⚠) | **Nenhuma** atividade pendente |
+
+O clique (sem abrir o cartão) mostra um painel com as atividades pendentes,
+atrasadas primeiro: tipo, nome, prazo e responsável, com os botões
+**Concluir** (verde) e **Abrir** (abre a atividade). No rodapé, **Agendar
+uma atividade** abre "Nova atividade" já vinculada ao cartão. A lista do
+painel rola sem fechá-lo; rolar o quadro, clicar fora ou Esc fecha.
 
 ### 6.1 Visão em lista
 
@@ -187,9 +227,9 @@ quadro:
   organização e campos personalizados), **Colunas padrão**, Cancelar e
   Salvar. Colunas lembradas por funil e usuário. Padrão: Etapa, Valor
   (comercial) / SLA (operacional) / Início e Prazo (projeto), Organização,
-  Contato, Responsável e Próxima tarefa.
+  Contato, Responsável e Próxima atividade.
 - Clique no cabeçalho ordena (crescente, decrescente, original); vazios no
-  fim. Próxima tarefa atrasada em vermelho.
+  fim. Próxima atividade atrasada em vermelho.
 - Quantidade e soma no topo; clique na linha abre o cartão.
 
 ### 6.2 Detalhe do cartão: painel ou tela cheia
@@ -239,7 +279,7 @@ Novo cadastro em **Configurações → Campos personalizados** (lista + modal
 | Nome do campo | Obrigatório |
 | Descrição | Texto de ajuda exibido no formulário |
 | Tipo de campo | Texto (padrão), texto longo, número, moeda, data, data e hora, sim/não, lista, lista múltipla, telefone, e-mail, URL, usuário, contato, organização. Tipos "lista" abrem o cadastro de opções |
-| Entidade | Contato (padrão), Organização, Negócio, Ticket, Projeto, Tarefa, Produto |
+| Entidade | Contato (padrão), Organização, Negócio, Ticket, Projeto, Atividade, Produto |
 | Chave reservada | Placeholder `{{chave}}` — gerada automaticamente a partir do nome (ex.: "Data de nascimento" → `{{data_de_nascimento}}`), editável, **única**. Usada no chat/WhatsApp para ser substituída pelo valor do campo |
 | Sempre mostrar | O campo aparece fora do "Mais detalhes" e fica visível no detalhe mesmo vazio |
 | Esconder | Não aparece nas telas; continua em relatórios, importação/exportação e na chave do chat |
@@ -278,14 +318,14 @@ no cartão mais recente do funil.
 - Campos disponíveis:
   - **Negócio:** valor, produtos e serviços, probabilidade da etapa, previsão
     de fechamento, SLA (operacional), início e prazo (projeto), descrição,
-    dias na etapa, próxima tarefa, tarefas concluídas, quantidade de notas,
+    dias na etapa, próxima atividade, atividades concluídas, quantidade de notas,
     tags, responsável, origem, criado em;
   - **Contato:** nome, telefone, e-mail;
   - **Organização:** nome, cidade/UF, CNPJ, segmento, telefone;
   - **Campos personalizados** do cartão (os do funil), do contato e da
     organização.
 - Campo sem valor não aparece no cartão. Datas vencidas (SLA, prazo,
-  previsão, próxima tarefa) ficam em vermelho.
+  previsão, próxima atividade) ficam em vermelho.
 - Até 12 campos. **Restaurar padrão** volta ao cartão original (valor,
   contato e responsável; no operacional, SLA; no projeto, prazo).
 
@@ -294,15 +334,15 @@ no cartão mais recente do funil.
 - Com produtos/serviços no negócio, o resumo aparece logo abaixo do valor:
   produto/serviço, quantidade, preço unitário, desconto e total (com linha
   de total quando há mais de um item). Clicar abre o editor de itens.
-- Abas do detalhe: **Histórico**, Notas, Tarefas e Documentos (o cartão
-  abre em Notas). No histórico, as linhas de **nota, tarefa e documento**
-  que ainda existem são links: a nota abre na aba Notas destacada, a tarefa
+- Abas do detalhe: **Histórico**, Notas, Atividades e Documentos (o cartão
+  abre em Notas). No histórico, as linhas de **nota, atividade e documento**
+  que ainda existem são links: a nota abre na aba Notas destacada, a atividade
   no formulário e o documento na prévia do GED.
 - A aba **Histórico** mostra toda alteração do cartão, com quem fez, quando
   e o valor antigo → novo: campos (valor, contato, organização,
   responsável, datas, motivo da perda…), etapa, ganho/perdido/reaberto,
   produtos (adicionados, alterados, removidos), tags, campos
-  personalizados, notas, anexos e tarefas (criada, concluída, remarcada,
+  personalizados, notas, anexos e atividades (criada, concluída, remarcada,
   excluída). Gravações do mesmo usuário em até 2 segundos aparecem como um
   só evento (ex.: salvar produtos recalcula o valor).
 

@@ -130,9 +130,9 @@ export function RelatedTasks({ filter }: { filter: { personId?: string; organiza
   return (
     <div>
       <TaButton variant="primary" startIcon={<Plus size={15} />} onClick={() => setModal({ ...filter })}>
-        Nova tarefa
+        Nova atividade
       </TaButton>
-      {tasks.length === 0 && <p className="mt-3 text-theme-sm text-gray-400">Nenhuma tarefa.</p>}
+      {tasks.length === 0 && <p className="mt-3 text-theme-sm text-gray-400">Nenhuma atividade.</p>}
       <ul className="mt-2 divide-y divide-gray-100 dark:divide-gray-800">
         {tasks.map((t) => (
           <li key={t.id} className="flex items-center gap-3 py-2">

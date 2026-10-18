@@ -7,6 +7,8 @@ import migration0004 from "./migrations/0004_tag_activity.sql?raw";
 import migration0005 from "./migrations/0005_ged.sql?raw";
 import migration0006 from "./migrations/0006_note_documents.sql?raw";
 import migration0007 from "./migrations/0007_tipo_prazo_final.sql?raw";
+import migration0008 from "./migrations/0008_indice_atividade_cartao.sql?raw";
+import migration0009 from "./migrations/0009_indices_volume.sql?raw";
 
 export const MIGRATIONS: { name: string; sql: string }[] = [
   { name: "0000_init.sql", sql: migration0000 },
@@ -17,6 +19,8 @@ export const MIGRATIONS: { name: string; sql: string }[] = [
   { name: "0005_ged.sql", sql: migration0005 },
   { name: "0006_note_documents.sql", sql: migration0006 },
   { name: "0007_tipo_prazo_final.sql", sql: migration0007 },
+  { name: "0008_indice_atividade_cartao.sql", sql: migration0008 },
+  { name: "0009_indices_volume.sql", sql: migration0009 },
 ];
 
 /** Aplica as migrations pendentes; devolve quantas rodaram. */

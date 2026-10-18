@@ -140,8 +140,8 @@ export function ReportsView() {
           name: "Responsáveis",
           rows: [
             sales
-              ? ["Responsável", t.wonPlural, `${t.wonPlural} (R$)`, t.lostPlural, `${t.rate} (%)`, "Abertos", "Abertos (R$)", "Ponderado (R$)", "Tarefas concluídas"]
-              : ["Responsável", t.wonPlural, t.lostPlural, `${t.rate} (%)`, "Abertos", "Tarefas concluídas"],
+              ? ["Responsável", t.wonPlural, `${t.wonPlural} (R$)`, t.lostPlural, `${t.rate} (%)`, "Abertos", "Abertos (R$)", "Ponderado (R$)", "Atividades concluídas"]
+              : ["Responsável", t.wonPlural, t.lostPlural, `${t.rate} (%)`, "Abertos", "Atividades concluídas"],
             ...r.owners.map((o) =>
               sales
                 ? [o.name, o.won, o.wonValueCents / 100, o.lost, pct1(o.winRate), o.open, o.openValueCents / 100, o.weightedCents / 100, o.activitiesDone]
@@ -322,7 +322,7 @@ function Tiles({ r }: { r: Report }) {
       <Tile label="Em aberto" value={sales ? money(s.open.valueCents) : int(s.open.count)} detail={sales ? `${s.open.count} cartão(ões) hoje` : "cartão(ões) hoje"} />
       {sales && <Tile label="Previsão ponderada" value={money(s.weightedCents)} detail="valor × probabilidade da etapa" />}
       <Tile label="Criados no período" value={int(s.created)} />
-      <Tile label="Tarefas concluídas" value={int(r.activities.reduce((a, x) => a + x.done, 0))} detail={`${int(r.activities.reduce((a, x) => a + x.overdue, 0))} atrasada(s)`} />
+      <Tile label="Atividades concluídas" value={int(r.activities.reduce((a, x) => a + x.done, 0))} detail={`${int(r.activities.reduce((a, x) => a + x.overdue, 0))} atrasada(s)`} />
     </div>
   );
 }
@@ -480,12 +480,12 @@ function OwnersCard({ r }: { r: Report }) {
       table={
         sales ? (
           <DataTable
-            headers={["Responsável", t.wonPlural, "Valor ganho", t.lostPlural, "Conversão", "Abertos", "Em aberto", "Ponderado", "Tarefas feitas"]}
+            headers={["Responsável", t.wonPlural, "Valor ganho", t.lostPlural, "Conversão", "Abertos", "Em aberto", "Ponderado", "Atividades feitas"]}
             rows={r.owners.map((o) => [o.name, o.won, money(o.wonValueCents), o.lost, pct(o.winRate), o.open, money(o.openValueCents), money(o.weightedCents), o.activitiesDone])}
           />
         ) : (
           <DataTable
-            headers={["Responsável", t.wonPlural, t.lostPlural, t.rate, "Abertos", "Tarefas feitas"]}
+            headers={["Responsável", t.wonPlural, t.lostPlural, t.rate, "Abertos", "Atividades feitas"]}
             rows={r.owners.map((o) => [o.name, o.won, o.lost, pct(o.winRate), o.open, o.activitiesDone])}
           />
         )
@@ -520,8 +520,8 @@ function ActivitiesCard({ r }: { r: Report }) {
   return (
     <ReportCard
       title="Atividades por usuário"
-      subtitle="Tarefas com data no período"
-      empty={r.activities.length ? null : "Nenhuma tarefa no período."}
+      subtitle="Atividades com data no período"
+      empty={r.activities.length ? null : "Nenhuma atividade no período."}
       chart={
         <BarChart
           label="Atividades por usuário"

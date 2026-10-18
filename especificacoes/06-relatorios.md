@@ -36,7 +36,7 @@ funil escolhido o relatório continua sendo dos funis comerciais, sem mudança.
 | Em aberto | Cartões abertos **hoje** (não depende do período) |
 | Previsão ponderada | Σ valor × probabilidade da etapa (Funil → Configurar etapas → Prob. %) |
 | Criados no período | Cartões criados no período |
-| Tarefas concluídas | Tarefas com data no período; também as atrasadas |
+| Atividades concluídas | Atividades com data no período; também as atrasadas |
 
 ## 3. Relatórios
 
@@ -56,7 +56,7 @@ Cada gráfico tem **Ver tabela** com os mesmos números.
 - **Produtos e serviços vendidos**: itens dos negócios ganhos no período
   (quantidade, total, negócios); gráfico com os 10 maiores.
 - **Desempenho por responsável** e **por equipe** (tabelas): ganhos, valor,
-  perdidos, conversão, abertos, valor em aberto, ponderado e tarefas feitas.
+  perdidos, conversão, abertos, valor em aberto, ponderado e atividades feitas.
   Quem está em duas equipes conta nas duas.
 - **Atividades por usuário**: concluídas × pendentes; tabela com atrasadas.
 
@@ -71,5 +71,5 @@ nos gráficos de uma série; verde e vermelho só nos indicadores, sempre com
 ## 5. Ambiente de Teste
 
 Os dados de exemplo trazem 6 meses de histórico (18 negócios ganhos e
-perdidos, com etapas percorridas, motivos, itens e tarefas) para os relatórios
+perdidos, com etapas percorridas, motivos, itens e atividades) para os relatórios
 já aparecerem completos.

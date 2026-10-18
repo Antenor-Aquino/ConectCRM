@@ -1,12 +1,20 @@
-// Usuário atual no topo: troca de usuário (pede o PIN de quem tiver) e bloqueio.
+// Usuário atual no topo: troca de usuário (pede o PIN de quem tiver), bloqueio e sair.
 import { useState } from "react";
-import { ChevronDown, Lock } from "lucide-react";
+import { ChevronDown, Lock, LogOut } from "lucide-react";
 import { TaModal, cn } from "@tailadmin";
 import { ROLE_LABEL, type User } from "../../db/users";
 import { useSession } from "../session";
 import { Avatar } from "../ui/Avatar";
 import { Popover } from "../ui/Popover";
 import { PinCheck } from "./PinInput";
+
+/** Sair: abre a página inicial do Chrome (nova guia) e fecha a aba do CRM. */
+async function leaveCrm(): Promise<void> {
+  const current = await chrome.tabs.getCurrent();
+  await chrome.tabs.create({ windowId: current?.windowId, index: current ? current.index + 1 : undefined });
+  if (current?.id != null) await chrome.tabs.remove(current.id);
+  else window.close();
+}
 
 export function UserSwitcher() {
   const { user, users, switchUser, unlock, lock } = useSession();
@@ -58,6 +66,22 @@ export function UserSwitcher() {
             <Lock size={15} /> Bloquear agora
           </button>
         )}
+        <button
+          type="button"
+          title="Fecha o CRM e abre a página inicial do Chrome"
+          onClick={async () => {
+            setOpen(false);
+            // Com PIN, bloqueia antes: ao abrir de novo, o CRM pede o PIN.
+            if (user.has_pin) await lock();
+            await leaveCrm();
+          }}
+          className={cn(
+            "flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-theme-sm text-error-600 hover:bg-error-50 dark:hover:bg-error-500/10",
+            !user.has_pin && "mt-1 border-t border-gray-100 dark:border-gray-800",
+          )}
+        >
+          <LogOut size={15} /> Sair
+        </button>
       </Popover>
       {askPin && (
         <TaModal isOpen onClose={() => setAskPin(null)} title={`Entrar como ${askPin.name}`} width="max-w-sm">

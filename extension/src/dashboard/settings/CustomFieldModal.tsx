@@ -18,7 +18,7 @@ export const ENTITY_LABEL: Record<CustomFieldEntity, string> = {
   deal: "Negócio",
   ticket: "Ticket",
   project: "Projeto",
-  activity: "Tarefa",
+  activity: "Atividade",
   product: "Produto",
 };
 

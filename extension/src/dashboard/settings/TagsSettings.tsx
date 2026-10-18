@@ -16,7 +16,7 @@ const ENTITY_LABEL: Record<TagEntity, string> = {
   deal: "Negócio",
   ticket: "Ticket",
   project: "Projeto",
-  activity: "Tarefa",
+  activity: "Atividade",
   document: "Documento",
 };
 const COLORS = Object.keys(badgePalette) as BadgeColor[];

@@ -18,6 +18,8 @@ import { ChangeLogList, CustomValuesView, DrawerShell, InfoRow, RelatedCards, Re
 import { MergeModal } from "./MergeModal";
 import { PersonFormModal } from "./PersonFormModal";
 import { errorText } from "../../lib/errors";
+import { EmailLink, PhoneLink } from "../ui/ContactLinks";
+import { openWhatsApp } from "../../lib/contactLinks";
 
 type Tab = "negocios" | "tarefas" | "documentos" | "notas" | "historico";
 
@@ -81,7 +83,7 @@ export function PersonDetail({
           Editar
         </TaButton>
         {waDigits && (
-          <TaButton startIcon={<MessageCircle size={15} />} onClick={() => void chrome.tabs.create({ url: `https://web.whatsapp.com/send?phone=${waDigits}` })}>
+          <TaButton startIcon={<MessageCircle size={15} />} onClick={() => void openWhatsApp(p.phone!)}>
             WhatsApp
           </TaButton>
         )}
@@ -111,8 +113,8 @@ export function PersonDetail({
       <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
         <div>
           <SectionLabel className="mt-0">Dados</SectionLabel>
-          <InfoRow label="E-mail">{p.email && <a className="text-brand-600 hover:underline" href={`mailto:${p.email}`}>{p.email}</a>}</InfoRow>
-          <InfoRow label="Celular">{formatPhone(p.phone)}</InfoRow>
+          <InfoRow label="E-mail">{p.email && <EmailLink email={p.email} className="text-brand-600">{p.email}</EmailLink>}</InfoRow>
+          <InfoRow label="Celular">{p.phone && <PhoneLink phone={p.phone} className="text-brand-600">{formatPhone(p.phone)}</PhoneLink>}</InfoRow>
           <InfoRow label="Responsável">{users.find((u) => u.id === p.owner_id)?.name}</InfoRow>
           <InfoRow label="Organizações">
             {p.organizations.length > 0 && (
@@ -151,7 +153,7 @@ export function PersonDetail({
           <Tabs<Tab>
             tabs={[
               ["negocios", "Negócios"],
-              ["tarefas", "Tarefas"],
+              ["tarefas", "Atividades"],
               ["documentos", "Documentos"],
               ["notas", "Notas"],
               ["historico", "Histórico"],

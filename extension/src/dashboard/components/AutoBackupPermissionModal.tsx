@@ -7,7 +7,7 @@ import { TaButton, TaModal } from "@tailadmin";
 import { writeBackup, type AutoBackupSettings } from "../../lib/autoBackup";
 import { backupDocuments } from "../../lib/documentFiles";
 import type { PermissionedDirectoryHandle } from "../../lib/backupFolder";
-import { exportDatabase } from "../settings/BackupSettings";
+import { exportDatabase } from "../../rpc/client";
 import { errorText } from "../../lib/errors";
 
 export function AutoBackupPermissionModal({ handle, settings, onClose }: { handle: PermissionedDirectoryHandle; settings: AutoBackupSettings; onClose: () => void }) {

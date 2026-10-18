@@ -11,6 +11,7 @@ import { PIPELINE_TYPE_LABEL } from "../../lib/cardTypes";
 import { CardLayoutEditor } from "./CardLayoutEditor";
 import { ErrorText, Field, SectionLabel } from "../ui/form";
 import { colorLabel } from "../../lib/colors";
+import { StagesPreview } from "../ui/StageSelect";
 import { errorText } from "../../lib/errors";
 
 const COLORS = Object.keys(badgePalette) as BadgeColor[];
@@ -149,6 +150,7 @@ export function PipelineSettingsModal({ pipeline, onClose, onSaved }: { pipeline
       <TaButton variant="ghost" className="mt-2" startIcon={<Plus size={14} />} onClick={() => setStages((l) => [...l, { name: "", color: COLORS[l.length % COLORS.length]!, probability: "", staleDays: "" }])}>
         Adicionar etapa
       </TaButton>
+      <StagesPreview stages={stages} />
 
       {removed.length > 0 && (
         <>

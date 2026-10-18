@@ -32,11 +32,11 @@ estiver aberto em alguma aba, ela é ativada em vez de abrir outra.
 
 - Busca por título ou nome do contato (negócio, ticket ou etapa de projeto).
 - Resumo: título, funil › etapa, contato, organização, responsável, valor e
-  tarefas em aberto (concluir com um clique). Botão **"Abrir no CRM"** abre o
+  atividades em aberto (concluir com um clique). Botão **"Abrir no CRM"** abre o
   cartão no funil dele, na aba do CRM já aberta (ou numa nova); ✕ troca o
   destino.
 - Ações: **Novo** (formulário completo do CRM, origem "WhatsApp"),
-  **Tarefa**, **Reunião** (formulário de tarefa já como reunião, com Google
+  **Tarefa**, **Reunião** (formulário de atividade já como reunião, com Google
   Agenda/Outlook, horários livres e convidados) e **Nota**.
 - O destino fica lembrado entre aberturas do popup.
 - Novo cartão parecido com um existente (título ou mesmo contato com cartão
@@ -67,7 +67,11 @@ estiver aberto em alguma aba, ela é ativada em vez de abrir outra.
 ## 5. Inteligência artificial
 
 Configurações → **Inteligência artificial**: provedor (Gemini, OpenAI, Claude,
-DeepSeek), chave, modelo (opcional), instruções 1 e 2 da IA e **Testar conexão**. A
+DeepSeek), chave, modelo (opcional; **Testar conexão** também carrega a lista
+de modelos liberados para a chave como sugestões do campo), instruções 1 e 2
+da IA e **Testar conexão**. Modelo inexistente: a mensagem lista os modelos
+disponíveis. OpenAI usa `max_completion_tokens` (exigido pelos modelos novos,
+como GPT‑5). A
 chave fica só neste computador; as chamadas saem direto do navegador para o
 provedor.
 

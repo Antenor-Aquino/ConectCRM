@@ -296,7 +296,7 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
         await call("activities.setExternalEvent", { id, provider, eventId: ev.id, meetingUrl: ev.link, guests });
       } catch (e) {
         setSaving(false);
-        setError(`Tarefa salva, mas o evento não foi criado na agenda: ${errorText(e)}`);
+        setError(`Atividade salva, mas o evento não foi criado na agenda: ${errorText(e)}`);
         return;
       }
     }
@@ -312,7 +312,7 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
   }
 
   return (
-    <TaModal isOpen onClose={onClose} title={request.id ? "Editar tarefa" : "Nova tarefa"} width="max-w-3xl">
+    <TaModal isOpen onClose={onClose} title={request.id ? "Editar atividade" : "Nova atividade"} width="max-w-3xl">
       {!loaded ? (
         <p className="text-theme-sm text-gray-500">Carregando…</p>
       ) : (
@@ -332,7 +332,7 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
                 <input
                   autoFocus={!request.id}
                   className={cn("w-full border-none bg-transparent text-lg font-medium text-gray-800 outline-none placeholder:text-gray-400 dark:text-white/90", done && "line-through opacity-60")}
-                  placeholder="Nome da tarefa"
+                  placeholder="Nome da atividade"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                 />
@@ -400,7 +400,7 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
                   }}
                 />
               </Field>
-              <Field label="Finalização" hint="Opcional. Sem finalização, a tarefa nunca fica atrasada.">
+              <Field label="Finalização" hint="Opcional. Sem finalização, a atividade nunca fica atrasada.">
                 <EndPicker value={endAt} start={when} onChange={setEndAt} />
               </Field>
               <Field label="Vinculado a" hint="Opcional: negócio, ticket ou etapa de projeto.">
@@ -507,7 +507,7 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
                 className="ml-auto"
                 startIcon={<Trash2 size={15} />}
                 onClick={async () => {
-                  if (!confirm("Excluir esta tarefa?")) return;
+                  if (!confirm("Excluir esta atividade?")) return;
                   await call("activities.delete", { id: request.id! });
                   onSaved();
                 }}
