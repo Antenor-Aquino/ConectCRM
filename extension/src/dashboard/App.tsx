@@ -34,6 +34,8 @@ import { TaskModal } from "./tasks/TaskModal";
 import { TasksView } from "./tasks/TasksView";
 import { SessionProvider, useSession } from "./session";
 import { errorText } from "../lib/errors";
+import { GlobalSearch } from "./components/GlobalSearch";
+import { DocumentViewer } from "./documents/DocumentViewer";
 
 // Menu principal (spec 01, seção 1).
 const NAV: TopNavItem[] = [
@@ -76,6 +78,8 @@ function Main() {
   };
   /** Tarefa aberta a partir de um vínculo de documento. */
   const [taskOpen, setTaskOpen] = useState<string | null>(null);
+  // Documento aberto pela pesquisa geral.
+  const [docOpen, setDocOpen] = useState<string | null>(null);
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [activeTypes, setActiveTypes] = useState<PipelineType[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(() => {
@@ -233,6 +237,17 @@ function Main() {
             activeId={tab}
             onSelect={setTab}
             beforeNavEnd={<QuickCreateMenu activeTypes={activeTypes} onSelect={onQuickCreate} />}
+            search={
+              <GlobalSearch
+                nav={{
+                  openCard: openCardFrom,
+                  openPerson: documentNav.openPerson,
+                  openOrganization: documentNav.openOrganization,
+                  openTask: setTaskOpen,
+                  openDocument: setDocOpen,
+                }}
+              />
+            }
             actions={
               <>
                 {env && <EnvironmentSwitch env={env} />}
@@ -344,6 +359,7 @@ function Main() {
           }}
         />
         {backupPending && <AutoBackupPermissionModal handle={backupPending.handle} settings={backupPending.settings} onClose={() => setBackupPending(null)} />}
+        {docOpen && <DocumentViewer documentId={docOpen} onClose={() => setDocOpen(null)} />}
         {taskOpen && (
           <TaskModal
             request={{ id: taskOpen }}

@@ -2,12 +2,29 @@
 // resolvido/não resolvido, concluído/não concluído conforme o tipo),
 // notas, tarefas e histórico de alterações.
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeftRight, Check, Copy, CheckCircle2, Circle, Maximize2, Minimize2, Pencil, PlusCircle, RotateCcw, Sparkles, Trash2, Trophy, X, XCircle } from "lucide-react";
+import {
+  ArrowLeftRight,
+  Check,
+  Copy,
+  CheckCircle2,
+  Circle,
+  Maximize2,
+  Minimize2,
+  Pencil,
+  PlusCircle,
+  RotateCcw,
+  Sparkles,
+  Trash2,
+  Trophy,
+  X,
+  XCircle,
+} from "lucide-react";
 import { TaBadge, TaButton, TaInput, TaTextarea, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { ActivityListItem } from "../../db/activities";
 import type { CustomField, CustomValue } from "../../db/customFields";
 import type { CardDetail as CardData } from "../../db/deals";
+import type { CardCounts } from "../../db/cardCounts";
 import type { HistoryEvent, HistoryRef } from "../../db/cardHistory";
 import type { Pipeline, Stage } from "../../db/pipelines";
 import { CARD_TEXT, OUTCOME_TEXT } from "../../lib/cardTypes";
@@ -77,6 +94,10 @@ export function CardDetail({
   const [itemsOpen, setItemsOpen] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
   const [pipelineAction, setPipelineAction] = useState<"move" | "clone" | null>(null);
+  // Quantidades nas abas (balão verde) e atividades atrasadas (balão vermelho).
+  const [counts, setCounts] = useState<CardCounts | null>(null);
+  const [countsKey, setCountsKey] = useState(0);
+  const recount = () => setCountsKey((k) => k + 1);
   // Cadastro aberto a partir do nome do contato, da organização ou do responsável.
   const [editing, setEditing] = useState<{ kind: "person" | "organization" | "user"; id: string } | null>(null);
   const { user: me, users, reloadUsers } = useSession();
@@ -112,6 +133,12 @@ export function CardDetail({
   };
   const update = (patch: Record<string, unknown>) => run(() => call("cards.update", { id: cardId, patch }));
 
+  useEffect(() => {
+    void call("cards.counts", { id: cardId })
+      .then(setCounts)
+      .catch(() => setCounts(null));
+  }, [cardId, card?.version, countsKey, tab]);
+
   if (!card) {
     return (
       <Shell onClose={onClose} mode={mode} onToggleMode={onToggleMode}>
@@ -135,7 +162,7 @@ export function CardDetail({
   }));
 
   return (
-    <Shell onClose={onClose} mode={mode} onToggleMode={onToggleMode}>
+    <Shell onClose={onClose} mode={mode} onToggleMode={onToggleMode} ticketNumber={card.kind === "ticket" ? card.ticket_number : null}>
       {/* Cabeçalho */}
       <div className={cn("flex items-start gap-3", onToggleMode ? "pr-20" : "pr-8")}>
         <input
@@ -391,26 +418,67 @@ export function CardDetail({
                 ["tarefas", "Atividades"],
                 ["documentos", "Documentos"],
               ] as [Tab, string][]
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => {
-                  setTab(id);
-                  setNoteFocus(null);
-                }}
-                className={cn(
-                  "flex-1 rounded-md py-1.5 text-theme-sm font-medium",
-                  tab === id ? "bg-white text-brand-600 shadow-theme-xs dark:bg-gray-900" : "text-gray-600 dark:text-gray-400",
-                )}
-              >
-                {label}
-              </button>
-            ))}
+            ).map(([id, label]) => {
+              const count = counts && { historico: counts.history, notas: counts.notes, tarefas: counts.activities, documentos: counts.documents }[id];
+              const overdue = id === "tarefas" ? (counts?.activitiesOverdue ?? 0) : 0;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  data-tab={id}
+                  onClick={() => {
+                    setTab(id);
+                    setNoteFocus(null);
+                  }}
+                  className={cn(
+                    "flex flex-1 items-center justify-center gap-1.5 rounded-md py-1.5 text-theme-sm font-medium",
+                    tab === id ? "bg-white text-brand-600 shadow-theme-xs dark:bg-gray-900" : "text-gray-600 dark:text-gray-400",
+                  )}
+                >
+                  {label}
+                  {count != null && (
+                    <span
+                      className="min-w-5 rounded-full bg-success-500 px-1.5 text-center text-[11px] font-semibold leading-5 text-white"
+                      title="Quantidade"
+                      data-count
+                    >
+                      {count}
+                    </span>
+                  )}
+                  {overdue > 0 && (
+                    <span
+                      className="min-w-5 rounded-full bg-error-500 px-1.5 text-center text-[11px] font-semibold leading-5 text-white"
+                      title="Atividades atrasadas"
+                      data-overdue
+                    >
+                      {overdue}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
-          {tab === "notas" && <NotesPanel entityType="deal" entityId={cardId} onChanged={onChanged} highlightId={noteFocus} />}
-          {tab === "tarefas" && <TasksTab cardId={cardId} onChanged={onChanged} />}
-          {tab === "documentos" && <DocumentsPanel type="deal" id={cardId} />}
+          {tab === "notas" && (
+            <NotesPanel
+              entityType="deal"
+              entityId={cardId}
+              onChanged={() => {
+                onChanged();
+                recount();
+              }}
+              highlightId={noteFocus}
+            />
+          )}
+          {tab === "tarefas" && (
+            <TasksTab
+              cardId={cardId}
+              onChanged={() => {
+                onChanged();
+                recount();
+              }}
+            />
+          )}
+          {tab === "documentos" && <DocumentsPanel type="deal" id={cardId} onChanged={recount} />}
           {tab === "historico" && (
             <HistoryTab
               cardId={cardId}
@@ -566,27 +634,50 @@ function ItemsSummary({ items, onEdit }: { items: CardData["items"]; onEdit: () 
   );
 }
 
-function Shell({ children, onClose, mode, onToggleMode }: { children: React.ReactNode; onClose: () => void; mode: CardDetailMode; onToggleMode?: () => void }) {
+function Shell({
+  children,
+  onClose,
+  mode,
+  onToggleMode,
+  ticketNumber,
+}: {
+  children: React.ReactNode;
+  onClose: () => void;
+  mode: CardDetailMode;
+  onToggleMode?: () => void;
+  /** Tickets (funil Operacional): "Ticket: 123" abaixo do X. */
+  ticketNumber?: number | null;
+}) {
   const buttons = (
-    <div className="absolute right-5 top-5 flex gap-1.5">
-      {onToggleMode && (
+    <div className="absolute right-5 top-5 flex flex-col items-end gap-1.5">
+      <div className="flex gap-1.5">
+        {onToggleMode && (
+          <button
+            type="button"
+            onClick={onToggleMode}
+            title={mode === "full" ? "Voltar ao painel lateral" : "Abrir em tela cheia (no lugar do quadro)"}
+            className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-white/5"
+          >
+            {mode === "full" ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
+        )}
         <button
           type="button"
-          onClick={onToggleMode}
-          title={mode === "full" ? "Voltar ao painel lateral" : "Abrir em tela cheia (no lugar do quadro)"}
+          onClick={onClose}
+          title="Fechar"
           className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-white/5"
         >
-          {mode === "full" ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          <X size={18} />
         </button>
+      </div>
+      {ticketNumber != null && (
+        <span
+          className="rounded-md bg-purple-50 px-2 py-0.5 text-theme-xs font-semibold text-purple-700 dark:bg-purple-500/10 dark:text-purple-300"
+          data-ticket-number
+        >
+          Ticket: {ticketNumber}
+        </span>
       )}
-      <button
-        type="button"
-        onClick={onClose}
-        title="Fechar"
-        className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-white/5"
-      >
-        <X size={18} />
-      </button>
     </div>
   );
   if (mode === "full") {

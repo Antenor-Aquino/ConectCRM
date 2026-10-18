@@ -1,6 +1,8 @@
 // Operações expostas pelo documento offscreen (dono do banco) às telas.
 // Cada entrada recebe (db, ctx, params) e devolve dados serializáveis.
 import * as activities from "../db/activities";
+import { cardCounts } from "../db/cardCounts";
+import { globalSearch } from "../db/globalSearch";
 import { cardHistory } from "../db/cardHistory";
 import { cardFieldValues } from "../db/cardFieldValues";
 import * as attachments from "../db/attachments";
@@ -166,6 +168,11 @@ export const methods = {
   "cards.changePipeline": (db: DatabaseSync, ctx: DbContext, p: Id & { pipelineId: string; stageId?: string | null }) => {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);
     return deals.changeCardPipeline(db, ctx, p.id, p);
+  },
+  "search.global": (db: DatabaseSync, ctx: DbContext, p: { text: string }) => globalSearch(db, p.text, viewer(db, ctx)),
+  "cards.counts": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    return cardCounts(db, p.id);
   },
   "cards.clone": (db: DatabaseSync, ctx: DbContext, p: Id & { pipelineId: string; stageId?: string | null; title?: string | null }) => {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);

@@ -77,6 +77,8 @@ export interface Card {
   closed_at: string | null;
   stage_entered_at: string;
   origin: string | null;
+  /** Só nos tickets (funil Operacional): número sequencial. */
+  ticket_number: number | null;
   created_at: string;
   updated_at: string;
   version: number;
@@ -139,6 +141,17 @@ function checkKindFields(kind: DealKind, input: Partial<CardInput>): void {
   reject(kind !== "deal" && !!input.expectedCloseAt, "Data prevista de fechamento");
   reject(kind !== "ticket" && !!input.slaAt, "SLA");
   reject(kind !== "project" && (!!input.startAt || !!input.dueAt), "Início/prazo");
+}
+
+/** "234525", "#234525" ou "Ticket: 234525" → 234525 (busca pelo número do ticket). */
+export function ticketNumberQuery(text: string): number | null {
+  const m = text.trim().match(/^(?:ticket\s*:?\s*)?#?\s*(\d{1,12})$/i);
+  return m ? Number(m[1]) : null;
+}
+
+/** Próximo número de ticket (contando os excluídos, para não repetir). */
+function nextTicketNumber(db: DatabaseSync): number {
+  return (one<{ n: number | null }>(db, "SELECT MAX(ticket_number) AS n FROM deal")?.n ?? 0) + 1;
 }
 
 function columnEdgePosition(db: DatabaseSync, stageId: string, edge: "top" | "bottom", exceptId = ""): number {
@@ -220,6 +233,7 @@ export function createCard(db: DatabaseSync, ctx: DbContext, input: CardInput): 
       owner_id: ownerId,
       stage_entered_at: at,
       origin: optionalText(input.origin),
+      ...(kind === "ticket" ? { ticket_number: nextTicketNumber(db) } : {}),
     });
     insertRow(db, ctx, "deal_stage_history", { deal_id: id, stage_id: stageId, entered_at: at });
     if (input.items?.length) setDealItems(db, ctx, id, input.items);
@@ -311,7 +325,11 @@ export function moveCard(db: DatabaseSync, ctx: DbContext, id: string, target: {
       insertRow(db, ctx, "deal_stage_history", { deal_id: id, stage_id: stage.id, entered_at: at });
       Object.assign(data, { stage_id: stage.id, pipeline_id: pipeline.id, stage_entered_at: at });
     }
-    if (kind !== card.kind) data.kind = kind;
+    if (kind !== card.kind) {
+      data.kind = kind;
+      // Virou ticket: ganha número (mantém o que já tinha, se voltar a ser ticket).
+      if (kind === "ticket" && card.ticket_number == null) data.ticket_number = nextTicketNumber(db);
+    }
     updateRow(db, ctx, "deal", id, data);
   });
 }
@@ -624,8 +642,9 @@ export function getBoard(
   }
   if (opts.search?.trim()) {
     const q = `%${opts.search.trim()}%`;
-    where.push("(d.title LIKE ? OR p.name LIKE ? OR o.name LIKE ?)");
-    params.push(q, q, q);
+    const ticket = ticketNumberQuery(opts.search);
+    where.push(`(d.title LIKE ? OR p.name LIKE ? OR o.name LIKE ?${ticket !== null ? " OR d.ticket_number = ?" : ""})`);
+    params.push(q, q, q, ...(ticket !== null ? [ticket] : []));
   }
   const scope = cardScope(db, opts.viewer);
   const now = new Date();

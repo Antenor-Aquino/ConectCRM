@@ -332,6 +332,23 @@ no cartão mais recente do funil.
 - Até 12 campos. **Restaurar padrão** volta ao cartão original (valor,
   contato e responsável; no operacional, SLA; no projeto, prazo).
 
+## 10.1.0 Abas do detalhe, número do ticket e pesquisa geral
+
+- Abas do detalhe do cartão com a quantidade num balão verde: **Histórico (n)**,
+  **Notas (n)**, **Atividades (n)** e **Documentos (n)**; em Atividades, um
+  segundo balão **vermelho** com as atrasadas (só quando há).
+- **Número do ticket**: todo cartão de funil Operacional recebe um número
+  sequencial, mostrado no canto superior direito do detalhe, abaixo do X:
+  "Ticket: 123". Os tickets existentes são numerados na ordem de criação; um
+  cartão que vira ticket (Mudar de funil) recebe o próximo número e o mantém se
+  sair e voltar; a cópia de um ticket ganha número novo. A pesquisa do funil
+  aceita "123", "#123" ou "Ticket: 123".
+- **Pesquisa geral** na barra superior (Ctrl+K ou "/"): cartões (título,
+  contato, organização e número do ticket), contatos, organizações, atividades,
+  notas e documentos, respeitando as permissões. Setas e Enter escolhem; o
+  resultado abre o cartão no funil, o contato, a organização, a atividade ou a
+  prévia do documento. Em telas menores que 1536 px aparece só a lupa.
+
 ## 10.1.1 Mudar o cartão de funil e clonar
 
 - No detalhe do cartão, o nome do funil (⇄) abre **Mudar de funil**: lista
