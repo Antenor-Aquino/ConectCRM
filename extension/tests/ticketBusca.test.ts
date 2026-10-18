@@ -71,3 +71,20 @@ describe("pesquisa geral", () => {
     expect(globalSearch(db, "a", null).cards).toEqual([]);
   });
 });
+
+describe("cartões escondidos pelo filtro", () => {
+  it("conta os que o filtro de tag/responsável esconde (mesma situação e pesquisa)", async () => {
+    const { db, ctx } = await freshDb();
+    const { createTag } = await import("../src/db/tags");
+    const { createUser } = await import("../src/db/users");
+    const { boardHiddenByFilter } = await import("../src/db/deals");
+    const p = createPipeline(db, ctx, { name: "PowerCubus", type: "comercial", stages: [{ name: "Prospect" }] });
+    const teste = createTag(db, ctx, { entity: "deal", name: "Teste" });
+    const antenor = createUser(db, ctx, { name: "Antenor", role: "admin" });
+    createCard(db, ctx, { pipelineId: p, title: "Abrir ticket ISAAC", ownerId: antenor, tagIds: [teste] });
+    createCard(db, ctx, { pipelineId: p, title: "Proposta teste", ownerId: antenor });
+    expect(boardHiddenByFilter(db, p, { ownerIds: [antenor], tagIds: [teste] })).toBe(1);
+    expect(boardHiddenByFilter(db, p, { ownerIds: [antenor], tagIds: [teste], search: "ISAAC" })).toBe(0);
+    expect(boardHiddenByFilter(db, p, {})).toBe(0);
+  });
+});

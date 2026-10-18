@@ -243,6 +243,8 @@ export function Board({
   const setOwnerIds = (v: string[]) => saveFilter({ ...filter, ownerIds: v });
   const setTagIds = (v: string[]) => saveFilter({ ...filter, tagIdsByKind: { ...filter.tagIdsByKind, [kind]: v } });
   const [tags, setTags] = useState<Tag[]>([]);
+  // Cartões escondidos pelo filtro de responsáveis/tags (aviso acima do quadro).
+  const [hiddenByFilter, setHiddenByFilter] = useState(0);
   const [filterOpen, setFilterOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -252,7 +254,12 @@ export function Board({
   const load = useCallback(async () => {
     try {
       const fieldKeys = mode === "lista" ? listCols.filter((k) => k !== STAGE_COLUMN) : undefined;
-      setColumns(await call("board.get", { pipelineId: pipeline.id, view, sort, status, search, ownerIds, tagIds, fieldKeys }));
+      const [cols, hidden] = await Promise.all([
+        call("board.get", { pipelineId: pipeline.id, view, sort, status, search, ownerIds, tagIds, fieldKeys }),
+        call("board.hiddenByFilter", { pipelineId: pipeline.id, view, status, search, ownerIds, tagIds }),
+      ]);
+      setColumns(cols);
+      setHiddenByFilter(hidden);
       setError(null);
     } catch (e) {
       setError(errorText(e));
@@ -504,6 +511,18 @@ export function Board({
 
       {error && <p className="mb-3 rounded-lg bg-error-50 px-3 py-2 text-theme-sm text-error-700">{error}</p>}
 
+      {hiddenByFilter > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-theme-sm text-warning-800 dark:border-warning-500/30 dark:bg-warning-500/10 dark:text-warning-300" data-hidden-by-filter>
+          <Filter size={15} className="shrink-0" />
+          <span>
+            {hiddenByFilter === 1 ? "1 cartão não aparece" : `${hiddenByFilter} cartões não aparecem`} por causa do filtro (
+            {filterParts.slice(1).join(" · ")}).
+          </span>
+          <button type="button" className="font-semibold text-brand-600 hover:underline" onClick={() => saveFilter({ ...filter, ownerIds: [], tagIdsByKind: { ...filter.tagIdsByKind, [kind]: [] } })}>
+            Mostrar todos
+          </button>
+        </div>
+      )}
       {mode === "lista" ? (
         <BoardList pipeline={pipeline} columns={columns} keys={listCols} options={fieldOptions} onChangeKeys={saveListCols} onOpenCard={onOpenCard} />
       ) : (

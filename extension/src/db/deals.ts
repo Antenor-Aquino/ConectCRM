@@ -603,21 +603,10 @@ const SORT_SQL: Record<BoardSort, string> = {
 
 /** Quadro do funil: colunas com quantidade, soma e cartões (spec 01, tela inicial).
  * Visões: *Fluxo geral* (all), *Meu fluxo* (mine), *Minha equipe* (team). */
-export function getBoard(
-  db: DatabaseSync,
-  pipelineId: string,
-  opts: {
-    view?: BoardView;
-    viewer?: Viewer | null;
-    search?: string;
-    status?: DealStatus | "all";
-    sort?: BoardSort;
-    ownerIds?: string[];
-    tagIds?: string[];
-    /** Visão em lista: colunas escolhidas pelo usuário (no lugar dos campos do cartão). */
-    fieldKeys?: string[];
-  } = {},
-): BoardColumn[] {
+type BoardFilterOpts = { view?: BoardView; viewer?: Viewer | null; search?: string; status?: DealStatus | "all"; ownerIds?: string[]; tagIds?: string[] };
+
+/** Condições do quadro (situação, visão, responsáveis, tags e pesquisa). */
+function boardWhere(db: DatabaseSync, pipelineId: string, opts: BoardFilterOpts): { where: string[]; params: SqlValue[] } {
   const where = ["d.pipeline_id = ?", "d.deleted_at IS NULL"];
   const params: SqlValue[] = [pipelineId];
   const status = opts.status ?? "open";
@@ -646,6 +635,47 @@ export function getBoard(
     where.push(`(d.title LIKE ? OR p.name LIKE ? OR o.name LIKE ?${ticket !== null ? " OR d.ticket_number = ?" : ""})`);
     params.push(q, q, q, ...(ticket !== null ? [ticket] : []));
   }
+  return { where, params };
+}
+
+/**
+ * Quantos cartões o filtro de responsáveis/tags está escondendo (mesma
+ * situação, visão e pesquisa): o quadro avisa para o cartão não "sumir".
+ */
+export function boardHiddenByFilter(db: DatabaseSync, pipelineId: string, opts: BoardFilterOpts): number {
+  if (!opts.ownerIds?.length && !opts.tagIds?.length) return 0;
+  const scope = cardScope(db, opts.viewer);
+  const count = (o: BoardFilterOpts) => {
+    const { where, params } = boardWhere(db, pipelineId, o);
+    return (
+      one<{ n: number }>(
+        db,
+        `SELECT COUNT(*) AS n FROM deal d LEFT JOIN person p ON p.id = d.person_id LEFT JOIN organization o ON o.id = d.organization_id
+         WHERE ${where.join(" AND ")}${scope.sql}`,
+        ...params,
+        ...scope.params,
+      )?.n ?? 0
+    );
+  };
+  return count({ ...opts, ownerIds: [], tagIds: [] }) - count(opts);
+}
+
+export function getBoard(
+  db: DatabaseSync,
+  pipelineId: string,
+  opts: {
+    view?: BoardView;
+    viewer?: Viewer | null;
+    search?: string;
+    status?: DealStatus | "all";
+    sort?: BoardSort;
+    ownerIds?: string[];
+    tagIds?: string[];
+    /** Visão em lista: colunas escolhidas pelo usuário (no lugar dos campos do cartão). */
+    fieldKeys?: string[];
+  } = {},
+): BoardColumn[] {
+  const { where, params } = boardWhere(db, pipelineId, opts);
   const scope = cardScope(db, opts.viewer);
   const now = new Date();
   const today0 = startOfDay(now).toISOString();

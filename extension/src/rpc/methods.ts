@@ -136,6 +136,8 @@ export const methods = {
   // Cartões (negócio / ticket / etapa de projeto)
   "board.get": (db: DatabaseSync, ctx: DbContext, p: { pipelineId: string } & Omit<NonNullable<Parameters<typeof deals.getBoard>[2]>, "viewer">) =>
     deals.getBoard(db, p.pipelineId, { ...p, viewer: viewer(db, ctx) }),
+  "board.hiddenByFilter": (db: DatabaseSync, ctx: DbContext, p: { pipelineId: string } & Omit<NonNullable<Parameters<typeof deals.boardHiddenByFilter>[2]>, "viewer">) =>
+    deals.boardHiddenByFilter(db, p.pipelineId, { ...p, viewer: viewer(db, ctx) }),
   /** Prévia dos campos do cartão (Editar funil → Cartão) no cartão mais recente do funil. */
   "cards.previewFields": (db: DatabaseSync, ctx: DbContext, p: { pipelineId: string; keys: string[] }) => {
     const scope = deals.cardScope(db, viewer(db, ctx));

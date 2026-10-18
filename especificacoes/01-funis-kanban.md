@@ -306,6 +306,10 @@ Em **Configurações → Funis** (e pelo menu ⋯ do quadro):
   escolhida vale nos funis comerciais; nos outros tipos, as tags deles. Ao lado do
   botão aparecem a quantidade e as opções ativas, ex.: "Filtrar (3) Todos ·
   Antenor · Teste" (o status aparece sempre, inclusive "Abertos").
+- Quando o filtro de responsáveis/tags esconde cartões do funil (com a mesma
+  situação e pesquisa), aparece acima do quadro: "1 cartão não aparece por
+  causa do filtro (Antenor · Teste). Mostrar todos" — o botão limpa
+  responsáveis e tags.
 - Lista de funis (tela Funis e seletores): agrupada por categoria —
   **Comercial**, **Projeto**, **Operacional** (título em negrito com uma linha
   abaixo) — e, dentro de cada uma, por nome.
