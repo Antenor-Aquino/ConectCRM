@@ -504,7 +504,7 @@ export function Board({
                 onDragLeave={() => setDrop(null)}
                 onDrop={(e) => void onDrop(e)}
                 className={cn(
-                  "flex shrink-0 flex-col items-center gap-2 rounded-xl bg-gray-50 px-1.5 py-2 hover:bg-gray-100 dark:bg-white/[0.03] dark:hover:bg-white/5",
+                  "flex shrink-0 flex-col items-center gap-2.5 rounded-xl bg-gray-50 px-3 py-3 hover:bg-gray-100 dark:bg-white/[0.03] dark:hover:bg-white/5",
                   drop?.stageId === col.id && "bg-brand-25 ring-2 ring-brand-200 dark:bg-brand-500/10",
                 )}
               >
