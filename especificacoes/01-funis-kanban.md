@@ -212,7 +212,8 @@ No rodapé de cada cartão em aberto, ao lado do responsável:
 O clique (sem abrir o cartão) mostra um painel com as atividades pendentes,
 atrasadas primeiro: tipo, nome, prazo e responsável, com os botões
 **Concluir** (verde) e **Abrir** (abre a atividade). No rodapé, **Agendar
-uma atividade** abre "Nova atividade" já vinculada ao cartão.
+uma atividade** abre "Nova atividade" já vinculada ao cartão. A lista do
+painel rola sem fechá-lo; rolar o quadro, clicar fora ou Esc fecha.
 
 ### 6.1 Visão em lista
 

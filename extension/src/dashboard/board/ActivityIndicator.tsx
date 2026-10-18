@@ -70,7 +70,8 @@ export function ActivityIndicator({
       if (!panel.current?.contains(e.target as Node) && !btn.current?.contains(e.target as Node)) setPos(null);
     };
     const esc = (e: KeyboardEvent) => e.key === "Escape" && setPos(null);
-    const off = () => setPos(null);
+    // Rolar o quadro fecha (o painel ficaria solto); rolar a lista do painel, não.
+    const off = (e: Event) => !panel.current?.contains(e.target as Node) && setPos(null);
     document.addEventListener("mousedown", close);
     document.addEventListener("keydown", esc);
     window.addEventListener("scroll", off, true);
