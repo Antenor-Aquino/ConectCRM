@@ -305,7 +305,7 @@ Em **Configurações → Funis** (e pelo menu ⋯ do quadro):
   (também ao reabrir). As tags são de cada tipo de cartão: a tag de negócio
   escolhida vale nos funis comerciais; nos outros tipos, as tags deles. Ao lado do
   botão aparecem a quantidade e as opções ativas, ex.: "Filtrar (3) Todos ·
-  Antenor · Teste" (o status só aparece quando não é o padrão "Abertos").
+  Antenor · Teste" (o status aparece sempre, inclusive "Abertos").
 - Lista de funis (tela Funis e seletores): agrupada por categoria —
   **Comercial**, **Projeto**, **Operacional** (título em negrito com uma linha
   abaixo) — e, dentro de cada uma, por nome.

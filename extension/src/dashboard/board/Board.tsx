@@ -283,9 +283,9 @@ export function Board({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tagsKind, tags, users, filterKey]);
 
-  // Resumo ao lado de "Filtrar": status (se não for o padrão), responsáveis e tags.
+  // Resumo ao lado de "Filtrar": status (sempre, inclusive "Abertos"), responsáveis e tags.
   const filterParts = [
-    ...(status !== "open" ? [statusLabels(pipeline.type)[status]] : []),
+    statusLabels(pipeline.type)[status],
     ...ownerIds.map((id) => users.find((u) => u.id === id)?.name).filter((n): n is string => !!n),
     ...tagIds.map((id) => tags.find((t) => t.id === id)?.name).filter((n): n is string => !!n),
   ];

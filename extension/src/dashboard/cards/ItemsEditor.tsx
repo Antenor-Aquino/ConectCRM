@@ -34,15 +34,24 @@ export function ItemsEditor({
 }) {
   const [rows, setRows] = useState<ItemDraft[]>(items);
   const [products, setProducts] = useState<Product[]>([]);
+  const [showErrors, setShowErrors] = useState(false);
 
   useEffect(() => {
     if (!open) return;
+    setShowErrors(false);
     setRows(items.length ? items : [emptyRow()]);
     void call("products.list", {}).then(setProducts);
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const update = (i: number, patch: Partial<ItemDraft>) => setRows((r) => r.map((row, j) => (j === i ? { ...row, ...patch } : row)));
-  const valid = rows.filter((r) => r.description.trim());
+  // Linha totalmente vazia é ignorada; com preço, desconto ou produto, a descrição é obrigatória.
+  const blank = (r: ItemDraft) => !r.description.trim() && !r.productId && r.unitPriceCents === 0 && r.discountCents === 0;
+  const filled = rows.filter((r) => !blank(r));
+  const missing = (r: ItemDraft) => !blank(r) && !r.description.trim();
+  const apply = () => {
+    if (filled.some(missing)) return setShowErrors(true);
+    onSave(filled);
+  };
 
   return (
     <TaModal isOpen={open} onClose={onClose} title="Produtos e serviços" width="max-w-3xl">
@@ -74,7 +83,13 @@ export function ItemsEditor({
                 ))}
               </TaSelect>
             )}
-            <TaInput placeholder="Descrição" value={row.description} onChange={(e) => update(i, { description: e.target.value })} />
+            <TaInput
+              placeholder={showErrors && missing(row) ? "Informe a descrição" : "Descrição"}
+              value={row.description}
+              onChange={(e) => update(i, { description: e.target.value })}
+              aria-invalid={showErrors && missing(row)}
+              className={showErrors && missing(row) ? "border-error-500 placeholder:text-error-500 focus:border-error-500 focus:ring-error-500/10" : undefined}
+            />
           </div>
           <TaInput type="number" min={0} step="any" value={row.quantity} onChange={(e) => update(i, { quantity: Number(e.target.value) || 0 })} />
           <MoneyInput value={row.unitPriceCents} onChange={(c) => update(i, { unitPriceCents: c })} />
@@ -85,16 +100,21 @@ export function ItemsEditor({
           </button>
         </div>
       ))}
+      {showErrors && filled.some(missing) && (
+        <p className="mt-2 text-theme-sm text-error-600" role="alert">
+          Preencha a descrição dos itens destacados para aplicar.
+        </p>
+      )}
       <TaButton variant="ghost" className="mt-2" startIcon={<Plus size={14} />} onClick={() => setRows((r) => [...r, emptyRow()])}>
         Adicionar item
       </TaButton>
       <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-4 dark:border-gray-800">
         <span className="text-theme-sm text-gray-600 dark:text-gray-300">
-          Total: <strong>{formatCents(valid.reduce((acc, r) => acc + itemTotal(r), 0))}</strong>
+          Total: <strong>{formatCents(filled.reduce((acc, r) => acc + itemTotal(r), 0))}</strong>
         </span>
         <div className="flex gap-2">
           <TaButton onClick={onClose}>Cancelar</TaButton>
-          <TaButton variant="primary" onClick={() => onSave(valid)}>
+          <TaButton variant="primary" onClick={apply}>
             Aplicar
           </TaButton>
         </div>
