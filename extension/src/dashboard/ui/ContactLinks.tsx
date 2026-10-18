@@ -28,6 +28,23 @@ export function PhoneLink({ phone, children, className }: { phone: string | null
   );
 }
 
+export function WebLink({ url, children, className }: { url: string; children: ReactNode; className?: string }) {
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`Abrir o site ${url}`}
+      data-site={url}
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      className={cn(LINK, className)}
+    >
+      {children}
+    </a>
+  );
+}
+
 /** Opção "computador" quando nada foi cadastrado. */
 const FALLBACK: EmailProvider = { id: "padrao", kind: "padrao", name: "Aplicativo de e-mail do computador" };
 

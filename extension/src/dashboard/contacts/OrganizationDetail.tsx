@@ -20,6 +20,7 @@ import { MergeModal } from "./MergeModal";
 import { OrganizationFormModal } from "./OrganizationFormModal";
 import { errorText } from "../../lib/errors";
 import { EmailLink, PhoneLink } from "../ui/ContactLinks";
+import { websiteUrl } from "../../lib/contactLinks";
 
 type Tab = "contatos" | "negocios" | "tarefas" | "documentos" | "notas" | "historico";
 
@@ -71,7 +72,7 @@ export function OrganizationDetail({
   ]
     .filter(Boolean)
     .join(" · ");
-  const site = o.website ? (o.website.startsWith("http") ? o.website : `https://${o.website}`) : null;
+  const site = websiteUrl(o.website);
 
   return (
     <DrawerShell onClose={onClose}>

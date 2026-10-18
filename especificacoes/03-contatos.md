@@ -48,7 +48,7 @@ Modal com rolagem interna, botão ✕ no topo, **Salvar** fixo no rodapé.
   do WhatsApp e histórico de alterações.
 - Mesclar contatos duplicados.
 
-## 3.1 Telefone e e-mail clicáveis
+## 3.1 Telefone, e-mail e site clicáveis
 
 - **Telefone** (no cartão do quadro, no detalhe do contato e da organização):
   o clique abre a conversa no **WhatsApp Web** (`web.whatsapp.com/send?phone=`),
@@ -63,7 +63,9 @@ Modal com rolagem interna, botão ✕ no topo, **Salvar** fixo no rodapé.
     ("E-mail copiado — cole no destinatário").
   - Com mais de um provedor, o clique mostra a lista para escolher; sem
     nenhum, oferece o aplicativo do computador e indica a configuração.
-- O clique no telefone/e-mail não abre o cartão.
+- **Organização** no cartão: com **site** cadastrado, o nome abre o site numa
+  nova aba (sem "https://", ele é acrescentado); sem site, é texto comum.
+- O clique no telefone/e-mail/organização não abre o cartão.
 
 ## 4. Decisões e pendências
 

@@ -27,6 +27,14 @@ export async function openWhatsApp(phone: string): Promise<void> {
   }
 }
 
+/** Site cadastrado → link http(s) ("empresa.com.br" ganha https://); inválido → null. */
+export function websiteUrl(site: string | null | undefined): string | null {
+  const t = site?.trim();
+  if (!t) return null;
+  const url = /^https?:\/\//i.test(t) ? t : `https://${t}`;
+  return validProviderUrl(url) && /\./.test(new URL(url).hostname) ? url : null;
+}
+
 export type EmailProviderKind = "gmail" | "outlook" | "outlook_pessoal" | "yahoo" | "padrao" | "outro";
 
 export interface EmailProvider {

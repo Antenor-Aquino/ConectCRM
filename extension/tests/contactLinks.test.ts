@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { composeUrl, validProviderUrl, whatsappDigits, whatsappSendUrl } from "../src/lib/contactLinks";
+import { composeUrl, validProviderUrl, websiteUrl, whatsappDigits, whatsappSendUrl } from "../src/lib/contactLinks";
 
 describe("links de contato", () => {
   it("telefone → conversa no WhatsApp Web", () => {
@@ -27,5 +27,15 @@ describe("links de contato", () => {
     expect(validProviderUrl("https://mail.zoho.com/zm/#mail/folder/inbox")).toBe(true);
     expect(validProviderUrl("mail.zoho.com")).toBe(false);
     expect(validProviderUrl("javascript:alert(1)")).toBe(false);
+  });
+});
+
+describe("site da organização", () => {
+  it("vira link http(s)", () => {
+    expect(websiteUrl("genialsoft.com.br")).toBe("https://genialsoft.com.br");
+    expect(websiteUrl(" http://www.x.com/a ")).toBe("http://www.x.com/a");
+    expect(websiteUrl("sem site")).toBeNull();
+    expect(websiteUrl("")).toBeNull();
+    expect(websiteUrl(null)).toBeNull();
   });
 });

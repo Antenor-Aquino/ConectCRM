@@ -7,10 +7,11 @@ import { isOverdue } from "../lib/taskTiming";
 import { formatCustomRaw } from "./cardHistory";
 import type { PipelineType } from "./pipelines";
 import { many, one, type DatabaseSync } from "./sql";
+import { websiteUrl } from "../lib/contactLinks";
 
 export type CardFieldValue =
-  /** `phone`/`email`: valor bruto para o link (WhatsApp / provedor de e-mail). */
-  | { text: string; tone?: "danger"; label?: string; phone?: string; email?: string }
+  /** `phone`/`email`/`url`: destino do link (WhatsApp / provedor de e-mail / site). */
+  | { text: string; tone?: "danger"; label?: string; phone?: string; email?: string; url?: string }
   | { tags: { name: string; color: string | null }[] };
 
 const DAY = 86_400_000;
@@ -31,6 +32,7 @@ interface Row {
   org_cnpj: string | null;
   org_segment: string | null;
   org_phone: string | null;
+  org_website: string | null;
   owner_name: string | null;
   probability: number | null;
   expected_close_at: string | null;
@@ -68,7 +70,7 @@ export function cardFieldValues(
   const rows = many<Row>(
     db,
     `SELECT d.id, d.value_cents, d.person_id, d.organization_id, pe.name AS person_name, pe.phone AS person_phone, pe.email AS person_email,
-       o.name AS org_name, o.city AS org_city, o.state AS org_state, o.cnpj AS org_cnpj, o.segment AS org_segment, o.phone AS org_phone,
+       o.name AS org_name, o.city AS org_city, o.state AS org_state, o.cnpj AS org_cnpj, o.segment AS org_segment, o.phone AS org_phone, o.website AS org_website,
        u.name AS owner_name, s.probability, d.expected_close_at, d.sla_at, d.start_at, d.due_at, d.description, d.origin, d.created_at, d.stage_entered_at,
        (SELECT a.title FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0 ORDER BY COALESCE(a.end_at, a.due_at) LIMIT 1) AS next_task,
        (SELECT COALESCE(a.end_at, a.due_at) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0 ORDER BY COALESCE(a.end_at, a.due_at) LIMIT 1) AS next_due,
@@ -209,8 +211,12 @@ export function cardFieldValues(
         case "contato_email":
           if (r.person_email) out[k] = { text: r.person_email, email: r.person_email };
           break;
-        case "organizacao":
-          put(k, r.org_name);
+        case "organizacao": {
+          // Com site cadastrado, o nome da organização abre o site.
+          const url = websiteUrl(r.org_website);
+          if (r.org_name) out[k] = url ? { text: r.org_name, url } : { text: r.org_name };
+          break;
+        }
           break;
         case "org_cidade":
           put(k, [r.org_city, r.org_state].filter(Boolean).join(" / "));

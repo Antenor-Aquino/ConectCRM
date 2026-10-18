@@ -11,7 +11,7 @@ import { parseCardFields } from "../../lib/cardFields";
 import { outcomeLabel } from "../../lib/cardTypes";
 import { formatDate } from "../../lib/format";
 import { Avatar } from "../ui/Avatar";
-import { EmailLink, PhoneLink } from "../ui/ContactLinks";
+import { EmailLink, PhoneLink, WebLink } from "../ui/ContactLinks";
 import { ActivityIndicator } from "./ActivityIndicator";
 
 /** Rótulo curto antes do valor (vazio = só ícone). */
@@ -123,8 +123,16 @@ export function CardFields({
             );
           }
           const label = v.label ?? PREFIX[k];
-          // Telefone abre o WhatsApp; e-mail, o provedor de e-mail do usuário.
-          const content = v.phone ? <PhoneLink phone={v.phone}>{v.text}</PhoneLink> : v.email ? <EmailLink email={v.email}>{v.text}</EmailLink> : v.text;
+          // Telefone abre o WhatsApp; e-mail, o provedor de e-mail do usuário; organização com site, o site.
+          const content = v.phone ? (
+            <PhoneLink phone={v.phone}>{v.text}</PhoneLink>
+          ) : v.email ? (
+            <EmailLink email={v.email}>{v.text}</EmailLink>
+          ) : v.url ? (
+            <WebLink url={v.url}>{v.text}</WebLink>
+          ) : (
+            v.text
+          );
           return (
             <div key={k} className={cn("mt-1 flex items-center gap-1.5 text-theme-xs", v.tone === "danger" ? "text-error-600" : "text-gray-500 dark:text-gray-400")}>
               <span className="shrink-0 opacity-70">{ICON[k] ?? <TagIcon size={13} />}</span>
