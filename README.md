@@ -113,6 +113,16 @@ pode ser **transcrito com IA** (opcional): áudio, PDF e imagem viram uma nota
 no cadastro; a janela avisa antes o que é extenso, complexo ou não dá para
 transcrever.
 
+### Integrações (Pipedrive)
+
+Em **Configurações → Integrações** (só administradores) o Pipedrive é conectado
+com a chave da API. **Importar do Pipedrive** traz leads (como cartões num funil
+comercial), contatos e organizações, buscando pelo nome ou pela data de
+criação, com de-para dos campos e dos valores. O CRM sabe o que já foi
+importado (e oferece atualizar), aponta possíveis duplicados e mostra no
+cadastro o link para o original (detalhes em
+[`especificacoes/09-integracoes.md`](especificacoes/09-integracoes.md)).
+
 ### Cadastros duplicados
 
 Ao criar contato, organização ou cartão, o CRM procura nomes parecidos (mais

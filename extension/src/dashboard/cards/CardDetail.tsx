@@ -54,6 +54,7 @@ import { ChangePipelineModal } from "./ChangePipelineModal";
 import { createOrganizationQuick, createPersonQuick, searchOrganizations, searchPersons } from "./searchers";
 import { errorText } from "../../lib/errors";
 import { RECURRENCE_LABEL, type Recurrence } from "../../db/products";
+import { ExternalOrigin } from "../ui/ExternalOrigin";
 
 type Tab = "notas" | "tarefas" | "documentos" | "historico";
 
@@ -162,7 +163,7 @@ export function CardDetail({
   }));
 
   return (
-    <Shell onClose={onClose} mode={mode} onToggleMode={onToggleMode} ticketNumber={card.kind === "ticket" ? card.ticket_number : null}>
+    <Shell onClose={onClose} mode={mode} onToggleMode={onToggleMode} ticketNumber={card.kind === "ticket" ? card.ticket_number : null} cardId={card.id}>
       {/* Cabeçalho */}
       <div className={cn("flex items-start gap-3", onToggleMode ? "pr-20" : "pr-8")}>
         <input
@@ -640,6 +641,7 @@ function Shell({
   mode,
   onToggleMode,
   ticketNumber,
+  cardId,
 }: {
   children: React.ReactNode;
   onClose: () => void;
@@ -647,6 +649,8 @@ function Shell({
   onToggleMode?: () => void;
   /** Tickets (funil Operacional): "Ticket: 123" abaixo do X. */
   ticketNumber?: number | null;
+  /** Para "Importado do Pipedrive ↗" abaixo do X. */
+  cardId?: string;
 }) {
   const buttons = (
     <div className="absolute right-5 top-5 flex flex-col items-end gap-1.5">
@@ -678,6 +682,7 @@ function Shell({
           Ticket: {ticketNumber}
         </span>
       )}
+      {cardId && <ExternalOrigin localId={cardId} />}
     </div>
   );
   if (mode === "full") {

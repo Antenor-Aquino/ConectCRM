@@ -18,6 +18,7 @@ import { EmailInput } from "../ui/ContactLinks";
 import { TagPicker } from "../ui/TagPicker";
 import { UserSelect } from "../ui/UserSelect";
 import { errorText } from "../../lib/errors";
+import { ExternalOrigin } from "../ui/ExternalOrigin";
 
 interface OrgLink {
   id: string;
@@ -121,6 +122,7 @@ export function PersonFormModal({
         <p className="text-theme-sm text-gray-500">Carregando…</p>
       ) : (
         <>
+          {personId && <ExternalOrigin localId={personId} className="mb-3" />}
           <ImageUpload value={avatarId} onChange={setAvatarId} shape="round" entityType="person" />
           <Field label="Nome" required>
             <TaInput autoFocus={!personId} value={name} placeholder="Nome do contato" onChange={(e) => setName(e.target.value)} />

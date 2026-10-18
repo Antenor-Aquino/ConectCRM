@@ -4,16 +4,16 @@
 // numa transação só: contato e organização são achados ou criados, tags
 // criadas quando não existem, e o cartão entra na etapa escolhida.
 import { errorText } from "../lib/errors";
-import { importKey, parseImportDate, parseImportDay, parseMoneyCents, parseNumber, parseYesNo, splitList } from "../lib/importParse";
+import { importKey, parseImportDate, parseMoneyCents, splitList } from "../lib/importParse";
 import { ValidationError } from "../lib/validate";
 import { createOrganization, createPerson, findDuplicatePersons, linkPersonOrganization } from "./contacts";
 import { listCustomFields, type CustomField, type CustomValue } from "./customFields";
+import { customValueFromText, idByName as byName, tagIdsByName } from "./importValues";
 import { createCard, setCardStatus, type DealStatus } from "./deals";
 import type { ImportSummary } from "./importer";
-import { KIND_BY_PIPELINE_TYPE, type DealKind, type PipelineType } from "./pipelines";
+import { KIND_BY_PIPELINE_TYPE, type PipelineType } from "./pipelines";
 import type { DbContext } from "./repo";
 import { many, one, withTransaction, type DatabaseSync } from "./sql";
-import { createTag, listTags } from "./tags";
 
 export interface CardImportRow {
   title?: string;
@@ -69,55 +69,6 @@ export const IMPORTABLE_FIELD_TYPES = new Set<CustomField["field_type"]>([
   "organization",
 ]);
 
-const byName = (db: DatabaseSync, table: "person" | "organization" | "app_user", name: string) =>
-  one<{ id: string }>(db, `SELECT id FROM ${table} WHERE name = ? COLLATE NOCASE AND deleted_at IS NULL`, name.trim())?.id;
-
-function optionId(field: CustomField, raw: string): string {
-  if (field.options.some((o) => o.id === raw)) return raw;
-  const opt = field.options.find((o) => importKey(o.label) === importKey(raw));
-  if (!opt) throw new ValidationError(`Campo "${field.name}": a opção "${raw}" não existe.`);
-  return opt.id;
-}
-
-function customValue(db: DatabaseSync, field: CustomField, raw: string | string[]): CustomValue {
-  const label = `Campo "${field.name}"`;
-  const text = Array.isArray(raw) ? raw.join(";") : raw.trim();
-  if (!text) return null;
-  switch (field.field_type) {
-    case "number": {
-      const n = parseNumber(text);
-      if (n === null) throw new ValidationError(`${label}: número "${text}" não reconhecido.`);
-      return n;
-    }
-    case "money":
-      return parseMoneyCents(text, label);
-    case "date":
-      return parseImportDay(text, label);
-    case "datetime":
-      return parseImportDate(text, label);
-    case "boolean":
-      return parseYesNo(text);
-    case "select":
-      return optionId(field, Array.isArray(raw) ? raw[0]! : text);
-    case "multiselect":
-      return (Array.isArray(raw) ? raw : splitList(text)).map((v) => optionId(field, v));
-    case "user": {
-      const id =
-        byName(db, "app_user", text) ?? one<{ id: string }>(db, "SELECT id FROM app_user WHERE email = ? COLLATE NOCASE AND deleted_at IS NULL", text)?.id;
-      if (!id) throw new ValidationError(`${label}: usuário "${text}" não encontrado.`);
-      return id;
-    }
-    case "person":
-    case "organization": {
-      const id = byName(db, field.field_type, text);
-      if (!id) throw new ValidationError(`${label}: "${text}" não encontrado.`);
-      return id;
-    }
-    default:
-      return text;
-  }
-}
-
 /** Contato pelo e-mail/celular, depois pelo nome; sem nenhum, cria. */
 function resolvePerson(db: DatabaseSync, ctx: DbContext, row: CardImportRow): string | null {
   const name = row.personName?.trim();
@@ -131,25 +82,6 @@ function resolvePerson(db: DatabaseSync, ctx: DbContext, row: CardImportRow): st
     if (id) return id;
   }
   return createPerson(db, ctx, { name: name || email || phone!, email, phone });
-}
-
-function resolveTags(db: DatabaseSync, ctx: DbContext, kind: DealKind, raw: string | undefined, cache: Map<string, string>): string[] | undefined {
-  const names = splitList(raw);
-  if (!names.length) return undefined;
-  if (!cache.size) for (const t of listTags(db, kind, { includeInactive: true })) cache.set(importKey(t.name), t.id);
-  return [
-    ...new Set(
-      names.map((n) => {
-        const key = importKey(n);
-        let id = cache.get(key);
-        if (!id) {
-          id = createTag(db, ctx, { entity: kind, name: n });
-          cache.set(key, id);
-        }
-        return id;
-      }),
-    ),
-  ];
 }
 
 export function importCards(
@@ -190,7 +122,7 @@ export function importCards(
         for (const [fieldId, raw] of Object.entries(row.custom ?? {})) {
           const field = fields.get(fieldId);
           if (!field || !IMPORTABLE_FIELD_TYPES.has(field.field_type)) continue;
-          const v = customValue(db, field, raw);
+          const v = customValueFromText(db, field, raw);
           if (v !== null) customValues[fieldId] = v;
         }
         const id = createCard(db, ctx, {
@@ -207,7 +139,7 @@ export function importCards(
           slaAt: kind === "ticket" ? parseImportDate(row.slaAt, "SLA") : undefined,
           startAt: kind === "project" ? parseImportDate(row.startAt, "Início") : undefined,
           dueAt: kind === "project" ? parseImportDate(row.dueAt, "Prazo") : undefined,
-          tagIds: resolveTags(db, ctx, kind, row.tags, tagCache),
+          tagIds: tagIdsByName(db, ctx, kind, splitList(row.tags), tagCache),
           customValues,
         });
         if (row.status && row.status !== "open") setCardStatus(db, ctx, id, { status: row.status });

@@ -47,6 +47,7 @@ export const DATA_TABLES = [
   "document",
   "document_version",
   "document_link",
+  "external_ref",
 ] as const;
 export type DataTable = (typeof DATA_TABLES)[number];
 

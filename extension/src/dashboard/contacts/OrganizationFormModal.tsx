@@ -21,6 +21,7 @@ import { TagPicker } from "../ui/TagPicker";
 import { UserSelect } from "../ui/UserSelect";
 import { errorText } from "../../lib/errors";
 import { EmailInput } from "../ui/ContactLinks";
+import { ExternalOrigin } from "../ui/ExternalOrigin";
 
 type Form = {
   name: string;
@@ -184,6 +185,7 @@ export function OrganizationFormModal({
         <p className="text-theme-sm text-gray-500">Carregando…</p>
       ) : (
         <>
+          {organizationId && <ExternalOrigin localId={organizationId} className="mb-3" />}
           <ImageUpload value={logoId} onChange={setLogoId} shape="square" entityType="organization" />
           <Field label="Nome da organização" required>
             <TaInput autoFocus={!organizationId} value={form.name} placeholder="Nome fantasia" onChange={(e) => set({ name: e.target.value })} />

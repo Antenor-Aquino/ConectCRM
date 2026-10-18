@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ConectCRM",
-  "version": "0.2.34",
+  "version": "0.2.35",
   "description": "CRM local com funis, Kanban, atividades, contatos e organizações - dados no seu computador. Integra com o WhatsApp Web.",
   "action": {
     "default_popup": "src/popup/popup.html",
@@ -29,6 +29,7 @@
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
+  "optional_host_permissions": ["https://api.pipedrive.com/*"],
   "host_permissions": [
     "https://extpipe.claudiacrm.com.br/*",
     "https://brasilapi.com.br/*",

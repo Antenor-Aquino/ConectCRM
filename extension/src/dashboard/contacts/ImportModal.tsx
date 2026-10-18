@@ -1,7 +1,7 @@
 // Importar planilha (Excel/CSV): escolher arquivo → conferir de qual coluna
 // vem cada campo (sugerido pelo cabeçalho) → importar → resumo.
 // Colunas com o mesmo nome de um campo personalizado entram automaticamente.
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { FileSpreadsheet } from "lucide-react";
 import { TaButton, TaModal, TaSelect } from "@tailadmin";
 import type { ImportSummary } from "../../db/importer";
@@ -132,11 +132,37 @@ export function ImportModal({
   );
 }
 
-/** Resumo da importação: criados, ignorados por já existirem e com erro. */
-export function ImportSummaryView({ summary, onClose }: { summary: ImportSummary; onClose: () => void }) {
+/** Resumo da importação: criados, atualizados/vinculados (integrações), ignorados, avisos e erros. */
+export function ImportSummaryView({
+  summary,
+  onClose,
+  extra,
+}: {
+  summary: ImportSummary & { updated?: number; linked?: number; warnings?: { row: number; message: string }[] };
+  onClose: () => void;
+  extra?: ReactNode;
+}) {
+  const warnings = summary.warnings ?? [];
   return (
-    <div className="text-theme-sm text-gray-700 dark:text-gray-300">
-      <p className="mb-3 rounded-lg bg-success-50 px-3 py-2 text-success-700">{summary.created} registro(s) importado(s).</p>
+    <div className="text-theme-sm text-gray-700 dark:text-gray-300" data-import-summary>
+      <p className="mb-3 rounded-lg bg-success-50 px-3 py-2 text-success-700">
+        {summary.created} registro(s) importado(s).
+        {summary.updated ? ` ${summary.updated} atualizado(s).` : ""}
+        {summary.linked ? ` ${summary.linked} vinculado(s) a cadastros existentes.` : ""}
+      </p>
+      {extra}
+      {warnings.length > 0 && (
+        <>
+          <p className="mb-1 font-medium text-warning-700">Importados com aviso ({warnings.length}):</p>
+          <ul className="mb-3 max-h-32 overflow-y-auto text-theme-xs text-warning-700">
+            {warnings.map((w) => (
+              <li key={w.row}>
+                {w.row}. {w.message}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
       {summary.skipped.length > 0 && (
         <>
           <p className="mb-1 font-medium">Ignorados por já existirem ({summary.skipped.length}):</p>
@@ -155,7 +181,7 @@ export function ImportSummaryView({ summary, onClose }: { summary: ImportSummary
           <ul className="mb-3 max-h-32 overflow-y-auto text-theme-xs text-error-600">
             {summary.errors.map((e) => (
               <li key={e.row}>
-                Linha {e.row}: {e.message}
+                {summary.updated !== undefined ? `${e.row}.` : `Linha ${e.row}:`} {e.message}
               </li>
             ))}
           </ul>

@@ -8,6 +8,7 @@ import { cardFieldValues } from "../db/cardFieldValues";
 import * as attachments from "../db/attachments";
 import * as importer from "../db/importer";
 import * as cardImporter from "../db/cardImporter";
+import * as ext from "../db/externalImport";
 import * as merge from "../db/merge";
 import * as contacts from "../db/contacts";
 import * as copilot from "../db/copilot";
@@ -42,6 +43,10 @@ function assertRole(db: DatabaseSync, ctx: DbContext, roles: users.Role[], what:
   if (v && !roles.includes(v.role)) throw new ValidationError(`Sem permissão para alterar ${what}.`);
 }
 const ADMIN: users.Role[] = ["admin"];
+/** Integrações (importar do Pipedrive...): só administrador. */
+function assertIntegrations(db: DatabaseSync, ctx: DbContext): void {
+  if (viewer(db, ctx)?.role !== "admin") throw new ValidationError("Apenas administradores podem usar as integrações.");
+}
 const MANAGERS: users.Role[] = ["admin", "gestor"];
 
 /** Tarefa fora do escopo do usuário (vendedor: só as suas; gestor: equipe). */
@@ -161,6 +166,28 @@ export const methods = {
   "cards.import": (db: DatabaseSync, ctx: DbContext, p: cardImporter.CardImportInput) => {
     const v = viewer(db, ctx);
     return cardImporter.importCards(db, ctx, p, (ownerId) => deals.assertCanAssign(db, v, ownerId));
+  },
+  // Integrações (spec 09): só administradores.
+  "integrations.check": (db: DatabaseSync, ctx: DbContext, p: { provider: ext.ExternalProvider; entity: ext.ExternalEntity; items: ext.ExternalCheckItem[] }) => {
+    assertIntegrations(db, ctx);
+    return ext.checkExternal(db, p.provider, p.entity, p.items);
+  },
+  "integrations.links": (db: DatabaseSync, ctx: DbContext, p: { provider: ext.ExternalProvider; entity: ext.ExternalEntity; externalIds: string[] }) => {
+    assertIntegrations(db, ctx);
+    return [...ext.externalLinks(db, p.provider, p.entity, p.externalIds).values()];
+  },
+  "integrations.refsOf": (db: DatabaseSync, _c: DbContext, p: Id) => ext.externalRefsOf(db, p.id),
+  "integrations.importOrganizations": (db: DatabaseSync, ctx: DbContext, p: ext.ExternalImportInput<ext.ExternalOrganizationRow>) => {
+    assertIntegrations(db, ctx);
+    return ext.importExternalOrganizations(db, ctx, p);
+  },
+  "integrations.importPersons": (db: DatabaseSync, ctx: DbContext, p: ext.ExternalImportInput<ext.ExternalPersonRow>) => {
+    assertIntegrations(db, ctx);
+    return ext.importExternalPersons(db, ctx, p);
+  },
+  "integrations.importDeals": (db: DatabaseSync, ctx: DbContext, p: ext.ExternalImportInput<ext.ExternalDealRow>) => {
+    assertIntegrations(db, ctx);
+    return ext.importExternalDeals(db, ctx, p);
   },
   "cards.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Parameters<typeof deals.updateCard>[3] }) => {
     const v = viewer(db, ctx);
