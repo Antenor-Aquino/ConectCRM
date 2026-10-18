@@ -3,7 +3,7 @@
 import { nowIso } from "../lib/ids";
 import { normalizeCents, normalizeIsoDate, optionalText, requireText, ValidationError } from "../lib/validate";
 import { primaryOrganizationId } from "./contacts";
-import { getCustomValues, setCustomValues, type CustomValue } from "./customFields";
+import { getCustomField, getCustomValues, listCustomFields, setCustomValues, type CustomValue } from "./customFields";
 import { KIND_BY_PIPELINE_TYPE, type DealKind, type PipelineType } from "./pipelines";
 import { getProduct, RECURRENCES, type Recurrence } from "./products";
 import { cardFieldValues, type CardFieldValue } from "./cardFieldValues";
@@ -12,7 +12,7 @@ import { normalizeText } from "../lib/search";
 import { OVERDUE_COND, overdueParams, startOfDay } from "../lib/taskTiming";
 import { getRow, insertRow, softDelete, updateRow, type DbContext } from "./repo";
 import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
-import { getEntityTags, setEntityTags, type Tag } from "./tags";
+import { createTag, getEntityTags, setEntityTags, type Tag } from "./tags";
 import { getUser, teammateIds, type Viewer } from "./users";
 
 export type DealStatus = "open" | "won" | "lost";
@@ -274,12 +274,14 @@ export function updateCard(
 /** Move o cartão para uma etapa (do mesmo funil ou de outro funil do mesmo
  * tipo), antes do cartão `beforeId` ou no fim da coluna. Mudança de etapa
  * fica registrada em deal_stage_history. */
-export function moveCard(db: DatabaseSync, ctx: DbContext, id: string, target: { stageId: string; beforeId?: string | null }): void {
+export function moveCard(db: DatabaseSync, ctx: DbContext, id: string, target: { stageId: string; beforeId?: string | null }, opts: { changeKind?: boolean } = {}): void {
   withTransaction(db, () => {
     const card = requireCard(db, id);
     const stage = stageOf(db, target.stageId);
     const pipeline = pipelineOf(db, stage.pipeline_id);
-    if (KIND_BY_PIPELINE_TYPE[pipeline.type] !== card.kind) throw new ValidationError("Só é possível mover para um funil do mesmo tipo.");
+    const kind = KIND_BY_PIPELINE_TYPE[pipeline.type];
+    // Arrastar só entre funis do mesmo tipo; "Mudar de funil" pode trocar o tipo.
+    if (kind !== card.kind && !opts.changeKind) throw new ValidationError("Só é possível mover para um funil do mesmo tipo.");
 
     let position: number;
     if (target.beforeId) {
@@ -309,6 +311,7 @@ export function moveCard(db: DatabaseSync, ctx: DbContext, id: string, target: {
       insertRow(db, ctx, "deal_stage_history", { deal_id: id, stage_id: stage.id, entered_at: at });
       Object.assign(data, { stage_id: stage.id, pipeline_id: pipeline.id, stage_entered_at: at });
     }
+    if (kind !== card.kind) data.kind = kind;
     updateRow(db, ctx, "deal", id, data);
   });
 }
@@ -321,22 +324,111 @@ export function matchingStageId(db: DatabaseSync, fromStageId: string, pipelineI
   return target.find((s) => normalizeText(s.name) === key)?.id ?? null;
 }
 
+/** Funil de destino e etapa: a informada ou a de mesmo nome; sem ela, pede a escolha. */
+function resolveTarget(db: DatabaseSync, fromStageId: string, input: { pipelineId: string; stageId?: string | null }) {
+  const target = pipelineOf(db, input.pipelineId);
+  if (target.archived_at) throw new ValidationError("Este funil está arquivado.");
+  const stageId = input.stageId ?? matchingStageId(db, fromStageId, target.id);
+  if (!stageId) throw new ValidationError("O funil de destino não tem uma etapa com o mesmo nome. Escolha a etapa.");
+  if (stageOf(db, stageId).pipeline_id !== target.id) throw new ValidationError("A etapa não pertence ao funil de destino.");
+  return { target, kind: KIND_BY_PIPELINE_TYPE[target.type], stageId };
+}
+
+/** Tags do cartão no tipo de destino: as de mesmo nome; as que faltam são criadas (mesma cor). */
+function tagsForKind(db: DatabaseSync, ctx: DbContext, cardId: string, kind: DealKind): string[] {
+  return getEntityTags(db, cardId).map((t) => {
+    if (t.entity === kind) return t.id;
+    const same = many<{ id: string; name: string }>(db, "SELECT id, name FROM tag WHERE entity = ? AND deleted_at IS NULL", kind).find(
+      (x) => normalizeText(x.name) === normalizeText(t.name),
+    );
+    return same?.id ?? createTag(db, ctx, { entity: kind, name: t.name, color: t.color ?? undefined });
+  });
+}
+
 /**
- * Leva o cartão para outro funil do mesmo tipo. Sem `stageId`, vai para a etapa
- * de mesmo nome; se o destino não tiver, é preciso escolher a etapa.
+ * Campos personalizados no destino: valor levado para o campo de mesmo nome e
+ * tipo que vale no funil de destino (listas pelo rótulo da opção).
+ */
+function customValuesFor(db: DatabaseSync, cardId: string, kind: DealKind, pipelineId: string): Record<string, CustomValue> {
+  const targets = listCustomFields(db, kind, { pipelineId });
+  const out: Record<string, CustomValue> = {};
+  for (const [fieldId, value] of Object.entries(getCustomValues(db, cardId))) {
+    const from = getCustomField(db, fieldId);
+    if (!from || value === null) continue;
+    const to = targets.find((f) => f.field_type === from.field_type && normalizeText(f.name) === normalizeText(from.name));
+    if (!to) continue;
+    if (to.id === from.id) out[to.id] = value;
+    else if (from.field_type === "select" || from.field_type === "multiselect") {
+      const label = (id: string) => from.options.find((o) => o.id === id)?.label;
+      const map = (id: string) => to.options.find((o) => normalizeText(o.label) === normalizeText(label(id) ?? "\u0000"))?.id;
+      const ids = (Array.isArray(value) ? value : [String(value)]).map(map).filter((x): x is string => !!x);
+      if (ids.length) out[to.id] = from.field_type === "multiselect" ? ids : ids[0]!;
+    } else out[to.id] = value;
+  }
+  return out;
+}
+
+/**
+ * Leva o cartão para outro funil, inclusive de outro tipo (negócio ↔ ticket ↔
+ * etapa de projeto). Sem `stageId`, vai para a etapa de mesmo nome; se o destino
+ * não tiver, é preciso escolher. Mudando de tipo, tags e campos personalizados
+ * de mesmo nome são levados; os campos só do tipo antigo ficam guardados.
  */
 export function changeCardPipeline(db: DatabaseSync, ctx: DbContext, id: string, input: { pipelineId: string; stageId?: string | null }): string {
   return withTransaction(db, () => {
     const card = requireCard(db, id);
     if (input.pipelineId === card.pipeline_id) throw new ValidationError("O cartão já está neste funil.");
-    const target = pipelineOf(db, input.pipelineId);
-    if (target.archived_at) throw new ValidationError("Este funil está arquivado.");
-    if (KIND_BY_PIPELINE_TYPE[target.type] !== card.kind) throw new ValidationError("Só é possível mudar para um funil do mesmo tipo.");
-    const stageId = input.stageId ?? matchingStageId(db, card.stage_id, target.id);
-    if (!stageId) throw new ValidationError("O funil de destino não tem uma etapa com o mesmo nome. Escolha a etapa.");
-    if (stageOf(db, stageId).pipeline_id !== target.id) throw new ValidationError("A etapa não pertence ao funil de destino.");
-    moveCard(db, ctx, id, { stageId });
+    const { target, kind, stageId } = resolveTarget(db, card.stage_id, input);
+    const changeKind = kind !== card.kind;
+    const tags = changeKind ? tagsForKind(db, ctx, id, kind) : [];
+    const custom = changeKind ? customValuesFor(db, id, kind, target.id) : {};
+    moveCard(db, ctx, id, { stageId }, { changeKind });
+    if (changeKind) {
+      setEntityTags(db, ctx, kind, id, tags);
+      setCustomValues(db, ctx, kind, id, custom, { pipelineId: target.id });
+    }
     return stageId;
+  });
+}
+
+/**
+ * Cópia do cartão em qualquer funil (mesmas regras de etapa e tipo): título,
+ * descrição, valor, produtos, contato, organização, responsável, origem, tags e
+ * campos personalizados; datas próprias do tipo só se o tipo for o mesmo.
+ * Atividades, notas, documentos e histórico não são copiados.
+ */
+export function cloneCard(db: DatabaseSync, ctx: DbContext, id: string, input: { pipelineId: string; stageId?: string | null; title?: string | null }): string {
+  return withTransaction(db, () => {
+    const card = requireCard(db, id);
+    const { target, kind, stageId } = resolveTarget(db, card.stage_id, input);
+    const same = kind === card.kind;
+    const items = listDealItems(db, id);
+    const newId = createCard(db, ctx, {
+      pipelineId: target.id,
+      stageId,
+      title: input.title?.trim() || card.title,
+      description: card.description,
+      valueCents: items.length ? undefined : card.value_cents,
+      items: items.map((i) => ({
+        productId: i.product_id,
+        description: i.description,
+        quantity: i.quantity,
+        unitPriceCents: i.unit_price_cents,
+        discountCents: i.discount_cents,
+        recurrence: i.recurrence,
+      })),
+      expectedCloseAt: same && kind === "deal" ? card.expected_close_at : null,
+      slaAt: same && kind === "ticket" ? card.sla_at : null,
+      startAt: same && kind === "project" ? card.start_at : null,
+      dueAt: same && kind === "project" ? card.due_at : null,
+      personId: card.person_id,
+      organizationId: card.organization_id,
+      ownerId: card.owner_id,
+      origin: card.origin,
+      tagIds: tagsForKind(db, ctx, id, kind),
+      customValues: customValuesFor(db, id, kind, target.id),
+    });
+    return newId;
   });
 }
 

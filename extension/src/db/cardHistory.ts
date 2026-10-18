@@ -3,7 +3,7 @@
 // anexos e tarefas) e descreve cada alteração em português, com o valor
 // antigo e o novo. Gravações do mesmo usuário em até 2 segundos viram um só
 // evento (ex.: salvar produtos também atualiza o valor do negócio).
-import { OUTCOME_TEXT, PIPELINE_TYPE_BY_KIND } from "../lib/cardTypes";
+import { CARD_TEXT, OUTCOME_TEXT, PIPELINE_TYPE_BY_KIND } from "../lib/cardTypes";
 import { formatCents, formatDateTime } from "../lib/format";
 import type { DealKind } from "./pipelines";
 import { many, type DatabaseSync } from "./sql";
@@ -200,7 +200,9 @@ export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
         // Mudou de funil: funil › etapa antes e depois numa linha só.
         const [pa, pb] = ch.pipeline_id as [string, string];
         const [sa, sb] = (ch.stage_id as [string, string] | undefined) ?? [prev.stage_id as string, next.stage_id as string];
-        out.push(`Mudou de funil: ${name(pipelines, pa)} › ${name(stages, sa)} → ${name(pipelines, pb)} › ${name(stages, sb)}`);
+        // Mudou também o tipo (negócio ↔ ticket ↔ etapa de projeto).
+        const kindNote = ch.kind ? ` (agora ${CARD_TEXT[PIPELINE_TYPE_BY_KIND[ch.kind[1] as DealKind]].noun})` : "";
+        out.push(`Mudou de funil: ${name(pipelines, pa)} › ${name(stages, sa)} → ${name(pipelines, pb)} › ${name(stages, sb)}${kindNote}`);
       } else if (ch.stage_id) out.push(`Moveu de etapa: ${name(stages, ch.stage_id[0])} → ${name(stages, ch.stage_id[1])}`);
       if (ch.status) {
         const [a, b] = ch.status as [string, string];

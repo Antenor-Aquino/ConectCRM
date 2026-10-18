@@ -2,7 +2,7 @@
 // resolvido/não resolvido, concluído/não concluído conforme o tipo),
 // notas, tarefas e histórico de alterações.
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeftRight, Check, CheckCircle2, Circle, Maximize2, Minimize2, Pencil, PlusCircle, RotateCcw, Sparkles, Trash2, Trophy, X, XCircle } from "lucide-react";
+import { ArrowLeftRight, Check, Copy, CheckCircle2, Circle, Maximize2, Minimize2, Pencil, PlusCircle, RotateCcw, Sparkles, Trash2, Trophy, X, XCircle } from "lucide-react";
 import { TaBadge, TaButton, TaInput, TaTextarea, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { ActivityListItem } from "../../db/activities";
@@ -50,14 +50,14 @@ export function CardDetail({
   mode = "drawer",
   onToggleMode,
   pipelines = [],
-  onMovedPipeline,
+  onGoToCard,
 }: {
   cardId: string;
   pipeline: Pipeline;
   /** Funis para "Mudar de funil" (só os do mesmo tipo aparecem). */
   pipelines?: Pipeline[];
-  /** O cartão foi para outro funil: a tela abre esse funil com o cartão. */
-  onMovedPipeline?: (pipelineId: string) => void;
+  /** Depois de mudar de funil ou clonar: a tela abre o funil com o cartão (o mesmo ou a cópia). */
+  onGoToCard?: (pipelineId: string, cardId: string) => void;
   onClose: () => void;
   onChanged: () => void;
   /** drawer = painel lateral sobre o quadro; full = ocupa a área do quadro. */
@@ -76,7 +76,7 @@ export function CardDetail({
   const [docOpen, setDocOpen] = useState<string | null>(null);
   const [itemsOpen, setItemsOpen] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
-  const [changingPipeline, setChangingPipeline] = useState(false);
+  const [pipelineAction, setPipelineAction] = useState<"move" | "clone" | null>(null);
   // Cadastro aberto a partir do nome do contato, da organização ou do responsável.
   const [editing, setEditing] = useState<{ kind: "person" | "organization" | "user"; id: string } | null>(null);
   const { user: me, users, reloadUsers } = useSession();
@@ -147,11 +147,11 @@ export function CardDetail({
         {status && <TaBadge color={status.color} label={status.label} />}
       </div>
       <p className="mb-4 flex flex-wrap items-center gap-1 px-1 text-theme-xs text-gray-500">
-        {onMovedPipeline ? (
+        {onGoToCard ? (
           <button
             type="button"
             title="Mudar de funil"
-            onClick={() => setChangingPipeline(true)}
+            onClick={() => setPipelineAction("move")}
             className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-brand-600 hover:bg-brand-50 dark:text-brand-400 dark:hover:bg-brand-500/10"
           >
             {pipeline.name} <ArrowLeftRight size={12} />
@@ -215,6 +215,11 @@ export function CardDetail({
         >
           Perguntar ao Copiloto
         </TaButton>
+        {onGoToCard && (
+          <TaButton variant="ghost" startIcon={<Copy size={15} />} onClick={() => setPipelineAction("clone")}>
+            Clonar
+          </TaButton>
+        )}
         <TaButton
           variant="ghost"
           startIcon={<Trash2 size={15} />}
@@ -481,17 +486,19 @@ export function CardDetail({
           }}
         />
       )}
-      {changingPipeline && onMovedPipeline && (
+      {pipelineAction && onGoToCard && (
         <ChangePipelineModal
+          mode={pipelineAction}
           cardId={cardId}
+          cardTitle={card.title}
           pipeline={pipeline}
           currentStage={stages.find((x) => x.id === card.stage_id)}
           pipelines={pipelines}
-          onClose={() => setChangingPipeline(false)}
-          onMoved={(id) => {
-            setChangingPipeline(false);
+          onClose={() => setPipelineAction(null)}
+          onDone={(pipelineId, id) => {
+            setPipelineAction(null);
             onChanged();
-            onMovedPipeline(id);
+            onGoToCard(pipelineId, id);
           }}
         />
       )}

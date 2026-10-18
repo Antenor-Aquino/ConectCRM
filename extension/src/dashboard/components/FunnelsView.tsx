@@ -121,11 +121,10 @@ export function FunnelsView({
           onClose={() => onOpenCard(null)}
           onChanged={() => void onChanged()}
           pipelines={pipelines}
-          onMovedPipeline={(id) => {
-            // Abre o funil de destino com o mesmo cartão aberto.
-            const card = openCardId;
-            onSelect(id);
-            onOpenCard(card);
+          onGoToCard={(pipelineId, cardId) => {
+            // Abre o funil de destino com o cartão (o mesmo, ou a cópia).
+            onSelect(pipelineId);
+            onOpenCard(cardId);
           }}
         />
       ) : (
@@ -170,11 +169,10 @@ export function FunnelsView({
           onClose={() => onOpenCard(null)}
           onChanged={() => void onChanged()}
           pipelines={pipelines}
-          onMovedPipeline={(id) => {
-            // Abre o funil de destino com o mesmo cartão aberto.
-            const card = openCardId;
-            onSelect(id);
-            onOpenCard(card);
+          onGoToCard={(pipelineId, cardId) => {
+            // Abre o funil de destino com o cartão (o mesmo, ou a cópia).
+            onSelect(pipelineId);
+            onOpenCard(cardId);
           }}
         />
       )}

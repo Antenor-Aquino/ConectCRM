@@ -167,6 +167,10 @@ export const methods = {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);
     return deals.changeCardPipeline(db, ctx, p.id, p);
   },
+  "cards.clone": (db: DatabaseSync, ctx: DbContext, p: Id & { pipelineId: string; stageId?: string | null; title?: string | null }) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    return deals.cloneCard(db, ctx, p.id, p);
+  },
   "cards.setStatus": (db: DatabaseSync, ctx: DbContext, p: Id & Parameters<typeof deals.setCardStatus>[3]) => {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);
     deals.setCardStatus(db, ctx, p.id, p);

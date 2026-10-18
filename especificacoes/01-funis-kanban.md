@@ -330,14 +330,26 @@ no cartão mais recente do funil.
 - Até 12 campos. **Restaurar padrão** volta ao cartão original (valor,
   contato e responsável; no operacional, SLA; no projeto, prazo).
 
-## 10.1.1 Mudar o cartão de funil
+## 10.1.1 Mudar o cartão de funil e clonar
 
 - No detalhe do cartão, o nome do funil (⇄) abre **Mudar de funil**: lista
-  só os funis do **mesmo tipo** (comercial, operacional ou projeto).
+  os funis de **todos os tipos**, agrupados por categoria.
+- Mudando de tipo (negócio ↔ ticket ↔ etapa de projeto), o cartão passa a ser
+  do tipo do funil de destino; tags e campos personalizados de **mesmo nome**
+  são levados (tags que faltam são criadas no novo tipo; listas pelo rótulo da
+  opção). Os campos só do tipo antigo (previsão de fechamento, SLA,
+  início/prazo) ficam guardados, mas não aparecem. Arrastar no quadro continua
+  só dentro do funil.
+- **Clonar** (botão no detalhe): nome da cópia e funil de destino (o atual ou
+  outro, de qualquer tipo), com as mesmas regras de etapa. Vão para a cópia
+  valor, produtos, contato, organização, responsável, origem, tags e campos
+  personalizados; as datas do tipo só quando o tipo é o mesmo. Atividades,
+  notas, documentos e histórico ficam no original. A tela abre a cópia.
 - Se o funil de destino tiver uma etapa com o **mesmo nome** (sem diferença de
   acento/maiúsculas), ela já vem escolhida; senão o usuário escolhe a etapa.
 - Depois de mudar, a tela abre o funil de destino com o cartão aberto. O
-  histórico registra "Mudou de funil: Vendas › Proposta → Parcerias › Proposta".
+  histórico registra "Mudou de funil: Vendas › Proposta → Parcerias › Proposta"
+  (com "(agora ticket)" quando o tipo muda).
 
 ## 10.2 Detalhe do negócio: produtos e histórico
 
