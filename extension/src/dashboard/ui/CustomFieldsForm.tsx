@@ -11,6 +11,7 @@ import type { CustomField, CustomValue } from "../../db/customFields";
 import { Field } from "./form";
 import { MoneyInput } from "./MoneyInput";
 import { UserSelect } from "./UserSelect";
+import { fieldGroups } from "../../lib/fieldGroups";
 
 export function isProminent(f: CustomField): boolean {
   return !!f.always_show || !!f.required;
@@ -44,7 +45,7 @@ function RefInput({ kind, value, onChange }: { kind: "person" | "organization"; 
   );
 }
 
-function FieldInput({ field, value, onChange }: { field: CustomField; value: CustomValue | undefined; onChange: (v: CustomValue) => void }) {
+export function FieldInput({ field, value, onChange }: { field: CustomField; value: CustomValue | undefined; onChange: (v: CustomValue) => void }) {
   const str = value == null ? "" : String(value);
   switch (field.field_type) {
     case "textarea":
@@ -129,12 +130,27 @@ export function CustomFieldsForm({
 }) {
   const visible = fields.filter((f) => !f.hidden);
   if (visible.length === 0) return null;
+  const grid = columns === 2 ? "grid grid-cols-2 gap-x-4" : "";
+  const inputs = (list: CustomField[]) =>
+    list.map((f) => (
+      <Field key={f.id} label={f.name} required={!!f.required} hint={f.description}>
+        <FieldInput field={f} value={values[f.id]} onChange={(v) => onChange({ ...values, [f.id]: v })} />
+      </Field>
+    ));
+  const groups = fieldGroups(visible);
+  // Sem categorias: todos os campos juntos, como antes.
+  if (groups.length === 1 && !groups[0]!.name) return <div className={grid}>{inputs(visible)}</div>;
   return (
-    <div className={columns === 2 ? "grid grid-cols-2 gap-x-4" : ""}>
-      {visible.map((f) => (
-        <Field key={f.id} label={f.name} required={!!f.required} hint={f.description}>
-          <FieldInput field={f} value={values[f.id]} onChange={(v) => onChange({ ...values, [f.id]: v })} />
-        </Field>
+    <div>
+      {groups.map((g) => (
+        <section key={g.id ?? "geral"} data-field-group={g.name ?? "geral"}>
+          {g.name && (
+            <p className="mb-2 mt-3 border-b border-gray-100 pb-1 text-theme-xs font-semibold uppercase tracking-wide text-gray-500 dark:border-gray-800">
+              {g.name}
+            </p>
+          )}
+          <div className={grid}>{inputs(g.fields)}</div>
+        </section>
       ))}
     </div>
   );

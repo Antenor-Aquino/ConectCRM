@@ -8,6 +8,8 @@ import { cardFieldValues } from "../db/cardFieldValues";
 import * as attachments from "../db/attachments";
 import * as importer from "../db/importer";
 import * as cardImporter from "../db/cardImporter";
+import * as bulk from "../db/bulkCards";
+import * as cardContacts from "../db/cardContacts";
 import * as ext from "../db/externalImport";
 import * as merge from "../db/merge";
 import * as contacts from "../db/contacts";
@@ -223,6 +225,23 @@ export const methods = {
   "cards.setItems": (db: DatabaseSync, ctx: DbContext, p: Id & { items: deals.DealItemInput[] }) => {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);
     deals.setDealItems(db, ctx, p.id, p.items);
+  },
+  "cards.bulk": (db: DatabaseSync, ctx: DbContext, p: { ids: string[]; action: bulk.BulkAction }) => bulk.bulkCards(db, ctx, viewer(db, ctx), p.ids, p.action),
+  "cards.archive": (db: DatabaseSync, ctx: DbContext, p: Id & { archived: boolean }) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    bulk.setCardArchived(db, ctx, p.id, p.archived);
+  },
+  "cards.contacts.add": (db: DatabaseSync, ctx: DbContext, p: Id & { personId: string }) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    cardContacts.addCardContact(db, ctx, p.id, p.personId);
+  },
+  "cards.contacts.remove": (db: DatabaseSync, ctx: DbContext, p: Id & { personId: string }) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    cardContacts.removeCardContact(db, ctx, p.id, p.personId);
+  },
+  "cards.contacts.setPrimary": (db: DatabaseSync, ctx: DbContext, p: Id & { personId: string }) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    cardContacts.setPrimaryCardContact(db, ctx, p.id, p.personId);
   },
   "cards.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);
@@ -472,6 +491,23 @@ export const methods = {
   },
 
   "customFields.usage": (db: DatabaseSync, _c: DbContext, p: Id) => cf.customFieldUsage(db, p.id),
+  "fieldGroups.list": (db: DatabaseSync, _c: DbContext, p: { entity: cf.CustomFieldEntity }) => cf.listFieldGroups(db, p.entity),
+  "fieldGroups.create": (db: DatabaseSync, ctx: DbContext, p: { entity: cf.CustomFieldEntity; name: string }) => {
+    assertRole(db, ctx, ADMIN, "campos personalizados");
+    return cf.createFieldGroup(db, ctx, p);
+  },
+  "fieldGroups.rename": (db: DatabaseSync, ctx: DbContext, p: Id & { name: string }) => {
+    assertRole(db, ctx, ADMIN, "campos personalizados");
+    cf.renameFieldGroup(db, ctx, p.id, p.name);
+  },
+  "fieldGroups.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    assertRole(db, ctx, ADMIN, "campos personalizados");
+    cf.deleteFieldGroup(db, ctx, p.id);
+  },
+  "fieldGroups.reorder": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => {
+    assertRole(db, ctx, ADMIN, "campos personalizados");
+    cf.reorderFieldGroups(db, ctx, p.ids);
+  },
   "customFields.reorder": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => {
     assertRole(db, ctx, ADMIN, "campos personalizados");
     cf.reorderCustomFields(db, ctx, p.ids);

@@ -1,7 +1,7 @@
 // Formulários "Nova negociação" (comercial), "Novo ticket" (operacional) e
 // "Nova etapa" (projeto) - spec 01, seções 4, 5 e 5.1.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { PlusCircle } from "lucide-react";
+import { PlusCircle, X } from "lucide-react";
 import { TaButton, TaInput, TaModal, TaSelect, TaTextarea } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { CustomField, CustomValue } from "../../db/customFields";
@@ -66,6 +66,8 @@ export function CardFormModal({
   const [startDate, setStartDate] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [person, setPerson] = useState<ComboItem | null>(null);
+  // Outros contatos (decisor, financeiro...), vinculados depois de criar.
+  const [others, setOthers] = useState<ComboItem[]>([]);
   const [org, setOrg] = useState<ComboItem | null>(null);
   const [ownerId, setOwnerId] = useState<string | null>(user.id);
   const [tagIds, setTagIds] = useState<string[]>([]);
@@ -93,6 +95,7 @@ export function CardFormModal({
     setStartDate("");
     setDueDate("");
     setPerson(null);
+    setOthers([]);
     setOrg(null);
     if (request.person) void pickPerson(request.person);
     setOwnerId(user.id);
@@ -148,6 +151,7 @@ export function CardFormModal({
         customValues,
         origin: request?.origin,
       });
+      for (const o of others) if (o.id !== person?.id) await call("cards.contacts.add", { id, personId: o.id });
       onCreated(id, pipelineId, open);
     } catch (e) {
       setError(errorText(e));
@@ -248,6 +252,31 @@ export function CardFormModal({
           onCreate={createPersonQuick}
           createLabel="Criar contato"
         />
+        {person && (
+          <div className="mt-2 space-y-1.5">
+            {others.map((o) => (
+              <div key={o.id} className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-1.5 text-theme-sm dark:border-gray-700" data-other-contact={o.label}>
+                <span className="min-w-0 flex-1 truncate">{o.label}</span>
+                <button type="button" title="Remover" onClick={() => setOthers(others.filter((x) => x.id !== o.id))} className="text-gray-400 hover:text-error-600">
+                  <X size={14} />
+                </button>
+              </div>
+            ))}
+            <Combobox
+              value={null}
+              onChange={(i) => i && i.id !== person.id && !others.some((o) => o.id === i.id) && setOthers([...others, i])}
+              search={searchPersons}
+              placeholder="Buscar por nome, telefone ou e-mail"
+              onCreate={createPersonQuick}
+              createLabel="Criar contato"
+              dashed={
+                <>
+                  <PlusCircle size={15} /> Adicionar outro contato
+                </>
+              }
+            />
+          </div>
+        )}
       </Field>
       <div className="mb-3">
         <span className="mb-1.5 block text-theme-sm font-medium text-gray-700 dark:text-gray-300">

@@ -46,6 +46,9 @@ export function BoardList({
   options,
   onChangeKeys,
   onOpenCard,
+  selected,
+  onToggleSelect,
+  onToggleMany,
 }: {
   pipeline: Pipeline;
   columns: BoardColumn[];
@@ -53,6 +56,10 @@ export function BoardList({
   options: FieldOption[];
   onChangeKeys: (keys: string[]) => void;
   onOpenCard: (id: string) => void;
+  /** Seleção para ações em lote. */
+  selected: Set<string>;
+  onToggleSelect: (id: string) => void;
+  onToggleMany: (ids: string[]) => void;
 }) {
   const [sort, setSort] = useState<SortState>(null);
   const [picker, setPicker] = useState(false);
@@ -134,14 +141,41 @@ export function BoardList({
         <table className="w-full border-separate border-spacing-0 text-theme-sm">
           <thead className="sticky top-0 z-10 bg-gray-50 text-theme-xs text-gray-500 dark:bg-gray-800">
             <tr>
-              {header("titulo", "Título", "sticky left-0 z-10 min-w-[220px] bg-gray-50 dark:bg-gray-800")}
+              <th className="sticky left-0 z-20 w-9 border-b border-gray-200 bg-gray-50 pl-3 dark:border-gray-800 dark:bg-gray-800">
+                <input
+                  type="checkbox"
+                  aria-label="Selecionar todos"
+                  title="Selecionar todos"
+                  checked={rows.length > 0 && rows.every((r) => selected.has(r.id))}
+                  ref={(el) => {
+                    if (el) el.indeterminate = rows.some((r) => selected.has(r.id)) && !rows.every((r) => selected.has(r.id));
+                  }}
+                  onChange={() => onToggleMany(rows.map((r) => r.id))}
+                  className="h-4 w-4 cursor-pointer accent-brand-500"
+                />
+              </th>
+              {header("titulo", "Título", "sticky left-9 z-10 min-w-[220px] bg-gray-50 dark:bg-gray-800")}
               {visible.map((k) => header(k, label(k), k === "valor" ? "text-right" : undefined))}
             </tr>
           </thead>
           <tbody>
             {sorted.map((r) => (
-              <tr key={r.id} className="group cursor-pointer" onClick={() => onOpenCard(r.id)}>
-                <td className="sticky left-0 max-w-[320px] border-b border-r border-gray-100 bg-white px-3 py-2 group-hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:group-hover:bg-gray-800">
+              <tr
+                key={r.id}
+                className={cn("group cursor-pointer", selected.has(r.id) && "[&>td]:!bg-brand-25 dark:[&>td]:!bg-brand-500/10")}
+                onClick={() => (selected.size ? onToggleSelect(r.id) : onOpenCard(r.id))}
+              >
+                <td className="sticky left-0 w-9 border-b border-gray-100 bg-white pl-3 group-hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:group-hover:bg-gray-800">
+                  <input
+                    type="checkbox"
+                    aria-label={`Selecionar ${r.title}`}
+                    checked={selected.has(r.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => onToggleSelect(r.id)}
+                    className="h-4 w-4 cursor-pointer accent-brand-500"
+                  />
+                </td>
+                <td className="sticky left-9 max-w-[320px] border-b border-r border-gray-100 bg-white px-3 py-2 group-hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:group-hover:bg-gray-800">
                   <div className="flex items-center gap-2">
                     <span
                       className={cn(
@@ -181,7 +215,7 @@ export function BoardList({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={visible.length + 1} className="px-3 py-10 text-center text-gray-400">
+                <td colSpan={visible.length + 2} className="px-3 py-10 text-center text-gray-400">
                   Nenhum {text.noun} com estes filtros.
                 </td>
               </tr>

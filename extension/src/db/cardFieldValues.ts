@@ -24,6 +24,7 @@ interface Row {
   person_id: string | null;
   organization_id: string | null;
   person_name: string | null;
+  extra_contacts: number;
   person_phone: string | null;
   person_email: string | null;
   org_name: string | null;
@@ -77,7 +78,9 @@ export function cardFieldValues(
        (SELECT a.end_at FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0 ORDER BY COALESCE(a.end_at, a.due_at) LIMIT 1) AS next_end,
        (SELECT COUNT(*) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL) AS tasks_total,
        (SELECT COUNT(*) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 1) AS tasks_done,
-       (SELECT COUNT(*) FROM note n WHERE n.entity_type = 'deal' AND n.entity_id = d.id AND n.deleted_at IS NULL) AS notes_count
+       (SELECT COUNT(*) FROM note n WHERE n.entity_type = 'deal' AND n.entity_id = d.id AND n.deleted_at IS NULL) AS notes_count,
+       (SELECT COUNT(*) FROM deal_participant dp JOIN person pp ON pp.id = dp.person_id AND pp.deleted_at IS NULL
+          WHERE dp.deal_id = d.id AND dp.deleted_at IS NULL) AS extra_contacts
      FROM deal d JOIN stage s ON s.id = d.stage_id
      LEFT JOIN person pe ON pe.id = d.person_id LEFT JOIN organization o ON o.id = d.organization_id LEFT JOIN app_user u ON u.id = d.owner_id
      WHERE d.id IN (${marks})`,
@@ -203,7 +206,8 @@ export function cardFieldValues(
           break;
         case "contato":
           // Sem contato, mostra a organização (como o cartão sempre fez).
-          put(k, r.person_name ?? (keys.includes("organizacao") ? null : r.org_name));
+          // Outros contatos: "Ana Souza +2".
+          put(k, r.person_name ? `${r.person_name}${r.extra_contacts ? ` +${r.extra_contacts}` : ""}` : keys.includes("organizacao") ? null : r.org_name);
           break;
         case "contato_telefone":
           if (r.person_phone) out[k] = { text: formatPhone(r.person_phone), phone: r.person_phone };

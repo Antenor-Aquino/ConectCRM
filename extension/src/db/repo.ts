@@ -38,6 +38,7 @@ export const DATA_TABLES = [
   "tag",
   "entity_tag",
   "custom_field",
+  "custom_field_group",
   "custom_field_option",
   "custom_field_pipeline",
   "custom_field_value",

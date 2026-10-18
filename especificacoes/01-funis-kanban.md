@@ -295,6 +295,21 @@ Proposta adicional: restringir o campo a **funis específicos** (ex.: campo
 Dados: `custom_fields` ganha `description`, `placeholder_key` (única),
 `always_show`, `hidden`, `required`, `pipeline_ids`.
 
+### 9.1 Categorias de campos (0.2.37)
+
+- Cada entidade pode ter **categorias** (ex.: em Contato, "Dados
+  profissionais" e "Dados pessoais"). Em Configurações → Campos
+  personalizados: **Nova categoria**, renomear, excluir (os campos ficam sem
+  categoria, nada se perde), subir/descer, "+" para criar um campo já na
+  categoria e um seletor de categoria em cada campo. Na janela do campo, o
+  campo **Categoria** (com "Nova").
+- Nos cadastros (contato, organização, cartão, tarefa) os campos aparecem
+  **agrupados por categoria**, com o nome da categoria como título: primeiro
+  os sem categoria, depois as categorias na ordem definida. Sem categorias,
+  todos ficam juntos como antes.
+- Dados: tabela `custom_field_group` (entidade, nome, ordem) e
+  `custom_field.group_id`.
+
 ## 10. Configuração de funis e etapas
 
 Em **Configurações → Funis** (e pelo menu ⋯ do quadro):
@@ -415,6 +430,52 @@ no cartão mais recente do funil.
 - Importa em lotes de 200 com o progresso na tela. O resumo mostra quantos
   cartões foram criados, os ignorados e os erros com o **número da linha** da
   planilha e o motivo.
+
+## 10.1.3 Seleção de cartões e ações em lote (0.2.37)
+
+- **Selecionar**: caixa no canto do cartão (aparece ao passar o mouse; com
+  algum selecionado, fica visível e clicar no cartão marca/desmarca), caixa
+  no cabeçalho da etapa (todos da etapa) e, na lista, caixa por linha e no
+  cabeçalho (todos). Esc limpa. A seleção some ao trocar de funil, de
+  situação, de visão ou de modo.
+- Com seleção, a barra de ferramentas vira a **barra de ações**: quantidade,
+  "Selecionar todos (N)", soma dos valores e:
+  - **Mover para etapa** (do funil aberto);
+  - **Mudar de funil** — qualquer funil, de qualquer categoria; usa a etapa
+    de mesmo nome quando existe (opção) e, para os demais, a etapa escolhida;
+    mudar de categoria segue as regras de 10.1.1 (tipo, tags e campos);
+  - **Responsável** (respeita as permissões: vendedor só a si, gestor à
+    equipe);
+  - **Ganho / Perdido** (motivo e observação) e **Reabrir**, conforme a
+    situação dos selecionados;
+  - **Mais**: adicionar ou remover tags, **atualizar campo** (previsão,
+    SLA, início, prazo, origem ou campo personalizado do funil; em branco
+    apaga), **adicionar contato** (vira principal onde não há; nos demais,
+    "outros contatos"), **agendar atividade** (a mesma em cada cartão, para o
+    responsável de cada um ou para mim), **exportar para Excel**,
+    **arquivar/desarquivar** e **excluir** (com confirmação).
+- Cada cartão é alterado na sua transação: um erro (sem permissão, campo
+  que não existe no tipo…) não impede os outros. O aviso mostra quantos
+  foram alterados e, dos que falharam, o nome e o motivo (eles continuam
+  selecionados).
+- **Arquivar** (também no detalhe do cartão): o cartão sai do quadro e da
+  lista, mas continua nos relatórios, na busca e na ficha do contato; o
+  filtro de situação ganhou **Arquivados**. O detalhe mostra a faixa
+  "Arquivado em …" e o botão **Desarquivar**. O histórico registra.
+
+## 10.1.4 Vários contatos no cartão (0.2.37)
+
+- O cartão tem o **contato principal** (campo Contato) e **outros
+  contatos** (decisor, financeiro, técnico…), no detalhe e na criação do
+  cartão: adicionar (buscar ou criar), abrir o cadastro, WhatsApp/e-mail,
+  **tornar principal** (o atual vai para "outros") e remover (saindo o
+  principal, o próximo assume). Sem principal, o primeiro adicionado vira o
+  principal.
+- No quadro o contato aparece como "Ana Souza +2". A busca do quadro acha o
+  cartão por qualquer contato; a ficha de cada contato lista o cartão.
+  Clonar leva os outros contatos. O histórico registra "Adicionou/Removeu o
+  contato …".
+- Dados: `deal_participant` (já existia) com `person_id`.
 
 ## 10.2 Detalhe do negócio: produtos e histórico
 

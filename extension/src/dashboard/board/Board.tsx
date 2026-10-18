@@ -20,7 +20,8 @@ import {
 } from "lucide-react";
 import { TaBadge, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
-import type { BoardColumn, BoardSort, BoardView, DealStatus } from "../../db/deals";
+import type { BoardColumn, BoardSort, BoardStatusFilter, BoardView, DealStatus } from "../../db/deals";
+import type { BulkResult } from "../../db/bulkCards";
 import type { DealKind, Pipeline, PipelineType } from "../../db/pipelines";
 import type { Tag } from "../../db/tags";
 import { CARD_TEXT, OUTCOME_TEXT, PIPELINE_TYPE_LABEL } from "../../lib/cardTypes";
@@ -35,6 +36,7 @@ import { KanbanCard } from "./KanbanCard";
 import { errorText } from "../../lib/errors";
 import { TaskModal, type TaskRequest } from "../tasks/TaskModal";
 import { CardImportModal } from "./CardImportModal";
+import { BulkBar } from "./BulkBar";
 
 const VIEW_LABEL: Record<BoardView, string> = { all: "Fluxo geral", mine: "Meu fluxo", team: "Minha equipe" };
 const SORT_LABEL: Record<BoardSort, string> = {
@@ -44,9 +46,9 @@ const SORT_LABEL: Record<BoardSort, string> = {
   value: "Maior valor",
   title: "Nome (A–Z)",
 };
-const STATUS_LABEL: Record<DealStatus | "all", string> = { open: "Abertos", won: "Ganhos", lost: "Perdidos", all: "Todos" };
+const STATUS_LABEL: Record<BoardStatusFilter, string> = { open: "Abertos", won: "Ganhos", lost: "Perdidos", all: "Todos", archived: "Arquivados" };
 /** Status do filtro com os termos do tipo de funil (Ganhos / Resolvidos / Concluídos...). */
-const statusLabels = (type: PipelineType): Record<DealStatus | "all", string> => ({
+const statusLabels = (type: PipelineType): Record<BoardStatusFilter, string> => ({
   ...STATUS_LABEL,
   won: OUTCOME_TEXT[type].wonPlural,
   lost: OUTCOME_TEXT[type].lostPlural,
@@ -59,7 +61,7 @@ const TYPE_BADGE = { comercial: "blue", operacional: "purple", projeto: "cyan" }
  * (negócio, ticket, etapa), então ficam guardadas por tipo.
  */
 interface BoardFilter {
-  status: DealStatus | "all";
+  status: BoardStatusFilter;
   ownerIds: string[];
   tagIdsByKind: Partial<Record<DealKind, string[]>>;
 }
@@ -79,7 +81,7 @@ function loadFilter(key: string, legacyKey: string, kind: DealKind): BoardFilter
     // Até 0.2.27 o filtro era por funil: o do funil aberto vira o filtro geral.
     const old = localStorage.getItem(legacyKey);
     if (!old) return EMPTY_FILTER;
-    const f = JSON.parse(old) as { status?: DealStatus | "all"; ownerIds?: string[]; tagIds?: string[] };
+    const f = JSON.parse(old) as { status?: BoardStatusFilter; ownerIds?: string[]; tagIds?: string[] };
     return {
       status: f.status && f.status in STATUS_LABEL ? f.status : "open",
       ownerIds: Array.isArray(f.ownerIds) ? f.ownerIds : [],
@@ -241,7 +243,7 @@ export function Board({
   };
   const { status, ownerIds } = filter;
   const tagIds = useMemo(() => filter.tagIdsByKind[kind] ?? [], [filter.tagIdsByKind, kind]);
-  const setStatus = (v: DealStatus | "all") => saveFilter({ ...filter, status: v });
+  const setStatus = (v: BoardStatusFilter) => saveFilter({ ...filter, status: v });
   const setOwnerIds = (v: string[]) => saveFilter({ ...filter, ownerIds: v });
   const setTagIds = (v: string[]) => saveFilter({ ...filter, tagIdsByKind: { ...filter.tagIdsByKind, [kind]: v } });
   const [tags, setTags] = useState<Tag[]>([]);
@@ -250,6 +252,25 @@ export function Board({
   const [filterOpen, setFilterOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [importing, setImporting] = useState(false);
+  // Seleção para ações em lote (some ao trocar de funil ou de filtro).
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [notice, setNotice] = useState<{ text: string; errors: BulkResult["errors"] } | null>(null);
+  const selecting = selected.size > 0;
+  const toggleSelect = (id: string) =>
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const toggleMany = (ids: string[]) =>
+    setSelected((cur) => {
+      const allOn = ids.every((id) => cur.has(id));
+      const next = new Set(cur);
+      for (const id of ids) if (allOn) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const [error, setError] = useState<string | null>(null);
   const [drag, setDrag] = useState<{ id: string; from: string } | null>(null);
   const [drop, setDrop] = useState<{ stageId: string; beforeId: string | null } | null>(null);
@@ -273,6 +294,28 @@ export function Board({
     const t = setTimeout(() => void load(), search ? 200 : 0);
     return () => clearTimeout(t);
   }, [load, refreshKey, search, user.id]);
+
+  useEffect(() => {
+    setSelected(new Set());
+    setNotice(null);
+  }, [pipeline.id, status, view, mode]);
+  // Selecionados que saíram do quadro (filtro, outro usuário...) deixam a seleção.
+  useEffect(() => {
+    setSelected((cur) => {
+      if (!cur.size) return cur;
+      const visible = new Set(columns.flatMap((c) => c.cards.map((x) => x.id)));
+      const next = new Set([...cur].filter((id) => visible.has(id)));
+      return next.size === cur.size ? cur : next;
+    });
+  }, [columns]);
+  useEffect(() => {
+    if (!selecting) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !document.querySelector("[role=dialog], .fixed.inset-0")) setSelected(new Set());
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selecting]);
 
   // Tags do tipo de cartão do funil aberto (o tipo vem junto: evita misturar ao trocar de funil).
   const [tagsKind, setTagsKind] = useState<DealKind | null>(null);
@@ -424,8 +467,22 @@ export function Board({
         </div>
       </div>
 
-      {/* Barra de ferramentas */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      {/* Barra de ferramentas (ou a de ações em lote, com cartões selecionados) */}
+      {selecting && (
+        <BulkBar
+          pipeline={pipeline}
+          columns={columns}
+          selected={[...selected]}
+          onClear={() => setSelected(new Set())}
+          onSelectAll={() => setSelected(new Set(columns.flatMap((c) => c.cards.map((x) => x.id))))}
+          onDone={(text, errors) => {
+            setNotice({ text, errors });
+            if (!errors.length) setSelected(new Set());
+            void load();
+          }}
+        />
+      )}
+      <div className={cn("mb-4 flex flex-wrap items-center gap-2", selecting && "hidden")}>
         <div className="relative w-full max-w-xs">
           <Search size={16} className="pointer-events-none absolute left-3 top-3 text-gray-400" />
           <input
@@ -454,7 +511,7 @@ export function Board({
           <Popover open={filterOpen} onClose={() => setFilterOpen(false)} className="w-72 p-4">
             <p className="mb-1.5 text-theme-xs font-semibold uppercase text-gray-400">Status</p>
             <div className="mb-3 flex flex-wrap gap-1">
-              {(Object.keys(STATUS_LABEL) as (DealStatus | "all")[]).map((s) => (
+              {(Object.keys(STATUS_LABEL) as BoardStatusFilter[]).map((s) => (
                 <button
                   key={s}
                   type="button"
@@ -523,6 +580,30 @@ export function Board({
       </div>
 
       {error && <p className="mb-3 rounded-lg bg-error-50 px-3 py-2 text-theme-sm text-error-700">{error}</p>}
+      {notice && (notice.text || notice.errors.length > 0) && (
+        <div className="mb-3 rounded-lg border border-gray-200 bg-white px-3 py-2 text-theme-sm dark:border-gray-700 dark:bg-gray-900" data-bulk-notice>
+          <div className="flex items-start gap-2">
+            <div className="min-w-0 flex-1">
+              {notice.text && <p className="text-success-700">{notice.text}</p>}
+              {notice.errors.length > 0 && (
+                <>
+                  <p className="text-error-700">
+                    {notice.errors.length} não {notice.errors.length === 1 ? "foi alterado" : "foram alterados"} (continuam selecionados):
+                  </p>
+                  <ul className="max-h-24 overflow-y-auto text-theme-xs text-error-600">
+                    {notice.errors.map((e, i) => (
+                      <li key={i}>{e.title ? `${e.title}: ${e.message}` : e.message}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
+            <button type="button" title="Fechar" onClick={() => setNotice(null)} className="text-gray-400 hover:text-gray-600">
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       {hiddenByFilter > 0 && (
         <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-theme-sm text-warning-800 dark:border-warning-500/30 dark:bg-warning-500/10 dark:text-warning-300" data-hidden-by-filter>
@@ -537,7 +618,17 @@ export function Board({
         </div>
       )}
       {mode === "lista" ? (
-        <BoardList pipeline={pipeline} columns={columns} keys={listCols} options={fieldOptions} onChangeKeys={saveListCols} onOpenCard={onOpenCard} />
+        <BoardList
+          pipeline={pipeline}
+          columns={columns}
+          keys={listCols}
+          options={fieldOptions}
+          onChangeKeys={saveListCols}
+          onOpenCard={onOpenCard}
+          selected={selected}
+          onToggleSelect={toggleSelect}
+          onToggleMany={toggleMany}
+        />
       ) : (
         /* Colunas */
         <div className="flex min-h-[60vh] flex-1 gap-4 overflow-x-auto pb-3 custom-scrollbar">
@@ -576,7 +667,7 @@ export function Board({
                   drop?.stageId === col.id && "bg-brand-25 ring-2 ring-brand-200 dark:bg-brand-500/10",
                 )}
               >
-                <div className="mb-0.5 flex items-center gap-1.5 px-1">
+                <div className="group/stage mb-0.5 flex items-center gap-1.5 px-1">
                   <StagePill name={col.name} color={col.color} className="min-w-0" />
                   {/* Quantidade e valor na mesma linha: "2 - R$ 641,00" (valor sempre no comercial; nos outros tipos quando há). */}
                   <span className="shrink-0 whitespace-nowrap text-theme-xs font-bold text-gray-700 dark:text-gray-300" data-stage-summary>
@@ -585,6 +676,19 @@ export function Board({
                   </span>
                   <OverdueBadge count={col.overdue_activities} />
                   <span className="ml-auto flex shrink-0 items-center">
+                    {col.cards.length > 0 && (
+                      <input
+                        type="checkbox"
+                        title={`Selecionar todos de ${col.name}`}
+                        aria-label={`Selecionar todos de ${col.name}`}
+                        checked={col.cards.every((c) => selected.has(c.id))}
+                        ref={(el) => {
+                          if (el) el.indeterminate = col.cards.some((c) => selected.has(c.id)) && !col.cards.every((c) => selected.has(c.id));
+                        }}
+                        onChange={() => toggleMany(col.cards.map((c) => c.id))}
+                        className={cn("mr-1 h-4 w-4 cursor-pointer accent-brand-500", !selecting && "opacity-0 group-hover/stage:opacity-100")}
+                      />
+                    )}
                     <button
                       type="button"
                       title="Editar funil e etapas"
@@ -616,6 +720,9 @@ export function Board({
                         onChanged={() => void load()}
                         dragging={drag?.id === card.id}
                         onOpen={() => onOpenCard(card.id)}
+                        selected={selected.has(card.id)}
+                        selecting={selecting}
+                        onToggleSelect={() => toggleSelect(card.id)}
                         onDragStart={(e) => {
                           e.dataTransfer.effectAllowed = "move";
                           e.dataTransfer.setData("text/plain", card.id);

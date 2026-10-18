@@ -179,6 +179,9 @@ export function KanbanCard({
   onOpenActivity,
   onNewActivity,
   onChanged,
+  selected,
+  selecting,
+  onToggleSelect,
 }: {
   card: BoardCard;
   pipeline: Pipeline;
@@ -189,6 +192,10 @@ export function KanbanCard({
   onChanged?: () => void;
   onDragStart: (e: React.DragEvent) => void;
   onDragEnd: () => void;
+  /** Seleção para ações em lote: com algum selecionado, clicar no cartão marca/desmarca. */
+  selected?: boolean;
+  selecting?: boolean;
+  onToggleSelect?: () => void;
 }) {
   const label = outcomeLabel(pipeline.type, card.status);
   const outcome: CardOutcome | null = label ? { won: card.status === "won", label, closedAt: card.closed_at } : null;
@@ -199,15 +206,28 @@ export function KanbanCard({
       title={outcome ? `${outcome.label}${outcome.closedAt ? ` em ${formatDate(outcome.closedAt)}` : ""}` : undefined}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      onClick={onOpen}
+      onClick={selecting && onToggleSelect ? onToggleSelect : onOpen}
       className={cn(
-        "relative cursor-pointer overflow-hidden rounded-xl border p-3.5 shadow-theme-xs transition hover:shadow-theme-sm",
+        "group relative cursor-pointer overflow-hidden rounded-xl border p-3.5 shadow-theme-xs transition hover:shadow-theme-sm",
+        selecting && "pl-9",
         dragging && "opacity-40",
         card.status === "open" && "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900",
         card.status === "won" && "border-success-300 bg-success-50 dark:border-success-500/40 dark:bg-success-500/10",
         card.status === "lost" && "border-error-300 bg-error-50 dark:border-error-500/40 dark:bg-error-500/10",
+        selected && "!border-brand-400 outline outline-2 outline-brand-300",
       )}
     >
+      {onToggleSelect && (
+        <input
+          type="checkbox"
+          checked={!!selected}
+          aria-label={`Selecionar ${card.title}`}
+          title="Selecionar para ações em lote"
+          onClick={(e) => e.stopPropagation()}
+          onChange={onToggleSelect}
+          className={cn("absolute left-3 top-3.5 z-10 h-4 w-4 cursor-pointer accent-brand-500", !selecting && "opacity-0 group-hover:opacity-100")}
+        />
+      )}
       {outcome && (
         // Canto dobrado com ✓ / ✕ (como nos CRMs de referência).
         <span

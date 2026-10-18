@@ -145,6 +145,7 @@ export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
     { table: "attachment", sql: "SELECT id FROM attachment WHERE entity_type = 'deal' AND entity_id = ?" },
     { table: "document_link", sql: "SELECT id FROM document_link WHERE entity_type = 'deal' AND entity_id = ?" },
     { table: "activity", sql: "SELECT id FROM activity WHERE deal_id = ?" },
+    { table: "deal_participant", sql: "SELECT id FROM deal_participant WHERE deal_id = ?" },
   ];
   const ids: string[] = [cardId];
   for (const o of owned) ids.push(...many<{ id: string }>(db, o.sql, cardId).map((r) => r.id));
@@ -204,6 +205,7 @@ export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
         const kindNote = ch.kind ? ` (agora ${CARD_TEXT[PIPELINE_TYPE_BY_KIND[ch.kind[1] as DealKind]].noun})` : "";
         out.push(`Mudou de funil: ${name(pipelines, pa)} › ${name(stages, sa)} → ${name(pipelines, pb)} › ${name(stages, sb)}${kindNote}`);
       } else if (ch.stage_id) out.push(`Moveu de etapa: ${name(stages, ch.stage_id[0])} → ${name(stages, ch.stage_id[1])}`);
+      if (ch.archived_at) out.push(ch.archived_at[1] ? "Arquivou o cartão" : "Desarquivou o cartão");
       if (ch.status) {
         const [a, b] = ch.status as [string, string];
         out.push(b === "won" ? outcome.markedWon : b === "lost" ? outcome.markedLost : `Reabriu (estava ${statusName[a] ?? a})`);
@@ -217,6 +219,12 @@ export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
       if (l.op === "restore") return [`Restaurou produto: ${next.description ?? "item"}`];
       const changes = fieldChanges(ch, ITEM_FIELDS, fmtItem, new Set(["total_cents"]));
       return changes.length ? [`Alterou produto ${next.description}: ${changes.join("; ")}`] : [];
+    }
+    if (t === "deal_participant") {
+      const who = name(persons, next.person_id);
+      if (l.op === "insert" || l.op === "restore") return [`Adicionou o contato ${who}`];
+      if (l.op === "delete") return [`Removeu o contato ${who}`];
+      return [];
     }
     if (t === "entity_tag") {
       const tag = name(tags, next.tag_id);

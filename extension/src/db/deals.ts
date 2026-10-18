@@ -14,6 +14,7 @@ import { getRow, insertRow, softDelete, updateRow, type DbContext } from "./repo
 import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
 import { createTag, getEntityTags, setEntityTags, type Tag } from "./tags";
 import { getUser, teammateIds, type Viewer } from "./users";
+import { copyCardContacts, listCardContacts, type CardContact } from "./cardContacts";
 
 export type DealStatus = "open" | "won" | "lost";
 
@@ -72,6 +73,8 @@ export interface Card {
   organization_id: string | null;
   owner_id: string | null;
   status: DealStatus;
+  /** Arquivado: fora do quadro (filtro "Arquivados"), mas nos relatórios. */
+  archived_at: string | null;
   loss_reason_id: string | null;
   loss_note: string | null;
   closed_at: string | null;
@@ -96,6 +99,8 @@ export interface DealItem {
 }
 
 export interface CardDetail extends Card {
+  /** Contatos do cartão: o principal primeiro, depois os demais. */
+  contacts: CardContact[];
   person_name: string | null;
   organization_name: string | null;
   loss_reason_name: string | null;
@@ -275,7 +280,12 @@ export function updateCard(
     if (patch.startAt !== undefined) data.start_at = normalizeIsoDate(patch.startAt, "Início");
     if (patch.dueAt !== undefined) data.due_at = normalizeIsoDate(patch.dueAt, "Prazo");
     if (patch.expectedCloseAt !== undefined) data.expected_close_at = normalizeIsoDate(patch.expectedCloseAt, "Previsão de fechamento");
-    if (patch.personId !== undefined) data.person_id = checkRef(db, "person", patch.personId, "Contato não encontrado.");
+    if (patch.personId !== undefined) {
+      data.person_id = checkRef(db, "person", patch.personId, "Contato não encontrado.");
+      // Virou principal: sai de "outros contatos".
+      const dup = data.person_id && one<{ id: string }>(db, "SELECT id FROM deal_participant WHERE deal_id = ? AND person_id = ? AND deleted_at IS NULL", id, data.person_id);
+      if (dup) softDelete(db, ctx, "deal_participant", dup.id);
+    }
     if (patch.organizationId !== undefined) data.organization_id = checkRef(db, "organization", patch.organizationId, "Organização não encontrada.");
     if (patch.ownerId !== undefined) data.owner_id = checkRef(db, "app_user", patch.ownerId, "Responsável não encontrado.");
     if (patch.origin !== undefined) data.origin = optionalText(patch.origin);
@@ -446,6 +456,7 @@ export function cloneCard(db: DatabaseSync, ctx: DbContext, id: string, input: {
       tagIds: tagsForKind(db, ctx, id, kind),
       customValues: customValuesFor(db, id, kind, target.id),
     });
+    copyCardContacts(db, ctx, id, newId);
     return newId;
   });
 }
@@ -540,6 +551,7 @@ export function getCard(db: DatabaseSync, id: string, viewer?: Viewer | null): C
   return {
     ...card,
     ...names,
+    contacts: listCardContacts(db, id),
     items: listDealItems(db, id),
     tags: getEntityTags(db, id),
     customValues: getCustomValues(db, id),
@@ -580,6 +592,9 @@ export interface BoardCard {
   act_today: number;
   act_pending: number;
   notes_count: number;
+  /** Outros contatos além do principal ("+2" no cartão). */
+  extra_contacts: number;
+  archived_at: string | null;
   /** Campos configurados no funil (lib/cardFields), já formatados. */
   fields: Record<string, CardFieldValue>;
 }
@@ -605,14 +620,17 @@ const SORT_SQL: Record<BoardSort, string> = {
 
 /** Quadro do funil: colunas com quantidade, soma e cartões (spec 01, tela inicial).
  * Visões: *Fluxo geral* (all), *Meu fluxo* (mine), *Minha equipe* (team). */
-type BoardFilterOpts = { view?: BoardView; viewer?: Viewer | null; search?: string; status?: DealStatus | "all"; ownerIds?: string[]; tagIds?: string[] };
+/** Situação do filtro do quadro; "archived" mostra só os arquivados. */
+export type BoardStatusFilter = DealStatus | "all" | "archived";
+type BoardFilterOpts = { view?: BoardView; viewer?: Viewer | null; search?: string; status?: BoardStatusFilter; ownerIds?: string[]; tagIds?: string[] };
 
 /** Condições do quadro (situação, visão, responsáveis, tags e pesquisa). */
 function boardWhere(db: DatabaseSync, pipelineId: string, opts: BoardFilterOpts): { where: string[]; params: SqlValue[] } {
   const where = ["d.pipeline_id = ?", "d.deleted_at IS NULL"];
   const params: SqlValue[] = [pipelineId];
   const status = opts.status ?? "open";
-  if (status !== "all") {
+  where.push(status === "archived" ? "d.archived_at IS NOT NULL" : "d.archived_at IS NULL");
+  if (status !== "all" && status !== "archived") {
     where.push("d.status = ?");
     params.push(status);
   }
@@ -634,8 +652,13 @@ function boardWhere(db: DatabaseSync, pipelineId: string, opts: BoardFilterOpts)
   if (opts.search?.trim()) {
     const q = `%${opts.search.trim()}%`;
     const ticket = ticketNumberQuery(opts.search);
-    where.push(`(d.title LIKE ? OR p.name LIKE ? OR o.name LIKE ?${ticket !== null ? " OR d.ticket_number = ?" : ""})`);
-    params.push(q, q, q, ...(ticket !== null ? [ticket] : []));
+    // Também pelos outros contatos do cartão.
+    where.push(
+      `(d.title LIKE ? OR p.name LIKE ? OR o.name LIKE ?${ticket !== null ? " OR d.ticket_number = ?" : ""}
+        OR EXISTS (SELECT 1 FROM deal_participant dp JOIN person pp ON pp.id = dp.person_id AND pp.deleted_at IS NULL
+                   WHERE dp.deal_id = d.id AND dp.deleted_at IS NULL AND pp.name LIKE ?))`,
+    );
+    params.push(q, q, q, ...(ticket !== null ? [ticket] : []), q);
   }
   return { where, params };
 }
@@ -669,7 +692,7 @@ export function getBoard(
     view?: BoardView;
     viewer?: Viewer | null;
     search?: string;
-    status?: DealStatus | "all";
+    status?: BoardStatusFilter;
     sort?: BoardSort;
     ownerIds?: string[];
     tagIds?: string[];
@@ -693,7 +716,10 @@ export function getBoard(
        (SELECT COUNT(*) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0 AND NOT ${OVERDUE_COND}
           AND ((a.due_at >= ? AND a.due_at < ?) OR (a.end_at IS NOT NULL AND a.end_at >= ? AND a.end_at < ?))) AS act_today,
        (SELECT COUNT(*) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0) AS act_pending,
-       (SELECT COUNT(*) FROM note n WHERE n.entity_type = 'deal' AND n.entity_id = d.id AND n.deleted_at IS NULL) AS notes_count
+       (SELECT COUNT(*) FROM note n WHERE n.entity_type = 'deal' AND n.entity_id = d.id AND n.deleted_at IS NULL) AS notes_count,
+       (SELECT COUNT(*) FROM deal_participant dp JOIN person pp ON pp.id = dp.person_id AND pp.deleted_at IS NULL
+          WHERE dp.deal_id = d.id AND dp.deleted_at IS NULL) AS extra_contacts,
+       d.archived_at
      FROM deal d
      LEFT JOIN person p ON p.id = d.person_id
      LEFT JOIN organization o ON o.id = d.organization_id
@@ -755,7 +781,10 @@ export function listCardsForEntity(
   f: { personId?: string; organizationId?: string },
   viewer?: Viewer | null,
 ): { id: string; title: string; kind: DealKind; status: DealStatus; value_cents: number; pipeline_id: string; pipeline_name: string; stage_name: string; updated_at: string }[] {
-  const col = f.personId ? "d.person_id" : "d.organization_id";
+  // Contato: principal ou um dos outros contatos do cartão.
+  const col = f.personId
+    ? "(d.person_id = ?1 OR EXISTS (SELECT 1 FROM deal_participant dp WHERE dp.deal_id = d.id AND dp.person_id = ?1 AND dp.deleted_at IS NULL))"
+    : "d.organization_id = ?1";
   const id = f.personId ?? f.organizationId;
   if (!id) return [];
   const scope = cardScope(db, viewer);
@@ -763,7 +792,7 @@ export function listCardsForEntity(
     db,
     `SELECT d.id, d.title, d.kind, d.status, d.value_cents, d.pipeline_id, p.name AS pipeline_name, s.name AS stage_name, d.updated_at
      FROM deal d JOIN pipeline p ON p.id = d.pipeline_id JOIN stage s ON s.id = d.stage_id
-     WHERE ${col} = ? AND d.deleted_at IS NULL${scope.sql}
+     WHERE ${col} AND d.deleted_at IS NULL${scope.sql}
      ORDER BY d.status = 'open' DESC, d.updated_at DESC`,
     id,
     ...scope.params,

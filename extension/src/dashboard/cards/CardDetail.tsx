@@ -3,6 +3,8 @@
 // notas, tarefas e histórico de alterações.
 import { useCallback, useEffect, useState } from "react";
 import {
+  Archive,
+  ArchiveRestore,
   ArrowLeftRight,
   Check,
   Copy,
@@ -12,8 +14,11 @@ import {
   Minimize2,
   Pencil,
   PlusCircle,
+  Mail,
+  MessageCircle,
   RotateCcw,
   Sparkles,
+  Star,
   Trash2,
   Trophy,
   X,
@@ -28,7 +33,7 @@ import type { CardCounts } from "../../db/cardCounts";
 import type { HistoryEvent, HistoryRef } from "../../db/cardHistory";
 import type { Pipeline, Stage } from "../../db/pipelines";
 import { CARD_TEXT, OUTCOME_TEXT } from "../../lib/cardTypes";
-import { formatCents, formatDateTime, fromDateInput, toDateInput } from "../../lib/format";
+import { formatCents, formatDateTime, formatPhone, fromDateInput, toDateInput } from "../../lib/format";
 import { Combobox, type ComboItem } from "../ui/Combobox";
 import { CustomFieldsForm } from "../ui/CustomFieldsForm";
 import { ErrorText, Field, SectionLabel } from "../ui/form";
@@ -52,6 +57,7 @@ import { ItemsEditor, type ItemDraft } from "./ItemsEditor";
 import { LostModal } from "./LostModal";
 import { ChangePipelineModal } from "./ChangePipelineModal";
 import { createOrganizationQuick, createPersonQuick, searchOrganizations, searchPersons } from "./searchers";
+import { EmailLink, PhoneLink } from "../ui/ContactLinks";
 import { errorText } from "../../lib/errors";
 import { RECURRENCE_LABEL, type Recurrence } from "../../db/products";
 import { ExternalOrigin } from "../ui/ExternalOrigin";
@@ -151,6 +157,7 @@ export function CardDetail({
   const outcome = OUTCOME_TEXT[pipeline.type];
   const status = card.status === "open" ? null : { color: card.status === "won" ? ("green" as const) : ("red" as const), label: outcome[card.status] };
   const person: ComboItem | null = card.person_id ? { id: card.person_id, label: card.person_name ?? "" } : null;
+  const others = card.contacts.filter((c) => !c.is_primary);
   const org: ComboItem | null = card.organization_id ? { id: card.organization_id, label: card.organization_name ?? "" } : null;
   const items: ItemDraft[] = card.items.map((i) => ({
     id: i.id,
@@ -250,6 +257,14 @@ export function CardDetail({
         )}
         <TaButton
           variant="ghost"
+          startIcon={card.archived_at ? <ArchiveRestore size={15} /> : <Archive size={15} />}
+          title={card.archived_at ? "Volta para o quadro" : "Sai do quadro, mas continua nos relatórios, na busca e na ficha do contato"}
+          onClick={() => void run(() => call("cards.archive", { id: cardId, archived: !card.archived_at }))}
+        >
+          {card.archived_at ? "Desarquivar" : "Arquivar"}
+        </TaButton>
+        <TaButton
+          variant="ghost"
           startIcon={<Trash2 size={15} />}
           onClick={() => {
             if (confirm(`Excluir este ${text.noun}?`)) void run(() => call("cards.delete", { id: cardId })).then(onClose);
@@ -258,6 +273,11 @@ export function CardDetail({
           Excluir
         </TaButton>
       </div>
+      {card.archived_at && (
+        <p className="mb-4 flex items-center gap-2 rounded-lg bg-gray-100 px-3 py-2 text-theme-sm text-gray-700 dark:bg-white/5 dark:text-gray-300" data-archived>
+          <Archive size={15} /> Arquivado em {formatDateTime(card.archived_at)}: não aparece no quadro (filtro “Arquivados” mostra).
+        </p>
+      )}
       {card.status !== "open" && (
         // Faixa do desfecho: verde (ganho/resolvido/concluído) ou vermelha (perdido/não…), com data e motivo.
         <div
@@ -353,6 +373,65 @@ export function CardDetail({
               createLabel="Criar contato"
               onOpenValue={(i) => setEditing({ kind: "person", id: i.id })}
               openTitle="Editar o cadastro do contato"
+            />
+          </Field>
+          <Field
+            label={`Outros contatos${others.length ? ` (${others.length})` : ""}`}
+            hint={others.length ? undefined : "Decisor, financeiro, técnico… Todos aparecem no cartão e na ficha de cada contato."}
+          >
+            {others.map((c) => (
+              <div key={c.id} className="mb-1.5 flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-700" data-card-contact={c.name}>
+                <button
+                  type="button"
+                  title="Editar o cadastro do contato"
+                  onClick={() => setEditing({ kind: "person", id: c.id })}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <span className="block truncate text-theme-sm font-medium text-brand-600 hover:underline">{c.name}</span>
+                  {(c.organization_name || c.phone || c.email) && (
+                    <span className="block truncate text-theme-xs text-gray-500">{[c.organization_name, formatPhone(c.phone), c.email].filter(Boolean).join(" · ")}</span>
+                  )}
+                </button>
+                {c.phone && (
+                  <PhoneLink phone={c.phone} className="text-gray-400 hover:text-success-600 hover:no-underline">
+                    <MessageCircle size={15} />
+                  </PhoneLink>
+                )}
+                {c.email && (
+                  <EmailLink iconOnly email={c.email} className="text-gray-400 hover:no-underline">
+                    <Mail size={15} />
+                  </EmailLink>
+                )}
+                <button
+                  type="button"
+                  title="Tornar o contato principal"
+                  onClick={() => void run(() => call("cards.contacts.setPrimary", { id: cardId, personId: c.id }))}
+                  className="text-gray-400 hover:text-warning-500"
+                >
+                  <Star size={15} />
+                </button>
+                <button
+                  type="button"
+                  title="Remover do cartão"
+                  onClick={() => void run(() => call("cards.contacts.remove", { id: cardId, personId: c.id }))}
+                  className="text-gray-400 hover:text-error-600"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            ))}
+            <Combobox
+              value={null}
+              onChange={(i) => i && void run(() => call("cards.contacts.add", { id: cardId, personId: i.id }))}
+              search={searchPersons}
+              placeholder="Buscar por nome, telefone ou e-mail"
+              onCreate={createPersonQuick}
+              createLabel="Criar contato"
+              dashed={
+                <>
+                  <PlusCircle size={15} /> Adicionar outro contato
+                </>
+              }
             />
           </Field>
           <Field label="Organização">
