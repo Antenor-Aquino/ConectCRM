@@ -115,7 +115,7 @@ export function EmailLink({ email, children, className, iconOnly }: { email: str
           <div
             ref={menu}
             onClick={(e) => e.stopPropagation()}
-            className="fixed z-[9000] w-[280px] rounded-xl border border-gray-200 bg-white p-1.5 shadow-theme-lg dark:border-gray-700 dark:bg-gray-900"
+            className="fixed z-[100000] w-[280px] rounded-xl border border-gray-200 bg-white p-1.5 shadow-theme-lg dark:border-gray-700 dark:bg-gray-900"
             style={{ top: options.top, left: options.left }}
           >
             <p className="truncate px-2.5 pb-1 pt-1.5 text-theme-xs text-gray-500">Escrever para {email}</p>

@@ -117,7 +117,7 @@ export function ActivityIndicator({
           <div
             ref={panel}
             onClick={(e) => e.stopPropagation()}
-            className="fixed z-[9000] w-80 rounded-xl border border-gray-200 bg-white shadow-theme-lg dark:border-gray-700 dark:bg-gray-900"
+            className="fixed z-[100000] w-80 rounded-xl border border-gray-200 bg-white shadow-theme-lg dark:border-gray-700 dark:bg-gray-900"
             style={{ top: pos.top, left: pos.left }}
           >
             <div className="max-h-64 overflow-y-auto p-1.5 custom-scrollbar">
