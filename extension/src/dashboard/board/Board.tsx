@@ -6,6 +6,7 @@ import {
   BarChart3,
   ChevronDown,
   ChevronLeft,
+  Clock,
   Columns3,
   Filter,
   FoldHorizontal,
@@ -557,7 +558,8 @@ export function Board({
                 )}
               >
                 <StagePill name={col.name} color={col.color} vertical />
-                <span className="text-theme-xs font-bold text-gray-700 dark:text-gray-300">{col.count}</span>
+                <span className="text-theme-xs font-bold text-gray-700 dark:text-gray-300">({col.count})</span>
+                <OverdueBadge count={col.overdue_activities} />
                 {/* Valor total da etapa (na vertical para caber na coluna estreita). */}
                 {col.total_cents > 0 && <span className="text-theme-xs font-bold text-gray-700 [writing-mode:vertical-rl] dark:text-gray-300">{formatCents(col.total_cents)}</span>}
               </button>
@@ -574,19 +576,20 @@ export function Board({
                   drop?.stageId === col.id && "bg-brand-25 ring-2 ring-brand-200 dark:bg-brand-500/10",
                 )}
               >
-                <div className="mb-0.5 flex items-center gap-2 px-1">
+                <div className="mb-0.5 flex items-center gap-1.5 px-1">
                   <StagePill name={col.name} color={col.color} className="min-w-0" />
                   {/* Quantidade e valor na mesma linha: "2 - R$ 641,00" (valor sempre no comercial; nos outros tipos quando há). */}
                   <span className="shrink-0 whitespace-nowrap text-theme-xs font-bold text-gray-700 dark:text-gray-300" data-stage-summary>
-                    {col.count}
+                    ({col.count})
                     {(pipeline.type === "comercial" || col.total_cents > 0) && ` - ${formatCents(col.total_cents)}`}
                   </span>
-                  <span className="ml-auto flex shrink-0 items-center gap-0.5">
+                  <OverdueBadge count={col.overdue_activities} />
+                  <span className="ml-auto flex shrink-0 items-center">
                     <button
                       type="button"
                       title="Editar funil e etapas"
                       onClick={onEditPipeline}
-                      className="flex h-6 w-6 items-center justify-center rounded-md text-gray-400 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-white/10"
+                      className="flex h-6 w-5 items-center justify-center rounded-md text-gray-400 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-white/10"
                     >
                       <MoreVertical size={15} />
                     </button>
@@ -594,7 +597,7 @@ export function Board({
                       type="button"
                       title="Recolher etapa"
                       onClick={() => toggleStage(col.id)}
-                      className="flex h-6 w-6 items-center justify-center rounded-md text-gray-400 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-white/10"
+                      className="flex h-6 w-5 items-center justify-center rounded-md text-gray-400 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-white/10"
                     >
                       <ChevronLeft size={15} />
                     </button>
@@ -652,5 +655,19 @@ export function Board({
         />
       )}
     </section>
+  );
+}
+
+/** Relógio com o número de atividades atrasadas da etapa (só quando há). */
+function OverdueBadge({ count }: { count: number }) {
+  if (!count) return null;
+  const label = `${count} atividade${count > 1 ? "s" : ""} atrasada${count > 1 ? "s" : ""} nesta etapa`;
+  return (
+    <span title={label} aria-label={label} data-stage-overdue={count} className="relative mr-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-gray-500 shadow-theme-xs dark:bg-white/10 dark:text-gray-300">
+      <Clock size={14} />
+      <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-error-500 px-1 text-[10px] font-bold leading-none text-white">
+        {count > 99 ? "99+" : count}
+      </span>
+    </span>
   );
 }

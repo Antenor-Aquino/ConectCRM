@@ -590,6 +590,8 @@ export interface BoardColumn {
   color: string | null;
   count: number;
   total_cents: number;
+  /** Atividades atrasadas dos cartões da etapa (relógio vermelho no cabeçalho). */
+  overdue_activities: number;
   cards: BoardCard[];
 }
 
@@ -717,7 +719,13 @@ export function getBoard(
   for (const c of cards) c.fields = values.get(c.id) ?? {};
   return stages.map((s) => {
     const inStage = cards.filter((c) => c.stage_id === s.id).map(({ stage_id: _s, ...c }) => c);
-    return { ...s, count: inStage.length, total_cents: inStage.reduce((acc, c) => acc + c.value_cents, 0), cards: inStage };
+    return {
+      ...s,
+      count: inStage.length,
+      total_cents: inStage.reduce((acc, c) => acc + c.value_cents, 0),
+      overdue_activities: inStage.reduce((acc, c) => acc + c.act_overdue, 0),
+      cards: inStage,
+    };
   });
 }
 

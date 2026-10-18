@@ -183,12 +183,15 @@ pergunta antes de criar (**Criar mesmo assim**).
 ### 6.0 Cabeçalho das etapas e recolher
 
 - O nome da etapa aparece numa "pílula" na cor da etapa (texto branco),
-  com a quantidade e o valor total ao lado: **Prospect 2 - R$ 641,00** (o
-  valor sempre no comercial; nos outros tipos quando há valor). No topo da coluna: **⋮**
-  abre "Editar funil e etapas" e **‹** recolhe a etapa.
+  com a quantidade entre parênteses e o valor total ao lado: **Contato (1) -
+  R$ 200,00** (o valor sempre no comercial; nos outros tipos quando há valor).
+  Quando os cartões da etapa têm atividades atrasadas, um **relógio com um
+  balão vermelho** mostra quantas são (soma de todos os cartões; concluídas e
+  futuras não contam). No topo da coluna: **⋮** abre "Editar funil e etapas"
+  e **‹** recolhe a etapa.
 - Em "Novo funil" e "Editar funil", a **Prévia no quadro** mostra os nomes
   com as cores escolhidas antes de salvar.
-- Etapa recolhida mostra nome, quantidade e **valor total** (na vertical),
+- Etapa recolhida mostra nome, quantidade, o relógio de atrasadas e **valor total** (na vertical),
   numa coluna da largura do texto (não uma faixa larga).
 - A pílula tem folga nas laterais; quantidade de cartões e valor em negrito.
 
