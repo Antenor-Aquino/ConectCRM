@@ -578,7 +578,7 @@ const HAYSTACK = `ged_norm(
 
 /** Função de normalização usada na busca (registrada a cada consulta; é barato). */
 function registerSearch(db: DatabaseSync): void {
-  db.create_function("ged_norm", (s: unknown) => (s == null ? "" : normalizeText(String(s))));
+  db.createFunction("ged_norm", (s) => (s == null ? "" : normalizeText(String(s))));
 }
 
 function documentWhere(db: DatabaseSync, f: DocumentFilter): { sql: string; params: SqlValue[] } {

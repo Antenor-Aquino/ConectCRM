@@ -13,6 +13,7 @@
   "dependencies": {
     "@conectcrm/tailadmin": "*",
     "@fontsource-variable/inter": "^5.2.8",
+    "@sqlite.org/sqlite-wasm": "3.53.4-build1",
     "chart.js": "^4.5.1",
     "clsx": "^2.1.1",
     "fflate": "0.8.2",
@@ -20,7 +21,6 @@
     "pdfjs-dist": "6.3.289",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "sql.js": "^1.13.0",
     "tailwind-merge": "^3.3.1",
     "xlsx": "^0.18.5"
   },
@@ -30,7 +30,6 @@
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
-    "@types/sql.js": "^1.4.9",
     "@vitejs/plugin-react": "^4.3.4",
     "fake-indexeddb": "6.2.2",
     "postcss": "^8.5.6",

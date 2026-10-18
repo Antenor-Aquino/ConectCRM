@@ -11,8 +11,8 @@ contatos, organizações e relatórios, com os dados no próprio computador.
 
 ```
 extension/              extensão Chrome (Vite + React + TypeScript)
-  src/db/               banco SQLite (sql.js): esquema, migrations, repo e módulos
-  src/offscreen/        documento offscreen: único dono do banco
+  src/db/               banco SQLite (sqlite-wasm, arquivo no OPFS): esquema, migrations, repo e módulos
+  src/offscreen/        documento offscreen e worker do banco (único dono do SQLite)
   src/rpc/              mensagens entre telas e banco
   src/background/       service worker
   src/dashboard/        CRM (aba própria)

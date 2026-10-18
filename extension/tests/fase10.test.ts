@@ -141,12 +141,9 @@ describe("relatórios", () => {
 
 describe("relatórios no ambiente de teste", () => {
   it("os dados de exemplo trazem 6 meses de histórico", async () => {
-    const initSqlJs = (await import("sql.js")).default;
-    const { createRequire } = await import("node:module");
-    const require = createRequire(import.meta.url);
-    const SQL = await initSqlJs({ locateFile: () => require.resolve("sql.js/dist/sql-wasm.wasm") });
+    const { sqlite } = await import("./helpers");
     const { openDatabase } = await import("../src/db/open");
-    const { db } = openDatabase(SQL, null, { seedDemo: true });
+    const { db } = openDatabase(await sqlite(), null, { seedDemo: true });
     const pipeline = (await import("../src/db/pipelines")).listPipelines(db).find((p) => p.name === "PowerCubus")!;
     const now = new Date();
     const r = buildReport(db, { from: new Date(now.getTime() - 365 * 86400_000).toISOString(), to: new Date(now.getTime() + 86400_000).toISOString(), pipelineId: pipeline.id });

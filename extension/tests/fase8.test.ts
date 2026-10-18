@@ -1,5 +1,3 @@
-import initSqlJs from "sql.js";
-import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 import { countPersons } from "../src/db/contacts";
 import { getBoard } from "../src/db/deals";
@@ -8,9 +6,9 @@ import { listPipelines } from "../src/db/pipelines";
 import { listUsers } from "../src/db/users";
 import { autoBackupFilename, isBackupDue } from "../src/lib/autoBackup";
 import { base64ToBytes, bytesToBase64 } from "../src/lib/environment";
+import { emptyDb, sqlite } from "./helpers";
 
-const require = createRequire(import.meta.url);
-const sql = () => initSqlJs({ locateFile: () => require.resolve("sql.js/dist/sql-wasm.wasm") });
+const sql = sqlite;
 
 describe("nome do backup (horário local)", () => {
   const d = new Date(2026, 6, 5, 14, 21, 14, 607);
@@ -61,7 +59,7 @@ describe("ambiente de teste e restauração", () => {
     const bytes = base64ToBytes(b64);
     expect(() => validateBackup(SQL, bytes)).not.toThrow();
     expect(countPersons(openDatabase(SQL, bytes).db)).toBe(12);
-    const other = new SQL.Database();
+    const other = await emptyDb();
     other.run("CREATE TABLE x (a)");
     expect(() => validateBackup(SQL, other.export())).toThrow(/não é um backup do ConectCRM/);
     expect(() => validateBackup(SQL, new TextEncoder().encode("texto qualquer"))).toThrow(/não é um backup/);

@@ -1,5 +1,3 @@
-import initSqlJs from "sql.js";
-import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 import { createActivity, getActivity, listActivities, updateActivity } from "../src/db/activities";
 import { createOrganization, createPerson } from "../src/db/contacts";
@@ -10,9 +8,9 @@ import { createPipeline } from "../src/db/pipelines";
 import { createTag } from "../src/db/tags";
 import { createUser } from "../src/db/users";
 import { methods } from "../src/rpc/methods";
-import { freshDb } from "./helpers";
+import { freshDb, emptyDb } from "./helpers";
+import { one } from "../src/db/sql";
 
-const require = createRequire(import.meta.url);
 const file = (filename: string, mime: string, sha = "b".repeat(64)) => ({ sha256: sha, mime, size: 10, filename, location: "browser" as const });
 
 describe("tarefas: início, finalização, tags, anexos e vínculos", () => {
@@ -76,8 +74,7 @@ describe("tarefas: início, finalização, tags, anexos e vínculos", () => {
   });
 
   it("migração: data escolhida vira finalização; 'agora' do cadastro não", async () => {
-    const SQL = await initSqlJs({ locateFile: () => require.resolve("sql.js/dist/sql-wasm.wasm") });
-    const db = new SQL.Database();
+    const db = await emptyDb();
     db.exec("CREATE TABLE _migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL);");
     for (const m of MIGRATIONS.filter((x) => x.name < "0003")) {
       db.exec(m.sql);
@@ -90,14 +87,13 @@ describe("tarefas: início, finalização, tags, anexos e vínculos", () => {
     ins("padrao", "2026-10-17T09:44:00.000Z", "2026-10-17T09:44:00.000Z");
     ins("escolhida", "2026-10-10T08:00:00.000Z", "2026-10-15T14:00:00.000Z");
     runMigrations(db);
-    const end = (id: string) => db.exec("SELECT end_at FROM activity WHERE id = ?", [id])[0]!.values[0]![0];
+    const end = (id: string) => one<{ end_at: string | null }>(db, "SELECT end_at FROM activity WHERE id = ?", id)?.end_at;
     expect(end("padrao")).toBeNull();
     expect(end("escolhida")).toBe("2026-10-15T14:00:00.000Z");
   });
 
   it("migração das tags preserva tags e vínculos e religa as chaves estrangeiras", async () => {
-    const SQL = await initSqlJs({ locateFile: () => require.resolve("sql.js/dist/sql-wasm.wasm") });
-    const db = new SQL.Database();
+    const db = await emptyDb();
     db.exec("PRAGMA foreign_keys = ON");
     db.exec("CREATE TABLE _migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL);");
     for (const m of MIGRATIONS.filter((x) => x.name < "0004")) {

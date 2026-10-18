@@ -69,7 +69,7 @@ Herdada da `gestao-financeira-extensao`:
 | Build | Vite + React 19 + TypeScript, `base: "./"`, entradas: dashboard, popup, background, content script, offscreen |
 | UI | Tailwind 4 + `shared/tailadmin` (Card, Button, Modal, Badge, layout, tema claro/escuro), lucide-react, fonte Inter |
 | Kanban | `@dnd-kit` para arrastar-e-soltar (acessível, com teclado) |
-| Banco | SQLite WASM (`sql.js`), snapshot no IndexedDB, migrations `.sql` versionadas |
+| Banco | SQLite oficial em WASM (`@sqlite.org/sqlite-wasm`) gravando num arquivo no OPFS (VFS `opfs-sahpool`), migrations `.sql` versionadas |
 | Backup | File System Access API, conforme seção 7 |
 | Testes | Vitest com banco em memória |
 
@@ -80,6 +80,17 @@ o banco roda num **documento offscreen** da extensão; dashboard, popup e
 background falam com ele por mensagens (camada `db/*` com a mesma interface,
 só muda o transporte). Isso também permite lembretes de tarefas via
 `chrome.alarms` com o dashboard fechado.
+
+**Armazenamento (desde 0.2.23).** O documento offscreen cria um **worker do
+banco** (`src/offscreen/dbWorker.ts`), o único que abre o SQLite: o OPFS com
+gravação síncrona só existe em workers. O banco é um arquivo por ambiente no
+OPFS da extensão (`/production.sqlite3`, `/demo.sqlite3`) e cada transação
+grava só as páginas alteradas, direto no disco (sem o banco inteiro na memória
+e sem regravar tudo a cada alteração, como era com o `sql.js` + snapshot no
+IndexedDB até 0.2.22). Na primeira abertura após atualizar, o snapshot antigo
+é importado para o OPFS e guardado no IndexedDB como `<ambiente>-legado`.
+Restaurar um backup guarda antes o banco atual em `<ambiente>-antes-da-restauracao`.
+Os testes usam o mesmo SQLite em memória.
 
 ## 5. Usuários e equipes — como funciona sendo local
 
@@ -196,7 +207,7 @@ Como ficou na Fase 8:
 - **Configurações → Backup e ambiente**: liga/desliga, frequência (diário/semanal), pasta, "Fazer backup agora", "Baixar cópia do banco" e "Restaurar backup…". Só o administrador altera o backup automático e restaura.
 - O backup automático só roda em **Produção**.
 - Antes de restaurar, o arquivo é validado (precisa ser um banco do ConectCRM). O banco atual fica guardado internamente como `<ambiente>-antes-da-restauracao`.
-- **Produção / Teste**: chave no topo. Cada ambiente tem seu banco no IndexedDB do documento offscreen, e a escolha do ambiente também fica lá (o offscreen não acessa `chrome.storage`). Cada ambiente lembra o próprio usuário atual. O Teste nasce com os dados do mockup (funil PowerCubus, Suporte, Implantação PUC-PR, 4 usuários, 12 contatos) e pode ser recriado.
+- **Produção / Teste**: chave no topo. Cada ambiente tem seu arquivo de banco no OPFS (worker do banco), e a escolha do ambiente fica no IndexedDB do offscreen (o offscreen não acessa `chrome.storage`). Cada ambiente lembra o próprio usuário atual. O Teste nasce com os dados do mockup (funil PowerCubus, Suporte, Implantação PUC-PR, 4 usuários, 12 contatos) e pode ser recriado.
 - **Sino de notificações**: backups (sucesso/erro), restauração e lembretes de tarefas. Fica em `chrome.storage.local`, até 200 itens; "Limpar tudo" só esconde.
 
 ## 8. Reaproveitamento do wa-pipedrive

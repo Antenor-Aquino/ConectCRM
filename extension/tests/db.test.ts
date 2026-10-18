@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { bootstrap, DEFAULT_ACTIVITY_TYPES } from "../src/db/bootstrap";
 import { runMigrations } from "../src/db/migrate";
 import { getRow, insertRow, restore, rowHistory, softDelete, updateRow } from "../src/db/repo";
-import { many, one, setWriteListener } from "../src/db/sql";
+import { many, one, withTransaction } from "../src/db/sql";
 import { freshDb } from "./helpers";
 
 describe("migrations e dados iniciais", () => {
@@ -87,15 +87,16 @@ describe("repo: gravação preparada para sincronização", () => {
     expect(() => insertRow(db, ctx, "organization", { name: "Nova", cnpj: "11222333000181" })).not.toThrow();
   });
 
-  it("avisa a persistência uma vez por transação", async () => {
+  it("transação com erro é desfeita por inteiro", async () => {
     const { db, ctx } = await freshDb();
-    let writes = 0;
-    setWriteListener(() => writes++);
-    try {
-      insertRow(db, ctx, "person", { name: "Jean" });
-      expect(writes).toBe(1);
-    } finally {
-      setWriteListener(null);
-    }
+    expect(() =>
+      withTransaction(db, () => {
+        insertRow(db, ctx, "person", { name: "Jean" });
+        throw new Error("falhou no meio");
+      }),
+    ).toThrow("falhou no meio");
+    expect(one(db, "SELECT 1 FROM person WHERE name = 'Jean'")).toBeUndefined();
+    insertRow(db, ctx, "person", { name: "Jean" });
+    expect(many(db, "SELECT 1 FROM person WHERE name = 'Jean'")).toHaveLength(1);
   });
 });
