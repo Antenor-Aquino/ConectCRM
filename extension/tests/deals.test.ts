@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createActivity, setActivityDone } from "../src/db/activities";
 import { createOrganization, createPerson } from "../src/db/contacts";
-import { createLossReason, createCard, getBoard, getCard, moveCard, setCardStatus, setDealItems, updateCard } from "../src/db/deals";
+import { createLossReason, createCard, getBoard, getCard, getCardRow, moveCard, setCardStatus, setDealItems, updateCard } from "../src/db/deals";
 import { createPipeline, listStages } from "../src/db/pipelines";
 import { createProduct } from "../src/db/products";
 import { createTeam, createUser } from "../src/db/users";
@@ -43,7 +43,10 @@ describe("cartões do Kanban", () => {
     const { db, ctx } = await setup();
     const suporte = createPipeline(db, ctx, { name: "Suporte", type: "operacional", stages: [{ name: "Novo ticket" }] });
     const projeto = createPipeline(db, ctx, { name: "Implantação", type: "projeto", stages: [{ name: "A fazer" }] });
-    expect(() => createCard(db, ctx, { pipelineId: suporte, title: "Falha", valueCents: 100 })).toThrow(/Valor\/produtos não se aplica/);
+    // Valor e produtos/serviços valem para todos os tipos de funil.
+    const comValor = createCard(db, ctx, { pipelineId: suporte, title: "Falha", valueCents: 100 });
+    setDealItems(db, ctx, comValor, [{ description: "Visita técnica", quantity: 2, unitPriceCents: 15000 }]);
+    expect(getCardRow(db, comValor)).toMatchObject({ value_cents: 30000, value_from_items: 1 });
     expect(() => createCard(db, ctx, { pipelineId: suporte, title: " " })).toThrow(/título do ticket/);
     const ticket = createCard(db, ctx, { pipelineId: suporte, title: "Falha no acesso", slaAt: "2026-10-20T18:00:00-03:00" });
     expect(getCard(db, ticket)).toMatchObject({ kind: "ticket", sla_at: "2026-10-20T21:00:00.000Z" });

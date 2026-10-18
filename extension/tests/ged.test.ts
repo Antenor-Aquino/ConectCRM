@@ -333,7 +333,10 @@ describe("GED: tipos de documento e campo personalizado", () => {
     expect(docs.getDocument(db, id)!.type_id).toBeNull();
     expect(docs.listDocuments(db, { typeId: "none" }).items.map((d) => d.id)).toEqual([id]);
     expect(docs.listDocuments(db, { search: "nao classificado" }).items.map((d) => d.id)).toEqual([id]);
-    expect(() => methods["documentTypes.create"](db, as(ctx, createUser(db, ctx, { name: "Vera", role: "vendedor" })), { name: "X" })).toThrow(/permissão/);
+    // Vendedor cria classificação nova ao digitar; editar/excluir continua com gestores.
+    const vera = as(ctx, createUser(db, ctx, { name: "Vera", role: "vendedor" }));
+    const nova = methods["documentTypes.create"](db, vera, { name: "Nota de débito" });
+    expect(() => methods["documentTypes.update"](db, vera, { id: nova, patch: { name: "Y" } })).toThrow(/permissão/);
     void type;
   });
 

@@ -59,6 +59,11 @@ No banco o status é sempre `open` / `won` / `lost`; só os termos mudam:
 
 ## 3. Botão "+" (cadastro rápido)
 
+Os cartões aparecem com o tipo do funil: **Negócio (Comercial)**, **Ticket
+(Operacional)** e **Etapa (Projeto)**. Os três tipos têm **Valor** e
+**produtos/serviços** no mesmo padrão do negócio (com produtos, o valor é a
+soma); os campos Valor e Produtos também podem ir para o cartão do quadro.
+
 Menu suspenso com as opções abaixo. As opções de item de funil **só aparecem
 se existir pelo menos um funil ativo daquele tipo**.
 
@@ -175,7 +180,14 @@ pergunta antes de criar (**Criar mesmo assim**).
 - Usuários inativos não aparecem para novos registros (mas continuam nos
   registros antigos).
 
-### 6.0 Recolher etapas
+### 6.0 Cabeçalho das etapas e recolher
+
+- O nome da etapa aparece numa "pílula" na cor da etapa (texto branco),
+  com a quantidade ao lado e o valor total abaixo. No topo da coluna: **⋮**
+  abre "Editar funil e etapas" e **‹** recolhe a etapa.
+- Em "Novo funil" e "Editar funil", a **Prévia no quadro** mostra os nomes
+  com as cores escolhidas antes de salvar.
+- Etapa recolhida mostra nome, quantidade e **valor total** (na vertical).
 
 - Cada coluna do quadro tem o botão **‹ Recolher etapa** no topo: a etapa
   vira uma coluna estreita com o nome na vertical e a quantidade; clicar

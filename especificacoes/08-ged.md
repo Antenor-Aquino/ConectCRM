@@ -44,6 +44,14 @@ ou organização).
 - **Arquivo repetido** (mesmo SHA-256): a janela avisa "já está no GED como
   …" e oferece **vincular o existente** (padrão) ou enviar como novo.
 
+### 2.0 Classificação
+
+O campo Classificação é uma busca: digitar um tipo que não existe oferece
+**Criar classificação "…"** e já o seleciona (qualquer usuário cria;
+editar e excluir tipos continua com administradores e gestores, em
+Configurações → Documentos). Nome igual a um existente (sem acento e
+maiúsculas) usa o existente.
+
 ### 2.1 Transcrição com IA (opcional, no envio)
 
 Cada arquivo da janela "Novo documento" pergunta **"Transcrever com IA?"**

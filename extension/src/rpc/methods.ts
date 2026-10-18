@@ -218,10 +218,8 @@ export const methods = {
   "attachments.dataUrls": (db: DatabaseSync, _c: DbContext, p: { ids: string[] }) => attachments.getDataUrls(db, p.ids),
   // GED (spec 08)
   "documentTypes.list": (db: DatabaseSync, _c: DbContext, p: { includeInactive?: boolean } = {}) => docs.listDocumentTypes(db, p),
-  "documentTypes.create": (db: DatabaseSync, ctx: DbContext, p: docs.DocumentTypeInput) => {
-    assertRole(db, ctx, MANAGERS, "tipos de documento");
-    return docs.createDocumentType(db, ctx, p);
-  },
+  // Qualquer usuário cria uma classificação ao digitar um tipo novo; editar e excluir ficam com gestores.
+  "documentTypes.create": (db: DatabaseSync, ctx: DbContext, p: docs.DocumentTypeInput) => docs.createDocumentType(db, ctx, p),
   "documentTypes.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Partial<docs.DocumentTypeInput> }) => {
     assertRole(db, ctx, MANAGERS, "tipos de documento");
     docs.updateDocumentType(db, ctx, p.id, p.patch);

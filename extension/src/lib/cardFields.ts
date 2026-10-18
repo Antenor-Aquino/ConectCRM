@@ -14,8 +14,8 @@ export interface BuiltinCardField {
 }
 
 export const BUILTIN_CARD_FIELDS: BuiltinCardField[] = [
-  { key: "valor", label: "Valor", group: "Negócio", types: ["comercial"] },
-  { key: "produtos", label: "Produtos e serviços", group: "Negócio", types: ["comercial"] },
+  { key: "valor", label: "Valor", group: "Negócio" },
+  { key: "produtos", label: "Produtos e serviços", group: "Negócio" },
   { key: "probabilidade", label: "Probabilidade da etapa", group: "Negócio", types: ["comercial"] },
   { key: "previsao_fechamento", label: "Previsão de fechamento", group: "Negócio", types: ["comercial"] },
   { key: "sla", label: "SLA", group: "Negócio", types: ["operacional"] },

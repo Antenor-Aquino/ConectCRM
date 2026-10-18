@@ -14,9 +14,10 @@ export const QUICK_CREATE_OPTIONS: QuickCreateOption[] = [
   { id: "tarefa", label: "Tarefa" },
   { id: "contato", label: "Contato" },
   { id: "organizacao", label: "Organização" },
-  { id: "negocio", label: "Negócio", requires: "comercial" },
-  { id: "ticket", label: "Ticket", requires: "operacional" },
-  { id: "projeto", label: "Etapa", requires: "projeto" },
+  // O tipo do funil ao lado deixa claro onde o cartão nasce.
+  { id: "negocio", label: "Negócio (Comercial)", requires: "comercial" },
+  { id: "ticket", label: "Ticket (Operacional)", requires: "operacional" },
+  { id: "projeto", label: "Etapa (Projeto)", requires: "projeto" },
 ];
 
 export function visibleQuickCreateOptions(activeTypes: PipelineType[]): QuickCreateOption[] {

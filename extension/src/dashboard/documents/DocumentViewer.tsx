@@ -2,7 +2,7 @@
 // editáveis, vínculos, versões e trilha de auditoria.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArchiveRestore, Download, History, Lock, RotateCcw, Trash2, Upload } from "lucide-react";
-import { TaButton, TaInput, TaModal, TaSelect, TaTextarea, cn } from "@tailadmin";
+import { TaButton, TaInput, TaModal, TaTextarea, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { AuditEntry, DocLink, DocumentDetail, DocumentType } from "../../db/documents";
 import { deleteOrphans, downloadVersion, prepareFile, saveContent } from "../../lib/documentFiles";
@@ -16,6 +16,7 @@ import { DOC_NAV_EVENT, LinkChip, RestrictedBadge, TypeBadge, ValidityBadge } fr
 import { LinkEditor } from "./LinkEditor";
 import { Preview } from "./Preview";
 import { errorText } from "../../lib/errors";
+import { DocumentTypePicker } from "./DocumentTypePicker";
 
 type Tab = "info" | "links" | "versions" | "audit";
 const TABS: { id: Tab; label: string }[] = [
@@ -190,16 +191,11 @@ export function DocumentViewer({ documentId, onClose, onChanged }: { documentId:
                   <TaInput value={form.name} disabled={trashed} onChange={(e) => setForm({ ...form, name: e.target.value })} />
                 </Field>
                 <Field label="Classificação" required>
-                  <TaSelect value={form.typeId} disabled={trashed} onChange={(e) => setForm({ ...form, typeId: e.target.value })}>
-                    {!form.typeId && <option value="">Não classificado</option>}
-                    {types
-                      .filter((t) => t.active || t.id === form.typeId)
-                      .map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
-                  </TaSelect>
+                  {trashed ? (
+                    <TaInput value={types.find((t) => t.id === form.typeId)?.name ?? "Não classificado"} disabled />
+                  ) : (
+                    <DocumentTypePicker value={form.typeId} onChange={(typeId) => setForm({ ...form, typeId })} placeholder="Não classificado" />
+                  )}
                 </Field>
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Data do documento">

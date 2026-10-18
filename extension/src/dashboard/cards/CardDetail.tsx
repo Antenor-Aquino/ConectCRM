@@ -37,7 +37,6 @@ import { createOrganizationQuick, createPersonQuick, searchOrganizations, search
 import { errorText } from "../../lib/errors";
 import { RECURRENCE_LABEL, type Recurrence } from "../../db/products";
 
-
 type Tab = "notas" | "tarefas" | "documentos" | "historico";
 
 export type CardDetailMode = "drawer" | "full";
@@ -214,7 +213,12 @@ export function CardDetail({
             card.status === "won" ? "border-success-200 bg-success-50 text-success-800" : "border-error-200 bg-error-50 text-error-800",
           )}
         >
-          <span className={cn("mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white", card.status === "won" ? "bg-success-500" : "bg-error-500")}>
+          <span
+            className={cn(
+              "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white",
+              card.status === "won" ? "bg-success-500" : "bg-error-500",
+            )}
+          >
             {card.status === "won" ? <Check size={13} strokeWidth={3} /> : <X size={13} strokeWidth={3} />}
           </span>
           <span>
@@ -235,7 +239,8 @@ export function CardDetail({
       <div className="grid gap-6 @3xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] @6xl:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
         {/* Dados */}
         <div>
-          {pipeline.type === "comercial" && (
+          {/* Valor e produtos/serviços em todos os tipos de funil. */}
+          {
             <>
               <SectionLabel className="mt-0">Valor</SectionLabel>
               <div className="flex items-center gap-3">
@@ -246,17 +251,26 @@ export function CardDetail({
                     <MoneyInput value={card.value_cents} onChange={(c) => c !== card.value_cents && void update({ valueCents: c })} />
                   )}
                 </div>
-                <button type="button" className="flex items-center gap-1.5 text-theme-sm font-medium text-brand-600 hover:underline" onClick={() => setItemsOpen(true)}>
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 text-theme-sm font-medium text-brand-600 hover:underline"
+                  onClick={() => setItemsOpen(true)}
+                >
                   <PlusCircle size={16} />
                   {card.items.length ? `${card.items.length} produto(s)` : "Adicionar produtos"}
                 </button>
               </div>
               {card.items.length > 0 && <ItemsSummary items={card.items} onEdit={() => setItemsOpen(true)} />}
             </>
-          )}
+          }
           {pipeline.type !== "comercial" && (
             <Field label="Descrição">
-              <TaTextarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} onBlur={() => description !== (card.description ?? "") && void update({ description })} />
+              <TaTextarea
+                rows={3}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                onBlur={() => description !== (card.description ?? "") && void update({ description })}
+              />
             </Field>
           )}
           {pipeline.type === "operacional" && (
@@ -296,7 +310,11 @@ export function CardDetail({
               placeholder="Buscar organização"
               onCreate={createOrganizationQuick}
               createLabel="Criar organização"
-              dashed={<><PlusCircle size={15} /> Vincular ou criar organização</>}
+              dashed={
+                <>
+                  <PlusCircle size={15} /> Vincular ou criar organização
+                </>
+              }
               onOpenValue={(i) => setEditing({ kind: "organization", id: i.id })}
               openTitle="Editar o cadastro da organização"
             />
@@ -474,7 +492,11 @@ function ItemsSummary({ items, onEdit }: { items: CardData["items"]; onEdit: () 
         </thead>
         <tbody>
           {items.map((i) => (
-            <tr key={i.id} onClick={onEdit} className="cursor-pointer border-b border-gray-100 last:border-0 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-white/5">
+            <tr
+              key={i.id}
+              onClick={onEdit}
+              className="cursor-pointer border-b border-gray-100 last:border-0 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-white/5"
+            >
               <td className="px-2.5 py-2 text-gray-800 dark:text-white/90">
                 {i.description}
                 {i.recurrence !== "avulso" && <span className="ml-1 text-gray-400">({RECURRENCE_LABEL[i.recurrence as Recurrence] ?? i.recurrence})</span>}
@@ -492,7 +514,9 @@ function ItemsSummary({ items, onEdit }: { items: CardData["items"]; onEdit: () 
               <td className="px-2.5 py-2 text-gray-700 dark:text-gray-300" colSpan={4}>
                 Total
               </td>
-              <td className="px-2.5 py-2 text-right tabular-nums text-gray-800 dark:text-white/90">{formatCents(items.reduce((a, i) => a + i.total_cents, 0))}</td>
+              <td className="px-2.5 py-2 text-right tabular-nums text-gray-800 dark:text-white/90">
+                {formatCents(items.reduce((a, i) => a + i.total_cents, 0))}
+              </td>
             </tr>
           </tfoot>
         )}
@@ -514,7 +538,12 @@ function Shell({ children, onClose, mode, onToggleMode }: { children: React.Reac
           {mode === "full" ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
         </button>
       )}
-      <button type="button" onClick={onClose} title="Fechar" className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-white/5">
+      <button
+        type="button"
+        onClick={onClose}
+        title="Fechar"
+        className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-white/5"
+      >
         <X size={18} />
       </button>
     </div>
@@ -560,13 +589,20 @@ function TasksTab({ cardId, onChanged }: { cardId: string; onChanged: () => void
           const overdue = timing.tone === "danger";
           return (
             <li key={t.id} className="flex items-center gap-3 py-2">
-              <button type="button" title={t.done ? "Reabrir" : "Concluir"} onClick={async () => {
-                await call("activities.setDone", { id: t.id, done: !t.done });
-                await after();
-              }} className={t.done ? "text-success-600" : "text-gray-400 hover:text-success-600"}>
+              <button
+                type="button"
+                title={t.done ? "Reabrir" : "Concluir"}
+                onClick={async () => {
+                  await call("activities.setDone", { id: t.id, done: !t.done });
+                  await after();
+                }}
+                className={t.done ? "text-success-600" : "text-gray-400 hover:text-success-600"}
+              >
                 {t.done ? <CheckCircle2 size={18} /> : <Circle size={18} />}
               </button>
-              <span className="text-brand-500"><ActivityIcon name={t.type_icon} /></span>
+              <span className="text-brand-500">
+                <ActivityIcon name={t.type_icon} />
+              </span>
               <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setModal({ id: t.id })}>
                 <p className={cn("truncate text-theme-sm", t.done ? "text-gray-400 line-through" : "text-gray-800 dark:text-white/90")}>{t.title}</p>
                 <p className={cn("text-theme-xs", overdue ? "text-error-600" : "text-gray-400")}>
@@ -638,7 +674,12 @@ function HistoryTab({
                 return (
                   <li key={j} className="break-words text-theme-sm text-gray-700 dark:text-gray-300">
                     {ref ? (
-                      <button type="button" title={REF_TITLE[ref.kind]} className="text-left text-brand-600 hover:underline dark:text-brand-400" onClick={() => onOpen(ref)}>
+                      <button
+                        type="button"
+                        title={REF_TITLE[ref.kind]}
+                        className="text-left text-brand-600 hover:underline dark:text-brand-400"
+                        onClick={() => onOpen(ref)}
+                      >
                         {line}
                       </button>
                     ) : (

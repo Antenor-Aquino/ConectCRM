@@ -134,7 +134,6 @@ function checkKindFields(kind: DealKind, input: Partial<CardInput>): void {
   const reject = (cond: boolean, what: string) => {
     if (cond) throw new ValidationError(`${what} não se aplica a este tipo de funil.`);
   };
-  reject(kind !== "deal" && (!!input.valueCents || !!input.items?.length), "Valor/produtos");
   reject(kind !== "deal" && !!input.expectedCloseAt, "Data prevista de fechamento");
   reject(kind !== "ticket" && !!input.slaAt, "SLA");
   reject(kind !== "project" && (!!input.startAt || !!input.dueAt), "Início/prazo");
@@ -348,11 +347,10 @@ export function listDealItems(db: DatabaseSync, dealId: string): DealItem[] {
   );
 }
 
-/** Substitui os itens do negócio; com itens, o valor do negócio passa a ser a soma (spec 01, seção 4). */
+/** Substitui os itens do cartão (qualquer tipo de funil); com itens, o valor passa a ser a soma (spec 01, seção 4). */
 export function setDealItems(db: DatabaseSync, ctx: DbContext, dealId: string, items: DealItemInput[]): void {
   withTransaction(db, () => {
     const card = requireCard(db, dealId);
-    if (card.kind !== "deal") throw new ValidationError("Produtos só se aplicam a negócios.");
     const current = listDealItems(db, dealId);
     const keep = new Set(items.filter((i) => i.id).map((i) => i.id!));
     for (const row of current) if (!keep.has(row.id)) softDelete(db, ctx, "deal_item", row.id);

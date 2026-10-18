@@ -3,7 +3,7 @@
 // para todos. Os vínculos da tela de origem já vêm marcados.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Info, Loader2, Lock, Paperclip, Sparkles, X } from "lucide-react";
-import { cn, TaButton, TaInput, TaModal, TaSelect, TaTextarea } from "@tailadmin";
+import { cn, TaButton, TaInput, TaModal, TaTextarea } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { DocLink, DocLinkType, DocumentType } from "../../db/documents";
 import { prepareFile, saveContent, type PreparedFile } from "../../lib/documentFiles";
@@ -14,6 +14,7 @@ import { Field, SectionLabel } from "../ui/form";
 import { Switch } from "../ui/Switch";
 import { TagPicker } from "../ui/TagPicker";
 import { FileTypeIcon } from "./docUi";
+import { DocumentTypePicker } from "./DocumentTypePicker";
 import { LinkEditor } from "./LinkEditor";
 import { errorText } from "../../lib/errors";
 
@@ -260,14 +261,11 @@ export function UploadModal({
                     value={r.name}
                     onChange={(e) => update(r.key, { name: e.target.value })}
                   />
-                  <TaSelect aria-label="Classificação" value={r.typeId} onChange={(e) => update(r.key, { typeId: e.target.value })}>
-                    <option value="">Classificação *</option>
-                    {types.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </TaSelect>
+                  <DocumentTypePicker
+                    value={r.typeId}
+                    onChange={(typeId) => update(r.key, { typeId })}
+                    onCreated={() => void call("documentTypes.list", {}).then(setTypes)}
+                  />
                 </div>
               )}
               {r.check && noteTarget && (

@@ -11,6 +11,7 @@ import {
   FoldHorizontal,
   List,
   MoreHorizontal,
+  MoreVertical,
   PanelLeft,
   Plus,
   Search,
@@ -25,7 +26,7 @@ import { CARD_TEXT, OUTCOME_TEXT, PIPELINE_TYPE_LABEL } from "../../lib/cardType
 import { formatCents } from "../../lib/format";
 import { useSession } from "../session";
 import { Popover } from "../ui/Popover";
-import { StageDot } from "../ui/StageSelect";
+import { StagePill } from "../ui/StageSelect";
 import { TagChip } from "../ui/TagPicker";
 import { BoardList, loadListColumns, STAGE_COLUMN } from "./BoardList";
 import { useCardFieldOptions } from "./fieldOptions";
@@ -504,9 +505,10 @@ export function Board({
                   drop?.stageId === col.id && "bg-brand-25 ring-2 ring-brand-200 dark:bg-brand-500/10",
                 )}
               >
-                <StageDot color={col.color} />
-                <span className="text-theme-sm font-semibold text-gray-800 [writing-mode:vertical-rl] dark:text-white/90">{col.name}</span>
-                <span className="text-theme-xs text-gray-400">{col.count}</span>
+                <StagePill name={col.name} color={col.color} vertical />
+                <span className="text-theme-xs font-medium text-gray-500">{col.count}</span>
+                {/* Valor total da etapa (na vertical para caber na coluna estreita). */}
+                {col.total_cents > 0 && <span className="text-theme-xs text-gray-500 [writing-mode:vertical-rl]">{formatCents(col.total_cents)}</span>}
               </button>
             ) : (
               <div
@@ -522,20 +524,33 @@ export function Board({
                 )}
               >
                 <div className="mb-0.5 flex items-center gap-2 px-1">
-                  <StageDot color={col.color} />
-                  <span className="truncate text-theme-sm font-semibold text-gray-800 dark:text-white/90">{col.name}</span>
-                  <span className="text-theme-xs text-gray-400">{col.count}</span>
-                  <button
-                    type="button"
-                    title="Recolher etapa"
-                    onClick={() => toggleStage(col.id)}
-                    className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-gray-400 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-white/10"
-                  >
-                    <ChevronLeft size={15} />
-                  </button>
+                  <StagePill name={col.name} color={col.color} className="min-w-0" />
+                  <span className="text-theme-xs font-medium text-gray-500">{col.count}</span>
+                  <span className="ml-auto flex shrink-0 items-center gap-0.5">
+                    <button
+                      type="button"
+                      title="Editar funil e etapas"
+                      onClick={onEditPipeline}
+                      className="flex h-6 w-6 items-center justify-center rounded-md text-gray-400 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-white/10"
+                    >
+                      <MoreVertical size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      title="Recolher etapa"
+                      onClick={() => toggleStage(col.id)}
+                      className="flex h-6 w-6 items-center justify-center rounded-md text-gray-400 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-white/10"
+                    >
+                      <ChevronLeft size={15} />
+                    </button>
+                  </span>
                 </div>
-                {pipeline.type === "comercial" && <div className="mb-3 px-1 text-theme-xs text-gray-500">{formatCents(col.total_cents)}</div>}
-                {pipeline.type !== "comercial" && <div className="mb-2" />}
+                {/* Valor da etapa: sempre no comercial; nos outros tipos quando há produtos/valor. */}
+                {pipeline.type === "comercial" || col.total_cents > 0 ? (
+                  <div className="mb-3 mt-1 px-1 text-theme-xs text-gray-500">{formatCents(col.total_cents)}</div>
+                ) : (
+                  <div className="mb-2" />
+                )}
                 <div className="flex flex-1 flex-col gap-2.5">
                   {col.cards.map((card) => (
                     <div key={card.id}>
