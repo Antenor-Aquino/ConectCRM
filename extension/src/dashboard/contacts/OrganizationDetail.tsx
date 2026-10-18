@@ -152,7 +152,7 @@ export function OrganizationDetail({
             tabs={[
               ["contatos", `Contatos (${o.persons.length})`],
               ["negocios", "Negócios"],
-              ["tarefas", "Tarefas"],
+              ["tarefas", "Atividades"],
               ["documentos", "Documentos"],
               ["notas", "Notas"],
               ["historico", "Histórico"],

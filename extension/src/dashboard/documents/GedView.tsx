@@ -135,7 +135,7 @@ function LinkFilter({
   }
   return (
     <div className="relative">
-      <TaInput placeholder="Cartão, tarefa, contato ou organização" value={q} onChange={(e) => setQ(e.target.value)} />
+      <TaInput placeholder="Cartão, atividade, contato ou organização" value={q} onChange={(e) => setQ(e.target.value)} />
       {results.length > 0 && (
         <div className="absolute left-0 top-full z-40 mt-1 max-h-64 w-72 overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-theme-lg dark:border-gray-700 dark:bg-gray-900">
           {results.map((r) => (
@@ -778,7 +778,7 @@ export function GedView() {
             <p className="py-10 text-center text-theme-sm text-gray-400">
               {filter.search || activeCount
                 ? "Nenhum documento encontrado com esses critérios."
-                : "Nenhum documento ainda. Envie por aqui ou anexe num cartão, tarefa, contato ou organização."}
+                : "Nenhum documento ainda. Envie por aqui ou anexe num cartão, atividade, contato ou organização."}
             </p>
           )}
 

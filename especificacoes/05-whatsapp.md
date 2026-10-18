@@ -32,11 +32,11 @@ estiver aberto em alguma aba, ela é ativada em vez de abrir outra.
 
 - Busca por título ou nome do contato (negócio, ticket ou etapa de projeto).
 - Resumo: título, funil › etapa, contato, organização, responsável, valor e
-  tarefas em aberto (concluir com um clique). Botão **"Abrir no CRM"** abre o
+  atividades em aberto (concluir com um clique). Botão **"Abrir no CRM"** abre o
   cartão no funil dele, na aba do CRM já aberta (ou numa nova); ✕ troca o
   destino.
 - Ações: **Novo** (formulário completo do CRM, origem "WhatsApp"),
-  **Tarefa**, **Reunião** (formulário de tarefa já como reunião, com Google
+  **Tarefa**, **Reunião** (formulário de atividade já como reunião, com Google
   Agenda/Outlook, horários livres e convidados) e **Nota**.
 - O destino fica lembrado entre aberturas do popup.
 - Novo cartão parecido com um existente (título ou mesmo contato com cartão

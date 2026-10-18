@@ -1,7 +1,7 @@
 // Tarefas (spec 02) e tipos de tarefa. O vínculo com negócio/ticket/projeto
 // ("Vinculado a") é opcional.
 import { nowIso } from "../lib/ids";
-import { startOfDay } from "../lib/taskTiming";
+import { OVERDUE_COND, overdueParams, startOfDay } from "../lib/taskTiming";
 import { normalizeIsoDate, optionalText, requireText, ValidationError } from "../lib/validate";
 import { getCustomValues, setCustomValues, type CustomValue } from "./customFields";
 import { getCardRow } from "./deals";
@@ -51,7 +51,7 @@ export function updateActivityType(
   if (patch.position !== undefined) data.position = patch.position;
   if (patch.active !== undefined) {
     if (!patch.active && listActivityTypes(db).filter((t) => t.id !== id).length === 0) {
-      throw new ValidationError("É preciso manter pelo menos um tipo de tarefa ativo.");
+      throw new ValidationError("É preciso manter pelo menos um tipo de atividade ativo.");
     }
     data.active = patch.active ? 1 : 0;
   }
@@ -62,7 +62,7 @@ export function updateActivityType(
 export function defaultActivityTypeId(db: DatabaseSync): string {
   const types = listActivityTypes(db);
   const t = types.find((x) => x.name === "Tarefa") ?? types[0];
-  if (!t) throw new ValidationError("Cadastre um tipo de tarefa.");
+  if (!t) throw new ValidationError("Cadastre um tipo de atividade.");
   return t.id;
 }
 
@@ -143,7 +143,7 @@ function minutes(value: number | null | undefined, label: string, allowNull: boo
 }
 
 function checkType(db: DatabaseSync, typeId: string): string {
-  if (!one(db, "SELECT 1 FROM activity_type WHERE id = ? AND deleted_at IS NULL", typeId)) throw new ValidationError("Tipo de tarefa não encontrado.");
+  if (!one(db, "SELECT 1 FROM activity_type WHERE id = ? AND deleted_at IS NULL", typeId)) throw new ValidationError("Tipo de atividade não encontrado.");
   return typeId;
 }
 
@@ -178,7 +178,7 @@ export function createActivity(db: DatabaseSync, ctx: DbContext, input: Activity
     const start = normalizeIsoDate(input.dueAt, "Início") ?? nowIso();
     const id = insertRow(db, ctx, "activity", {
       type_id: checkType(db, input.typeId ?? defaultActivityTypeId(db)),
-      title: requireText(input.title, "Informe o nome da tarefa."),
+      title: requireText(input.title, "Informe o nome da atividade."),
       description: optionalText(input.description),
       due_at: start,
       end_at: checkEnd(start, normalizeIsoDate(input.endAt, "Finalização")),
@@ -206,10 +206,10 @@ export function getActivity(db: DatabaseSync, id: string): (Activity & { customV
 export function updateActivity(db: DatabaseSync, ctx: DbContext, id: string, patch: Partial<ActivityInput>): void {
   withTransaction(db, () => {
     const current = getActivity(db, id);
-    if (!current) throw new ValidationError("Tarefa não encontrada.");
+    if (!current) throw new ValidationError("Atividade não encontrada.");
     const data: Record<string, SqlValue> = links(db, patch, current);
     if (patch.typeId !== undefined) data.type_id = checkType(db, patch.typeId);
-    if (patch.title !== undefined) data.title = requireText(patch.title, "Informe o nome da tarefa.");
+    if (patch.title !== undefined) data.title = requireText(patch.title, "Informe o nome da atividade.");
     if (patch.description !== undefined) data.description = optionalText(patch.description);
     if (patch.dueAt !== undefined) data.due_at = normalizeIsoDate(patch.dueAt, "Início") ?? current.due_at;
     if (patch.endAt !== undefined) data.end_at = normalizeIsoDate(patch.endAt, "Finalização");
@@ -268,9 +268,8 @@ export interface ActivityFilter {
  * Atrasada (mesma regra de isOverdue em lib/taskTiming): finalização vencida;
  * sem finalização, início antes de hoje. Parâmetros: overdueParams(agora).
  */
-export const OVERDUE_COND = "((a.end_at IS NOT NULL AND a.end_at < ?) OR (a.end_at IS NULL AND a.due_at < ?))";
+export { OVERDUE_COND, overdueParams };
 export const OVERDUE = `a.done = 0 AND ${OVERDUE_COND}`;
-export const overdueParams = (now = new Date()): [string, string] => [now.toISOString(), startOfDay(now).toISOString()];
 /** Fim efetivo da tarefa para filtros por período (parâmetro: agora). */
 const EFFECTIVE_END = "COALESCE(a.end_at, CASE WHEN a.done = 0 THEN MAX(a.due_at, ?) ELSE COALESCE(a.done_at, a.due_at) END)";
 

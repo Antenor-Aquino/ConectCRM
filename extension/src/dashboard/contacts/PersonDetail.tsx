@@ -151,7 +151,7 @@ export function PersonDetail({
           <Tabs<Tab>
             tabs={[
               ["negocios", "Negócios"],
-              ["tarefas", "Tarefas"],
+              ["tarefas", "Atividades"],
               ["documentos", "Documentos"],
               ["notas", "Notas"],
               ["historico", "Histórico"],

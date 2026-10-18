@@ -45,14 +45,14 @@ como na gestão financeira.
 | Gestão financeira | Uso no ConectCRM |
 |---|---|
 | Barra superior com logo + nome do sistema e subtítulo da tela ("Gestão Financeira / Lançamentos") | "**ConectCRM** / *tela atual*" |
-| Itens de menu com ícone e item ativo em destaque | Funis · Tarefas · Contatos · Organizações · Relatórios · Configurações, + botão "+" |
+| Itens de menu com ícone e item ativo em destaque | Funis · Atividades · Contatos · Organizações · Relatórios · Configurações, + botão "+" |
 | Guia, Ajuda, chave **Produção / Teste**, sino com contador, Sair | Iguais |
-| Barra de período (‹ Outubro ›, Hoje, 7 dias atrás, Esse mês, Esse ano, intervalo de datas, Limpar filtro, Filtros avançados) | Filtros de Tarefas e Relatórios |
+| Barra de período (‹ Outubro ›, Hoje, 7 dias atrás, Esse mês, Esse ano, intervalo de datas, Limpar filtro, Filtros avançados) | Filtros de Atividades e Relatórios |
 | Cards de KPI com borda lateral colorida e detalhamento | Topo de Relatórios e indicadores do funil |
-| Cards de alerta clicáveis que filtram a lista | Tarefas atrasadas, vencendo, negócios parados |
+| Cards de alerta clicáveis que filtram a lista | Atividades atrasadas, vencendo, negócios parados |
 | Abas segmentadas (Todas / Receitas / Despesas) + botões de ação coloridos | Ex.: Abertos / Ganhos / Perdidos |
-| Barra de busca com filtro de responsável e botões de status | Listas de contatos, organizações e tarefas |
-| Tabela com ordenação, agrupamento com total (ex.: "Antenor · 10 lançamentos · R$ 9.950,00"), badges de status, ações por linha, paginação, **Exportar Excel**, configuração de colunas | Listas de contatos, organizações, negócios e tarefas |
+| Barra de busca com filtro de responsável e botões de status | Listas de contatos, organizações e atividades |
+| Tabela com ordenação, agrupamento com total (ex.: "Antenor · 10 lançamentos · R$ 9.950,00"), badges de status, ações por linha, paginação, **Exportar Excel**, configuração de colunas | Listas de contatos, organizações, negócios e atividades |
 | Modais, drawer de filtros, central de notificações, tela de PIN | Iguais |
 
 ## 5. Mockups de CRM × padrão financeiro

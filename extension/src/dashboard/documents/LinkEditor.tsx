@@ -32,7 +32,7 @@ export function LinkEditor({ value, onChange }: { value: DocLink[]; onChange: (l
         <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
         <input
           className={`${inputClass} pl-8`}
-          placeholder="Vincular também a… (cartão, tarefa, contato ou organização)"
+          placeholder="Vincular também a… (cartão, atividade, contato ou organização)"
           value={q}
           onChange={(e) => {
             setQ(e.target.value);

@@ -146,7 +146,7 @@ export function TargetSection({
           Novo
         </TaButton>
         <TaButton size="sm" disabled={!card} startIcon={<ListPlus size={14} />} onClick={() => onNewTask(false)}>
-          Tarefa
+          Atividade
         </TaButton>
         <TaButton size="sm" disabled={!card} startIcon={<CalendarPlus size={14} />} onClick={() => onNewTask(true)}>
           Reunião

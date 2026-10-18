@@ -27,7 +27,7 @@ const SECTIONS: { id: Section | null; label: string; icon: React.ReactNode; phas
   { id: "campos", label: "Campos personalizados", icon: <SlidersHorizontal size={16} /> },
   { id: "produtos", label: "Produtos e serviços", icon: <Package size={16} /> },
   { id: "motivos", label: "Motivos de perda", icon: <Ban size={16} /> },
-  { id: "tipos", label: "Tipos de tarefa", icon: <ListChecks size={16} /> },
+  { id: "tipos", label: "Tipos de atividade", icon: <ListChecks size={16} /> },
   { id: "documentos", label: "Documentos (GED)", icon: <FileText size={16} /> },
   { id: "ia", label: "Inteligência artificial", icon: <Sparkles size={16} /> },
   { id: "backup", label: "Backup e ambiente", icon: <Database size={16} /> },

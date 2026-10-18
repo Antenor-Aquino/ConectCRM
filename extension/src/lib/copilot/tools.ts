@@ -23,7 +23,7 @@ export const DATA_TOOLS: ToolDef[] = [
   {
     name: "buscar_cartoes",
     description:
-      "Lista negócios, tickets e etapas de projeto com funil, etapa, valor, contato, responsável, dias na etapa, próxima tarefa e tarefas atrasadas. " +
+      "Lista negócios, tickets e etapas de projeto com funil, etapa, valor, contato, responsável, dias na etapa, próxima atividade e atividades atrasadas. " +
       "Use para perguntas sobre negócios específicos, maiores negócios, negócios de alguém ou de um funil. Devolve também o total e a soma dos valores.",
     parameters: {
       type: "object",
@@ -41,7 +41,7 @@ export const DATA_TOOLS: ToolDef[] = [
   {
     name: "detalhar_cartao",
     description:
-      "Tudo de um cartão pelo id: dados, contato (telefone/e-mail), itens, tarefas pendentes e concluídas, últimas notas, etapas percorridas com dias. " +
+      "Tudo de um cartão pelo id: dados, contato (telefone/e-mail), itens, atividades pendentes e concluídas, últimas notas, etapas percorridas com dias. " +
       "Use para resumir um negócio, entender o histórico ou sugerir o próximo passo. O id vem de buscar_cartoes ou do contexto.",
     parameters: { type: "object", properties: { id: str("Id do cartão") }, required: ["id"] },
   },
@@ -64,7 +64,7 @@ export const DATA_TOOLS: ToolDef[] = [
   {
     name: "listar_tarefas",
     description:
-      "Tarefas pendentes: atrasadas (finalização vencida ou, sem finalização, início antes de hoje; da mais atrasada para a menos), de hoje, dos próximos 7 dias " +
+      "Atividades pendentes: atrasadas (finalização vencida ou, sem finalização, início antes de hoje; da mais atrasada para a menos), de hoje, dos próximos 7 dias " +
       "ou todas as pendentes, com cartão vinculado, responsável e atrasadaHaDias.",
     parameters: {
       type: "object",
@@ -77,7 +77,7 @@ export const DATA_TOOLS: ToolDef[] = [
   {
     name: "negocios_parados",
     description:
-      "Cartões abertos sem movimento (mudança de etapa, tarefa concluída ou nota) há muitos dias. Sem 'dias', usa o limite 'parado após' de cada etapa (ou 14 dias). " +
+      "Cartões abertos sem movimento (mudança de etapa, atividade concluída ou nota) há muitos dias. Sem 'dias', usa o limite 'parado após' de cada etapa (ou 14 dias). " +
       "Use para pontos de atenção, follow-ups esquecidos e risco no funil.",
     parameters: {
       type: "object",
@@ -95,7 +95,7 @@ export const DATA_TOOLS: ToolDef[] = [
   },
   {
     name: "estrutura_do_crm",
-    description: "Funis com etapas (probabilidade, limite de dias parado), usuários com papel, equipes com membros, motivos de perda e tipos de tarefa.",
+    description: "Funis com etapas (probabilidade, limite de dias parado), usuários com papel, equipes com membros, motivos de perda e tipos de atividade.",
     parameters: { type: "object", properties: {} },
   },
 ];
@@ -178,7 +178,7 @@ export const RESPOND_TOOL: ToolDef = {
             tipo: str("Tipo da ação", { enum: ["criar_tarefa", "adicionar_nota", "abrir_cartao", "criar_cartao"] }),
             rotulo: str("Texto do botão, no imperativo (ex.: 'Criar cartão \"Conserto Gaveta Miguel\" em Casa › A fazer')"),
             cartaoId: str("Id do cartão; em criar_cartao, string vazia"),
-            titulo: str("criar_tarefa: título da tarefa; criar_cartao: título do cartão; senão null", { nullable: true }),
+            titulo: str("criar_tarefa: título da atividade; criar_cartao: título do cartão; senão null", { nullable: true }),
             funilId: str("criar_cartao: id do funil (de estrutura_do_crm); senão null", { nullable: true }),
             etapaId: str("criar_cartao: id da etapa (de estrutura_do_crm; null = primeira etapa); senão null", { nullable: true }),
             quando: str("criar_tarefa: data e hora local AAAA-MM-DDTHH:MM; senão null", { nullable: true }),
@@ -189,7 +189,7 @@ export const RESPOND_TOOL: ToolDef = {
       },
       sugestoes: {
         type: "array",
-        description: "2 a 4 próximos pedidos que o usuário pode fazer com um clique, escritos como o usuário falaria (imperativo, sem '?'), ex.: 'Liste minhas tarefas de hoje'",
+        description: "2 a 4 próximos pedidos que o usuário pode fazer com um clique, escritos como o usuário falaria (imperativo, sem '?'), ex.: 'Liste minhas atividades de hoje'",
         items: { type: "string" },
       },
     },

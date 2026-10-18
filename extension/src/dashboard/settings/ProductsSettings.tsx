@@ -36,7 +36,7 @@ export function ProductsSettings() {
   return (
     <TaPanel
       title="Produtos e serviços"
-      subtitle="Catálogo usado em “Adicionar produtos” nos negócios."
+      subtitle="Catálogo usado em “Adicionar” (produtos e serviços) nos cartões de todos os funis."
       action={
         canEdit && (
           <span className="flex gap-2">
@@ -217,7 +217,7 @@ function ProductModal({
         <TaTextarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
       </Field>
       <div className="flex items-center justify-between rounded-xl border border-gray-200 px-4 py-3 text-theme-sm font-medium dark:border-gray-800">
-        Ativo (aparece em “Adicionar produtos”)
+        Ativo (aparece em “Adicionar” nos cartões)
         <Switch checked={active} onChange={setActive} />
       </div>
       <ErrorText>{error}</ErrorText>

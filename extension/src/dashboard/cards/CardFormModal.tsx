@@ -184,7 +184,7 @@ export function CardFormModal({
               onClick={() => setItemsOpen(true)}
             >
               <PlusCircle size={16} />
-              {items.length ? `${items.length} produto(s) — editar` : "Adicionar produtos"}
+              {items.length ? `${items.length} produto(s) — editar` : "Adicionar"}
             </button>
           </div>
         </>

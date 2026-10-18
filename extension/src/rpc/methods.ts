@@ -45,7 +45,7 @@ const MANAGERS: users.Role[] = ["admin", "gestor"];
 function assertActivityAccess(db: DatabaseSync, ctx: DbContext, id: string): void {
   const scope = activities.activityScope(db, viewer(db, ctx));
   const ok = one(db, `SELECT 1 FROM activity a WHERE a.id = ? AND a.deleted_at IS NULL${scope.sql ? ` AND ${scope.sql}` : ""}`, id, ...scope.params);
-  if (!ok) throw new ValidationError("Tarefa não encontrada ou sem permissão de acesso.");
+  if (!ok) throw new ValidationError("Atividade não encontrada ou sem permissão de acesso.");
 }
 
 /** Cadastro onde se anexa ou a que se vincula um documento: segue a permissão dele. */
@@ -329,11 +329,11 @@ export const methods = {
   // Tarefas
   "activityTypes.list": (db: DatabaseSync, _c: DbContext, p: { includeInactive?: boolean } = {}) => activities.listActivityTypes(db, p),
   "activityTypes.create": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof activities.createActivityType>[2]) => {
-    assertRole(db, ctx, MANAGERS, "tipos de tarefa");
+    assertRole(db, ctx, MANAGERS, "tipos de atividade");
     return activities.createActivityType(db, ctx, p);
   },
   "activityTypes.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Parameters<typeof activities.updateActivityType>[3] }) => {
-    assertRole(db, ctx, MANAGERS, "tipos de tarefa");
+    assertRole(db, ctx, MANAGERS, "tipos de atividade");
     return activities.updateActivityType(db, ctx, p.id, p.patch);
   },
   "activities.list": (db: DatabaseSync, ctx: DbContext, p: Omit<activities.ActivityFilter, "viewer"> = {}) =>

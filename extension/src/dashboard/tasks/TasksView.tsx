@@ -173,7 +173,7 @@ export function TasksView({
   }, [rows, period]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const alerts: { key: Period; label: string; n: number; icon: React.ReactNode; cls: string }[] = [
-    { key: "atrasadas", label: "Tarefas atrasadas", n: counters.overdue, icon: <AlertTriangle size={20} />, cls: "border-error-200 bg-error-50 text-error-700" },
+    { key: "atrasadas", label: "Atividades atrasadas", n: counters.overdue, icon: <AlertTriangle size={20} />, cls: "border-error-200 bg-error-50 text-error-700" },
     { key: "hoje", label: "Para hoje", n: counters.today, icon: <Sun size={20} />, cls: "border-brand-200 bg-brand-25 text-brand-700" },
     { key: "proximos7", label: "Próximos 7 dias", n: counters.next7, icon: <CalendarClock size={20} />, cls: "border-warning-200 bg-warning-25 text-warning-700" },
   ];
@@ -342,7 +342,7 @@ export function TasksView({
             {al.icon}
             <span>
               <span className="block text-theme-sm font-semibold">{al.label}</span>
-              <span className="block text-theme-xs opacity-80">{al.n} tarefa(s)</span>
+              <span className="block text-theme-xs opacity-80">{al.n} atividade(s)</span>
             </span>
           </button>
         ))}
@@ -353,7 +353,7 @@ export function TasksView({
           <Search size={16} className="pointer-events-none absolute left-3 top-3 text-gray-400" />
           <input
             className="h-10 w-full rounded-lg border border-gray-300 bg-white pl-9 pr-3 text-theme-sm placeholder:text-gray-400 focus:border-brand-300 focus:outline-none focus:ring-4 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
-            placeholder="Pesquisar tarefas…"
+            placeholder="Pesquisar atividades…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -385,14 +385,14 @@ export function TasksView({
           <option value="todas">Todas</option>
         </TaSelect>
         <TaButton variant="primary" startIcon={<Plus size={15} />} onClick={() => setModal({})}>
-          Tarefa
+          Atividade
         </TaButton>
       </div>
 
       <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-theme-xs dark:border-gray-800 dark:bg-gray-900">
         {mode === "lista" ? (
           groups.length === 0 ? (
-            <p className="py-10 text-center text-theme-sm text-gray-500">Nenhuma tarefa neste período.</p>
+            <p className="py-10 text-center text-theme-sm text-gray-500">Nenhuma atividade neste período.</p>
           ) : (
             groups.map(([label, items]) => (
               <section key={label} className="mb-4 last:mb-0">

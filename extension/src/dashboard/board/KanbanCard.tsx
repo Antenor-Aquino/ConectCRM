@@ -11,6 +11,7 @@ import { parseCardFields } from "../../lib/cardFields";
 import { outcomeLabel } from "../../lib/cardTypes";
 import { formatDate } from "../../lib/format";
 import { Avatar } from "../ui/Avatar";
+import { ActivityIndicator } from "./ActivityIndicator";
 
 /** Rótulo curto antes do valor (vazio = só ícone). */
 const PREFIX: Record<string, string> = {
@@ -21,7 +22,7 @@ const PREFIX: Record<string, string> = {
   prazo: "Prazo",
   etapa_dias: "Na etapa há",
   proxima_tarefa: "Próxima",
-  tarefas: "Tarefas",
+  tarefas: "Atividades",
   notas: "Notas",
   origem: "Origem",
   criado_em: "Criado em",
@@ -58,7 +59,20 @@ export interface CardOutcome {
 }
 
 /** Corpo do cartão a partir dos campos; usado no quadro e na prévia da configuração. */
-export function CardFields({ title, keys, fields, outcome }: { title: string; keys: string[]; fields: Record<string, CardFieldValue>; outcome?: CardOutcome | null }) {
+export function CardFields({
+  title,
+  keys,
+  fields,
+  outcome,
+  indicator,
+}: {
+  title: string;
+  keys: string[];
+  fields: Record<string, CardFieldValue>;
+  outcome?: CardOutcome | null;
+  /** Indicador de atividades (cartões em aberto do quadro). */
+  indicator?: React.ReactNode;
+}) {
   const text = (k: string) => {
     const v = fields[k];
     return v && "text" in v ? v : null;
@@ -118,7 +132,7 @@ export function CardFields({ title, keys, fields, outcome }: { title: string; ke
             </div>
           );
         })}
-      {(owner || outcome) && (
+      {(owner || outcome || indicator) && (
         <div className="mt-2.5 flex items-center justify-between gap-2">
           {outcome ? (
             <span
@@ -134,7 +148,10 @@ export function CardFields({ title, keys, fields, outcome }: { title: string; ke
           ) : (
             <span />
           )}
-          {owner && <Avatar name={owner.text} size={24} title={`Responsável: ${owner.text}`} />}
+          <span className="flex items-center gap-1.5">
+            {indicator}
+            {owner && <Avatar name={owner.text} size={24} title={`Responsável: ${owner.text}`} />}
+          </span>
         </div>
       )}
     </>
@@ -148,11 +165,17 @@ export function KanbanCard({
   onOpen,
   onDragStart,
   onDragEnd,
+  onOpenActivity,
+  onNewActivity,
+  onChanged,
 }: {
   card: BoardCard;
   pipeline: Pipeline;
   dragging: boolean;
   onOpen: () => void;
+  onOpenActivity?: (id: string) => void;
+  onNewActivity?: () => void;
+  onChanged?: () => void;
   onDragStart: (e: React.DragEvent) => void;
   onDragEnd: () => void;
 }) {
@@ -184,7 +207,17 @@ export function KanbanCard({
           {outcome.won ? <Check size={14} strokeWidth={3} className="absolute right-1 top-1" /> : <X size={14} strokeWidth={3} className="absolute right-1 top-1" />}
         </span>
       )}
-      <CardFields title={card.title} keys={parseCardFields(pipeline.card_fields, pipeline.type)} fields={card.fields} outcome={outcome} />
+      <CardFields
+        title={card.title}
+        keys={parseCardFields(pipeline.card_fields, pipeline.type)}
+        fields={card.fields}
+        outcome={outcome}
+        indicator={
+          card.status === "open" && onOpenActivity && onNewActivity ? (
+            <ActivityIndicator card={card} onOpenActivity={onOpenActivity} onNewActivity={onNewActivity} onChanged={onChanged ?? (() => undefined)} />
+          ) : null
+        }
+      />
     </div>
   );
 }

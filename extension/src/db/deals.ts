@@ -8,6 +8,7 @@ import { KIND_BY_PIPELINE_TYPE, type DealKind, type PipelineType } from "./pipel
 import { getProduct, RECURRENCES, type Recurrence } from "./products";
 import { cardFieldValues, type CardFieldValue } from "./cardFieldValues";
 import { isCardFieldKey } from "../lib/cardFields";
+import { OVERDUE_COND, overdueParams, startOfDay } from "../lib/taskTiming";
 import { getRow, insertRow, softDelete, updateRow, type DbContext } from "./repo";
 import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
 import { getEntityTags, setEntityTags, type Tag } from "./tags";
@@ -436,6 +437,10 @@ export interface BoardCard {
   tasks_total: number;
   tasks_done: number;
   next_task_due_at: string | null;
+  /** Indicador de atividades do cartão: atrasadas, de hoje (não atrasadas) e pendentes. */
+  act_overdue: number;
+  act_today: number;
+  act_pending: number;
   notes_count: number;
   /** Campos configurados no funil (lib/cardFields), já formatados. */
   fields: Record<string, CardFieldValue>;
@@ -503,6 +508,9 @@ export function getBoard(
     params.push(q, q, q);
   }
   const scope = cardScope(db, opts.viewer);
+  const now = new Date();
+  const today0 = startOfDay(now).toISOString();
+  const today1 = new Date(startOfDay(now).getTime() + 86_400_000).toISOString();
   const cards = many<BoardCard & { stage_id: string }>(
     db,
     `SELECT d.id, d.stage_id, d.title, d.value_cents, d.status, d.person_id, p.name AS person_name, o.name AS organization_name,
@@ -510,6 +518,10 @@ export function getBoard(
        (SELECT COUNT(*) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL) AS tasks_total,
        (SELECT COUNT(*) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 1) AS tasks_done,
        (SELECT MIN(a.due_at) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0) AS next_task_due_at,
+       (SELECT COUNT(*) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0 AND ${OVERDUE_COND}) AS act_overdue,
+       (SELECT COUNT(*) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0 AND NOT ${OVERDUE_COND}
+          AND ((a.due_at >= ? AND a.due_at < ?) OR (a.end_at IS NOT NULL AND a.end_at >= ? AND a.end_at < ?))) AS act_today,
+       (SELECT COUNT(*) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0) AS act_pending,
        (SELECT COUNT(*) FROM note n WHERE n.entity_type = 'deal' AND n.entity_id = d.id AND n.deleted_at IS NULL) AS notes_count
      FROM deal d
      LEFT JOIN person p ON p.id = d.person_id
@@ -517,6 +529,12 @@ export function getBoard(
      LEFT JOIN app_user u ON u.id = d.owner_id
      WHERE ${where.join(" AND ")}${scope.sql}
      ORDER BY ${SORT_SQL[opts.sort ?? "recent"]}, d.position`,
+    ...overdueParams(now),
+    ...overdueParams(now),
+    today0,
+    today1,
+    today0,
+    today1,
     ...params,
     ...scope.params,
   );

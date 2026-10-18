@@ -14,7 +14,7 @@
 | **Palavras-chave** | Tags da entidade "Documento" |
 | **Descrição** | Opcional |
 | **Restrito** | Só quem enviou, administradores e o responsável por um cartão vinculado veem |
-| **Vínculos** | Contatos, organizações, cartões (negócio, ticket, projeto) e tarefas, quantos forem |
+| **Vínculos** | Contatos, organizações, cartões (negócio, ticket, projeto) e atividades, quantos forem |
 
 **Tipos padrão:** Comprovante de endereço (90 dias), Documento de
 identificação, CPF/CNPJ, Contrato, Proposta, Nota fiscal, Comprovante de
@@ -25,21 +25,21 @@ padrão, ordem e ativo são editáveis; excluir um tipo deixa os documentos dele
 ## 2. Vínculos automáticos ("tudo que está na tela")
 
 Na janela **Novo documento** os vínculos já vêm marcados (etiquetas cinza =
-automáticos); dá para tirar ou acrescentar (busca de cartão, tarefa, contato
+automáticos); dá para tirar ou acrescentar (busca de cartão, atividade, contato
 ou organização).
 
 | Onde anexa | Vínculos |
 |---|---|
-| Tarefa | tarefa + cartão + contato + organização (da tarefa ou do cartão) |
+| Atividade | atividade + cartão + contato + organização (da atividade ou do cartão) |
 | Cartão | cartão + contato + organização |
 | Contato | contato + organizações dele |
 | Organização | organização |
 | Popup do WhatsApp (arquivos e recortes) | cartão escolhido + contato + organização |
 | GED | nenhum (o usuário escolhe) |
 
-- Os vínculos ficam como gravados no envio (se a tarefa mudar de cartão, o
+- Os vínculos ficam como gravados no envio (se a atividade mudar de cartão, o
   documento não muda). Editáveis no documento → Vínculos.
-- Tarefa nova: os arquivos escolhidos aguardam; ao salvar a tarefa abre a
+- Atividade nova: os arquivos escolhidos aguardam; ao salvar a atividade abre a
   janela Novo documento já vinculada a ela.
 - **Arquivo repetido** (mesmo SHA-256): a janela avisa "já está no GED como
   …" e oferece **vincular o existente** (padrão) ou enviar como novo.
@@ -56,7 +56,7 @@ maiúsculas) usa o existente.
 
 Cada arquivo da janela "Novo documento" pergunta **"Transcrever com IA?"**
 (desmarcado). O texto vira uma **nota** no cadastro de origem (ou no 1º
-vínculo: cartão, tarefa, contato, organização) com a referência ao documento
+vínculo: cartão, atividade, contato, organização) com a referência ao documento
 ("Arquivo: …"), e também entra na busca do GED. Antes de enviar, a janela
 diz o que esperar:
 
@@ -73,7 +73,7 @@ Sem IA configurada, a opção fica desabilitada com o aviso (exceto PDF com
 texto). Se a transcrição falhar (cota, chave, sem texto), o documento é
 salvo assim mesmo e a janela lista o motivo antes de fechar.
 
-## 3. Aba "Documentos" (cartão, tarefa, contato, organização)
+## 3. Aba "Documentos" (cartão, atividade, contato, organização)
 
 - Lista: ícone, nome, classificação, validade, restrito, arquivo, tamanho,
   versão e "Também em:" (os outros vínculos, clicáveis).
@@ -81,7 +81,7 @@ salvo assim mesmo e a janela lista o motivo antes de fechar.
   continua no GED e nos outros) e **lixeira** (sai de todos os cadastros).
 - Anexar: botão ou arrastar arquivos para a aba.
 - Histórico do cartão: "Vinculou/Desvinculou o documento X".
-- Lista de tarefas: chips dos documentos (clique baixa).
+- Lista de atividades: chips dos documentos (clique baixa).
 
 ## 4. Menu GED
 
@@ -91,7 +91,7 @@ salvo assim mesmo e a janela lista o motivo antes de fechar.
   palavras-chave, datas (dd/mm/aaaa), quem enviou, nomes e e-mail/CNPJ dos
   vínculos, funil, e o **texto de dentro dos PDFs**. Sem acento, sem
   maiúsculas, pedaço de palavra e em qualquer ordem ("comp ender regina").
-- **Filtros**: classificação, funil, vinculado a (cartão/tarefa/contato/
+- **Filtros**: classificação, funil, vinculado a (cartão/atividade/contato/
   organização), formato (PDF, imagem, planilha, texto, outros), validade,
   enviado por, período de envio, palavras-chave, só sem vínculo, lixeira.
   Ficam na URL (`#ged?...`).
@@ -117,7 +117,7 @@ salvo assim mesmo e a janela lista o motivo antes de fechar.
 - Administrador vê tudo; quem enviou sempre vê.
 - Restrito: + responsável por um cartão vinculado.
 - Demais: vê se puder ver algum cadastro vinculado (contato e organização são
-  de todos; cartão e tarefa seguem a regra do funil/tarefas); sem vínculo,
+  de todos; cartão e atividade seguem a regra do funil/atividades); sem vínculo,
   todos veem.
 - Vincular exige acesso ao cadastro. Lixeira, restaurar e marcar restrito:
   quem enviou, gestor ou administrador. Excluir definitivamente: administrador.
@@ -135,7 +135,7 @@ salvo assim mesmo e a janela lista o motivo antes de fechar.
 - Backup automático: além do `.sqlite`, copia para `documentos/` só os
   arquivos novos. Cópia manual: `.zip` (banco + documentos). Restaurar aceita
   `.zip` ou `.sqlite` (neste caso busca os documentos na pasta de backup).
-- Atualização da 0.1.x: anexos de cartão e tarefa viram documentos "não
+- Atualização da 0.1.x: anexos de cartão e atividade viram documentos "não
   classificados" com os vínculos da regra acima; o conteúdo sai do banco na
   primeira abertura e o texto dos PDFs é lido ao abrir o GED.
 

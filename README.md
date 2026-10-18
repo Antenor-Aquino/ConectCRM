@@ -1,6 +1,6 @@
 # ConectCRM
 
-CRM local como extensão do Chrome (Manifest V3): funis, Kanban, tarefas,
+CRM local como extensão do Chrome (Manifest V3): funis, Kanban, atividades,
 contatos, organizações e relatórios, com os dados no próprio computador.
 
 - Planejamento: [`PLANEJAMENTO.md`](PLANEJAMENTO.md)
@@ -77,7 +77,7 @@ exemplo.
 ### WhatsApp e inteligência artificial
 
 Com o WhatsApp Web aberto, clique no ícone do ConectCRM: o popup identifica o
-contato da conversa pelo telefone e grava notas, tarefas, reuniões, recortes de
+contato da conversa pelo telefone e grava notas, atividades, reuniões, recortes de
 tela e arquivos no cartão escolhido (detalhes em
 [`especificacoes/05-whatsapp.md`](especificacoes/05-whatsapp.md)). Para resumir
 recortes e transcrever áudios, informe a chave do provedor em
@@ -95,15 +95,15 @@ probabilidade de cada etapa é definida nas configurações do funil.
 ### Copiloto de IA
 
 Botão **Copiloto** no topo (ou **Perguntar ao Copiloto** no cartão): perguntas
-em linguagem natural sobre negócios, tarefas e vendas, respondidas com consultas
-reais ao banco local e com ações sugeridas (criar tarefa, nota) que só são
+em linguagem natural sobre negócios, atividades e vendas, respondidas com consultas
+reais ao banco local e com ações sugeridas (criar atividade, nota) que só são
 aplicadas com um clique. Usa o provedor de **Configurações → Inteligência
 artificial** (detalhes em [`especificacoes/07-copiloto-ia.md`](especificacoes/07-copiloto-ia.md)).
 
 ### GED (documentos)
 
-Todo arquivo anexado (cartão, tarefa, contato, organização, popup) vira um
-documento com nome, classificação, validade e vínculos — anexado numa tarefa,
+Todo arquivo anexado (cartão, atividade, contato, organização, popup) vira um
+documento com nome, classificação, validade e vínculos — anexado numa atividade,
 aparece também no cartão, no contato e na organização. O menu **GED** busca em
 qualquer campo (inclusive no texto dos PDFs), filtra, mostra a prévia de PDFs e
 imagens, guarda versões e a trilha de auditoria. Os arquivos ficam no

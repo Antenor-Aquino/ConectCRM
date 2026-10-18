@@ -245,19 +245,19 @@ export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
     }
     if (t === "activity") {
       const title = `"${next.title}"`;
-      if (l.op === "insert") return [`Criou a tarefa ${title} com início em ${formatDateTime(String(next.due_at))}${next.end_at ? ` e finalização em ${formatDateTime(String(next.end_at))}` : ""}`];
-      if (l.op === "delete") return [`Excluiu a tarefa ${title}`];
+      if (l.op === "insert") return [`Criou a atividade ${title} com início em ${formatDateTime(String(next.due_at))}${next.end_at ? ` e finalização em ${formatDateTime(String(next.end_at))}` : ""}`];
+      if (l.op === "delete") return [`Excluiu a atividade ${title}`];
       const out: string[] = [];
-      if (ch.done) out.push(ch.done[1] ? `Concluiu a tarefa ${title}` : `Reabriu a tarefa ${title}`);
-      if (ch.due_at) out.push(`Remarcou o início da tarefa ${title}: ${formatDateTime(String(ch.due_at[0]))} → ${formatDateTime(String(ch.due_at[1]))}`);
+      if (ch.done) out.push(ch.done[1] ? `Concluiu a atividade ${title}` : `Reabriu a atividade ${title}`);
+      if (ch.due_at) out.push(`Remarcou o início da atividade ${title}: ${formatDateTime(String(ch.due_at[0]))} → ${formatDateTime(String(ch.due_at[1]))}`);
       if (ch.end_at) {
         const f = (v: unknown) => (v ? formatDateTime(String(v)) : "sem finalização");
-        out.push(`Finalização da tarefa ${title}: ${f(ch.end_at[0])} → ${f(ch.end_at[1])}`);
+        out.push(`Finalização da atividade ${title}: ${f(ch.end_at[0])} → ${f(ch.end_at[1])}`);
       }
-      if (ch.title) out.push(`Renomeou a tarefa: "${ch.title[0]}" → "${ch.title[1]}"`);
-      if (ch.owner_id) out.push(`Tarefa ${title}: responsável ${name(users, ch.owner_id[0])} → ${name(users, ch.owner_id[1])}`);
-      if (ch.deal_id && ch.deal_id[1] === cardId && ch.deal_id[0] !== cardId) out.push(`Vinculou a tarefa ${title} a este cartão`);
-      if (ch.deal_id && ch.deal_id[0] === cardId) out.push(`Desvinculou a tarefa ${title} deste cartão`);
+      if (ch.title) out.push(`Renomeou a atividade: "${ch.title[0]}" → "${ch.title[1]}"`);
+      if (ch.owner_id) out.push(`Atividade ${title}: responsável ${name(users, ch.owner_id[0])} → ${name(users, ch.owner_id[1])}`);
+      if (ch.deal_id && ch.deal_id[1] === cardId && ch.deal_id[0] !== cardId) out.push(`Vinculou a atividade ${title} a este cartão`);
+      if (ch.deal_id && ch.deal_id[0] === cardId) out.push(`Desvinculou a atividade ${title} deste cartão`);
       return out;
     }
     return [];

@@ -101,7 +101,7 @@ describe("histórico com origem clicável", () => {
     const refOf = (start: string) => pairs.find(([l]) => String(l).startsWith(start))?.[1];
     expect(refOf("Adicionou nota: \"Primeira")).toEqual({ kind: "note", id: note });
     expect(refOf("Adicionou nota: \"Nota apagada")).toBeNull();
-    expect(refOf("Criou a tarefa")).toEqual({ kind: "activity", id: task });
+    expect(refOf("Criou a atividade")).toEqual({ kind: "activity", id: task });
     expect(refOf("Criou o cartão")).toBeNull();
   });
 });
@@ -137,5 +137,30 @@ describe("erros da IA", () => {
     const msg = "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.";
     expect(translateAiError("OpenAI", msg, 400)).toMatch(/recusou um parâmetro/);
     expect(translateAiError("OpenAI", "The model `gpt-x` does not exist or you do not have access to it.", 404)).toMatch(/não encontrado/);
+  });
+});
+
+describe("copiloto com modelo de raciocínio da OpenAI", () => {
+  it("repete com reasoning_effort 'none' quando o modelo exige e lembra para os próximos envios", async () => {
+    const { askCopilot } = await import("../src/lib/copilot/agent");
+    const bodies: any[] = [];
+    const reply = { choices: [{ message: { content: null, tool_calls: [{ id: "t", function: { name: "responder", arguments: JSON.stringify({ titulo: "Ok", acoes: [], sugestoes: [] }) } }] } }] };
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      const b = JSON.parse(String(init.body));
+      bodies.push(b);
+      if (b.reasoning_effort !== "none")
+        return new Response(
+          JSON.stringify({ error: { message: "Function tools with reasoning_effort are not supported for gpt-5.6-sol in /v1/chat/completions. To use function tools, use /v1/responses or set reasoning_effort to 'none'." } }),
+          { status: 400 },
+        );
+      return new Response(JSON.stringify(reply), { status: 200 });
+    }) as typeof fetch;
+    const s = { provider: "openai" as const, keys: { openai: "k" }, models: { openai: "gpt-5.6-sol" }, prompt1: "", prompt2: "" };
+    const ctx = { userName: "Antenor", userRole: "administrador" };
+    expect((await askCopilot(s, [{ role: "user", content: "Resuma" }], ctx, async () => ({}))).titulo).toBe("Ok");
+    expect(bodies.map((b) => b.reasoning_effort ?? "-")).toEqual(["-", "none"]);
+    await askCopilot(s, [{ role: "user", content: "De novo" }], ctx, async () => ({}));
+    expect(bodies.at(-1).reasoning_effort).toBe("none"); // já vai direto
+    expect(bodies).toHaveLength(3);
   });
 });

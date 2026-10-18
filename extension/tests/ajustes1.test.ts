@@ -80,9 +80,9 @@ describe("histórico completo do cartão", () => {
     has(/^Campo "Origem do lead": Site → Indicação$/);
     has(/^Adicionou nota: "Cliente pediu desconto"$/);
     has(/^Vinculou o documento Proposta comercial$/);
-    has(/^Criou a tarefa "Ligar" com início em /);
-    has(/^Concluiu a tarefa "Ligar"$/);
-    has(/^Remarcou o início da tarefa "Ligar": /);
+    has(/^Criou a atividade "Ligar" com início em /);
+    has(/^Concluiu a atividade "Ligar"$/);
+    has(/^Remarcou o início da atividade "Ligar": /);
     has(/^Marcou como perdido$/);
     has(/^Motivo da perda: vazio → Preço$/);
     // Nada interno vaza (posição, entrada na etapa etc.).

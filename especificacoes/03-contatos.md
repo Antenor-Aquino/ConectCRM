@@ -44,7 +44,7 @@ Modal com rolagem interna, botão ✕ no topo, **Salvar** fixo no rodapé.
 
 - Lista com busca, filtros (tags, responsável, organização, campos
   personalizados), colunas configuráveis, exportar/importar Excel/CSV.
-- Detalhe: dados, organizações, negócios/tickets, tarefas, notas, conversas
+- Detalhe: dados, organizações, negócios/tickets, atividades, notas, conversas
   do WhatsApp e histórico de alterações.
 - Mesclar contatos duplicados.
 

@@ -39,7 +39,7 @@ import { errorText } from "../lib/errors";
 // Menu principal (spec 01, seção 1).
 const NAV: TopNavItem[] = [
   { id: "funis", label: "Funis", icon: <Filter /> },
-  { id: "tarefas", label: "Tarefas", icon: <CircleCheck /> },
+  { id: "tarefas", label: "Atividades", icon: <CircleCheck /> },
   { id: "contatos", label: "Contatos", icon: <User /> },
   { id: "organizacoes", label: "Organizações", icon: <Building2 /> },
   { id: "ged", label: "GED", icon: <FolderArchive /> },

@@ -1,23 +1,23 @@
-# Especificação 02 — Tarefas
+# Especificação 02 — Atividades
 
-> Status: **em detalhamento**. Tela de referência: modal "Nova tarefa"
+> Status: **em detalhamento**. Tela de referência: modal "Nova atividade"
 > (tipo, responsável, quando com duração e lembrete).
 
-## 1. Modal de tarefa
+## 1. Modal de atividade
 
 Modal largo em **duas colunas**, botão ✕ no canto.
 
 **Coluna esquerda**
-- Círculo de **concluir** (marca/desmarca a tarefa como feita) + campo
-  **Nome da tarefa** (título grande, obrigatório).
-- Tarefa nova: o nome já vem com o **tipo** escolhido ("Reunião ") para o
+- Círculo de **concluir** (marca/desmarca a atividade como feita) + campo
+  **Nome da atividade** (título grande, obrigatório).
+- Atividade nova: o nome já vem com o **tipo** escolhido ("Reunião ") para o
   usuário completar ou trocar. Mudar o tipo troca só esse começo (o que foi
   digitado depois continua); se o nome foi reescrito, não muda. Ao editar
-  uma tarefa existente o nome nunca é alterado.
+  uma atividade existente o nome nunca é alterado.
 - **Add descrição...** — texto longo logo abaixo, sem borda.
 - **Documentos**: "Anexar documentos" (vários) — viram documentos do GED com
-  nome e classificação, vinculados à tarefa, ao cartão, ao contato e à
-  organização (spec 08). Numa tarefa nova os arquivos aguardam e a janela
+  nome e classificação, vinculados à atividade, ao cartão, ao contato e à
+  organização (spec 08). Numa atividade nova os arquivos aguardam e a janela
   Novo documento abre ao salvar.
 
 **Coluna direita**
@@ -28,9 +28,9 @@ Modal largo em **duas colunas**, botão ✕ no canto.
 | **Responsável** | Avatar + nome. O usuário atual aparece como **"Antenor (Você)"**; os demais com o tipo: "Maria (vendedor)". Padrão: o usuário atual |
 | **Início** | Texto por extenso: **"16 de outubro às 18:25"**. Padrão: o momento do cadastro; pode ser alterado e pode ser futuro. Abre o painel da seção 2 |
 | **Finalização** (opcional) | Data/hora de entrega. Vazio = "Sem finalização (opcional)"; ao abrir, sugere o dia seguinte ao início às 18:00. Nunca antes do início. Sem finalização, fica atrasada quando o início é de um dia que já passou |
-| **Vinculado a** (opcional) | Busca um **negócio, ticket ou etapa de projeto**. Pode ficar vazio (tarefa avulsa). Com vínculo, a tarefa herda contato e organização do cartão |
-| **Tags** | Tags próprias de tarefa (Configurações → Tags → Tarefa) |
-| **Campos personalizados** | Os criados em Configurações → Campos personalizados → Tarefa |
+| **Vinculado a** (opcional) | Busca um **negócio, ticket ou etapa de projeto**. Pode ficar vazio (atividade avulsa). Com vínculo, a atividade herda contato e organização do cartão |
+| **Tags** | Tags próprias de atividade (Configurações → Tags → Atividade) |
+| **Campos personalizados** | Os criados em Configurações → Campos personalizados → Atividade |
 
 **Rodapé:** **Salvar** (principal) · **Cancelar**.
 
@@ -45,12 +45,12 @@ Modal largo em **duas colunas**, botão ✕ no canto.
   do Chrome (via `chrome.alarms`) mesmo com o CRM fechado.
 - Também aceita digitar direto no campo "Quando".
 
-## 3. Tipos de tarefa
+## 3. Tipos de atividade
 
 Padrão (com ícone): **Ligar, Reunião, Agendamento, Tarefa, Prazo final, Almoço,
 E-mail**.
 
-- Cadastro em **Configurações → Tipos de tarefa** (nome, ícone, ativo,
+- Cadastro em **Configurações → Tipos de atividade** (nome, ícone, ativo,
   ordem) para incluir/renomear tipos.
 - Tipo **Reunião** (e **Agendamento**): opção de criar o evento no Google
   Agenda / Outlook com Meet/Teams e convidados — reaproveitando o
@@ -60,11 +60,14 @@ E-mail**.
 
 - Criada a partir de um negócio/ticket, contato ou organização: já nasce
   vinculada a ele (e herda contato/organização do negócio).
-- Criada pelo botão "+" ou pelo menu Tarefas: campo **Vinculado a** opcional.
-- No cartão do Kanban, as tarefas do item alimentam o contador de
-  concluídas/total (indicadores definidos mais à frente).
+- Criada pelo botão "+" ou pelo menu Atividades: campo **Vinculado a** opcional.
+- No cartão do Kanban, as atividades do item alimentam o contador de
+  concluídas/total e o **indicador de atividades** (vermelho = atrasada,
+  verde = hoje, cinza = futura, amarelo = nenhuma; spec 01, 6.0.1).
+- Nomenclatura: **atividade** é o termo geral (menu, formulários, histórico);
+  **Tarefa** é um dos tipos de atividade.
 
-## 5. Lista de tarefas (menu Tarefas)
+## 5. Lista de atividades (menu Atividades)
 
 - Grupos: **Atrasadas**, **Em andamento** (pendentes iniciadas antes de
   hoje) e depois por dia de início.
@@ -76,7 +79,7 @@ E-mail**.
   sem prazo" e, de um dia que já passou, "atrasada há N dias (sem
   finalização)"; concluídas: "concluída no prazo" ou "com N dias de
   atraso". Abaixo, "Início dd/mm hh:mm" e "Fim dd/mm hh:mm · N dias" (duração
-  total da tarefa).
+  total da atividade).
 - **Atrasada** (regra única: contadores, filtros, cartão, relatórios e
   Copiloto) = pendente com a finalização já passada ou, sem finalização, com
   o início num dia anterior a hoje.
@@ -95,14 +98,14 @@ E-mail**.
 
 - T1: campo "Vinculado a" opcional (negócio, ticket ou projeto).
 - T3: o antigo "Quando" virou **Início** (coluna `due_at`) e a nova coluna
-  `end_at` é a **Finalização**. Na atualização, tarefas antigas cuja data foi
+  `end_at` é a **Finalização**. Na atualização, atividades antigas cuja data foi
   escolhida (diferente do momento do cadastro) passam a ter essa data como
   finalização; as criadas "agora" ficam sem finalização.
-- T2: seletor do SLA e seletor da tarefa coexistem, cada um como no mockup.
-- Permissão: administrador vê todas as tarefas; gestor, as da equipe;
-  vendedor, as suas (tarefas sem responsável aparecem para todos).
+- T2: seletor do SLA e seletor da atividade coexistem, cada um como no mockup.
+- Permissão: administrador vê todas as atividades; gestor, as da equipe;
+  vendedor, as suas (atividades sem responsável aparecem para todos).
 - Lembrete: notificação do Chrome a cada minuto (service worker), só para as
-  tarefas do usuário atual desta instalação; tarefas vencidas há mais de um
+  atividades do usuário atual desta instalação; atividades vencidas há mais de um
   dia não são notificadas. Mudar a data ou o lembrete reativa o aviso.
 - Agenda: tipos marcados como "Reunião" podem criar o evento no Google Agenda
   ou Outlook, com convidados, link do Meet/Teams e horários livres do dia.

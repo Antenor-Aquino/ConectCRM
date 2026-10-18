@@ -53,15 +53,15 @@ describe("botão + (spec 01, seção 3)", () => {
   const labels = (types: Parameters<typeof visibleQuickCreateOptions>[0]) => visibleQuickCreateOptions(types).map((o) => o.label);
 
   it("só funil comercial → Tarefa, Contato, Organização, Negócio", () => {
-    expect(labels(["comercial"])).toEqual(["Tarefa", "Contato", "Organização", "Negócio (Comercial)"]);
+    expect(labels(["comercial"])).toEqual(["Atividade", "Contato", "Organização", "Negócio (Comercial)"]);
   });
 
   it("comercial + operacional → inclui Ticket", () => {
-    expect(labels(["comercial", "operacional"])).toEqual(["Tarefa", "Contato", "Organização", "Negócio (Comercial)", "Ticket (Operacional)"]);
+    expect(labels(["comercial", "operacional"])).toEqual(["Atividade", "Contato", "Organização", "Negócio (Comercial)", "Ticket (Operacional)"]);
   });
 
   it("sem funis → só os cadastros básicos; projeto → Etapa", () => {
-    expect(labels([])).toEqual(["Tarefa", "Contato", "Organização"]);
+    expect(labels([])).toEqual(["Atividade", "Contato", "Organização"]);
     expect(labels(["projeto"])).toContain("Etapa (Projeto)");
   });
 });

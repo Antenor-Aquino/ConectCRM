@@ -825,7 +825,7 @@ const ACTION_TEXT: Record<string, string> = { view: "Visualizou", download: "Bai
 /** "ao cartão" / "do cartão", "à tarefa" / "da tarefa"... */
 const LINK_LABEL: Record<DocLinkType, { to: string; from: string }> = {
   deal: { to: "ao cartão", from: "do cartão" },
-  activity: { to: "à tarefa", from: "da tarefa" },
+  activity: { to: "à atividade", from: "da atividade" },
   person: { to: "ao contato", from: "do contato" },
   organization: { to: "à organização", from: "da organização" },
 };

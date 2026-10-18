@@ -32,6 +32,7 @@ import { BoardList, loadListColumns, STAGE_COLUMN } from "./BoardList";
 import { useCardFieldOptions } from "./fieldOptions";
 import { KanbanCard } from "./KanbanCard";
 import { errorText } from "../../lib/errors";
+import { TaskModal, type TaskRequest } from "../tasks/TaskModal";
 
 const VIEW_LABEL: Record<BoardView, string> = { all: "Fluxo geral", mine: "Meu fluxo", team: "Minha equipe" };
 const SORT_LABEL: Record<BoardSort, string> = {
@@ -170,6 +171,8 @@ export function Board({
     }
   };
   const fieldOptions = useCardFieldOptions(pipeline);
+  // Atividade aberta (ou nova) pelo indicador do cartão.
+  const [activityModal, setActivityModal] = useState<TaskRequest | null>(null);
   // Etapas recolhidas (coluna estreita), lembradas por funil e usuário.
   const collapsedKey = `conectcrm-board-collapsed-${user.id}-${pipeline.id}`;
   const readCollapsed = () => {
@@ -501,14 +504,14 @@ export function Board({
                 onDragLeave={() => setDrop(null)}
                 onDrop={(e) => void onDrop(e)}
                 className={cn(
-                  "flex w-11 shrink-0 flex-col items-center gap-2 rounded-xl bg-gray-50 py-3 hover:bg-gray-100 dark:bg-white/[0.03] dark:hover:bg-white/5",
+                  "flex shrink-0 flex-col items-center gap-2 rounded-xl bg-gray-50 px-1.5 py-2 hover:bg-gray-100 dark:bg-white/[0.03] dark:hover:bg-white/5",
                   drop?.stageId === col.id && "bg-brand-25 ring-2 ring-brand-200 dark:bg-brand-500/10",
                 )}
               >
                 <StagePill name={col.name} color={col.color} vertical />
-                <span className="text-theme-xs font-medium text-gray-500">{col.count}</span>
+                <span className="text-theme-xs font-bold text-gray-700 dark:text-gray-300">{col.count}</span>
                 {/* Valor total da etapa (na vertical para caber na coluna estreita). */}
-                {col.total_cents > 0 && <span className="text-theme-xs text-gray-500 [writing-mode:vertical-rl]">{formatCents(col.total_cents)}</span>}
+                {col.total_cents > 0 && <span className="text-theme-xs font-bold text-gray-700 [writing-mode:vertical-rl] dark:text-gray-300">{formatCents(col.total_cents)}</span>}
               </button>
             ) : (
               <div
@@ -525,7 +528,7 @@ export function Board({
               >
                 <div className="mb-0.5 flex items-center gap-2 px-1">
                   <StagePill name={col.name} color={col.color} className="min-w-0" />
-                  <span className="text-theme-xs font-medium text-gray-500">{col.count}</span>
+                  <span className="text-theme-xs font-bold text-gray-700 dark:text-gray-300">{col.count}</span>
                   <span className="ml-auto flex shrink-0 items-center gap-0.5">
                     <button
                       type="button"
@@ -547,7 +550,7 @@ export function Board({
                 </div>
                 {/* Valor da etapa: sempre no comercial; nos outros tipos quando há produtos/valor. */}
                 {pipeline.type === "comercial" || col.total_cents > 0 ? (
-                  <div className="mb-3 mt-1 px-1 text-theme-xs text-gray-500">{formatCents(col.total_cents)}</div>
+                  <div className="mb-3 mt-1.5 px-1 text-theme-xs font-bold text-gray-700 dark:text-gray-300">{formatCents(col.total_cents)}</div>
                 ) : (
                   <div className="mb-2" />
                 )}
@@ -558,6 +561,9 @@ export function Board({
                       <KanbanCard
                         card={card}
                         pipeline={pipeline}
+                        onOpenActivity={(id) => setActivityModal({ id })}
+                        onNewActivity={() => setActivityModal({ dealId: card.id })}
+                        onChanged={() => void load()}
                         dragging={drag?.id === card.id}
                         onOpen={() => onOpenCard(card.id)}
                         onDragStart={(e) => {
@@ -586,6 +592,16 @@ export function Board({
             ),
           )}
         </div>
+      )}
+      {activityModal && (
+        <TaskModal
+          request={activityModal}
+          onClose={() => setActivityModal(null)}
+          onSaved={() => {
+            setActivityModal(null);
+            void load();
+          }}
+        />
       )}
     </section>
   );

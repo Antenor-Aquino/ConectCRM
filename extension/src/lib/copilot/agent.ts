@@ -41,7 +41,7 @@ export function buildSystemPrompt(c: CopilotContext): string {
     "Responda em português do Brasil, direto e objetivo, com foco comercial: o que está em risco, o que priorizar e qual o próximo passo.",
     "",
     "DADOS: para qualquer número, valor, nome ou fato do CRM, use as ferramentas. Nunca invente, estime ou recalcule valores; copie os valores já formatados que as ferramentas devolvem. " +
-      "Os resultados das ferramentas NÃO ficam no histórico e o CRM muda durante a conversa (tarefas e negócios novos, concluídos, movidos): " +
+      "Os resultados das ferramentas NÃO ficam no histórico e o CRM muda durante a conversa (atividades e negócios novos, concluídos, movidos): " +
       "a CADA pergunta, consulte as ferramentas de novo, mesmo que já tenha respondido algo parecido. Nunca repita uma resposta anterior sem consultar.",
     `QUEM: 'eu', 'meu', 'minhas' = ${c.userName}; passe esse nome em 'responsavel' quando a pergunta for sobre o próprio usuário.`,
     "TAREFAS: atrasada = pendente com a finalização vencida ou, sem finalização, com o início num dia anterior a hoje. " +
@@ -50,9 +50,9 @@ export function buildSystemPrompt(c: CopilotContext): string {
     "PERÍODOS: converta 'este mês', 'mês passado', 'trimestre', 'este ano' etc. em datas AAAA-MM-DD a partir de hoje antes de chamar resumo_comercial.",
     "NOMES: funil e responsável aceitam parte do nome. Se a ferramenta devolver 'erro' com 'opcoes', mostre as opções e pergunte qual é; não adivinhe.",
     "PANORAMA: para 'como estou', 'pontos de atenção' ou 'o que fazer hoje', combine listar_tarefas (atrasadas e hoje), negocios_parados e resumo_comercial do mês atual.",
-    "NEGÓCIO ESPECÍFICO: localize com buscar_cartoes e depois use detalhar_cartao; para resumir, cubra situação, histórico recente (notas e tarefas), riscos e próximo passo.",
+    "NEGÓCIO ESPECÍFICO: localize com buscar_cartoes e depois use detalhar_cartao; para resumir, cubra situação, histórico recente (notas e atividades), riscos e próximo passo.",
     "",
-    "RESPOSTA: termine SEMPRE chamando a ferramenta 'responder'. Use 'tabela' quando houver linhas comparáveis (lista de negócios, tarefas, responsáveis); senão null. " +
+    "RESPOSTA: termine SEMPRE chamando a ferramenta 'responder'. Use 'tabela' quando houver linhas comparáveis (lista de negócios, atividades, responsáveis); senão null. " +
       "Até 3 insights, cada um com o valor-chave entre **dois asteriscos** e um tom (alerta para atraso/risco/perda, positivo para ganho/folga, neutro para o resto). " +
       "Em 'sugestoes', 2 a 4 próximos pedidos que façam sentido (regra de SUGESTÕES abaixo).",
     "AÇÕES: em 'acoes', sugira até 3 ações concretas que o usuário aplica com um clique, só com ids que vieram das ferramentas nesta pergunta: " +
@@ -66,14 +66,14 @@ export function buildSystemPrompt(c: CopilotContext): string {
       "se só achar parecido, mostre-o como provável ('Encontrei Conserto Gaveta Miguel'). Pedido claro é ordem: execute (consulte e entregue a ação) em vez de perguntar. " +
       "'Sim', 'pode', 'crie' ou um clique numa sugestão confirmam o que você ofereceu na resposta anterior.",
     "SUGESTÕES: escreva como o próximo pedido do usuário, no imperativo e sem ponto de interrogação, porque o clique envia o texto como se ele tivesse digitado " +
-      "(ex.: 'Crie o cartão Conserto Gaveta Miguel no funil Casa', 'Liste minhas tarefas atrasadas'). Nunca 'Você quer…?'.",
-    "CRIAR TAREFA OU NOTA: pedido de tarefa (mesmo ditado como 'criou/cria a tarefa X para dia 18 às 8 horas') é ordem: entregue criar_tarefa pronta, com titulo " +
-      "e quando em AAAA-MM-DDTHH:MM (ano atual; se a data já passou, o próximo ano; sem hora, 09:00). Nota: adicionar_nota com o texto pedido. Não liste tarefas no lugar de criar.",
+      "(ex.: 'Crie o cartão Conserto Gaveta Miguel no funil Casa', 'Liste minhas atividades atrasadas'). Nunca 'Você quer…?'.",
+    "CRIAR TAREFA OU NOTA: pedido de atividade ou tarefa (mesmo ditado como 'criou/cria a tarefa X para dia 18 às 8 horas'; tarefa é um tipo de atividade) é ordem: entregue criar_tarefa pronta, com titulo " +
+      "e quando em AAAA-MM-DDTHH:MM (ano atual; se a data já passou, o próximo ano; sem hora, 09:00). Nota: adicionar_nota com o texto pedido. Não liste atividades no lugar de criar.",
     c.cardId
       ? `CONTEXTO DO CARTÃO: o Copiloto foi aberto no cartão ${c.cardTitle ? `"${c.cardTitle}" ` : ""}(id ${c.cardId}). Tudo nesta conversa se refere a ESTE cartão, ` +
-        "a não ser que o usuário cite outro cartão, contato, organização ou funil: 'crie uma tarefa', 'adicione uma nota', 'resuma', 'próximo passo', 'deste negócio' " +
+        "a não ser que o usuário cite outro cartão, contato, organização ou funil: 'crie uma atividade', 'adicione uma nota', 'resuma', 'próximo passo', 'deste negócio' " +
         `valem para ele. Em criar_tarefa, adicionar_nota e abrir_cartao use cartaoId ${c.cardId} (não procure nem use outro cartão). ` +
-        "Para os dados dele, use detalhar_cartao com esse id. Perguntas claramente gerais ('minhas tarefas atrasadas de todos os negócios', 'negócios parados') valem para o CRM todo."
+        "Para os dados dele, use detalhar_cartao com esse id. Perguntas claramente gerais ('minhas atividades atrasadas de todos os negócios', 'negócios parados') valem para o CRM todo."
       : "",
   ]
     .filter(Boolean)
@@ -128,11 +128,41 @@ function geminiSchema(s: Schema): Record<string, unknown> {
 
 // ---------- Chamada HTTP ----------
 
+/** Erro do provedor com a mensagem original (para decidir um novo envio). */
+class ProviderError extends Error {
+  constructor(
+    message: string,
+    readonly raw: string,
+  ) {
+    super(message);
+  }
+}
+
 async function post(url: string, headers: Record<string, string>, body: unknown, label: string): Promise<any> {
   const resp = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
   const json = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(translateAiError(label, json?.error?.message ?? json?.error, resp.status));
+  if (!resp.ok) {
+    const raw = json?.error?.message ?? json?.error;
+    throw new ProviderError(translateAiError(label, raw, resp.status), typeof raw === "string" ? raw : JSON.stringify(raw ?? ""));
+  }
   return json;
+}
+
+/**
+ * Modelos de raciocínio da OpenAI (ex.: GPT-5.x) só aceitam ferramentas no Chat Completions com
+ * reasoning_effort "none"; os demais recusam o parâmetro. Envia sem e, se o modelo pedir, repete com ele
+ * (e lembra o modelo para os próximos envios).
+ */
+const NEEDS_NO_REASONING = new Set<string>();
+async function postChat(url: string, headers: Record<string, string>, body: Record<string, unknown>, label: string, model: string): Promise<any> {
+  if (NEEDS_NO_REASONING.has(model)) return post(url, headers, { ...body, reasoning_effort: "none" }, label);
+  try {
+    return await post(url, headers, body, label);
+  } catch (e) {
+    if (!(e instanceof ProviderError) || !/reasoning_effort/i.test(e.raw)) throw e;
+    NEEDS_NO_REASONING.add(model);
+    return post(url, headers, { ...body, reasoning_effort: "none" }, label);
+  }
 }
 
 function credentials(s: AiSettings): { prov: AiProvider; key: string; model: string } {
@@ -152,11 +182,12 @@ async function runOpenAiLike(s: AiSettings, history: CopilotMessage[], ctx: Copi
   const messages: any[] = [{ role: "system", content: buildSystemPrompt(ctx) }, ...history];
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const last = round === MAX_ROUNDS - 1;
-    const json = await post(
+    const json = await postChat(
       url,
       { Authorization: `Bearer ${key}` },
       { model, messages, tools, tool_choice: last ? { type: "function", function: { name: RESPOND_TOOL.name } } : "auto" },
       label,
+      model,
     );
     const msg = json.choices?.[0]?.message;
     if (!msg) throw new Error(`O ${label} não retornou um resultado.`);

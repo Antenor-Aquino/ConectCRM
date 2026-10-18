@@ -31,6 +31,10 @@ export function isOverdue(t: { due_at: string; end_at: string | null; done: numb
   return t.end_at ? new Date(t.end_at) < now : new Date(t.due_at) < startOfDay(now);
 }
 
+/** A mesma regra em SQL (tabela com alias `a`); parâmetros: overdueParams(agora). */
+export const OVERDUE_COND = "((a.end_at IS NOT NULL AND a.end_at < ?) OR (a.end_at IS NULL AND a.due_at < ?))";
+export const overdueParams = (now = new Date()): [string, string] => [now.toISOString(), startOfDay(now).toISOString()];
+
 /** Data de referência do atraso (finalização ou, sem ela, o início). */
 export const overdueFrom = (t: { due_at: string; end_at: string | null }) => t.end_at ?? t.due_at;
 

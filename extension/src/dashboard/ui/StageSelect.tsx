@@ -16,8 +16,9 @@ export function StagePill({ name, color, vertical, className }: { name: string; 
   return (
     <span
       className={cn(
-        "inline-block max-w-full rounded-md px-2 py-0.5 text-theme-xs font-semibold leading-5 text-white",
-        vertical ? "max-h-[60vh] overflow-hidden px-0.5 py-2 [writing-mode:vertical-rl]" : "truncate",
+        "inline-block max-w-full rounded-md text-theme-xs font-semibold leading-5 text-white",
+        // Respiro em volta do texto (como no HubSpot); na vertical, a largura acompanha o texto.
+        vertical ? "max-h-[60vh] overflow-hidden px-1 py-3 [writing-mode:vertical-rl]" : "truncate px-3 py-1",
         className,
       )}
       style={{ background: stageColor(color) }}

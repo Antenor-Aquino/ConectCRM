@@ -257,7 +257,7 @@ export function CardDetail({
                   onClick={() => setItemsOpen(true)}
                 >
                   <PlusCircle size={16} />
-                  {card.items.length ? `${card.items.length} produto(s)` : "Adicionar produtos"}
+                  {card.items.length ? `${card.items.length} produto(s)` : "Adicionar"}
                 </button>
               </div>
               {card.items.length > 0 && <ItemsSummary items={card.items} onEdit={() => setItemsOpen(true)} />}
@@ -363,7 +363,7 @@ export function CardDetail({
               [
                 ["historico", "Histórico"],
                 ["notas", "Notas"],
-                ["tarefas", "Tarefas"],
+                ["tarefas", "Atividades"],
                 ["documentos", "Documentos"],
               ] as [Tab, string][]
             ).map(([id, label]) => (
@@ -581,7 +581,7 @@ function TasksTab({ cardId, onChanged }: { cardId: string; onChanged: () => void
   return (
     <div>
       <TaButton variant="primary" startIcon={<PlusCircle size={15} />} onClick={() => setModal({ dealId: cardId })}>
-        Nova tarefa
+        Nova atividade
       </TaButton>
       <ul className="mt-3 divide-y divide-gray-100 dark:divide-gray-800">
         {tasks.map((t) => {
@@ -613,7 +613,7 @@ function TasksTab({ cardId, onChanged }: { cardId: string; onChanged: () => void
             </li>
           );
         })}
-        {tasks.length === 0 && <p className="py-2 text-theme-sm text-gray-400">Nenhuma tarefa.</p>}
+        {tasks.length === 0 && <p className="py-2 text-theme-sm text-gray-400">Nenhuma atividade.</p>}
       </ul>
       {modal && (
         <TaskModal
@@ -629,7 +629,7 @@ function TasksTab({ cardId, onChanged }: { cardId: string; onChanged: () => void
   );
 }
 
-const REF_TITLE: Record<HistoryRef["kind"], string> = { note: "Abrir a nota", activity: "Abrir a tarefa", document: "Abrir o documento" };
+const REF_TITLE: Record<HistoryRef["kind"], string> = { note: "Abrir a nota", activity: "Abrir a atividade", document: "Abrir o documento" };
 
 function HistoryTab({
   cardId,

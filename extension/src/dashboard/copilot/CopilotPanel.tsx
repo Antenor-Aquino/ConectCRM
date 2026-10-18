@@ -39,7 +39,7 @@ const STARTERS = [
   "O que devo priorizar hoje?",
   "Quais negócios estão parados?",
   "Como estão as vendas deste mês?",
-  "Quais tarefas estão atrasadas?",
+  "Quais atividades estão atrasadas?",
   "Qual a previsão ponderada do funil?",
 ];
 
@@ -175,7 +175,7 @@ export function CopilotPanel({
           <div className="min-w-0 flex-1">
             <h2 className="text-base font-semibold text-gray-800 dark:text-white/90">Copiloto</h2>
             <p className="truncate text-theme-xs text-gray-500">
-              Consulta seus negócios, tarefas e relatórios reais{configured ? ` · ${AI_LABELS[ai!.provider]}` : ""}
+              Consulta seus negócios, atividades e relatórios reais{configured ? ` · ${AI_LABELS[ai!.provider]}` : ""}
             </p>
           </div>
           <TaButton size="sm" disabled={!entries.length || busy} startIcon={<SquarePen size={14} />} onClick={reset}>
@@ -187,7 +187,7 @@ export function CopilotPanel({
         </header>
         {cardId && cardTitle && (
           <div className="flex items-center gap-2 border-b border-gray-100 bg-brand-25 px-5 py-2 text-theme-xs text-gray-600 dark:border-gray-800 dark:bg-brand-500/10 dark:text-gray-300">
-            <span className="min-w-0 flex-1 truncate" title="Tarefas e notas pedidas nesta conversa vão para este cartão, a não ser que você cite outro.">
+            <span className="min-w-0 flex-1 truncate" title="Atividades e notas pedidas nesta conversa vão para este cartão, a não ser que você cite outro.">
               Conversa sobre o cartão <b className="text-gray-800 dark:text-white/90">{cardTitle}</b>
             </span>
             <button type="button" title="Conversar sobre o CRM todo" className="flex shrink-0 items-center gap-1 text-gray-500 hover:text-gray-800" onClick={() => setCardId(null)}>
@@ -435,7 +435,7 @@ function ActionButton({ action, onOpenCard }: { action: CopilotAction; onOpenCar
             ? action.tipo === "criar_cartao"
               ? `Cartão criado: ${action.titulo} — clique para abrir`
               : action.tipo === "criar_tarefa"
-                ? `Tarefa criada: ${action.titulo}`
+                ? `Atividade criada: ${action.titulo}`
                 : "Nota adicionada ao cartão"
             : action.rotulo}
         </span>

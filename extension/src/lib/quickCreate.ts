@@ -11,7 +11,7 @@ export interface QuickCreateOption {
 }
 
 export const QUICK_CREATE_OPTIONS: QuickCreateOption[] = [
-  { id: "tarefa", label: "Tarefa" },
+  { id: "tarefa", label: "Atividade" },
   { id: "contato", label: "Contato" },
   { id: "organizacao", label: "Organização" },
   // O tipo do funil ao lado deixa claro onde o cartão nasce.

@@ -36,7 +36,7 @@ interface Row {
 
 /** Onde fica a nota da transcrição: a tela de origem ou o 1º vínculo (cartão primeiro). */
 const NOTE_ORDER: DocLinkType[] = ["deal", "activity", "person", "organization"];
-const NOTE_PLACE: Record<DocLinkType, string> = { deal: "no cartão", activity: "na tarefa", person: "no contato", organization: "na organização" };
+const NOTE_PLACE: Record<DocLinkType, string> = { deal: "no cartão", activity: "na atividade", person: "no contato", organization: "na organização" };
 
 const baseName = (filename: string) =>
   filename
