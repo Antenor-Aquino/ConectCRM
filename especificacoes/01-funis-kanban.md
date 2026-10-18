@@ -301,7 +301,9 @@ Em **Configurações → Funis** (e pelo menu ⋯ do quadro):
   em dias para considerar o item parado.
 - Excluir etapa com itens: pede para mover os itens para outra etapa.
 - **Filtrar** do quadro (status, responsável, tags): o último filtro escolhido
-  fica salvo por funil e por usuário e volta a valer ao reabrir. Ao lado do
+  fica salvo por usuário e vale em **todos os funis de todas as categorias**
+  (também ao reabrir). As tags são de cada tipo de cartão: a tag de negócio
+  escolhida vale nos funis comerciais; nos outros tipos, as tags deles. Ao lado do
   botão aparecem a quantidade e as opções ativas, ex.: "Filtrar (3) Todos ·
   Antenor · Teste" (o status só aparece quando não é o padrão "Abertos").
 - Lista de funis (tela Funis e seletores): agrupada por categoria —

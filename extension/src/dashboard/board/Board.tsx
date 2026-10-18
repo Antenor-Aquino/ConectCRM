@@ -1,7 +1,7 @@
 // Quadro Kanban do funil (tela inicial do mockup): busca, filtros, visões
 // Fluxo geral / Meu fluxo / Minha equipe, ordenação, colunas com quantidade
 // e soma, "+" tracejado por coluna e arrastar cartões entre etapas.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
   ChevronDown,
@@ -20,7 +20,7 @@ import {
 import { TaBadge, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { BoardColumn, BoardSort, BoardView, DealStatus } from "../../db/deals";
-import type { Pipeline, PipelineType } from "../../db/pipelines";
+import type { DealKind, Pipeline, PipelineType } from "../../db/pipelines";
 import type { Tag } from "../../db/tags";
 import { CARD_TEXT, OUTCOME_TEXT, PIPELINE_TYPE_LABEL } from "../../lib/cardTypes";
 import { formatCents } from "../../lib/format";
@@ -51,22 +51,37 @@ const statusLabels = (type: PipelineType): Record<DealStatus | "all", string> =>
 });
 const TYPE_BADGE = { comercial: "blue", operacional: "purple", projeto: "cyan" } as const;
 
+/**
+ * Filtro do quadro, o mesmo em todos os funis de todas as categorias: situação
+ * e responsáveis valem para todos; as tags são de cada tipo de cartão
+ * (negócio, ticket, etapa), então ficam guardadas por tipo.
+ */
 interface BoardFilter {
   status: DealStatus | "all";
   ownerIds: string[];
-  tagIds: string[];
+  tagIdsByKind: Partial<Record<DealKind, string[]>>;
 }
-const EMPTY_FILTER: BoardFilter = { status: "open", ownerIds: [], tagIds: [] };
+const EMPTY_FILTER: BoardFilter = { status: "open", ownerIds: [], tagIdsByKind: {} };
 
-function loadFilter(key: string): BoardFilter {
+function loadFilter(key: string, legacyKey: string, kind: DealKind): BoardFilter {
   try {
     const raw = localStorage.getItem(key);
-    if (!raw) return EMPTY_FILTER;
-    const f = JSON.parse(raw) as Partial<BoardFilter>;
+    if (raw) {
+      const f = JSON.parse(raw) as Partial<BoardFilter>;
+      return {
+        status: f.status && f.status in STATUS_LABEL ? f.status : "open",
+        ownerIds: Array.isArray(f.ownerIds) ? f.ownerIds : [],
+        tagIdsByKind: f.tagIdsByKind && typeof f.tagIdsByKind === "object" ? f.tagIdsByKind : {},
+      };
+    }
+    // Até 0.2.27 o filtro era por funil: o do funil aberto vira o filtro geral.
+    const old = localStorage.getItem(legacyKey);
+    if (!old) return EMPTY_FILTER;
+    const f = JSON.parse(old) as { status?: DealStatus | "all"; ownerIds?: string[]; tagIds?: string[] };
     return {
       status: f.status && f.status in STATUS_LABEL ? f.status : "open",
       ownerIds: Array.isArray(f.ownerIds) ? f.ownerIds : [],
-      tagIds: Array.isArray(f.tagIds) ? f.tagIds : [],
+      tagIdsByKind: Array.isArray(f.tagIds) && f.tagIds.length ? { [kind]: f.tagIds } : {},
     };
   } catch {
     return EMPTY_FILTER;
@@ -205,16 +220,16 @@ export function Board({
   };
   // Com alguma etapa recolhida, o botão geral expande todas; sem nenhuma, recolhe todas.
   const anyCollapsed = columns.some((c) => collapsed.has(c.id));
-  // Filtro lembrado por funil e usuário: ao voltar, vale o último escolhido.
-  const filterKey = `conectcrm-board-filter-${user.id}-${pipeline.id}`;
-  const [filter, setFilter] = useState<BoardFilter>(() => loadFilter(filterKey));
+  // Filtro lembrado por usuário, o mesmo em todos os funis (tags por tipo de cartão).
+  const kind = CARD_TEXT[pipeline.type].kind;
+  const filterKey = `conectcrm-board-filter-${user.id}`;
+  const [filter, setFilter] = useState<BoardFilter>(() => loadFilter(filterKey, `${filterKey}-${pipeline.id}`, kind));
   const [loadedKey, setLoadedKey] = useState(filterKey);
   if (loadedKey !== filterKey) {
     setLoadedKey(filterKey);
-    setFilter(loadFilter(filterKey));
+    setFilter(loadFilter(filterKey, `${filterKey}-${pipeline.id}`, kind));
   }
-  const updateFilter = (patch: Partial<BoardFilter>) => {
-    const next = { ...filter, ...patch };
+  const saveFilter = (next: BoardFilter) => {
     setFilter(next);
     try {
       localStorage.setItem(filterKey, JSON.stringify(next));
@@ -222,10 +237,11 @@ export function Board({
       /* preferência só desta tela */
     }
   };
-  const { status, ownerIds, tagIds } = filter;
-  const setStatus = (v: DealStatus | "all") => updateFilter({ status: v });
-  const setOwnerIds = (v: string[]) => updateFilter({ ownerIds: v });
-  const setTagIds = (v: string[]) => updateFilter({ tagIds: v });
+  const { status, ownerIds } = filter;
+  const tagIds = useMemo(() => filter.tagIdsByKind[kind] ?? [], [filter.tagIdsByKind, kind]);
+  const setStatus = (v: DealStatus | "all") => saveFilter({ ...filter, status: v });
+  const setOwnerIds = (v: string[]) => saveFilter({ ...filter, ownerIds: v });
+  const setTagIds = (v: string[]) => saveFilter({ ...filter, tagIdsByKind: { ...filter.tagIdsByKind, [kind]: v } });
   const [tags, setTags] = useState<Tag[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -233,7 +249,6 @@ export function Board({
   const [drag, setDrag] = useState<{ id: string; from: string } | null>(null);
   const [drop, setDrop] = useState<{ stageId: string; beforeId: string | null } | null>(null);
 
-  const kind = CARD_TEXT[pipeline.type].kind;
   const load = useCallback(async () => {
     try {
       const fieldKeys = mode === "lista" ? listCols.filter((k) => k !== STAGE_COLUMN) : undefined;
@@ -249,22 +264,24 @@ export function Board({
     return () => clearTimeout(t);
   }, [load, refreshKey, search, user.id]);
 
-  const [tagsLoaded, setTagsLoaded] = useState(false);
+  // Tags do tipo de cartão do funil aberto (o tipo vem junto: evita misturar ao trocar de funil).
+  const [tagsKind, setTagsKind] = useState<DealKind | null>(null);
   useEffect(() => {
     void call("tags.list", { entity: kind }).then((list) => {
       setTags(list);
-      setTagsLoaded(true);
+      setTagsKind(kind);
     });
   }, [kind]);
 
   // Tag ou usuário salvo no filtro que deixou de existir: sai do filtro.
   useEffect(() => {
-    if (!tagsLoaded || users.length === 0) return;
+    if (tagsKind !== kind || users.length === 0) return;
     const keepTags = tagIds.filter((id) => tags.some((t) => t.id === id));
     const keepOwners = ownerIds.filter((id) => users.some((u) => u.id === id));
-    if (keepTags.length !== tagIds.length || keepOwners.length !== ownerIds.length) updateFilter({ tagIds: keepTags, ownerIds: keepOwners });
+    if (keepTags.length !== tagIds.length || keepOwners.length !== ownerIds.length)
+      saveFilter({ ...filter, ownerIds: keepOwners, tagIdsByKind: { ...filter.tagIdsByKind, [kind]: keepTags } });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tagsLoaded, tags, users, filterKey]);
+  }, [tagsKind, tags, users, filterKey]);
 
   // Resumo ao lado de "Filtrar": status (se não for o padrão), responsáveis e tags.
   const filterParts = [
@@ -462,7 +479,7 @@ export function Board({
               </>
             )}
             {filterCount > 0 && (
-              <button type="button" className="text-theme-sm text-brand-600 hover:underline" onClick={() => updateFilter(EMPTY_FILTER)}>
+              <button type="button" className="text-theme-sm text-brand-600 hover:underline" onClick={() => saveFilter(EMPTY_FILTER)}>
                 Limpar filtros
               </button>
             )}
