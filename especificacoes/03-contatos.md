@@ -48,6 +48,23 @@ Modal com rolagem interna, botão ✕ no topo, **Salvar** fixo no rodapé.
   do WhatsApp e histórico de alterações.
 - Mesclar contatos duplicados.
 
+## 3.1 Telefone e e-mail clicáveis
+
+- **Telefone** (no cartão do quadro, no detalhe do contato e da organização):
+  o clique abre a conversa no **WhatsApp Web** (`web.whatsapp.com/send?phone=`),
+  reaproveitando a aba do WhatsApp já aberta. Número sem DDI ganha o 55.
+- **E-mail**: o clique abre o provedor cadastrado em **Configurações →
+  E-mail** (por usuário, neste computador):
+  - Gmail, Outlook (Microsoft 365), Outlook.com/Hotmail e Yahoo abrem a nova
+    mensagem já com o destinatário;
+  - Aplicativo de e-mail do computador (mailto:);
+  - **Outro**: o link de abertura informado (ex.: Zoho). Com `{email}` no
+    link, ele vira o destinatário; sem, o link abre e o endereço é copiado
+    ("E-mail copiado — cole no destinatário").
+  - Com mais de um provedor, o clique mostra a lista para escolher; sem
+    nenhum, oferece o aplicativo do computador e indica a configuração.
+- O clique no telefone/e-mail não abre o cartão.
+
 ## 4. Decisões e pendências
 
 - C1: **sem sincronização com o Google** (decisão do cliente); o toggle do sistema de referência não entra.

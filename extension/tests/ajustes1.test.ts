@@ -145,7 +145,7 @@ describe("campos do cartão por funil", () => {
     const card = methods["board.get"](db, ctx, { pipelineId: pid })[0]!.cards[0]!;
     expect(Object.keys(card.fields)).toEqual(keys);
     expect(card.fields.tags).toEqual({ tags: [{ name: "Venda", color: "red" }] });
-    expect(card.fields.contato_telefone).toEqual({ text: "(41) 99999-8888" });
+    expect(card.fields.contato_telefone).toEqual({ text: "(41) 99999-8888", phone: "+5541999998888" });
     expect(card.fields.org_cidade).toEqual({ text: "Curitiba / PR" });
     expect(card.fields.org_cnpj).toEqual({ text: "11.222.333/0001-81" });
     expect(card.fields.probabilidade).toEqual({ text: "30%" });
@@ -154,7 +154,7 @@ describe("campos do cartão por funil", () => {
     expect(card.fields[`ocf:${ocf}`]).toEqual({ text: "Médio", label: "Porte" });
     // A prévia usa uma lista ainda não salva.
     const prev = methods["cards.previewFields"](db, ctx, { pipelineId: pid, keys: ["contato_email"] });
-    expect(prev).toEqual({ title: "Negociação Teste", fields: { contato_email: { text: "antenor@exemplo.com" } } });
+    expect(prev).toEqual({ title: "Negociação Teste", fields: { contato_email: { text: "antenor@exemplo.com", email: "antenor@exemplo.com" } } });
   });
 
   it("recusa chave inválida e volta ao padrão com null", async () => {

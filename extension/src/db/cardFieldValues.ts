@@ -8,7 +8,10 @@ import { formatCustomRaw } from "./cardHistory";
 import type { PipelineType } from "./pipelines";
 import { many, one, type DatabaseSync } from "./sql";
 
-export type CardFieldValue = { text: string; tone?: "danger"; label?: string } | { tags: { name: string; color: string | null }[] };
+export type CardFieldValue =
+  /** `phone`/`email`: valor bruto para o link (WhatsApp / provedor de e-mail). */
+  | { text: string; tone?: "danger"; label?: string; phone?: string; email?: string }
+  | { tags: { name: string; color: string | null }[] };
 
 const DAY = 86_400_000;
 const dateOnly = (iso: string | null) => (iso ? formatDateTime(iso).slice(0, 10) : null);
@@ -201,10 +204,10 @@ export function cardFieldValues(
           put(k, r.person_name ?? (keys.includes("organizacao") ? null : r.org_name));
           break;
         case "contato_telefone":
-          put(k, formatPhone(r.person_phone));
+          if (r.person_phone) out[k] = { text: formatPhone(r.person_phone), phone: r.person_phone };
           break;
         case "contato_email":
-          put(k, r.person_email);
+          if (r.person_email) out[k] = { text: r.person_email, email: r.person_email };
           break;
         case "organizacao":
           put(k, r.org_name);
@@ -219,7 +222,7 @@ export function cardFieldValues(
           put(k, r.org_segment);
           break;
         case "org_telefone":
-          put(k, formatPhone(r.org_phone));
+          if (r.org_phone) out[k] = { text: formatPhone(r.org_phone), phone: r.org_phone };
           break;
         default: {
           // Campo personalizado (cf:, pcf:, ocf:), na mesma posição da lista.

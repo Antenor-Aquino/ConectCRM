@@ -1,7 +1,7 @@
 // Configurações: menu lateral com as seções. As que chegam em outras fases
 // aparecem desabilitadas, com a fase indicada.
 import { useEffect, useState } from "react";
-import { Ban, Database, FileText, Sparkles, KeyRound, ListChecks, Package, SlidersHorizontal, Tags, Users, UsersRound } from "lucide-react";
+import { Ban, Database, FileText, Sparkles, KeyRound, ListChecks, Mail, Package, SlidersHorizontal, Tags, Users, UsersRound } from "lucide-react";
 import { TaPanel, cn } from "@tailadmin";
 import { planLabel } from "../../lib/license";
 import { useLicense } from "../license/LicenseGate";
@@ -11,13 +11,14 @@ import { AiSettings } from "./AiSettings";
 import { BackupSettings } from "./BackupSettings";
 import { CustomFieldsSettings } from "./CustomFieldsSettings";
 import { DocumentsSettings } from "./DocumentsSettings";
+import { EmailSettings } from "./EmailSettings";
 import { LossReasonsSettings } from "./LossReasonsSettings";
 import { ProductsSettings } from "./ProductsSettings";
 import { TagsSettings } from "./TagsSettings";
 import { TeamsSettings } from "./TeamsSettings";
 import { UsersSettings } from "./UsersSettings";
 
-type Section = "usuarios" | "equipes" | "licenca" | "tags" | "campos" | "produtos" | "motivos" | "tipos" | "documentos" | "backup" | "ia";
+type Section = "usuarios" | "equipes" | "licenca" | "tags" | "campos" | "produtos" | "motivos" | "tipos" | "documentos" | "backup" | "ia" | "email";
 
 const SECTIONS: { id: Section | null; label: string; icon: React.ReactNode; phase?: string }[] = [
   { id: "usuarios", label: "Usuários", icon: <Users size={16} /> },
@@ -29,6 +30,7 @@ const SECTIONS: { id: Section | null; label: string; icon: React.ReactNode; phas
   { id: "motivos", label: "Motivos de perda", icon: <Ban size={16} /> },
   { id: "tipos", label: "Tipos de atividade", icon: <ListChecks size={16} /> },
   { id: "documentos", label: "Documentos (GED)", icon: <FileText size={16} /> },
+  { id: "email", label: "E-mail", icon: <Mail size={16} /> },
   { id: "ia", label: "Inteligência artificial", icon: <Sparkles size={16} /> },
   { id: "backup", label: "Backup e ambiente", icon: <Database size={16} /> },
 ];
@@ -67,6 +69,7 @@ export function SettingsView({ env }: { env: DbEnv }) {
         {section === "motivos" && <LossReasonsSettings />}
         {section === "tipos" && <ActivityTypesSettings />}
         {section === "documentos" && <DocumentsSettings env={env} />}
+        {section === "email" && <EmailSettings />}
         {section === "ia" && (
           <div className="space-y-5">
             <AiSettings />

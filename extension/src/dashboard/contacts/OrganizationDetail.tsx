@@ -19,6 +19,7 @@ import { ChangeLogList, CustomValuesView, DrawerShell, InfoRow, RelatedCards, Re
 import { MergeModal } from "./MergeModal";
 import { OrganizationFormModal } from "./OrganizationFormModal";
 import { errorText } from "../../lib/errors";
+import { EmailLink, PhoneLink } from "../ui/ContactLinks";
 
 type Tab = "contatos" | "negocios" | "tarefas" | "documentos" | "notas" | "historico";
 
@@ -127,8 +128,8 @@ export function OrganizationDetail({
             )}
           </InfoRow>
           <InfoRow label="Responsável">{users.find((u) => u.id === o.owner_id)?.name}</InfoRow>
-          <InfoRow label="Telefone">{formatPhone(o.phone)}</InfoRow>
-          <InfoRow label="E-mail">{o.email && <a className="text-brand-600 hover:underline" href={`mailto:${o.email}`}>{o.email}</a>}</InfoRow>
+          <InfoRow label="Telefone">{o.phone && <PhoneLink phone={o.phone} className="text-brand-600">{formatPhone(o.phone)}</PhoneLink>}</InfoRow>
+          <InfoRow label="E-mail">{o.email && <EmailLink email={o.email} className="text-brand-600">{o.email}</EmailLink>}</InfoRow>
           <InfoRow label="Endereço">{address}</InfoRow>
           <InfoRow label="Tags">
             {o.tags.length > 0 && (
