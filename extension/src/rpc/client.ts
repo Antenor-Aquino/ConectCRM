@@ -2,6 +2,7 @@
 // operação do banco. Uso: `await call("pipelines.list", {})`.
 import type { MethodName, MethodParams, MethodResult } from "./methods";
 import type { EnsureOffscreenMessage, RpcRequest, RpcResponse } from "./protocol";
+import { base64ToBytes, bytesToBase64 } from "../lib/environment";
 
 let currentUserId: string | null = null;
 
@@ -45,7 +46,40 @@ export async function call<M extends MethodName>(method: M, ...args: MethodParam
 
 export class RpcError extends Error {}
 
-/** Operações do próprio offscreen: ambiente, exportar, restaurar. */
-export async function systemCall<T>(method: "system.env" | "system.export" | "system.switchEnv" | "system.resetDemo" | "system.restore", params: Record<string, unknown> = {}): Promise<T> {
+type SystemMethod =
+  | "system.env"
+  | "system.exportBegin"
+  | "system.exportChunk"
+  | "system.restoreBegin"
+  | "system.restoreChunk"
+  | "system.restore"
+  | "system.switchEnv"
+  | "system.resetDemo";
+
+/** Operações do worker do banco: ambiente, exportar, restaurar. */
+export async function systemCall<T>(method: SystemMethod, params: Record<string, unknown> = {}): Promise<T> {
   return (call as unknown as (m: string, p: unknown) => Promise<T>)(method, params);
 }
+
+/** Cópia do banco em bytes, buscada em partes (as mensagens têm limite de 64 MB). */
+export async function exportDatabase(): Promise<Uint8Array> {
+  const { token, size } = await systemCall<{ token: string; size: number }>("system.exportBegin");
+  const out = new Uint8Array(size);
+  for (let offset = 0; offset < size; ) {
+    const part = base64ToBytes(await systemCall<string>("system.exportChunk", { token, offset }));
+    if (!part.length) throw new Error("Falha ao exportar o banco.");
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+}
+
+/** Substitui o banco do ambiente atual pelos bytes do backup (enviados em partes). */
+export async function restoreDatabase(bytes: Uint8Array): Promise<void> {
+  const token = await systemCall<string>("system.restoreBegin", { size: bytes.length });
+  for (let offset = 0; offset < bytes.length; offset += RESTORE_CHUNK) {
+    await systemCall("system.restoreChunk", { token, base64: bytesToBase64(bytes.subarray(offset, offset + RESTORE_CHUNK)) });
+  }
+  await systemCall("system.restore", { token });
+}
+const RESTORE_CHUNK = 16 * 1024 * 1024;

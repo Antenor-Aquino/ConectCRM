@@ -93,6 +93,10 @@ async function moveLegacyFiles(st: State): Promise<void> {
 
 let opened: Promise<State> = loadActiveEnv().then(open);
 
+/** Backups em trânsito (exportação ou restauração em partes). */
+const CHUNK = 16 * 1024 * 1024;
+const transfers = new Map<string, { bytes: Uint8Array; size: number }>();
+
 /** Operações do próprio worker (não passam pelo registro de métodos). */
 async function system(method: string, params: Record<string, unknown>): Promise<unknown> {
   const st = await opened;
@@ -100,8 +104,38 @@ async function system(method: string, params: Record<string, unknown>): Promise<
   switch (method) {
     case "system.env":
       return st.env;
-    case "system.export":
-      return bytesToBase64(st.db.export());
+    // Backup em partes: as mensagens entre páginas da extensão têm limite de
+    // 64 MB, e o banco pode ser bem maior.
+    case "system.exportBegin": {
+      const token = crypto.randomUUID();
+      const bytes = st.db.export();
+      transfers.set(token, { bytes, size: bytes.length });
+      return { token, size: bytes.length };
+    }
+    case "system.exportChunk": {
+      const t = transfers.get(String(params.token));
+      if (!t) throw new Error("Exportação expirada. Tente de novo.");
+      const offset = Number(params.offset);
+      const part = t.bytes.subarray(offset, offset + CHUNK);
+      if (offset + part.length >= t.size) transfers.delete(String(params.token));
+      return bytesToBase64(part);
+    }
+    case "system.restoreBegin": {
+      const size = Number(params.size);
+      if (!(size > 0)) throw new Error("Arquivo vazio.");
+      const token = crypto.randomUUID();
+      transfers.set(token, { bytes: new Uint8Array(size), size: 0 });
+      return token;
+    }
+    case "system.restoreChunk": {
+      const t = transfers.get(String(params.token));
+      if (!t) throw new Error("Restauração expirada. Tente de novo.");
+      const part = base64ToBytes(String(params.base64));
+      if (t.size + part.length > t.bytes.length) throw new Error("Arquivo maior que o informado.");
+      t.bytes.set(part, t.size);
+      t.size += part.length;
+      return t.size;
+    }
     case "system.switchEnv": {
       const env = params.env as DbEnv;
       if (env !== "production" && env !== "demo") throw new Error("Ambiente inválido.");
@@ -121,7 +155,10 @@ async function system(method: string, params: Record<string, unknown>): Promise<
       return true;
     }
     case "system.restore": {
-      const bytes = base64ToBytes(String(params.base64));
+      const t = transfers.get(String(params.token));
+      transfers.delete(String(params.token));
+      if (!t || t.size !== t.bytes.length) throw new Error("Restauração incompleta. Tente de novo.");
+      const bytes = t.bytes;
       validateBackup(sqlite3, bytes);
       // Guarda o banco atual antes de substituir (desfazer manual em caso de engano).
       await pool.importDb(fileOf(`${st.env}-antes-da-restauracao`), st.db.export());
@@ -136,7 +173,16 @@ async function system(method: string, params: Record<string, unknown>): Promise<
   }
 }
 
-const SYSTEM = new Set(["system.env", "system.export", "system.switchEnv", "system.resetDemo", "system.restore"]);
+const SYSTEM = new Set([
+  "system.env",
+  "system.exportBegin",
+  "system.exportChunk",
+  "system.restoreBegin",
+  "system.restoreChunk",
+  "system.restore",
+  "system.switchEnv",
+  "system.resetDemo",
+]);
 
 // As operações de sistema fecham e reabrem o banco: uma por vez.
 let systemQueue: Promise<unknown> = Promise.resolve();

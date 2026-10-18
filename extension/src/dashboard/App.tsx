@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Building2, Sparkles, CalendarDays, CircleCheck, Filter, FolderArchive, LineChart, Settings, User, Workflow } from "lucide-react";
 import { AppLayout, TopNavBar, cn, type TopNavItem } from "@tailadmin";
-import { call, systemCall } from "../rpc/client";
+import { call, exportDatabase, systemCall } from "../rpc/client";
 import { checkAutoBackup, type AutoBackupCheck } from "../lib/autoBackup";
 import { backupDocuments, checkDocumentExpiry } from "../lib/documentFiles";
 import type { OpenCardMessage } from "../rpc/protocol";
@@ -20,7 +20,6 @@ import { QuickCreateMenu } from "./components/QuickCreateMenu";
 import { UserSwitcher } from "./components/UserSwitcher";
 import { LicenseGate } from "./license/LicenseGate";
 import { LockScreen } from "./components/LockScreen";
-import { exportDatabase } from "./settings/BackupSettings";
 import { DocumentNavProvider, type DocumentNav } from "./documents/docUi";
 import { GedView } from "./documents/GedView";
 import { ReportsView } from "./reports/ReportsView";

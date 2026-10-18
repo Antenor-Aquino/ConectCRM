@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import { DatabaseBackup, Download, FolderOpen, RefreshCw, Upload } from "lucide-react";
 import { TaButton, TaPanel, TaSelect } from "@tailadmin";
-import { systemCall } from "../../rpc/client";
+import { exportDatabase, restoreDatabase, systemCall } from "../../rpc/client";
 import {
   loadAutoBackupSettings,
   manualBackupFilename,
@@ -16,16 +16,12 @@ import {
 } from "../../lib/autoBackup";
 import { loadBackupFolderHandle, pickBackupFolder } from "../../lib/backupFolder";
 import { backupDocuments, buildBackupZip, readBackupZip, recoverFromBackupFolder, restoreDocumentFiles, saveBlobAs } from "../../lib/documentFiles";
-import { base64ToBytes, bytesToBase64, type DbEnv } from "../../lib/environment";
+import type { DbEnv } from "../../lib/environment";
 import { formatDateTime } from "../../lib/format";
 import { addNotification } from "../../lib/notifications";
 import { useSession } from "../session";
 import { Switch } from "../ui/Switch";
 import { errorText } from "../../lib/errors";
-
-export async function exportDatabase(): Promise<Uint8Array> {
-  return base64ToBytes(await systemCall<string>("system.export"));
-}
 
 type Msg = { text: string; kind: "ok" | "err" } | null;
 
@@ -157,7 +153,7 @@ export function BackupSettings({ env }: { env: DbEnv }) {
                 const raw = new Uint8Array(await file.arrayBuffer());
                 const isZip = raw[0] === 0x50 && raw[1] === 0x4b;
                 const backup = isZip ? await readBackupZip(raw) : null;
-                await systemCall("system.restore", { base64: bytesToBase64(backup ? backup.db : raw) });
+                await restoreDatabase(backup ? backup.db : raw);
                 // Documentos: os do .zip; num .sqlite, os que estiverem na pasta de backup.
                 const docs = backup ? await restoreDocumentFiles(backup.files) : await recoverFromBackupFolder(await loadBackupFolderHandle());
                 await addNotification({
