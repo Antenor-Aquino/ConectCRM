@@ -196,12 +196,17 @@ export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
       if (l.op === "delete") return ["Excluiu o cartão"];
       if (l.op === "restore") return ["Restaurou o cartão"];
       const out: string[] = [];
-      if (ch.stage_id) out.push(`Moveu de etapa: ${name(stages, ch.stage_id[0])} → ${name(stages, ch.stage_id[1])}`);
+      if (ch.pipeline_id) {
+        // Mudou de funil: funil › etapa antes e depois numa linha só.
+        const [pa, pb] = ch.pipeline_id as [string, string];
+        const [sa, sb] = (ch.stage_id as [string, string] | undefined) ?? [prev.stage_id as string, next.stage_id as string];
+        out.push(`Mudou de funil: ${name(pipelines, pa)} › ${name(stages, sa)} → ${name(pipelines, pb)} › ${name(stages, sb)}`);
+      } else if (ch.stage_id) out.push(`Moveu de etapa: ${name(stages, ch.stage_id[0])} → ${name(stages, ch.stage_id[1])}`);
       if (ch.status) {
         const [a, b] = ch.status as [string, string];
         out.push(b === "won" ? outcome.markedWon : b === "lost" ? outcome.markedLost : `Reabriu (estava ${statusName[a] ?? a})`);
       }
-      out.push(...fieldChanges(ch, dealFields, fmtDeal, DEAL_SKIP));
+      out.push(...fieldChanges(ch, dealFields, fmtDeal, ch.pipeline_id ? new Set([...DEAL_SKIP, "pipeline_id"]) : DEAL_SKIP));
       return out;
     }
     if (t === "deal_item") {

@@ -2,7 +2,7 @@
 // resolvido/não resolvido, concluído/não concluído conforme o tipo),
 // notas, tarefas e histórico de alterações.
 import { useCallback, useEffect, useState } from "react";
-import { Check, CheckCircle2, Circle, Maximize2, Minimize2, Pencil, PlusCircle, RotateCcw, Sparkles, Trash2, Trophy, X, XCircle } from "lucide-react";
+import { ArrowLeftRight, Check, CheckCircle2, Circle, Maximize2, Minimize2, Pencil, PlusCircle, RotateCcw, Sparkles, Trash2, Trophy, X, XCircle } from "lucide-react";
 import { TaBadge, TaButton, TaInput, TaTextarea, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { ActivityListItem } from "../../db/activities";
@@ -33,6 +33,7 @@ import { ActivityIcon } from "../../lib/activityIcons";
 import { taskTiming } from "../../lib/taskTiming";
 import { ItemsEditor, type ItemDraft } from "./ItemsEditor";
 import { LostModal } from "./LostModal";
+import { ChangePipelineModal } from "./ChangePipelineModal";
 import { createOrganizationQuick, createPersonQuick, searchOrganizations, searchPersons } from "./searchers";
 import { errorText } from "../../lib/errors";
 import { RECURRENCE_LABEL, type Recurrence } from "../../db/products";
@@ -48,9 +49,15 @@ export function CardDetail({
   onChanged,
   mode = "drawer",
   onToggleMode,
+  pipelines = [],
+  onMovedPipeline,
 }: {
   cardId: string;
   pipeline: Pipeline;
+  /** Funis para "Mudar de funil" (só os do mesmo tipo aparecem). */
+  pipelines?: Pipeline[];
+  /** O cartão foi para outro funil: a tela abre esse funil com o cartão. */
+  onMovedPipeline?: (pipelineId: string) => void;
   onClose: () => void;
   onChanged: () => void;
   /** drawer = painel lateral sobre o quadro; full = ocupa a área do quadro. */
@@ -69,6 +76,7 @@ export function CardDetail({
   const [docOpen, setDocOpen] = useState<string | null>(null);
   const [itemsOpen, setItemsOpen] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
+  const [changingPipeline, setChangingPipeline] = useState(false);
   // Cadastro aberto a partir do nome do contato, da organização ou do responsável.
   const [editing, setEditing] = useState<{ kind: "person" | "organization" | "user"; id: string } | null>(null);
   const { user: me, users, reloadUsers } = useSession();
@@ -138,8 +146,20 @@ export function CardDetail({
         />
         {status && <TaBadge color={status.color} label={status.label} />}
       </div>
-      <p className="mb-4 px-1 text-theme-xs text-gray-500">
-        {pipeline.name} · criado em {formatDateTime(card.created_at)}
+      <p className="mb-4 flex flex-wrap items-center gap-1 px-1 text-theme-xs text-gray-500">
+        {onMovedPipeline ? (
+          <button
+            type="button"
+            title="Mudar de funil"
+            onClick={() => setChangingPipeline(true)}
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-brand-600 hover:bg-brand-50 dark:text-brand-400 dark:hover:bg-brand-500/10"
+          >
+            {pipeline.name} <ArrowLeftRight size={12} />
+          </button>
+        ) : (
+          pipeline.name
+        )}
+        <span>· criado em {formatDateTime(card.created_at)}</span>
       </p>
 
       {/* Etapas: clicar move o cartão */}
@@ -458,6 +478,20 @@ export function CardDetail({
             await reloadUsers();
             void load();
             onChanged();
+          }}
+        />
+      )}
+      {changingPipeline && onMovedPipeline && (
+        <ChangePipelineModal
+          cardId={cardId}
+          pipeline={pipeline}
+          currentStage={stages.find((x) => x.id === card.stage_id)}
+          pipelines={pipelines}
+          onClose={() => setChangingPipeline(false)}
+          onMoved={(id) => {
+            setChangingPipeline(false);
+            onChanged();
+            onMovedPipeline(id);
           }}
         />
       )}

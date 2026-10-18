@@ -8,6 +8,7 @@ import { KIND_BY_PIPELINE_TYPE, type DealKind, type PipelineType } from "./pipel
 import { getProduct, RECURRENCES, type Recurrence } from "./products";
 import { cardFieldValues, type CardFieldValue } from "./cardFieldValues";
 import { isCardFieldKey } from "../lib/cardFields";
+import { normalizeText } from "../lib/search";
 import { OVERDUE_COND, overdueParams, startOfDay } from "../lib/taskTiming";
 import { getRow, insertRow, softDelete, updateRow, type DbContext } from "./repo";
 import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
@@ -112,8 +113,8 @@ function pipelineOf(db: DatabaseSync, pipelineId: string): { id: string; type: P
   return p;
 }
 
-function stageOf(db: DatabaseSync, stageId: string): { id: string; pipeline_id: string } {
-  const s = one<{ id: string; pipeline_id: string }>(db, "SELECT id, pipeline_id FROM stage WHERE id = ? AND deleted_at IS NULL", stageId);
+function stageOf(db: DatabaseSync, stageId: string): { id: string; pipeline_id: string; name: string } {
+  const s = one<{ id: string; pipeline_id: string; name: string }>(db, "SELECT id, pipeline_id, name FROM stage WHERE id = ? AND deleted_at IS NULL", stageId);
   if (!s) throw new ValidationError("Etapa não encontrada.");
   return s;
 }
@@ -309,6 +310,33 @@ export function moveCard(db: DatabaseSync, ctx: DbContext, id: string, target: {
       Object.assign(data, { stage_id: stage.id, pipeline_id: pipeline.id, stage_entered_at: at });
     }
     updateRow(db, ctx, "deal", id, data);
+  });
+}
+
+/** Etapa do funil de destino com o mesmo nome (sem acento/maiúsculas) da etapa de origem. */
+export function matchingStageId(db: DatabaseSync, fromStageId: string, pipelineId: string): string | null {
+  const from = stageOf(db, fromStageId);
+  const key = normalizeText(from.name);
+  const target = many<{ id: string; name: string }>(db, "SELECT id, name FROM stage WHERE pipeline_id = ? AND deleted_at IS NULL ORDER BY position", pipelineId);
+  return target.find((s) => normalizeText(s.name) === key)?.id ?? null;
+}
+
+/**
+ * Leva o cartão para outro funil do mesmo tipo. Sem `stageId`, vai para a etapa
+ * de mesmo nome; se o destino não tiver, é preciso escolher a etapa.
+ */
+export function changeCardPipeline(db: DatabaseSync, ctx: DbContext, id: string, input: { pipelineId: string; stageId?: string | null }): string {
+  return withTransaction(db, () => {
+    const card = requireCard(db, id);
+    if (input.pipelineId === card.pipeline_id) throw new ValidationError("O cartão já está neste funil.");
+    const target = pipelineOf(db, input.pipelineId);
+    if (target.archived_at) throw new ValidationError("Este funil está arquivado.");
+    if (KIND_BY_PIPELINE_TYPE[target.type] !== card.kind) throw new ValidationError("Só é possível mudar para um funil do mesmo tipo.");
+    const stageId = input.stageId ?? matchingStageId(db, card.stage_id, target.id);
+    if (!stageId) throw new ValidationError("O funil de destino não tem uma etapa com o mesmo nome. Escolha a etapa.");
+    if (stageOf(db, stageId).pipeline_id !== target.id) throw new ValidationError("A etapa não pertence ao funil de destino.");
+    moveCard(db, ctx, id, { stageId });
+    return stageId;
   });
 }
 

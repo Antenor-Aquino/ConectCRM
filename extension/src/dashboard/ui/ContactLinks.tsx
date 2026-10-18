@@ -3,7 +3,8 @@
 // um, mostra a escolha). O clique não abre o cartão por baixo.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Mail, Settings } from "lucide-react";
+import { Check, Mail, Settings } from "lucide-react";
+import { TaInput } from "@tailadmin";
 import { cn } from "@tailadmin";
 import { emailKindLabel, loadEmailProviders, openEmail, openWhatsApp, whatsappDigits, type EmailProvider } from "../../lib/contactLinks";
 import { useSession } from "../session";
@@ -48,7 +49,7 @@ export function WebLink({ url, children, className }: { url: string; children: R
 /** Opção "computador" quando nada foi cadastrado. */
 const FALLBACK: EmailProvider = { id: "padrao", kind: "padrao", name: "Aplicativo de e-mail do computador" };
 
-export function EmailLink({ email, children, className }: { email: string; children: ReactNode; className?: string }) {
+export function EmailLink({ email, children, className, iconOnly }: { email: string; children: ReactNode; className?: string; /** Botão só com ícone: "copiado" vira ✓. */ iconOnly?: boolean }) {
   const { user } = useSession();
   const btn = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
@@ -79,14 +80,19 @@ export function EmailLink({ email, children, className }: { email: string; child
     const close = (e: MouseEvent) => {
       if (!menu.current?.contains(e.target as Node) && !btn.current?.contains(e.target as Node)) setOptions(null);
     };
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOptions(null);
+    // Esc fecha só este menu (captura antes da janela/painel por baixo, que também fecha com Esc).
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopImmediatePropagation();
+      setOptions(null);
+    };
     const off = (e: Event) => !menu.current?.contains(e.target as Node) && setOptions(null);
     document.addEventListener("mousedown", close);
-    document.addEventListener("keydown", esc);
+    window.addEventListener("keydown", esc, true);
     window.addEventListener("scroll", off, true);
     return () => {
       document.removeEventListener("mousedown", close);
-      document.removeEventListener("keydown", esc);
+      window.removeEventListener("keydown", esc, true);
       window.removeEventListener("scroll", off, true);
     };
   }, [options]);
@@ -102,7 +108,7 @@ export function EmailLink({ email, children, className }: { email: string; child
         onMouseDown={(e) => e.stopPropagation()}
         className={cn(LINK, className)}
       >
-        {copied ? <span className="text-success-600">E-mail copiado — cole no destinatário</span> : children}
+        {copied ? iconOnly ? <Check size={15} /> : <span className="text-success-600">E-mail copiado — cole no destinatário</span> : children}
       </button>
       {options &&
         createPortal(
@@ -134,5 +140,22 @@ export function EmailLink({ email, children, className }: { email: string; child
           document.body,
         )}
     </>
+  );
+}
+
+/** Campo de e-mail editável com o botão que abre o provedor (como no cartão). */
+export function EmailInput({ value, onChange, onBlur, placeholder }: { value: string; onChange: (v: string) => void; onBlur?: () => void; placeholder?: string }) {
+  const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+  return (
+    <div className="relative">
+      <TaInput type="email" placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} className={valid ? "pr-11" : undefined} />
+      {valid && (
+        <span className="absolute right-2 top-1/2 -translate-y-1/2">
+          <EmailLink iconOnly email={value.trim()} className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-500 text-white no-underline shadow-theme-xs hover:bg-brand-600 hover:text-white hover:no-underline">
+            <Mail size={15} />
+          </EmailLink>
+        </span>
+      )}
+    </div>
   );
 }

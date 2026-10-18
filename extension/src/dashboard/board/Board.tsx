@@ -528,7 +528,11 @@ export function Board({
               >
                 <div className="mb-0.5 flex items-center gap-2 px-1">
                   <StagePill name={col.name} color={col.color} className="min-w-0" />
-                  <span className="text-theme-xs font-bold text-gray-700 dark:text-gray-300">{col.count}</span>
+                  {/* Quantidade e valor na mesma linha: "2 - R$ 641,00" (valor sempre no comercial; nos outros tipos quando há). */}
+                  <span className="shrink-0 whitespace-nowrap text-theme-xs font-bold text-gray-700 dark:text-gray-300" data-stage-summary>
+                    {col.count}
+                    {(pipeline.type === "comercial" || col.total_cents > 0) && ` - ${formatCents(col.total_cents)}`}
+                  </span>
                   <span className="ml-auto flex shrink-0 items-center gap-0.5">
                     <button
                       type="button"
@@ -548,12 +552,7 @@ export function Board({
                     </button>
                   </span>
                 </div>
-                {/* Valor da etapa: sempre no comercial; nos outros tipos quando há produtos/valor. */}
-                {pipeline.type === "comercial" || col.total_cents > 0 ? (
-                  <div className="mb-3 mt-1.5 px-1 text-theme-xs font-bold text-gray-700 dark:text-gray-300">{formatCents(col.total_cents)}</div>
-                ) : (
-                  <div className="mb-2" />
-                )}
+                <div className="mb-3" />
                 <div className="flex flex-1 flex-col gap-2.5">
                   {col.cards.map((card) => (
                     <div key={card.id}>

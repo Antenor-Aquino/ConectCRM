@@ -183,7 +183,8 @@ pergunta antes de criar (**Criar mesmo assim**).
 ### 6.0 Cabeçalho das etapas e recolher
 
 - O nome da etapa aparece numa "pílula" na cor da etapa (texto branco),
-  com a quantidade ao lado e o valor total abaixo. No topo da coluna: **⋮**
+  com a quantidade e o valor total ao lado: **Prospect 2 - R$ 641,00** (o
+  valor sempre no comercial; nos outros tipos quando há valor). No topo da coluna: **⋮**
   abre "Editar funil e etapas" e **‹** recolhe a etapa.
 - Em "Novo funil" e "Editar funil", a **Prévia no quadro** mostra os nomes
   com as cores escolhidas antes de salvar.
@@ -328,6 +329,15 @@ no cartão mais recente do funil.
   previsão, próxima atividade) ficam em vermelho.
 - Até 12 campos. **Restaurar padrão** volta ao cartão original (valor,
   contato e responsável; no operacional, SLA; no projeto, prazo).
+
+## 10.1.1 Mudar o cartão de funil
+
+- No detalhe do cartão, o nome do funil (⇄) abre **Mudar de funil**: lista
+  só os funis do **mesmo tipo** (comercial, operacional ou projeto).
+- Se o funil de destino tiver uma etapa com o **mesmo nome** (sem diferença de
+  acento/maiúsculas), ela já vem escolhida; senão o usuário escolhe a etapa.
+- Depois de mudar, a tela abre o funil de destino com o cartão aberto. O
+  histórico registra "Mudou de funil: Vendas › Proposta → Parcerias › Proposta".
 
 ## 10.2 Detalhe do negócio: produtos e histórico
 

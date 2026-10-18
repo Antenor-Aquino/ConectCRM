@@ -120,6 +120,13 @@ export function FunnelsView({
           onToggleMode={toggleCardMode}
           onClose={() => onOpenCard(null)}
           onChanged={() => void onChanged()}
+          pipelines={pipelines}
+          onMovedPipeline={(id) => {
+            // Abre o funil de destino com o mesmo cartão aberto.
+            const card = openCardId;
+            onSelect(id);
+            onOpenCard(card);
+          }}
         />
       ) : (
         <Board
@@ -162,6 +169,13 @@ export function FunnelsView({
           onToggleMode={toggleCardMode}
           onClose={() => onOpenCard(null)}
           onChanged={() => void onChanged()}
+          pipelines={pipelines}
+          onMovedPipeline={(id) => {
+            // Abre o funil de destino com o mesmo cartão aberto.
+            const card = openCardId;
+            onSelect(id);
+            onOpenCard(card);
+          }}
         />
       )}
     </div>

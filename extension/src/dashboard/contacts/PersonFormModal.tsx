@@ -14,6 +14,7 @@ import { ErrorText, Field, SectionLabel } from "../ui/form";
 import { ImageUpload } from "../ui/ImageUpload";
 import { SimilarNotice, useSimilar } from "../ui/SimilarNotice";
 import { localPart, PhoneInput } from "../ui/PhoneInput";
+import { EmailInput } from "../ui/ContactLinks";
 import { TagPicker } from "../ui/TagPicker";
 import { UserSelect } from "../ui/UserSelect";
 import { errorText } from "../../lib/errors";
@@ -134,11 +135,12 @@ export function PersonFormModal({
           <SectionLabel>Canais</SectionLabel>
           <div className="grid grid-cols-2 gap-3">
             <Field label="E-mail">
-              <TaInput type="email" placeholder="nome@empresa.com.br" value={email} onChange={(e) => setEmail(e.target.value)} onBlur={() => void checkDuplicates()} />
+              <EmailInput placeholder="nome@empresa.com.br" value={email} onChange={setEmail} onBlur={() => void checkDuplicates()} />
             </Field>
             <Field label="Celular">
               <div onBlur={() => void checkDuplicates()}>
                 <PhoneInput
+                  whatsapp
                   value={phone}
                   country={country}
                   onChange={(v, c) => {

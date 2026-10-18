@@ -65,6 +65,9 @@ Modal com rolagem interna, botão ✕ no topo, **Salvar** fixo no rodapé.
     nenhum, oferece o aplicativo do computador e indica a configuração.
 - **Organização** no cartão: com **site** cadastrado, o nome abre o site numa
   nova aba (sem "https://", ele é acrescentado); sem site, é texto comum.
+- No formulário de contato e de organização, os campos de telefone e e-mail
+  têm um botão (WhatsApp verde / envelope) com o mesmo comportamento; clicar
+  no campo continua editando.
 - O clique no telefone/e-mail/organização não abre o cartão.
 
 ## 4. Decisões e pendências

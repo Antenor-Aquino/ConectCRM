@@ -20,6 +20,7 @@ import { localPart, PhoneInput } from "../ui/PhoneInput";
 import { TagPicker } from "../ui/TagPicker";
 import { UserSelect } from "../ui/UserSelect";
 import { errorText } from "../../lib/errors";
+import { EmailInput } from "../ui/ContactLinks";
 
 type Form = {
   name: string;
@@ -226,10 +227,10 @@ export function OrganizationFormModal({
           <SectionLabel>Contato</SectionLabel>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Telefone">
-              <PhoneInput value={form.phone} country={form.phoneCountry} onChange={(v, c) => set({ phone: v, phoneCountry: c })} placeholder="(11) 3333-4444" />
+              <PhoneInput whatsapp value={form.phone} country={form.phoneCountry} onChange={(v, c) => set({ phone: v, phoneCountry: c })} placeholder="(11) 3333-4444" />
             </Field>
             <Field label="E-mail">
-              <TaInput type="email" value={form.email} placeholder="contato@empresa.com.br" onChange={(e) => set({ email: e.target.value })} />
+              <EmailInput value={form.email} placeholder="contato@empresa.com.br" onChange={(v) => set({ email: v })} />
             </Field>
           </div>
 
