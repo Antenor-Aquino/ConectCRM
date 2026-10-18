@@ -8,19 +8,20 @@ import { ArrowLeft, ArrowRight, Search } from "lucide-react";
 import { TaBadge, TaButton, TaInput, TaModal, TaSelect, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { CustomField } from "../../db/customFields";
-import type { ExternalCheckResult, ExternalImportSummary } from "../../db/externalImport";
+import type { ExternalCheckResult, ExternalImportSummary, ExternalNoteRow } from "../../db/externalImport";
 import type { Pipeline, Stage } from "../../db/pipelines";
 import { errorText } from "../../lib/errors";
 import { formatDate } from "../../lib/format";
 import { importKey } from "../../lib/importParse";
 import { loadPipedriveMappings, savePipedriveMapping, type PipedriveSettings } from "../../lib/integrations";
-import { PipedriveClient, type PdEntity, type PdRaw, type PdUser } from "../../lib/pipedrive/api";
+import { PipedriveClient, type PdEntity, type PdPipeline, type PdRaw, type PdStage, type PdUser } from "../../lib/pipedrive/api";
 import {
   buildRow,
   CRM_ENTITY,
   crmTargets,
   guessFieldMapping,
   guessOption,
+  noteRows,
   orgIdOf,
   OWNER_ME,
   OWNER_NONE,
@@ -41,10 +42,19 @@ import { ErrorText } from "../ui/form";
 
 const TABS: { id: PdEntity; label: string; noun: string }[] = [
   { id: "lead", label: "Leads", noun: "lead(s)" },
+  { id: "deal", label: "Negócios", noun: "negócio(s)" },
   { id: "person", label: "Contatos", noun: "contato(s)" },
   { id: "organization", label: "Organizações", noun: "organização(ões)" },
 ];
-const IMPORT_METHOD = { person: "integrations.importPersons", organization: "integrations.importOrganizations", lead: "integrations.importDeals" } as const;
+const IMPORT_METHOD = {
+  person: "integrations.importPersons",
+  organization: "integrations.importOrganizations",
+  lead: "integrations.importDeals",
+  deal: "integrations.importDeals",
+} as const;
+/** Leads e negócios viram cartões; trazem contato e organização junto. */
+const isCard = (e: PdEntity) => e === "lead" || e === "deal";
+const NOTE_BATCH = 200;
 const BATCH = 100;
 const MATCH_LABEL = { email: "e-mail", phone: "celular", cnpj: "CNPJ", name: "nome" } as const;
 
@@ -87,6 +97,10 @@ export function PipedriveImportModal({ settings, onClose }: { settings: Pipedriv
   // Caches da sessão da janela: metadados por tipo, usuários e registros relacionados.
   const pdUsers = useRef<PdUser[] | null>(null);
   const infos = useRef(new Map<PdEntity, Info>());
+  // Negócios: funis e etapas do Pipedrive.
+  const pdStages = useRef<{ pipelines: PdPipeline[]; stages: PdStage[] } | null>(null);
+  // Etapas de todos os funis comerciais do CRM (de-para das etapas).
+  const [crmStages, setCrmStages] = useState<{ pipeline: Pipeline; stages: Stage[] }[]>([]);
   const related = useRef(new Map<string, PdRaw>()); // `${tipo}:${id}`
 
   const reset = () => {
@@ -149,6 +163,10 @@ export function PipedriveImportModal({ settings, onClose }: { settings: Pipedriv
     try {
       const inf = await ensure(tab);
       setInfo(inf);
+      if (tab === "deal" && !pdStages.current) {
+        const [pipelines, stages] = await Promise.all([client.pipelines(), client.stages()]);
+        pdStages.current = { pipelines, stages };
+      }
       let raws: PdRaw[];
       if (mode === "name") {
         raws = await client.search(tab, term);
@@ -165,7 +183,7 @@ export function PipedriveImportModal({ settings, onClose }: { settings: Pipedriv
           "organization",
           list.map((r) => r.sum.orgId),
         );
-      if (tab === "lead")
+      if (isCard(tab))
         await relatedRaws(
           "person",
           list.map((r) => r.sum.personId),
@@ -214,7 +232,15 @@ export function PipedriveImportModal({ settings, onClose }: { settings: Pipedriv
       for (const raw of raws) for (const v of s.get(raw)) if (m[importKey(v)] === undefined) m[importKey(v)] = guessOption(tgt, v);
       options[tgtKey] = m;
     }
-    return { fields, owners, options, pipelineId: saved?.pipelineId, stageId: saved?.stageId };
+    return {
+      fields,
+      owners,
+      options,
+      pipelineId: saved?.pipelineId,
+      stageId: saved?.stageId,
+      stages: { ...(saved?.stages ?? {}) },
+      notes: saved?.notes ?? true,
+    };
   }
 
   async function goMap() {
@@ -222,10 +248,31 @@ export function PipedriveImportModal({ settings, onClose }: { settings: Pipedriv
     setError(null);
     const raws = results.filter((r) => selected.has(r.sum.id)).map((r) => r.raw);
     const m = await mappingFor(tab, info, raws);
-    if (tab === "lead") {
+    if (isCard(tab)) {
       const all = (await call("pipelines.list", {})).filter((p) => p.type === "comercial" && !p.archived_at);
       setPipelines(all);
       if (!m.pipelineId || !all.some((p) => p.id === m.pipelineId)) m.pipelineId = all[0]?.id;
+    }
+    if (tab === "deal") {
+      // De-para das etapas: sugestão pelo nome (funil de mesmo nome primeiro).
+      const groups = await Promise.all(
+        (await call("pipelines.list", {}))
+          .filter((p) => p.type === "comercial" && !p.archived_at)
+          .map(async (pipeline) => ({ pipeline, stages: await call("stages.list", { pipelineId: pipeline.id }) })),
+      );
+      setCrmStages(groups);
+      const stagesMap = { ...(m.stages ?? {}) };
+      for (const st of usedPdStages(raws)) {
+        const valid = groups.some((g) => g.stages.some((x) => x.id === stagesMap[st.id]));
+        if (valid) continue;
+        const pdPipe = pdStages.current?.pipelines.find((p) => p.id === st.pipeline_id)?.name ?? "";
+        const same = groups.find((g) => importKey(g.pipeline.name) === importKey(pdPipe));
+        const hit =
+          same?.stages.find((x) => importKey(x.name) === importKey(st.name)) ??
+          groups.flatMap((g) => g.stages).find((x) => importKey(x.name) === importKey(st.name));
+        stagesMap[String(st.id)] = hit?.id ?? "";
+      }
+      m.stages = stagesMap;
     }
     setMapping(m);
     setStep("map");
@@ -239,6 +286,34 @@ export function PipedriveImportModal({ settings, onClose }: { settings: Pipedriv
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, mapping?.pipelineId]);
+
+  /** Etapas do Pipedrive usadas pelos negócios escolhidos (na ordem do funil). */
+  function usedPdStages(raws: PdRaw[]): PdStage[] {
+    const ids = new Set(raws.map((r) => String(r.stage_id ?? "")));
+    return (pdStages.current?.stages ?? [])
+      .filter((s) => ids.has(String(s.id)))
+      .sort((a, b) => a.pipeline_id - b.pipeline_id || (a.order_nr ?? 0) - (b.order_nr ?? 0));
+  }
+
+  /** Notas dos registros importados (uma chamada por registro). */
+  async function importNotes(entity: PdEntity, ids: string[], notes: string[]) {
+    let rows: ExternalNoteRow[] = [];
+    let created = 0;
+    const flush = async () => {
+      if (!rows.length) return;
+      const r = await call("integrations.importNotes", { provider: "pipedrive", rows });
+      created += r.created;
+      for (const e of r.errors) notes.push(`nota: ${e}`);
+      rows = [];
+    };
+    for (let i = 0; i < ids.length; i++) {
+      setBusy(`Buscando as notas… ${i + 1} de ${ids.length}`);
+      rows.push(...noteRows(entity, ids[i]!, await client.notes(entity, ids[i]!), pdUsers.current ?? []));
+      if (rows.length >= NOTE_BATCH) await flush();
+    }
+    await flush();
+    if (created) notes.push(`${created} nota(s) importada(s)`);
+  }
 
   /** Importa os relacionados que ainda não estão no CRM (novos são criados; duplicados, vinculados). */
   async function importRelated(entity: "person" | "organization", raws: PdRaw[], notes: string[]) {
@@ -268,24 +343,28 @@ export function PipedriveImportModal({ settings, onClose }: { settings: Pipedriv
   async function run() {
     if (!info || !results || !mapping) return;
     if (tab === "lead" && (!mapping.pipelineId || !mapping.stageId)) return setError("Escolha o funil e a etapa de destino dos leads.");
+    if (tab === "deal") {
+      const chosenRaws = results.filter((r) => selected.has(r.sum.id)).map((r) => r.raw);
+      const missing = usedPdStages(chosenRaws).filter((st) => !mapping.stages?.[String(st.id)]);
+      if (missing.length) return setError(`Escolha a etapa do CRM para: ${missing.map((st) => st.name).join(", ")}.`);
+    }
     setError(null);
     const chosen = results.filter((r) => selected.has(r.sum.id));
     const notes: string[] = [];
     const total: ExternalImportSummary = { created: 0, updated: 0, linked: 0, skipped: [], errors: [], warnings: [] };
     try {
       // 1. Relacionados: contatos dos leads e organizações (dos leads e desses contatos).
-      const persons =
-        tab === "lead"
-          ? await relatedRaws(
-              "person",
-              chosen.map((r) => r.sum.personId),
-            )
-          : [];
+      const persons = isCard(tab)
+        ? await relatedRaws(
+            "person",
+            chosen.map((r) => r.sum.personId),
+          )
+        : [];
       if (tab !== "organization") {
         const orgs = await relatedRaws("organization", [...chosen.map((r) => orgIdOf(r.raw)), ...persons.map(orgIdOf)]);
         await importRelated("organization", orgs, notes);
       }
-      if (tab === "lead") await importRelated("person", persons, notes);
+      if (isCard(tab)) await importRelated("person", persons, notes);
       // 2. Os escolhidos.
       const rows = chosen.map((r, i): PdRow & { _i: number } => {
         const base = { ...buildRow(tab, r.raw, info.sources, info.targets, mapping), _i: i };
@@ -314,6 +393,13 @@ export function PipedriveImportModal({ settings, onClose }: { settings: Pipedriv
         total.errors.push(...r.errors);
         total.warnings.push(...r.warnings);
       }
+      // 3. Notas dos registros que entraram (ou já estavam) no CRM.
+      if (mapping.notes !== false)
+        await importNotes(
+          tab,
+          chosen.map((r) => r.sum.id),
+          notes,
+        );
       await savePipedriveMapping(tab, mapping);
       setSummary({ main: total, related: notes });
       setStep("done");
@@ -369,6 +455,13 @@ export function PipedriveImportModal({ settings, onClose }: { settings: Pipedriv
     </TaModal>
   );
 
+  /** "R$ 1.500,00 · Proposta · Ganho" (negócios). */
+  function dealDetail(sum: PdSummary): string {
+    const stage = pdStages.current?.stages.find((x) => String(x.id) === sum.stageId)?.name;
+    const status = sum.status === "won" ? "Ganho" : sum.status === "lost" ? "Perdido" : "";
+    return [sum.detail, stage, status].filter(Boolean).join(" · ");
+  }
+
   function searchStep() {
     const all = results ?? [];
     const allOn = all.length > 0 && all.every((r) => selected.has(r.sum.id));
@@ -402,7 +495,15 @@ export function PipedriveImportModal({ settings, onClose }: { settings: Pipedriv
               <TaInput
                 value={term}
                 autoFocus
-                placeholder={tab === "person" ? "Nome, e-mail ou telefone" : tab === "lead" ? "Título do lead" : "Nome da organização"}
+                placeholder={
+                  tab === "person"
+                    ? "Nome, e-mail ou telefone"
+                    : tab === "lead"
+                      ? "Título do lead"
+                      : tab === "deal"
+                        ? "Título do negócio"
+                        : "Nome da organização"
+                }
                 onChange={(e) => setTerm(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && void search()}
                 aria-label="Buscar no Pipedrive"
@@ -447,9 +548,11 @@ export function PipedriveImportModal({ settings, onClose }: { settings: Pipedriv
                           onChange={(e) => setSelected(new Set(e.target.checked ? all.map((r) => r.sum.id) : []))}
                         />
                       </th>
-                      <th className="px-2 py-2">{tab === "lead" ? "Lead" : "Nome"}</th>
-                      <th className="px-2 py-2">{tab === "organization" ? "Cidade" : tab === "lead" ? "Valor" : "E-mail / telefone"}</th>
-                      {tab !== "organization" && <th className="px-2 py-2">{tab === "lead" ? "Contato / organização" : "Organização"}</th>}
+                      <th className="px-2 py-2">{tab === "lead" ? "Lead" : tab === "deal" ? "Negócio" : "Nome"}</th>
+                      <th className="px-2 py-2">
+                        {tab === "organization" ? "Cidade" : tab === "lead" ? "Valor" : tab === "deal" ? "Valor · etapa" : "E-mail / telefone"}
+                      </th>
+                      {tab !== "organization" && <th className="px-2 py-2">{isCard(tab) ? "Contato / organização" : "Organização"}</th>}
                       <th className="px-2 py-2">Criado em</th>
                       <th className="px-2 py-2">Situação no CRM</th>
                     </tr>
@@ -474,10 +577,10 @@ export function PipedriveImportModal({ settings, onClose }: { settings: Pipedriv
                             />
                           </td>
                           <td className="px-2 py-2 font-medium text-gray-800 dark:text-white/90">{sum.name || `#${sum.id}`}</td>
-                          <td className="px-2 py-2 text-gray-600 dark:text-gray-400">{sum.detail || "—"}</td>
+                          <td className="px-2 py-2 text-gray-600 dark:text-gray-400">{(tab === "deal" ? dealDetail(sum) : sum.detail) || "—"}</td>
                           {tab !== "organization" && (
                             <td className="px-2 py-2 text-gray-600 dark:text-gray-400">
-                              {[tab === "lead" ? relName("person", sum.personId) : "", relName("organization", sum.orgId)].filter(Boolean).join(" · ") || "—"}
+                              {[isCard(tab) ? relName("person", sum.personId) : "", relName("organization", sum.orgId)].filter(Boolean).join(" · ") || "—"}
                             </td>
                           )}
                           <td className="whitespace-nowrap px-2 py-2 text-gray-600 dark:text-gray-400">{formatDate(sum.addTime)}</td>
@@ -728,9 +831,63 @@ export function PipedriveImportModal({ settings, onClose }: { settings: Pipedriv
             </section>
           )}
 
+          {tab === "deal" && (
+            <section data-stage-map>
+              <p className="mb-2 text-theme-sm text-gray-600 dark:text-gray-300">
+                <b>3. De-para das etapas.</b> Cada negócio vira um cartão no funil comercial da etapa escolhida. Ganhos e perdidos mantêm a situação, o motivo
+                da perda e as datas do Pipedrive.
+              </p>
+              {crmStages.length === 0 ? (
+                <p className="text-theme-sm text-error-600">Crie um funil comercial antes de importar negócios.</p>
+              ) : (
+                <div className="grid gap-x-5 gap-y-1.5 sm:grid-cols-2">
+                  {usedPdStages(chosen).map((st) => {
+                    const cur = m.stages?.[String(st.id)] ?? "";
+                    const pipe = pdStages.current?.pipelines.find((p) => p.id === st.pipeline_id)?.name;
+                    const count = chosen.filter((r) => String(r.stage_id) === String(st.id)).length;
+                    return (
+                      <label key={st.id} className="flex items-center gap-2 text-theme-sm" data-value={st.name}>
+                        <span className="w-48 shrink-0 truncate" title={`${pipe} › ${st.name}`}>
+                          <span className="text-gray-400">{pipe} › </span>
+                          {st.name} <span className="text-theme-xs text-gray-400">({count})</span>
+                        </span>
+                        <span className="text-gray-400">→</span>
+                        <TaSelect
+                          value={cur}
+                          onChange={(e) => {
+                            setError(null);
+                            setMapping({ ...m, stages: { ...m.stages, [String(st.id)]: e.target.value } });
+                          }}
+                          className={cn("h-9 py-0", !cur && "border-warning-300 bg-warning-50/40")}
+                          aria-label={`Etapa do CRM para ${st.name}`}
+                        >
+                          <option value="">Escolha a etapa…</option>
+                          {crmStages.map((g) => (
+                            <optgroup key={g.pipeline.id} label={g.pipeline.name}>
+                              {g.stages.map((x) => (
+                                <option key={x.id} value={x.id}>
+                                  {g.pipeline.name} › {x.name}
+                                </option>
+                              ))}
+                            </optgroup>
+                          ))}
+                        </TaSelect>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          )}
+
+          <label className="flex items-center gap-2 text-theme-sm text-gray-700 dark:text-gray-300">
+            <input type="checkbox" checked={m.notes !== false} onChange={(e) => setMapping({ ...m, notes: e.target.checked })} />
+            Importar também as notas (as já trazidas não se repetem)
+          </label>
+
           <p className="text-theme-xs text-gray-500">
-            {tab === "lead"
-              ? "O contato e a organização de cada lead que ainda não estão no CRM são importados junto e vinculados ao cartão."
+            {isCard(tab)
+              ? `O contato e a organização de cada ${tab === "lead" ? "lead" : "negócio"} que ainda não estão no CRM são importados junto e vinculados ao cartão.`
               : tab === "person"
                 ? "A organização de cada contato que ainda não está no CRM é importada junto e vinculada."
                 : "Organizações já importadas e marcadas são atualizadas com os dados do Pipedrive."}{" "}
@@ -741,7 +898,7 @@ export function PipedriveImportModal({ settings, onClose }: { settings: Pipedriv
           <TaButton startIcon={<ArrowLeft size={15} />} disabled={!!busy} onClick={() => setStep("search")}>
             Voltar
           </TaButton>
-          <TaButton variant="primary" disabled={!!busy || (tab === "lead" && !pipelines.length)} onClick={() => void run()}>
+          <TaButton variant="primary" disabled={!!busy || (isCard(tab) && !pipelines.length)} onClick={() => void run()}>
             {busy ? "Importando…" : `Importar ${chosen.length} ${noun}`}
           </TaButton>
         </div>

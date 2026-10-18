@@ -7,7 +7,7 @@
 export const PIPEDRIVE_API = "https://api.pipedrive.com";
 export const PIPEDRIVE_ORIGIN = `${PIPEDRIVE_API}/*`;
 
-export type PdEntity = "person" | "organization" | "lead";
+export type PdEntity = "person" | "organization" | "lead" | "deal";
 
 /** Registro como vem da API (o formato muda entre v1 e v2). */
 export type PdRaw = Record<string, unknown>;
@@ -27,6 +27,31 @@ export interface PdUser {
   active_flag?: boolean;
 }
 
+export interface PdPipeline {
+  id: number;
+  name: string;
+}
+
+export interface PdStage {
+  id: number;
+  name: string;
+  pipeline_id: number;
+  order_nr?: number;
+}
+
+export interface PdNote {
+  id: number;
+  content: string;
+  add_time: string;
+  update_time?: string;
+  user_id?: number;
+  user?: { name?: string } | null;
+  pinned_to_person_flag?: boolean;
+  pinned_to_organization_flag?: boolean;
+  pinned_to_deal_flag?: boolean;
+  pinned_to_lead_flag?: boolean;
+}
+
 export interface PdMe {
   id: number;
   name: string;
@@ -39,9 +64,21 @@ export class PipedriveError extends Error {}
 
 type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
-const LIST_PATH: Record<PdEntity, string> = { person: "/api/v2/persons", organization: "/api/v2/organizations", lead: "/v1/leads" };
-const SEARCH_PATH: Record<PdEntity, string> = { person: "/api/v2/persons/search", organization: "/api/v2/organizations/search", lead: "/api/v2/leads/search" };
-const FIELDS_PATH: Record<PdEntity, string> = { person: "/v1/personFields", organization: "/v1/organizationFields", lead: "/v1/dealFields" };
+const LIST_PATH: Record<PdEntity, string> = { person: "/api/v2/persons", organization: "/api/v2/organizations", lead: "/v1/leads", deal: "/api/v2/deals" };
+const SEARCH_PATH: Record<PdEntity, string> = {
+  person: "/api/v2/persons/search",
+  organization: "/api/v2/organizations/search",
+  lead: "/api/v2/leads/search",
+  deal: "/api/v2/deals/search",
+};
+const FIELDS_PATH: Record<PdEntity, string> = {
+  person: "/v1/personFields",
+  organization: "/v1/organizationFields",
+  lead: "/v1/dealFields",
+  deal: "/v1/dealFields",
+};
+/** Filtro das notas pelo registro. */
+const NOTE_PARAM: Record<PdEntity, string> = { person: "person_id", organization: "org_id", lead: "lead_id", deal: "deal_id" };
 
 /** "2026-01-15 12:34:56" (v1, UTC) ou ISO → ISO. */
 export function pdTime(v: unknown): string {
@@ -105,6 +142,29 @@ export class PipedriveClient {
 
   leadLabels(): Promise<{ id: string; name: string }[]> {
     return this.get<{ id: string; name: string }[]>("/v1/leadLabels").then((r) => r.data ?? []);
+  }
+
+  /** Funis e etapas (v2; contas antigas pela v1). */
+  async pipelines(): Promise<PdPipeline[]> {
+    const r = await this.get<PdPipeline[]>("/api/v2/pipelines", { limit: 500 }).catch(() => this.get<PdPipeline[]>("/v1/pipelines"));
+    return r.data ?? [];
+  }
+
+  async stages(): Promise<PdStage[]> {
+    const r = await this.get<PdStage[]>("/api/v2/stages", { limit: 500 }).catch(() => this.get<PdStage[]>("/v1/stages"));
+    return r.data ?? [];
+  }
+
+  /** Notas de um registro (todas as páginas). */
+  async notes(entity: PdEntity, id: string): Promise<PdNote[]> {
+    const out: PdNote[] = [];
+    for (let start = 0; ; ) {
+      const r = await this.get<PdNote[]>("/v1/notes", { [NOTE_PARAM[entity]]: id, start, limit: 500 });
+      out.push(...(r.data ?? []));
+      const pg = r.additional_data?.pagination as { more_items_in_collection?: boolean; next_start?: number } | undefined;
+      if (!pg?.more_items_in_collection || pg.next_start === undefined) return out;
+      start = pg.next_start;
+    }
   }
 
   async getOne(entity: PdEntity, id: string): Promise<PdRaw> {

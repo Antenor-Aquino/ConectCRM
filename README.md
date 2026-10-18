@@ -116,8 +116,9 @@ transcrever.
 ### Integrações (Pipedrive)
 
 Em **Configurações → Integrações** (só administradores) o Pipedrive é conectado
-com a chave da API. **Importar do Pipedrive** traz leads (como cartões num funil
-comercial), contatos e organizações, buscando pelo nome ou pela data de
+com a chave da API. **Importar do Pipedrive** traz leads e negócios (como cartões
+nos funis comerciais, com de-para das etapas), contatos e organizações, com as
+notas, buscando pelo nome ou pela data de
 criação, com de-para dos campos e dos valores. O CRM sabe o que já foi
 importado (e oferece atualizar), aponta possíveis duplicados e mostra no
 cadastro o link para o original (detalhes em

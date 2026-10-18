@@ -185,6 +185,10 @@ export const methods = {
     assertIntegrations(db, ctx);
     return ext.importExternalPersons(db, ctx, p);
   },
+  "integrations.importNotes": (db: DatabaseSync, ctx: DbContext, p: { provider: ext.ExternalProvider; rows: ext.ExternalNoteRow[] }) => {
+    assertIntegrations(db, ctx);
+    return ext.importExternalNotes(db, ctx, p);
+  },
   "integrations.importDeals": (db: DatabaseSync, ctx: DbContext, p: ext.ExternalImportInput<ext.ExternalDealRow>) => {
     assertIntegrations(db, ctx);
     return ext.importExternalDeals(db, ctx, p);

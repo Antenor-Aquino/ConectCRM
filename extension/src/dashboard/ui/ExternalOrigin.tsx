@@ -13,10 +13,11 @@ export function ExternalOrigin({ localId, className }: { localId: string; classN
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const ref = (await call("integrations.refsOf", { id: localId })).find((r) => r.provider === "pipedrive");
+      const ref = (await call("integrations.refsOf", { id: localId })).find((r) => r.provider === "pipedrive" && r.entity !== "note");
       if (!ref) return alive && setOrigin(null);
       const { pipedrive } = await loadIntegrations();
-      if (alive) setOrigin({ url: pipedriveRecordUrl(pipedrive.domain, ref.entity, ref.externalId), importedAt: ref.importedAt });
+      if (alive)
+        setOrigin({ url: pipedriveRecordUrl(pipedrive.domain, ref.entity as "person" | "organization" | "deal", ref.externalId), importedAt: ref.importedAt });
     })();
     return () => {
       alive = false;

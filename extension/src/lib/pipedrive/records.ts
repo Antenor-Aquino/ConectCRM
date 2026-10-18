@@ -2,10 +2,10 @@
 // origem (padrão e personalizados, com o valor já legível), campos de destino
 // no CRM, sugestão do de-para e montagem da linha com o de-para escolhido.
 import type { CustomField } from "../../db/customFields";
-import type { ExternalDealRow, ExternalOrganizationRow, ExternalPersonRow } from "../../db/externalImport";
+import type { ExternalDealRow, ExternalNoteRow, ExternalOrganizationRow, ExternalPersonRow } from "../../db/externalImport";
 import { formatDate } from "../format";
 import { importKey } from "../importParse";
-import { pdTime, type PdEntity, type PdField, type PdRaw, type PdUser } from "./api";
+import { pdTime, type PdEntity, type PdField, type PdNote, type PdRaw, type PdUser } from "./api";
 
 export interface PdMeta {
   fields: PdField[];
@@ -26,6 +26,7 @@ const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !
 const str = (v: unknown) => (v === null || v === undefined ? "" : String(v).trim());
 const list = (...v: unknown[]) => v.map(str).filter(Boolean);
 const CUSTOM_KEY = /^[0-9a-f]{40}$/;
+const DEAL_STATUS_LABEL: Record<string, string> = { open: "Aberto", won: "Ganho", lost: "Perdido", deleted: "Excluído" };
 
 /** Id de uma referência (número, string ou objeto {id}/{value} da v1). */
 export function refId(v: unknown): string | undefined {
@@ -128,6 +129,23 @@ export function sourceFields(entity: PdEntity, meta: PdMeta): SourceField[] {
       std("labels", "Etiquetas", (r) => (Array.isArray(r.label_ids) ? r.label_ids : list(r.label)).map((x) => optionLabel(labelField, x))),
       created,
     ];
+  } else if (entity === "deal") {
+    const labelField = byKey.get("label_ids") ?? byKey.get("label");
+    base = [
+      std("title", "Título", (r) => list(r.title)),
+      std("value", "Valor", (r) => list(isObj(r.value) ? r.value.amount : r.value)),
+      std("currency", "Moeda", (r) => list(r.currency)),
+      std("expected_close_date", "Data prevista de fechamento", (r) => list(r.expected_close_date)),
+      std("status", "Situação", (r) => list(DEAL_STATUS_LABEL[str(r.status)] ?? r.status)),
+      std("lost_reason", "Motivo da perda", (r) => list(r.lost_reason)),
+      std("origin", "Origem (sistema)", (r) => list(r.origin)),
+      owner,
+      std("labels", "Etiquetas", (r) => (Array.isArray(r.label_ids) ? r.label_ids : list(r.label)).map((x) => optionLabel(labelField, x))),
+      created,
+      std("close_time", "Data de fechamento", (r) =>
+        list((r.close_time ?? r.won_time ?? r.lost_time) ? formatDate(pdTime(r.close_time ?? r.won_time ?? r.lost_time)) : ""),
+      ),
+    ];
   } else {
     const labels = new Map((meta.leadLabels ?? []).map((l) => [l.id, l.name]));
     base = [
@@ -148,6 +166,9 @@ export function sourceFields(entity: PdEntity, meta: PdMeta): SourceField[] {
   return [...base, ...custom];
 }
 
+const money = (amount: unknown, currency: unknown) =>
+  Number(amount) ? `${str(currency)} ${Number(amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`.trim() : "";
+
 /** Resumo para a lista de resultados. */
 export interface PdSummary {
   id: string;
@@ -161,6 +182,10 @@ export interface PdSummary {
   ownerId?: string;
   orgId?: string;
   personId?: string;
+  /** Negócios: etapa/funil e situação na origem. */
+  stageId?: string;
+  pipelineId?: string;
+  status?: string;
 }
 
 export function summarize(entity: PdEntity, raw: PdRaw, sources?: SourceField[]): PdSummary {
@@ -183,20 +208,33 @@ export function summarize(entity: PdEntity, raw: PdRaw, sources?: SourceField[])
       detail: list(addressPart(raw, "locality"), addressPart(raw, "admin_area_level_1")).join(" - "),
     };
   }
+  if (entity === "deal") {
+    const amount = isObj(raw.value) ? raw.value.amount : raw.value;
+    return {
+      ...base,
+      name: str(raw.title),
+      personId: personIdOf(raw),
+      orgId: orgIdOf(raw),
+      stageId: refId(raw.stage_id),
+      pipelineId: refId(raw.pipeline_id),
+      status: str(raw.status) || "open",
+      detail: money(amount, raw.currency),
+    };
+  }
   const value = isObj(raw.value) ? raw.value : undefined;
   return {
     ...base,
     name: str(raw.title),
     personId: personIdOf(raw),
     orgId: orgIdOf(raw),
-    detail: value?.amount ? `${str(value.currency)} ${Number(value.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`.trim() : "",
+    detail: money(value?.amount, value?.currency),
   };
 }
 
 // ---------- Destinos no CRM ----------
 
 export type CrmEntity = "person" | "organization" | "deal";
-export const CRM_ENTITY: Record<PdEntity, CrmEntity> = { person: "person", organization: "organization", lead: "deal" };
+export const CRM_ENTITY: Record<PdEntity, CrmEntity> = { person: "person", organization: "organization", lead: "deal", deal: "deal" };
 
 export interface CrmTarget {
   key: string;
@@ -264,6 +302,7 @@ const STANDARD_GUESS: Record<PdEntity, Record<string, string>> = {
     labels: "tags",
   },
   lead: { title: "title", value: "value", expected_close_date: "expectedCloseAt", source_name: "origin", owner: "owner", labels: "tags" },
+  deal: { title: "title", value: "value", expected_close_date: "expectedCloseAt", owner: "owner", labels: "tags" },
 };
 
 /** Sugestão do de-para: padrões fixos; personalizados pelo nome (ex.: "CNPJ" → CNPJ). Cada destino uma vez. */
@@ -308,8 +347,13 @@ export interface PdMapping {
   owners: Record<string, string>;
   /** Destino de lista → valor normalizado da origem → opção do CRM. */
   options: Record<string, Record<string, string>>;
+  /** Leads: funil e etapa de entrada. */
   pipelineId?: string;
   stageId?: string;
+  /** Negócios: etapa do Pipedrive → etapa do CRM. */
+  stages?: Record<string, string>;
+  /** Trazer as notas dos registros importados (padrão: sim). */
+  notes?: boolean;
 }
 
 export type PdRow = ExternalPersonRow & ExternalOrganizationRow & ExternalDealRow;
@@ -342,9 +386,58 @@ export function buildRow(entity: PdEntity, raw: PdRaw, sources: SourceField[], t
     }
   }
   if (entity === "person") row.organizationExternalId = s.orgId;
-  if (entity === "lead") {
+  if (entity === "lead" || entity === "deal") {
     row.personExternalId = s.personId;
     row.organizationExternalId = s.orgId;
+    if (s.addTime) row.createdAt = s.addTime;
+  }
+  if (entity === "deal") {
+    row.stageId = mapping.stages?.[s.stageId ?? ""] || undefined;
+    row.status = s.status === "won" || s.status === "lost" ? s.status : "open";
+    if (row.status === "lost") row.lossReason = str(raw.lost_reason) || undefined;
+    const closed = raw.close_time ?? (row.status === "won" ? raw.won_time : raw.lost_time);
+    if (row.status !== "open" && closed) row.closedAt = pdTime(closed);
   }
   return row;
+}
+
+// ---------- Notas ----------
+
+/** HTML das notas do Pipedrive → texto (as notas do CRM são texto). */
+export function htmlToText(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li|h[1-6]|tr)>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "• ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, n: string) => String.fromCharCode(Number(n)))
+    .replace(/&amp;/g, "&")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+const PIN_FLAG: Record<PdEntity, keyof PdNote> = {
+  person: "pinned_to_person_flag",
+  organization: "pinned_to_organization_flag",
+  lead: "pinned_to_lead_flag",
+  deal: "pinned_to_deal_flag",
+};
+
+/** Notas de um registro do Pipedrive → linhas de importação no registro correspondente do CRM. */
+export function noteRows(entity: PdEntity, parentExternalId: string, notes: PdNote[], users: PdUser[]): ExternalNoteRow[] {
+  return notes.map((n) => ({
+    externalId: String(n.id),
+    entity: CRM_ENTITY[entity],
+    parentExternalId,
+    body: htmlToText(n.content ?? ""),
+    author: n.user?.name || users.find((u) => u.id === n.user_id)?.name,
+    createdAt: n.add_time ? new Date(pdTime(n.add_time)).toISOString() : undefined,
+    pinned: !!n[PIN_FLAG[entity]],
+  }));
 }

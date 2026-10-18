@@ -1,7 +1,8 @@
 # Especificação 09 — Integrações (Pipedrive)
 
-> Status: **implementado** (versão 0.2.35). Importa do Pipedrive leads,
-> contatos e organizações, com de-para e controle do que já foi importado.
+> Status: **implementado** (versões 0.2.35 e 0.2.36). Importa do Pipedrive
+> leads, negócios, contatos e organizações, com as notas, de-para e controle do
+> que já foi importado.
 
 ## 1. Configurações → Integrações
 
@@ -23,7 +24,7 @@
 
 ## 2. Importar do Pipedrive
 
-Janela com as abas **Leads**, **Contatos** e **Organizações**.
+Janela com as abas **Leads**, **Negócios**, **Contatos** e **Organizações**.
 
 ### 2.1 Buscar
 
@@ -67,6 +68,12 @@ registro de origem aponta para um registro local por vez.
    lista/múltipla escolha (valor → opção do CRM, ou deixar vazio).
 3. **Leads**: funil **comercial** e etapa de destino; cada lead vira um
    **cartão (negócio)**.
+4. **Negócios — de-para das etapas**: cada etapa do Pipedrive usada pelos
+   negócios escolhidos ("Funil › Etapa", com a quantidade) → etapa de um funil
+   comercial do CRM. Sugestão pelo nome (no funil de mesmo nome primeiro);
+   sem sugestão, a escolha é obrigatória. Cada negócio vira um cartão no funil
+   da etapa escolhida.
+5. **Importar também as notas** (marcado por padrão; fica salvo).
 
 O de-para fica salvo por tipo neste computador e volta preenchido.
 
@@ -83,11 +90,39 @@ O de-para fica salvo por tipo neste computador e volta preenchido.
 - Em lotes de 100, com progresso. Resumo: criados, atualizados, vinculados,
   relacionados criados/vinculados, avisos e erros (com o nome do registro).
 
+### 2.5 Negócios
+
+- Situação: **ganho** e **perdido** são mantidos, com a data de fechamento do
+  Pipedrive; o motivo da perda vira o motivo cadastrado de mesmo nome
+  (Configurações → Motivos de perda) ou, se não houver, a observação da perda.
+- Data de criação do Pipedrive vira a do cartão (relatórios por período ficam
+  fiéis); o mesmo para leads.
+- Contato e organização do negócio entram junto, como nos leads.
+- Atualizar um negócio já importado: muda os campos do de-para, **move** o
+  cartão se a etapa mudou no Pipedrive e acompanha a situação (reaberto,
+  ganho, perdido).
+
+### 2.6 Notas
+
+- Depois de gravar os registros, busca as notas de cada um no Pipedrive
+  (`GET /v1/notes?person_id|org_id|lead_id|deal_id=…`, uma chamada por
+  registro) e grava no registro correspondente do CRM (cartão, contato ou
+  organização).
+- O texto vem sem formatação (as notas do CRM são texto), começando por "Nota
+  do Pipedrive · autor"; mantém a data original e a fixação.
+- Uma nota ligada a vários registros no Pipedrive (lead, contato e
+  organização) entra uma vez em cada registro importado. Notas já trazidas
+  são ignoradas (vínculo nota + registro), então reimportar ou atualizar só
+  traz as novas.
+- Só as notas dos registros escolhidos; as dos relacionados (importados junto)
+  vêm quando eles forem importados pela própria aba.
+
 ## 3. Origem no cadastro
 
 No detalhe do cartão (abaixo do X) e nas janelas de editar contato e
 organização: **"Importado do Pipedrive em dd/mm/aaaa ↗"**, com link para o
-registro original quando o endereço da conta está configurado.
+registro original (contato, organização, lead ou negócio) quando o endereço
+da conta está configurado.
 
 ## 4. API usada
 
@@ -97,8 +132,10 @@ registro original quando o endereço da conta está configurado.
 | Usuários | `GET /v1/users` |
 | Campos | `GET /v1/personFields`, `/v1/organizationFields`, `/v1/dealFields` (leads usam os campos de negócio) |
 | Etiquetas de lead | `GET /v1/leadLabels` |
-| Listar | `GET /api/v2/persons`, `/api/v2/organizations` (cursor); `GET /v1/leads` (start/limit) |
-| Buscar | `GET /api/v2/{persons,organizations,leads}/search` |
+| Listar | `GET /api/v2/persons`, `/api/v2/organizations`, `/api/v2/deals` (cursor); `GET /v1/leads` (start/limit) |
+| Buscar | `GET /api/v2/{persons,organizations,leads,deals}/search` |
+| Funis e etapas | `GET /api/v2/pipelines`, `/api/v2/stages` (contas antigas: `/v1/…`) |
+| Notas | `GET /v1/notes` com `person_id`, `org_id`, `lead_id` ou `deal_id` |
 | Por id | `GET /api/v2/persons?ids=…` (em lotes) ou `/{id}`; `GET /v1/leads/{id}` |
 
 Autenticação pelo cabeçalho `x-api-token`. Formatos v1 e v2 (custom fields na

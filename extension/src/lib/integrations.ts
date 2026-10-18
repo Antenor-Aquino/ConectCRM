@@ -44,7 +44,9 @@ export function pipedriveBaseUrl(domain: string): string | null {
 export function pipedriveRecordUrl(domain: string, entity: "person" | "organization" | "deal", id: string): string | null {
   const base = pipedriveBaseUrl(domain);
   if (!base) return null;
-  return entity === "deal" ? `${base}/leads/inbox/${id}` : `${base}/${entity}/${id}`;
+  // Cartão vindo de negócio (id numérico) ou de lead (uuid).
+  if (entity === "deal") return /^\d+$/.test(id) ? `${base}/deal/${id}` : `${base}/leads/inbox/${id}`;
+  return `${base}/${entity}/${id}`;
 }
 
 /** Permissão de acesso à API (pedida ao conectar; fica fora do pacote para não desativar a extensão na atualização). */

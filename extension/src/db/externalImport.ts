@@ -16,18 +16,24 @@ import {
   updatePerson,
 } from "./contacts";
 import { listCustomFields, type CustomField, type CustomFieldEntity, type CustomValue } from "./customFields";
-import { createCard, updateCard } from "./deals";
+import { createCard, getCardRow, moveCard, setCardStatus, updateCard, type DealStatus } from "./deals";
 import type { ImportSummary } from "./importer";
 import { customValueFromText, tagIdsByName } from "./importValues";
 import { KIND_BY_PIPELINE_TYPE, type PipelineType } from "./pipelines";
 import { insertRow, updateRow, type DbContext } from "./repo";
-import { many, one, withTransaction, type DatabaseSync } from "./sql";
+import { many, one, run as runSql, withTransaction, type DatabaseSync } from "./sql";
 import { getEntityTags, type TagEntity } from "./tags";
+import { addNote, updateNote } from "./notes";
 
 export type ExternalProvider = "pipedrive";
-export type ExternalEntity = "person" | "organization" | "deal";
+export type ExternalEntity = "person" | "organization" | "deal" | "note";
 
-const TABLE: Record<ExternalEntity, "person" | "organization" | "deal"> = { person: "person", organization: "organization", deal: "deal" };
+const TABLE: Record<ExternalEntity, "person" | "organization" | "deal" | "note"> = {
+  person: "person",
+  organization: "organization",
+  deal: "deal",
+  note: "note",
+};
 
 export interface ExternalLink {
   externalId: string;
@@ -40,7 +46,7 @@ export interface ExternalLink {
 /** Vínculos ativos (registro local não excluído) dos ids de origem informados. */
 export function externalLinks(db: DatabaseSync, provider: ExternalProvider, entity: ExternalEntity, externalIds: string[]): Map<string, ExternalLink> {
   const out = new Map<string, ExternalLink>();
-  const nameCol = entity === "deal" ? "title" : "name";
+  const nameCol = entity === "deal" ? "title" : entity === "note" ? "body" : "name";
   for (let i = 0; i < externalIds.length; i += 500) {
     const ids = externalIds.slice(i, i + 500);
     if (!ids.length) continue;
@@ -224,6 +230,15 @@ export interface ExternalDealRow extends BaseRow {
   description?: string;
   personExternalId?: string;
   organizationExternalId?: string;
+  /** Negócios: etapa do de-para (define o funil). Sem ela, a etapa do input (leads). Ao atualizar, move o cartão. */
+  stageId?: string;
+  /** Negócios: situação na origem. */
+  status?: DealStatus;
+  /** Motivo da perda (texto): vira o motivo cadastrado de mesmo nome ou a observação. */
+  lossReason?: string;
+  /** Datas da origem (ISO), para relatórios e histórico ficarem fiéis. */
+  createdAt?: string;
+  closedAt?: string;
 }
 
 export interface ExternalImportInput<R> {
@@ -265,12 +280,14 @@ function lenient<T>(c: Ctx, raw: string | undefined, label: string, fn: (v: stri
   }
 }
 
-function customValues(c: Ctx, raw: BaseRow["custom"]): Record<string, CustomValue> | undefined {
+function customValues(c: Ctx, raw: BaseRow["custom"], pipelineId?: string): Record<string, CustomValue> | undefined {
   if (!raw) return undefined;
   const out: Record<string, CustomValue> = {};
   for (const [fieldId, v] of Object.entries(raw)) {
     const field = c.fields.get(fieldId);
     if (!field || field.field_type === "document") continue;
+    // Campo de cartão restrito a outros funis: fica de fora.
+    if (pipelineId && field.pipelineIds.length && !field.pipelineIds.includes(pipelineId)) continue;
     const value = customValueFromText(c.db, field, v);
     if (value !== null) out[fieldId] = value;
   }
@@ -299,10 +316,9 @@ function run<R extends BaseRow>(
   fieldsEntity: CustomFieldEntity,
   tagEntity: TagEntity,
   write: (c: Ctx, row: R, mode: "create" | "update" | "link") => string,
-  opts: { pipelineId?: string } = {},
 ): ExternalImportSummary {
   const summary: ExternalImportSummary = { created: 0, updated: 0, linked: 0, skipped: [], errors: [], warnings: [] };
-  const fields = new Map(listCustomFields(db, fieldsEntity, { pipelineId: opts.pipelineId }).map((f) => [f.id, f]));
+  const fields = new Map(listCustomFields(db, fieldsEntity).map((f) => [f.id, f]));
   const tagCache = new Map<string, string>();
   input.rows.forEach((row, i) => {
     const line = i + (input.firstRow ?? 1);
@@ -393,43 +409,124 @@ export function importExternalPersons(db: DatabaseSync, ctx: DbContext, input: E
   });
 }
 
-export function importExternalDeals(db: DatabaseSync, ctx: DbContext, input: ExternalImportInput<ExternalDealRow>): ExternalImportSummary {
-  const pipeline = input.pipelineId
-    ? one<{ id: string; type: PipelineType }>(db, "SELECT id, type FROM pipeline WHERE id = ? AND deleted_at IS NULL", input.pipelineId)
-    : undefined;
-  if (!pipeline) throw new ValidationError("Escolha o funil de destino.");
-  const kind = KIND_BY_PIPELINE_TYPE[pipeline.type];
-  if (kind !== "deal") throw new ValidationError("Os leads entram num funil comercial.");
-  return run(
+/** Funil (precisa ser comercial) de uma etapa. */
+function commercialPipelineOf(db: DatabaseSync, stageId: string): string {
+  const p = one<{ id: string; type: PipelineType }>(
     db,
-    ctx,
-    input,
-    "deal",
-    kind,
-    kind,
-    (c, row, mode) => {
-      if (mode === "link") return row.localId!;
-      const personId = localIdOf(db, c.provider, "person", row.personExternalId);
-      const organizationId = localIdOf(db, c.provider, "organization", row.organizationExternalId);
-      const data = defined({
-        title: row.title?.trim() || undefined,
-        valueCents: parseMoneyCents(row.value, "Valor") ?? undefined,
-        expectedCloseAt: parseImportDate(row.expectedCloseAt, "Previsão de fechamento"),
-        origin: row.origin,
-        description: row.description,
-        ownerId: row.ownerId,
-        personId,
-        organizationId,
-        customValues: customValues(c, row.custom),
-      });
-      const tagIds = mergedTags(c, row.localId, row.tags);
-      if (mode === "update") {
-        updateCard(db, ctx, row.localId!, { ...data, ...(tagIds ? { tagIds } : {}) });
-        return row.localId!;
-      }
-      if (!data.title) throw new ValidationError("sem título do lead.");
-      return createCard(db, ctx, { ...data, title: data.title, pipelineId: pipeline.id, stageId: input.stageId || undefined, tagIds });
-    },
-    { pipelineId: pipeline.id },
+    "SELECT p.id, p.type FROM stage s JOIN pipeline p ON p.id = s.pipeline_id WHERE s.id = ? AND s.deleted_at IS NULL AND p.deleted_at IS NULL",
+    stageId,
   );
+  if (!p) throw new ValidationError("Etapa de destino não encontrada.");
+  if (KIND_BY_PIPELINE_TYPE[p.type] !== "deal") throw new ValidationError("Leads e negócios entram num funil comercial.");
+  return p.id;
+}
+
+/**
+ * Leads (etapa única do input) e negócios do Pipedrive (etapa por linha, do
+ * de-para das etapas), como cartões de funil comercial. Negócios trazem a
+ * situação (ganho/perdido), o motivo da perda e as datas da origem.
+ */
+export function importExternalDeals(db: DatabaseSync, ctx: DbContext, input: ExternalImportInput<ExternalDealRow>): ExternalImportSummary {
+  let defaultStage = input.stageId;
+  if (input.pipelineId) {
+    const p = one<{ type: PipelineType }>(db, "SELECT type FROM pipeline WHERE id = ? AND deleted_at IS NULL", input.pipelineId);
+    if (!p) throw new ValidationError("Funil de destino não encontrado.");
+    if (KIND_BY_PIPELINE_TYPE[p.type] !== "deal") throw new ValidationError("Os leads entram num funil comercial.");
+    defaultStage ??= one<{ id: string }>(
+      db,
+      "SELECT id FROM stage WHERE pipeline_id = ? AND deleted_at IS NULL ORDER BY position LIMIT 1",
+      input.pipelineId,
+    )?.id;
+  }
+  const lossReason = (name: string | undefined) =>
+    name?.trim() ? one<{ id: string }>(db, "SELECT id FROM loss_reason WHERE name = ? COLLATE NOCASE AND deleted_at IS NULL", name.trim())?.id : undefined;
+  return run(db, ctx, input, "deal", "deal", "deal", (c, row, mode) => {
+    if (mode === "link") return row.localId!;
+    const personId = localIdOf(db, c.provider, "person", row.personExternalId);
+    const organizationId = localIdOf(db, c.provider, "organization", row.organizationExternalId);
+    const current = mode === "update" ? getCardRow(db, row.localId!) : undefined;
+    if (mode === "update" && !current) throw new ValidationError("Cartão não encontrado.");
+    const stageId = row.stageId || (mode === "create" ? defaultStage : undefined);
+    if (mode === "create" && !stageId) throw new ValidationError("Escolha a etapa de destino.");
+    const pipelineId = stageId ? commercialPipelineOf(db, stageId) : current!.pipeline_id;
+    const data = defined({
+      title: row.title?.trim() || undefined,
+      valueCents: parseMoneyCents(row.value, "Valor") ?? undefined,
+      expectedCloseAt: parseImportDate(row.expectedCloseAt, "Previsão de fechamento"),
+      origin: row.origin,
+      description: row.description,
+      ownerId: row.ownerId,
+      personId,
+      organizationId,
+      customValues: customValues(c, row.custom, pipelineId),
+    });
+    const tagIds = mergedTags(c, row.localId, row.tags);
+    let id: string;
+    if (mode === "update") {
+      id = row.localId!;
+      // Mudou de etapa na origem: move (outro funil comercial também).
+      if (row.stageId && row.stageId !== current!.stage_id) moveCard(db, ctx, id, { stageId: row.stageId });
+      updateCard(db, ctx, id, { ...data, ...(tagIds ? { tagIds } : {}) });
+    } else {
+      if (!data.title) throw new ValidationError("sem título.");
+      id = createCard(db, ctx, { ...data, title: data.title, pipelineId, stageId, tagIds });
+      if (row.createdAt) runSql(db, "UPDATE deal SET created_at = ?, stage_entered_at = ? WHERE id = ?", row.createdAt, row.createdAt, id);
+    }
+    const status = row.status;
+    if (status && status !== (current?.status ?? "open")) {
+      const reasonId = status === "lost" ? lossReason(row.lossReason) : undefined;
+      setCardStatus(db, ctx, id, { status, lossReasonId: reasonId ?? null, lossNote: status === "lost" && !reasonId ? (row.lossReason ?? null) : null });
+      if (status !== "open" && row.closedAt) runSql(db, "UPDATE deal SET closed_at = ? WHERE id = ?", row.closedAt, id);
+    }
+    return id;
+  });
+}
+
+// ---------- Notas ----------
+
+export interface ExternalNoteRow {
+  /** Id da nota na origem. */
+  externalId: string;
+  /** Registro (já importado) onde a nota entra. */
+  entity: "person" | "organization" | "deal";
+  parentExternalId: string;
+  /** Texto já sem HTML. */
+  body: string;
+  author?: string;
+  createdAt?: string;
+  pinned?: boolean;
+}
+
+/**
+ * Notas da origem nos registros já importados. A mesma nota pode estar em
+ * vários registros (lead, contato e organização): entra uma vez em cada um.
+ * Notas já trazidas são ignoradas (vínculo por nota + registro).
+ */
+export function importExternalNotes(
+  db: DatabaseSync,
+  ctx: DbContext,
+  input: { provider: ExternalProvider; rows: ExternalNoteRow[] },
+): { created: number; skipped: number; errors: string[] } {
+  const out = { created: 0, skipped: 0, errors: [] as string[] };
+  for (const row of input.rows) {
+    const parent = localIdOf(db, input.provider, row.entity, row.parentExternalId);
+    const key = `${row.externalId}@${row.entity}:${row.parentExternalId}`;
+    if (!parent || localIdOf(db, input.provider, "note", key) || !row.body.trim()) {
+      out.skipped++;
+      continue;
+    }
+    try {
+      withTransaction(db, () => {
+        const body = row.author ? `Nota do Pipedrive · ${row.author}\n\n${row.body.trim()}` : row.body.trim();
+        const id = addNote(db, ctx, row.entity, parent, body);
+        if (row.pinned) updateNote(db, ctx, id, { pinned: true });
+        if (row.createdAt) runSql(db, "UPDATE note SET created_at = ? WHERE id = ?", row.createdAt, id);
+        saveLink(db, ctx, input.provider, "note", key, id, row.createdAt);
+      });
+      out.created++;
+    } catch (e) {
+      out.errors.push(errorText(e));
+    }
+  }
+  return out;
 }
