@@ -123,3 +123,15 @@ Por usuário, neste computador (`chrome.storage.local`):
 canais (com Testar), lembretes padrão, reserva no Google Agenda, resumo diário,
 aviso de atraso e horário de silêncio. O administrador vê a tabela de quais
 usuários deste computador configuraram cada canal.
+
+## 7. Em espera (decisão de 19/10/2026)
+
+- **E-mail:** suspenso (ver aviso no início). Caminhos avaliados: envio próprio
+  por serviço de e-mail (SES, Resend, Brevo) com servidor pequeno; conta
+  Gmail/Outlook do usuário (exige `client_id` do Google); IMAP/SMTP por uma
+  ponte, que também permitiria o histórico de e-mails no CRM.
+- **SMS:** sem opção gratuita confiável. Avaliados: celular Android como
+  gateway (app de código aberto, usa o SMS do plano) e provedores pagos
+  (Zenvia, Comtele, Mobizon). Uso sugerido: reserva quando o WhatsApp falhar.
+- **Telegram:** canal gratuito e oficial, sugerido como alternativa.
+- **WhatsApp oficial (API da Meta):** para empresas que queiram envio oficial.
