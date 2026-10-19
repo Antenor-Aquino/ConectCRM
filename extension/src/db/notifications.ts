@@ -74,15 +74,17 @@ interface ActRow {
   meeting_url: string | null;
   type_name: string;
   deal_title: string | null;
+  pipeline_name: string | null;
   person_name: string | null;
   person_phone: string | null;
   org_name: string | null;
 }
 
 const ACT_SQL = `SELECT a.id, a.title, a.due_at, a.end_at, a.owner_id, a.meeting_url, t.name AS type_name,
-    d.title AS deal_title, pe.name AS person_name, pe.phone AS person_phone, o.name AS org_name
+    d.title AS deal_title, pl.name AS pipeline_name, pe.name AS person_name, pe.phone AS person_phone, o.name AS org_name
   FROM activity a JOIN activity_type t ON t.id = a.type_id
   LEFT JOIN deal d ON d.id = a.deal_id AND d.deleted_at IS NULL
+  LEFT JOIN pipeline pl ON pl.id = d.pipeline_id
   LEFT JOIN person pe ON pe.id = COALESCE(a.person_id, d.person_id) AND pe.deleted_at IS NULL
   LEFT JOIN organization o ON o.id = COALESCE(a.organization_id, d.organization_id) AND o.deleted_at IS NULL`;
 
@@ -142,6 +144,44 @@ function listJob(kind: NotifyKind, key: string, channel: Channel, userId: string
     subject: heading,
     html: emailHtml(heading, acts.map((a) => ({ title: a.title, lines: [`Início: ${when(a.due_at)}`, ...details(a)] }))),
   };
+}
+
+/**
+ * Texto do resumo diário: atrasadas em destaque e as do dia, agrupadas pelo
+ * cartão ("*Cartão* - *_Funil_*") em ordem de horário. `wa` = marcações do
+ * WhatsApp (*negrito*, _itálico_); sem elas para o Chrome.
+ */
+export function digestText(today: ActRow[], late: ActRow[], wa: boolean): string {
+  const b = (t: string) => (wa ? `*${t}*` : t);
+  const bi = (t: string) => (wa ? `*_${t}_*` : t);
+  const dm = (iso: string) => formatDate(iso).slice(0, 5);
+  const groups = (acts: ActRow[], withDate: boolean): string[] => {
+    const out: string[] = [];
+    let last: string | null = null;
+    for (const a of acts) {
+      const head = a.deal_title
+        ? `${b(a.deal_title)}${a.pipeline_name ? ` - ${bi(a.pipeline_name)}` : ""}`
+        : b(a.org_name ?? a.person_name ?? "Sem vínculo");
+      if (head !== last) {
+        if (last !== null && wa) out.push("");
+        out.push(head);
+        last = head;
+      }
+      const iso = withDate && a.end_at ? a.end_at : a.due_at;
+      out.push(`${wa ? "*" : "•"} ${withDate ? `${dm(iso)} ` : ""}${hhmm(new Date(iso))} ${a.title}`);
+    }
+    return out;
+  };
+  const sep = wa ? [""] : [];
+  const lines = ["Sua agenda de hoje:"];
+  if (late.length) {
+    const shown = late.slice(0, 30);
+    lines.push(...sep, `⚠️ ${b(`${late.length} atrasada${late.length === 1 ? "" : "s"}`)}`, ...sep, ...groups(shown, true));
+    if (late.length > shown.length) lines.push(`e mais ${late.length - shown.length}…`);
+  }
+  if (today.length) lines.push(...sep, `✅ ${today.length} atividade${today.length === 1 ? "" : "s"} do dia`, ...sep, ...groups(today, false));
+  if (!late.length && !today.length) lines.push(...sep, "Nenhuma atividade para hoje.");
+  return lines.join("\n");
 }
 
 const MAX_ATTEMPTS = 3;
@@ -266,8 +306,15 @@ export function planNotifications(
             nowIso,
             day0.toISOString(),
           );
-          const heading = `Sua agenda de hoje: ${today.length} atividade${today.length === 1 ? "" : "s"}${late.length ? ` · ${late.length} atrasada${late.length === 1 ? "" : "s"}` : ""}`;
-          for (const c of chans) jobs.push(listJob("digest", key, c, userId, heading, [...today, ...late.slice(0, 10)], "Nenhuma atividade para hoje."));
+          // A atrasada que começou hoje aparece só entre as atrasadas.
+          const lateIds = new Set(late.map((a) => a.id));
+          const todayOnly = today.filter((a) => !lateIds.has(a.id));
+          const heading = `Sua agenda de hoje: ${todayOnly.length} atividade${todayOnly.length === 1 ? "" : "s"}${late.length ? ` · ${late.length} atrasada${late.length === 1 ? "" : "s"}` : ""}`;
+          for (const c of chans)
+            jobs.push({
+              ...listJob("digest", key, c, userId, heading, [...late.slice(0, 30), ...todayOnly]),
+              text: digestText(todayOnly, late, c === "whatsapp"),
+            });
         }
       }
     }

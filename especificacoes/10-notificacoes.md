@@ -86,8 +86,32 @@ conectada...).
 ## 3. Resumo diário, atrasos e silêncio
 
 - **Resumo diário da agenda** (opcional): no horário escolhido (padrão 07:30),
-  uma vez por dia, com as atividades de hoje e até 10 atrasadas. Canais à
-  escolha (padrão: e-mail). Se o Chrome abrir depois do horário, sai ao abrir.
+  uma vez por dia. Canais à escolha (padrão: Chrome). Se o Chrome abrir depois
+  do horário, sai ao abrir. Formato (0.2.42), no WhatsApp:
+  ```
+  Sua agenda de hoje:
+
+  ⚠️ *6 atrasadas*
+
+  *FACULDADE CETRUS* - *_Perseus_*
+  * 17/10 14:00 Ligar de volta
+
+  ✅ 2 atividades do dia
+
+  *Negociação Teste* - *_Perseus_*
+  * 09:15 Tarefa futura
+
+  *Ajeitar a Gaveta de Miguel* - *_Casa_*
+  * 15:31 Tarefa
+  ```
+  - Atrasadas sempre primeiro, em destaque, com data e hora (da finalização,
+    se houver); até 30 listadas e "e mais N".
+  - As do dia em ordem de horário, agrupadas pelo cartão: nome do cartão em
+    negrito e o funil em negrito e itálico. Atividades seguidas do mesmo
+    cartão ficam no mesmo grupo; sem cartão, o grupo é a organização ou o
+    contato (ou "Sem vínculo").
+  - A atrasada que começou hoje aparece só entre as atrasadas.
+  - No Chrome, o mesmo texto sem as marcações e com "•" nas linhas.
 - **Aviso de atraso** (opcional): quando uma atividade passa da finalização (ou
   do início, se não tiver finalização) sem ser concluída. Só para as que
   atrasaram nas últimas 24 h; cada uma avisa uma vez por prazo.

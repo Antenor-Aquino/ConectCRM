@@ -208,3 +208,57 @@ describe("e-mail suspenso", () => {
     expect(jobs.map((j) => j.channel)).toEqual(["chrome"]);
   });
 });
+
+describe("resumo diário", () => {
+  it("atrasadas em destaque e as do dia agrupadas por cartão e funil (WhatsApp e Chrome)", async () => {
+    const { createCard } = await import("../src/db/deals");
+    const { createPipeline } = await import("../src/db/pipelines");
+    const { db, actx, ana } = await setup();
+    const local = (h: number, m = 0, d = 2) => new Date(2026, 10, d, h, m).toISOString();
+    const perseus = createPipeline(db, actx, { name: "Perseus", type: "comercial", stages: [{ name: "Contato" }] });
+    const casa = createPipeline(db, actx, { name: "Casa", type: "projeto", stages: [{ name: "A fazer" }] });
+    const neg = createCard(db, actx, { pipelineId: perseus, title: "Negociação Teste" });
+    const cetrus = createCard(db, actx, { pipelineId: perseus, title: "FACULDADE CETRUS" });
+    const gaveta = createCard(db, actx, { pipelineId: casa, title: "Ajeitar a Gaveta de Miguel" });
+    const act = (title: string, dueAt: string, dealId?: string) => createActivity(db, actx, { title, dueAt, dealId, ownerId: ana, reminders: [] });
+    act("Ligar de volta", local(14, 0, 1), cetrus);
+    act("Tarefa futura", local(9, 15), neg);
+    act("Tarefa contato TI - Usam Lyceum", local(10), cetrus);
+    act("Tarefa", local(15, 31), gaveta);
+    act("Tarefa", local(16, 53), gaveta);
+    act("Tarefa teste", local(23, 15), neg);
+    const s = { [ana]: { chrome: true, digest: { enabled: true, time: "07:30", channels: ["chrome" as const, "whatsapp" as const] } } };
+    const s2 = { [ana]: { ...s[ana], whatsapp: { enabled: true, via: "web" as const, phone: "41999998888", apikey: "" } } };
+    const jobs = planNotifications(db, new Date(2026, 10, 2, 7, 31), s2, ana);
+    const wa = jobs.find((j) => j.channel === "whatsapp")!.text;
+    expect(wa).toBe(
+      [
+        "Sua agenda de hoje:",
+        "",
+        "⚠️ *1 atrasada*",
+        "",
+        "*FACULDADE CETRUS* - *_Perseus_*",
+        "* 01/11 14:00 Ligar de volta",
+        "",
+        "✅ 5 atividades do dia",
+        "",
+        "*Negociação Teste* - *_Perseus_*",
+        "* 09:15 Tarefa futura",
+        "",
+        "*FACULDADE CETRUS* - *_Perseus_*",
+        "* 10:00 Tarefa contato TI - Usam Lyceum",
+        "",
+        "*Ajeitar a Gaveta de Miguel* - *_Casa_*",
+        "* 15:31 Tarefa",
+        "* 16:53 Tarefa",
+        "",
+        "*Negociação Teste* - *_Perseus_*",
+        "* 23:15 Tarefa teste",
+      ].join("\n"),
+    );
+    const chrome = jobs.find((j) => j.channel === "chrome")!;
+    expect(chrome.title).toBe("Sua agenda de hoje: 5 atividades · 1 atrasada");
+    expect(chrome.text).not.toMatch(/\*/);
+    expect(chrome.text.split("\n").slice(0, 4)).toEqual(["Sua agenda de hoje:", "⚠️ 1 atrasada", "FACULDADE CETRUS - Perseus", "01/11 14:00 Ligar de volta"].map((l, i) => (i === 3 ? `• ${l}` : l)));
+  });
+});
