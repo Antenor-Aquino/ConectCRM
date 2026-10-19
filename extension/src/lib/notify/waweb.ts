@@ -14,13 +14,14 @@ export function waDigits(phone: string): string {
   return d.length <= 11 ? `55${d}` : d;
 }
 
-type SendResult = { ok: true } | { ok: false; code: "not-ready" | "not-auth" | "not-on-whatsapp" | "self" | "error"; message?: string };
+type SendResult = { ok: true; me?: string } | { ok: false; code: "not-ready" | "not-auth" | "not-on-whatsapp" | "self" | "wrong-number" | "error"; message?: string };
 
 const ERRORS: Record<Exclude<SendResult, { ok: true }>["code"], string> = {
   "not-ready": "o WhatsApp Web não terminou de carregar. Deixe a aba aberta e conectada.",
   "not-auth": "o WhatsApp Web não está conectado ou ainda está carregando. Abra a aba e confira se aparece a lista de conversas (sem o QR Code).",
   "not-on-whatsapp": "o número indicado não tem WhatsApp. Confira o DDD e o número.",
   self: "o número indicado é o mesmo do WhatsApp Web; mensagem para você mesmo não toca no celular. Indique outro número.",
+  "wrong-number": "o WhatsApp Web deste Chrome está conectado em outro número",
   error: "não foi possível enviar.",
 };
 
@@ -38,7 +39,8 @@ function waConfigure(): string {
 /** Texto, ou arquivo (data URL) com legenda. */
 type WaPayload = { text: string } | { file: { dataUrl: string; filename: string; mime: string }; caption: string };
 
-async function waSend(digits: string, payload: WaPayload, waitMs: number): Promise<SendResult> {
+/** `from` = número de origem esperado (confere o conectado); `digits` vazio = só informa o número conectado. */
+async function waSend(digits: string, payload: WaPayload | null, waitMs: number, from: string | null): Promise<SendResult> {
   type Wid = { _serialized?: string; toString(): string; user?: string };
   const WPP = (window as unknown as { WPP?: any }).WPP; // eslint-disable-line @typescript-eslint/no-explicit-any
   if (!WPP) return { ok: false, code: "not-ready" };
@@ -56,6 +58,13 @@ async function waSend(digits: string, payload: WaPayload, waitMs: number): Promi
   try {
     if (!WPP.conn.isAuthenticated()) return { ok: false, code: "not-auth" };
     const me = WPP.conn.getMyUserId() as Wid | undefined;
+    const meDigits = (me?.user ?? (me?._serialized ?? "").split("@")[0] ?? "").replace(/\D/g, "");
+    if (from && meDigits) {
+      // Mesmo DDD e 8 últimos dígitos (celular com ou sem o 9).
+      const ddd = (d: string) => (d.startsWith("55") ? d.slice(2, 4) : d.slice(0, -8));
+      if (meDigits.slice(-8) !== from.slice(-8) || ddd(meDigits) !== ddd(from)) return { ok: false, code: "wrong-number", message: `+${meDigits}` };
+    }
+    if (!payload) return { ok: true, me: meDigits };
     const found = (await WPP.contact.queryWidExists(`${digits}@c.us`)) as { wid: Wid } | null;
     if (!found) return { ok: false, code: "not-on-whatsapp" };
     const id = found.wid._serialized ?? found.wid.toString();
@@ -67,7 +76,7 @@ async function waSend(digits: string, payload: WaPayload, waitMs: number): Promi
       const type = /^image\/(png|jpe?g|webp)$/.test(mime) ? "image" : "document";
       await WPP.chat.sendFileMessage(id, dataUrl, { type, filename, mimetype: mime, caption: payload.caption || undefined, createChat: true });
     }
-    return { ok: true };
+    return { ok: true, me: meDigits };
   } catch (e) {
     return { ok: false, code: "error", message: e instanceof Error ? e.message : String(e) };
   }
@@ -102,9 +111,9 @@ async function whatsappTab(): Promise<chrome.tabs.Tab> {
   return tab;
 }
 
-async function sendPayload(phone: string, payload: WaPayload, waitMs: number): Promise<void> {
-  const digits = waDigits(phone);
-  if (digits.length < 12) throw new Error("WhatsApp Web: informe o número com DDD.");
+async function sendPayload(phone: string, payload: WaPayload | null, waitMs: number, from?: string | null): Promise<string | undefined> {
+  const digits = phone ? waDigits(phone) : "";
+  if (payload && digits.length < 12) throw new Error("WhatsApp Web: informe o número com DDD.");
   const tab = await whatsappTab();
   const target = { tabId: tab.id! };
   try {
@@ -119,19 +128,24 @@ async function sendPayload(phone: string, payload: WaPayload, waitMs: number): P
   } catch (e) {
     throw new Error(`WhatsApp Web: não foi possível acessar a aba (${e instanceof Error ? e.message : String(e)}).`);
   }
-  const [res] = await chrome.scripting.executeScript({ target, world: "MAIN", func: waSend, args: [digits, payload, waitMs] });
+  const [res] = await chrome.scripting.executeScript({ target, world: "MAIN", func: waSend, args: [digits, payload, waitMs, from ? waDigits(from) : null] });
   const r = res?.result as SendResult | undefined;
-  if (r?.ok) return;
+  if (r?.ok) return r.me;
   const code = r && !r.ok ? r.code : "error";
   throw new Error(`WhatsApp Web: ${ERRORS[code]}${r && !r.ok && r.message ? ` (${r.message})` : ""}`);
 }
 
 /** Envia `text` para `phone` pelo WhatsApp Web aberto neste Chrome. */
-export function sendViaWhatsAppWeb(phone: string, text: string, waitMs = 30_000): Promise<void> {
-  return sendPayload(phone, { text }, waitMs);
+export async function sendViaWhatsAppWeb(phone: string, text: string, waitMs = 30_000, from?: string | null): Promise<void> {
+  await sendPayload(phone, { text }, waitMs, from);
 }
 
-const blobToDataUrl = (blob: Blob) =>
+/** Número conectado no WhatsApp Web deste Chrome (ex.: "5581987298285"). */
+export async function connectedWhatsAppNumber(waitMs = 15_000): Promise<string> {
+  return (await sendPayload("", null, waitMs)) ?? "";
+}
+
+export const blobToDataUrl = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
     const r = new FileReader();
     r.onload = () => resolve(String(r.result));
@@ -143,8 +157,14 @@ const blobToDataUrl = (blob: Blob) =>
 export const WHATSAPP_FILE_MAX = 64 * 1024 * 1024;
 
 /** Envia um arquivo (documento ou imagem) com legenda para `phone` pelo WhatsApp Web aberto neste Chrome. */
-export async function sendFileViaWhatsAppWeb(phone: string, file: { blob: Blob; filename: string; mime: string }, caption: string, waitMs = 20_000): Promise<void> {
+export async function sendFileViaWhatsAppWeb(
+  phone: string,
+  file: { blob: Blob; filename: string; mime: string },
+  caption: string,
+  waitMs = 20_000,
+  from?: string | null,
+): Promise<void> {
   if (file.blob.size > WHATSAPP_FILE_MAX) throw new Error("Arquivo grande demais para enviar pelo WhatsApp Web (máximo 64 MB).");
   const dataUrl = await blobToDataUrl(new Blob([file.blob], { type: file.mime || "application/octet-stream" }));
-  await sendPayload(phone, { file: { dataUrl, filename: file.filename, mime: file.mime || "application/octet-stream" }, caption }, waitMs);
+  await sendPayload(phone, { file: { dataUrl, filename: file.filename, mime: file.mime || "application/octet-stream" }, caption }, waitMs, from);
 }

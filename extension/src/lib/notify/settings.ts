@@ -11,7 +11,8 @@ export const EMAIL_CHANNEL_ENABLED = false;
 export const ACTIVE_CHANNELS: Channel[] = CHANNELS.filter((c) => c !== "email" || EMAIL_CHANNEL_ENABLED);
 export const CHANNEL_LABEL: Record<Channel, string> = { chrome: "Chrome", email: "E-mail", whatsapp: "WhatsApp" };
 
-export type WhatsAppVia = "web" | "callmebot";
+/** "zapi" = um número da Z-API cadastrado em Configurações → WhatsApp (`senderId`). */
+export type WhatsAppVia = "web" | "callmebot" | "zapi";
 
 export interface ReminderRule {
   minutesBefore: number;
@@ -22,7 +23,7 @@ export interface NotifySettings {
   chrome: boolean;
   email: { enabled: boolean; to: string };
   /** `via`: WhatsApp Web aberto neste Chrome (padrão) ou CallMeBot. `phone` = quem recebe. */
-  whatsapp: { enabled: boolean; via: WhatsAppVia; phone: string; apikey: string };
+  whatsapp: { enabled: boolean; via: WhatsAppVia; phone: string; apikey: string; senderId?: string };
   /** Lembretes que vêm preenchidos em toda atividade nova. */
   defaults: ReminderRule[];
   /** "Sua agenda de hoje" no horário escolhido. */
@@ -70,7 +71,8 @@ export function activeSettings(s: NotifySettings): NotifySettings {
 export function channelReady(s: NotifySettings, c: Channel): boolean {
   if (c === "chrome") return s.chrome;
   if (c === "email") return s.email.enabled && !!s.email.to.trim();
-  return s.whatsapp.enabled && !!s.whatsapp.phone.trim() && (s.whatsapp.via === "web" || !!s.whatsapp.apikey.trim());
+  const via = s.whatsapp.via;
+  return s.whatsapp.enabled && !!s.whatsapp.phone.trim() && (via === "web" || (via === "zapi" ? !!s.whatsapp.senderId : !!s.whatsapp.apikey.trim()));
 }
 
 const minutesOf = (hhmm: string) => {

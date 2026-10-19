@@ -70,7 +70,10 @@ O usuário informa o **número que recebe** os avisos e escolhe como enviar:
   oficialmente pelo WhatsApp — usar só para lembretes, para um número salvo nos
   contatos; as mensagens ficam no histórico do WhatsApp conectado.
 
-**b) CallMeBot** (serviço gratuito de terceiros)
+**b) Um número da Z-API** (0.2.48) cadastrado em Configurações → WhatsApp:
+os lembretes saem por ele mesmo sem o WhatsApp Web aberto.
+
+**c) CallMeBot** (serviço gratuito de terceiros)
 - Envia para o próprio número que fez a ativação: o usuário manda "I allow
   callmebot to send me messages" para o número do CallMeBot e recebe a chave
   (apikey). O serviço às vezes fica sem vagas para novos números.

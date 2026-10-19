@@ -180,3 +180,26 @@ salvo assim mesmo e a janela lista o motivo antes de fechar.
 
 No cartão, o campo **Contato** (principal) mostra os ícones de WhatsApp e de
 e-mail quando o contato tem celular/e-mail, como os "Outros contatos".
+
+## Vários números de origem do WhatsApp (0.2.48)
+
+**Configurações → WhatsApp**: cada usuário cadastra os números de onde envia
+(neste computador, como os provedores de e-mail): nome (ex.: Comercial,
+Suporte), número e forma de envio:
+
+| Forma | Como envia |
+|---|---|
+| WhatsApp Web deste Chrome | Sozinho, pelo WhatsApp Web aberto neste perfil do Chrome. Só um por perfil (o WhatsApp Web aceita um número por perfil). O CRM confere se o número conectado é o cadastrado (DDD e 8 últimos dígitos, com ou sem o 9) e recusa se for outro |
+| Manual | Para o número aberto em outro perfil do Chrome ou no celular: o CRM baixa o arquivo e mostra os passos com "Copiar o link da conversa" (wa.me) e "Copiar a mensagem"; "Já enviei" registra o envio |
+| Z-API | Sozinho, pela API da Z-API (instância, token e Client-Token; permissão de acesso a api.z-api.io pedida ao salvar). Funciona com qualquer perfil aberto |
+
+- **Testar**: WhatsApp Web confere o número conectado; Z-API consulta se a
+  instância está conectada.
+- No envio do documento, com mais de um número, aparece **Enviar de**; vem
+  escolhido o último usado. Sem nenhum número cadastrado, tudo sai do WhatsApp
+  Web deste Chrome, como antes.
+- A auditoria registra o número de origem: "… · de Suporte (envio manual)".
+- **Por que não há dois automáticos pelo WhatsApp Web:** cada perfil do Chrome
+  é isolado; a extensão só enxerga as abas do perfil onde está instalada, e
+  instalá-la no outro perfil criaria outro CRM, com banco próprio. Para dois
+  números automáticos, o segundo vai pela Z-API.

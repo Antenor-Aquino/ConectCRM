@@ -4,6 +4,7 @@ import type { NotifyJob } from "../db/notifications";
 import { sendMail } from "../lib/calendar";
 import { sendCallMeBot } from "../lib/notify/callmebot";
 import { sendViaWhatsAppWeb } from "../lib/notify/waweb";
+import { loadSenders, zapiSendText } from "../lib/whatsappSenders";
 import { CHANNEL_LABEL, activeSettings, loadAllNotifySettings, loadMailSender, withDefaults, type Channel } from "../lib/notify/settings";
 import { addNotification } from "../lib/notifications";
 import { runClip, type ClipStartMessage } from "./clip";
@@ -128,7 +129,11 @@ async function runNotifications(): Promise<void> {
           await sendMail(sender.provider, { to: s.email.to, subject: job.subject, html: job.html });
         } else {
           if (s.whatsapp.via === "web") await sendViaWhatsAppWeb(s.whatsapp.phone, job.text);
-          else await sendCallMeBot(s.whatsapp.phone, s.whatsapp.apikey, job.text);
+          else if (s.whatsapp.via === "zapi") {
+            const zs = (await loadSenders(job.userId ?? "")).senders.find((x) => x.id === s.whatsapp.senderId);
+            if (!zs?.zapi) throw new Error("O número da Z-API dos lembretes não existe mais em Configurações → WhatsApp.");
+            await zapiSendText(zs.zapi, s.whatsapp.phone, job.text);
+          } else await sendCallMeBot(s.whatsapp.phone, s.whatsapp.apikey, job.text);
         }
       } catch (e) {
         error = e instanceof Error ? e.message : String(e);

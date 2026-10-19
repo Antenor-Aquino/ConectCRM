@@ -8,6 +8,7 @@ import { TaBadge, TaButton, TaInput, TaPanel, TaSelect, cn } from "@tailadmin";
 import { connectMailSender, googleClientConfigured, sendMail, type CalendarProvider } from "../../lib/calendar";
 import { CALLMEBOT_HELP, CALLMEBOT_ORIGIN, sendCallMeBot } from "../../lib/notify/callmebot";
 import { sendViaWhatsAppWeb } from "../../lib/notify/waweb";
+import { askZapiPermission, loadSenders, zapiSendText, type WhatsAppSender } from "../../lib/whatsappSenders";
 import {
   CHANNEL_LABEL,
   ACTIVE_CHANNELS,
@@ -90,12 +91,14 @@ export function NotificationsSettings() {
   const [busy, setBusy] = useState<string | null>(null);
   const [provider, setProvider] = useState<CalendarProvider>("google");
   const [waTab, setWaTab] = useState<boolean | null>(null);
+  const [zapiSenders, setZapiSenders] = useState<WhatsAppSender[]>([]);
 
   useEffect(() => {
     void loadNotifySettings(user.id).then((x) => setS({ ...x, email: { ...x.email, to: x.email.to || user.email || "" } }));
     void loadMailSender().then(setSender);
     void loadAllNotifySettings().then(setAll);
     void chrome.tabs.query({ url: "https://web.whatsapp.com/*" }).then((t) => setWaTab(t.length > 0));
+    void loadSenders(user.id).then((r) => setZapiSenders(r.senders.filter((x) => x.via === "zapi")));
   }, [user.id, user.email]);
   if (!s) return null;
 
@@ -174,6 +177,13 @@ export function NotificationsSettings() {
   const testWhatsapp = () =>
     run("whatsapp", async () => {
       if (!s.whatsapp.phone.trim()) throw new Error("Informe o número que recebe os avisos.");
+      if (s.whatsapp.via === "zapi") {
+        const z = zapiSenders.find((x) => x.id === s.whatsapp.senderId);
+        if (!z?.zapi) throw new Error("Escolha um número da Z-API (Configurações → WhatsApp).");
+        if (!(await askZapiPermission())) throw new Error("Sem a permissão de acesso à Z-API.");
+        await zapiSendText(z.zapi, s.whatsapp.phone, "ConectCRM: teste de notificação. Os lembretes pelo WhatsApp estão funcionando.");
+        return `Mensagem enviada pela Z-API (${z.name}) para ${s.whatsapp.phone}.`;
+      }
       if (s.whatsapp.via === "web") {
         await sendViaWhatsAppWeb(s.whatsapp.phone, "ConectCRM: teste de notificação. Os lembretes pelo WhatsApp estão funcionando.", 15_000);
         setWaTab(true);
@@ -298,11 +308,23 @@ export function NotificationsSettings() {
           <div className="ml-6 mt-3 grid gap-x-4 md:grid-cols-2">
             <Field label="Enviar pelo">
               <TaSelect
-                value={s.whatsapp.via}
+                value={s.whatsapp.via === "zapi" ? `zapi:${s.whatsapp.senderId ?? ""}` : s.whatsapp.via}
                 aria-label="Forma de envio do WhatsApp"
-                onChange={(e) => patch({ whatsapp: { ...s.whatsapp, via: e.target.value as WhatsAppVia } })}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  patch({
+                    whatsapp: v.startsWith("zapi:")
+                      ? { ...s.whatsapp, via: "zapi", senderId: v.slice(5) }
+                      : { ...s.whatsapp, via: v as WhatsAppVia, senderId: undefined },
+                  });
+                }}
               >
                 <option value="web">WhatsApp Web aberto neste Chrome</option>
+                {zapiSenders.map((z) => (
+                  <option key={z.id} value={`zapi:${z.id}`}>
+                    Z-API — {z.name}
+                  </option>
+                ))}
                 <option value="callmebot">CallMeBot (serviço gratuito)</option>
               </TaSelect>
             </Field>
@@ -318,7 +340,12 @@ export function NotificationsSettings() {
               />
             </Field>
           </div>
-          {s.whatsapp.via === "web" ? (
+          {s.whatsapp.via === "zapi" ? (
+            <p className="ml-6 text-theme-xs text-gray-600 dark:text-gray-400" data-wazapi>
+              Os lembretes saem pela Z-API, do número {zapiSenders.find((z) => z.id === s.whatsapp.senderId)?.name ?? "(removido)"}, mesmo sem o WhatsApp Web
+              aberto. Os números ficam em Configurações → WhatsApp.
+            </p>
+          ) : s.whatsapp.via === "web" ? (
             <div className="ml-6 space-y-1.5 text-theme-xs text-gray-600 dark:text-gray-400" data-waweb>
               <p className="flex flex-wrap items-center gap-2">
                 {waTab === null ? null : waTab ? (

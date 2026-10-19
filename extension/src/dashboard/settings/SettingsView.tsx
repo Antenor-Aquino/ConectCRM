@@ -1,7 +1,7 @@
 // Configurações: menu lateral com as seções. As que chegam em outras fases
 // aparecem desabilitadas, com a fase indicada.
 import { useEffect, useState } from "react";
-import { Ban, Bell, Database, Trash2, FileText, Plug, Sparkles, KeyRound, ListChecks, Mail, Package, SlidersHorizontal, Tags, Users, UsersRound } from "lucide-react";
+import { Ban, Bell, Database, MessageCircle, Trash2, FileText, Plug, Sparkles, KeyRound, ListChecks, Mail, Package, SlidersHorizontal, Tags, Users, UsersRound } from "lucide-react";
 import { TaPanel, cn } from "@tailadmin";
 import { planLabel } from "../../lib/license";
 import { useLicense } from "../license/LicenseGate";
@@ -15,13 +15,14 @@ import { EmailSettings } from "./EmailSettings";
 import { IntegrationsSettings } from "./IntegrationsSettings";
 import { NotificationsSettings } from "./NotificationsSettings";
 import { TrashSettings } from "./TrashSettings";
+import { WhatsAppSettings } from "./WhatsAppSettings";
 import { LossReasonsSettings } from "./LossReasonsSettings";
 import { ProductsSettings } from "./ProductsSettings";
 import { TagsSettings } from "./TagsSettings";
 import { TeamsSettings } from "./TeamsSettings";
 import { UsersSettings } from "./UsersSettings";
 
-export type Section = "usuarios" | "equipes" | "licenca" | "tags" | "campos" | "produtos" | "motivos" | "tipos" | "documentos" | "backup" | "ia" | "email" | "notificacoes" | "integracoes" | "lixeira";
+export type Section = "usuarios" | "equipes" | "licenca" | "tags" | "campos" | "produtos" | "motivos" | "tipos" | "documentos" | "backup" | "ia" | "email" | "notificacoes" | "integracoes" | "lixeira" | "whatsapp";
 
 const SECTIONS: { id: Section | null; label: string; icon: React.ReactNode; phase?: string }[] = [
   { id: "usuarios", label: "Usuários", icon: <Users size={16} /> },
@@ -34,6 +35,7 @@ const SECTIONS: { id: Section | null; label: string; icon: React.ReactNode; phas
   { id: "tipos", label: "Tipos de atividade", icon: <ListChecks size={16} /> },
   { id: "documentos", label: "Documentos (GED)", icon: <FileText size={16} /> },
   { id: "email", label: "E-mail", icon: <Mail size={16} /> },
+  { id: "whatsapp", label: "WhatsApp", icon: <MessageCircle size={16} /> },
   { id: "notificacoes", label: "Notificações", icon: <Bell size={16} /> },
   { id: "ia", label: "Inteligência artificial", icon: <Sparkles size={16} /> },
   { id: "integracoes", label: "Integrações", icon: <Plug size={16} /> },
@@ -78,6 +80,7 @@ export function SettingsView({ env, initialSection }: { env: DbEnv; initialSecti
         {section === "email" && <EmailSettings />}
         {section === "notificacoes" && <NotificationsSettings />}
         {section === "lixeira" && <TrashSettings />}
+        {section === "whatsapp" && <WhatsAppSettings />}
         {section === "integracoes" && <IntegrationsSettings />}
         {section === "ia" && (
           <div className="space-y-5">
