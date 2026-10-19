@@ -526,7 +526,7 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
                 className="ml-auto"
                 startIcon={<Trash2 size={15} />}
                 onClick={async () => {
-                  if (!confirm("Excluir esta atividade?")) return;
+                  if (!confirm("Excluir esta atividade? Vai para a lixeira, de onde pode ser restaurado.")) return;
                   await call("activities.delete", { id: request.id! });
                   onSaved();
                 }}

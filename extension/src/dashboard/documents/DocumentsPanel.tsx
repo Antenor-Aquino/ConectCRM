@@ -159,7 +159,7 @@ export function DocumentsPanel({ type, id, onChanged, compact }: { type: DocLink
                     className="text-gray-400 hover:text-error-600"
                     onClick={() =>
                       confirm(
-                        `Mover "${d.name}" para a lixeira?\n\nEle sai de TODOS os cadastros${others.length ? ` (inclusive de ${others.length} outro(s))` : ""}. Pode ser restaurado no GED em até 30 dias.`,
+                        `Mover "${d.name}" para a lixeira?\n\nEle sai de TODOS os cadastros${others.length ? ` (inclusive de ${others.length} outro(s))` : ""}. Pode ser restaurado pela Lixeira dentro do prazo.`,
                       ) && void run(() => call("documents.trash", { ids: [d.id] }))
                     }
                   >

@@ -133,7 +133,7 @@ export function DocumentViewer({ documentId, onClose, onChanged }: { documentId:
                 disabled={busy}
                 onClick={() =>
                   confirm(
-                    `Mover "${doc.name}" para a lixeira? Ele sai de todos os cadastros (${doc.links.length} vínculo(s)) e pode ser restaurado em até 30 dias.`,
+                    `Mover "${doc.name}" para a lixeira? Ele sai de todos os cadastros (${doc.links.length} vínculo(s)) e pode ser restaurado pela Lixeira dentro do prazo.`,
                   ) && void run(() => call("documents.trash", { ids: [doc.id] }), onClose)
                 }
               >

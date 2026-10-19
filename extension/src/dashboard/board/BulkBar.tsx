@@ -230,7 +230,7 @@ export function BulkBar({
           <button
             type="button"
             className={cn(item, "text-error-600")}
-            onClick={() => confirm(`Excluir ${n} ${plural}? Esta ação não pode ser desfeita pela tela.`) && void apply({ type: "delete" }, "excluídos")}
+            onClick={() => confirm(`Excluir ${n} ${plural}? Vão para a lixeira (com as atividades e notas), de onde podem ser restaurados.`) && void apply({ type: "delete" }, "excluídos")}
           >
             <Trash2 size={15} /> Excluir
           </button>

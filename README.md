@@ -134,6 +134,15 @@ de silêncio. Com o Chrome fechado, ao reabrir chega um resumo único. O canal d
 e-mail está suspenso por enquanto (detalhes em
 [`especificacoes/10-notificacoes.md`](especificacoes/10-notificacoes.md)).
 
+### Lixeira
+
+Toda exclusão vai para a **Lixeira** (ícone no menu superior e em
+Configurações → Lixeira), com um aviso "enviado para a lixeira, pode ser
+restaurado em até N dias" e o botão **Restaurar**. O cartão leva junto as
+atividades e notas, e tudo volta junto. Depois do prazo (padrão 30 dias,
+configurável pelo administrador), o item é excluído definitivamente (detalhes
+em [`especificacoes/11-lixeira.md`](especificacoes/11-lixeira.md)).
+
 ### Cadastros duplicados
 
 Ao criar contato, organização ou cartão, o CRM procura nomes parecidos (mais

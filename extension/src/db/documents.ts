@@ -8,6 +8,7 @@ import { optionalText, requireText, ValidationError } from "../lib/validate";
 import { activityScope } from "./activities";
 import { cardScope } from "./deals";
 import { insertRow, restore, softDelete, updateRow, type DbContext } from "./repo";
+import { moveToTrash, type TrashNotice } from "./trash";
 import { many, one, run, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
 import { getEntityTags, setEntityTags } from "./tags";
 import type { Viewer } from "./users";
@@ -105,8 +106,8 @@ export function updateDocumentType(db: DatabaseSync, ctx: DbContext, id: string,
 }
 
 /** Documentos do tipo ficam "não classificados". */
-export function deleteDocumentType(db: DatabaseSync, ctx: DbContext, id: string): void {
-  withTransaction(db, () => {
+export function deleteDocumentType(db: DatabaseSync, ctx: DbContext, id: string): TrashNotice {
+  return moveToTrash(db, ctx, "document_type", id, () => {
     for (const d of many<{ id: string }>(db, "SELECT id FROM document WHERE type_id = ?", id)) updateRow(db, ctx, "document", d.id, { type_id: null });
     softDelete(db, ctx, "document_type", id);
   });
@@ -371,8 +372,8 @@ export function restoreDocumentVersion(db: DatabaseSync, ctx: DbContext, id: str
 }
 
 /** Para a lixeira (some de todos os cadastros; pode ser restaurado). */
-export function trashDocument(db: DatabaseSync, ctx: DbContext, id: string): void {
-  softDelete(db, ctx, "document", id);
+export function trashDocument(db: DatabaseSync, ctx: DbContext, id: string): TrashNotice {
+  return moveToTrash(db, ctx, "document", id, () => softDelete(db, ctx, "document", id));
 }
 
 export function restoreDocument(db: DatabaseSync, ctx: DbContext, id: string): void {
@@ -380,7 +381,6 @@ export function restoreDocument(db: DatabaseSync, ctx: DbContext, id: string): v
   restore(db, ctx, "document", id);
 }
 
-export const TRASH_DAYS = 30;
 
 /** Arquivos que ficaram sem nenhum documento (a tela apaga o conteúdo). */
 export interface OrphanBlob {
@@ -412,9 +412,9 @@ export function purgeDocuments(db: DatabaseSync, ctx: DbContext, ids: string[]):
   });
 }
 
-/** Lixeira com mais de 30 dias. */
-export function expiredTrash(db: DatabaseSync, now = new Date()): string[] {
-  const limit = new Date(now.getTime() - TRASH_DAYS * 86400_000).toISOString();
+/** Lixeira com o prazo vencido (`days` = prazo da lixeira). */
+export function expiredTrash(db: DatabaseSync, days: number, now = new Date()): string[] {
+  const limit = new Date(now.getTime() - days * 86400_000).toISOString();
   return many<{ id: string }>(db, "SELECT id FROM document WHERE deleted_at IS NOT NULL AND purged_at IS NULL AND deleted_at < ?", limit).map((r) => r.id);
 }
 

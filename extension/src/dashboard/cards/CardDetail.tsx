@@ -267,7 +267,7 @@ export function CardDetail({
           variant="ghost"
           startIcon={<Trash2 size={15} />}
           onClick={() => {
-            if (confirm(`Excluir este ${text.noun}?`)) void run(() => call("cards.delete", { id: cardId })).then(onClose);
+            if (confirm(`Excluir este ${text.noun}? Vai para a lixeira com as atividades e notas, de onde pode ser restaurado.`)) void run(() => call("cards.delete", { id: cardId })).then(onClose);
           }}
         >
           Excluir

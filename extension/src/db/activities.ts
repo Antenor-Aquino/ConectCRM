@@ -6,6 +6,7 @@ import { normalizeIsoDate, optionalText, requireText, ValidationError } from "..
 import { getCustomValues, setCustomValues, type CustomValue } from "./customFields";
 import { getCardRow } from "./deals";
 import { getRow, insertRow, softDelete, updateRow, type DbContext } from "./repo";
+import { moveToTrash, type TrashNotice } from "./trash";
 import { documentScope } from "./documents";
 import { getEntityTags, setEntityTags } from "./tags";
 import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
@@ -261,8 +262,12 @@ export function setActivityDone(db: DatabaseSync, ctx: DbContext, id: string, do
   updateActivity(db, ctx, id, { done });
 }
 
-export function deleteActivity(db: DatabaseSync, ctx: DbContext, id: string): void {
-  softDelete(db, ctx, "activity", id);
+export function deleteActivity(db: DatabaseSync, ctx: DbContext, id: string): TrashNotice {
+  return moveToTrash(db, ctx, "activity", id, () => {
+    for (const n of many<{ id: string }>(db, "SELECT id FROM note WHERE entity_type = ? AND entity_id = ? AND deleted_at IS NULL", "activity", id))
+      softDelete(db, ctx, "note", n.id);
+    softDelete(db, ctx, "activity", id);
+  });
 }
 
 export interface ActivityFilter {

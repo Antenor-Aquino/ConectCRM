@@ -1,6 +1,7 @@
 // Notas de contato, organização, cartão ou tarefa.
 import { requireText, ValidationError } from "../lib/validate";
 import { getRow, insertRow, softDelete, updateRow, type DbContext } from "./repo";
+import { moveToTrash, type TrashNotice } from "./trash";
 import { many, type DatabaseSync } from "./sql";
 
 export type NoteEntity = "person" | "organization" | "deal" | "activity";
@@ -42,8 +43,8 @@ export function updateNote(db: DatabaseSync, ctx: DbContext, id: string, patch: 
   updateRow(db, ctx, "note", id, data);
 }
 
-export function deleteNote(db: DatabaseSync, ctx: DbContext, id: string): void {
-  softDelete(db, ctx, "note", id);
+export function deleteNote(db: DatabaseSync, ctx: DbContext, id: string): TrashNotice {
+  return moveToTrash(db, ctx, "note", id, () => softDelete(db, ctx, "note", id));
 }
 
 export function listNotes(db: DatabaseSync, entityType: NoteEntity, entityId: string): Note[] {

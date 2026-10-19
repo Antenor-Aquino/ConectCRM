@@ -101,7 +101,7 @@ export function OrganizationDetail({
           className="ml-auto"
           startIcon={<Trash2 size={15} />}
           onClick={async () => {
-            if (!confirm(`Excluir a organização "${o.name}"?`)) return;
+            if (!confirm(`Excluir a organização "${o.name}"? Vai para a lixeira com as notas e as atividades ligadas só a ela, de onde pode ser restaurada.`)) return;
             try {
               await call("organizations.delete", { id: o.id });
               onChanged();

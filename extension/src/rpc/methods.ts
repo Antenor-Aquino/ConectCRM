@@ -25,6 +25,7 @@ import * as products from "../db/products";
 import * as reports from "../db/reports";
 import * as similar from "../db/similar";
 import * as stages from "../db/stages";
+import * as trash from "../db/trash";
 import { rowHistory, type DataTable, type DbContext } from "../db/repo";
 import { many, one, type DatabaseSync } from "../db/sql";
 import { hashPin, verifyPin } from "../lib/pin";
@@ -129,7 +130,7 @@ export const methods = {
   },
   "teams.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
     assertAdmin(db, ctx);
-    users.deleteTeam(db, ctx, p.id);
+    return users.deleteTeam(db, ctx, p.id);
   },
 
   // Funis
@@ -247,7 +248,7 @@ export const methods = {
   },
   "cards.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);
-    deals.deleteCard(db, ctx, p.id);
+    return deals.deleteCard(db, ctx, p.id);
   },
   "lossReasons.list": (db: DatabaseSync, _c: DbContext, p: { includeInactive?: boolean } = {}) => deals.listLossReasons(db, p),
   // Criar motivo fica liberado: o vendedor cria direto ao marcar "Perdido".
@@ -300,7 +301,7 @@ export const methods = {
   },
   "documentTypes.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
     assertRole(db, ctx, MANAGERS, "tipos de documento");
-    docs.deleteDocumentType(db, ctx, p.id);
+    return docs.deleteDocumentType(db, ctx, p.id);
   },
   "documents.list": (db: DatabaseSync, ctx: DbContext, p: Omit<docs.DocumentFilter, "viewer"> = {}) => docs.listDocuments(db, { ...p, viewer: viewer(db, ctx) }),
   "documents.forEntity": (db: DatabaseSync, ctx: DbContext, p: { type: docs.DocLinkType; id: string }) => {
@@ -355,7 +356,10 @@ export const methods = {
       docView(db, ctx, id);
       docs.assertDocumentOwner(db, viewer(db, ctx), id);
     }
-    for (const id of p.ids) docs.trashDocument(db, ctx, id);
+    return trash.mergeNotices(
+      p.ids.map((id) => docs.trashDocument(db, ctx, id)),
+      "documentos",
+    );
   },
   "documents.restore": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => {
     for (const id of p.ids) {
@@ -370,7 +374,41 @@ export const methods = {
     return docs.purgeDocuments(db, ctx, p.ids);
   },
   /** Lixeira com mais de 30 dias (rotina ao abrir o GED). */
-  "documents.purgeExpired": (db: DatabaseSync, ctx: DbContext) => docs.purgeDocuments(db, ctx, docs.expiredTrash(db)),
+  "documents.purgeExpired": (db: DatabaseSync, ctx: DbContext) => docs.purgeDocuments(db, ctx, docs.expiredTrash(db, trash.retentionDays(db))),
+
+  // Lixeira (spec 11)
+  "trash.list": (db: DatabaseSync, ctx: DbContext, p: { entity?: string; search?: string } = {}) => trash.listTrash(db, viewer(db, ctx), p),
+  "trash.count": (db: DatabaseSync, ctx: DbContext) => trash.trashCount(db, viewer(db, ctx)),
+  "trash.settings": (db: DatabaseSync) => ({ days: trash.retentionDays(db) }),
+  "trash.setRetention": (db: DatabaseSync, ctx: DbContext, p: { days: number }) => {
+    assertRole(db, ctx, ADMIN, "o prazo da lixeira");
+    trash.setRetentionDays(db, ctx, p.days);
+  },
+  /** Restaura cada item; um erro (ex.: funil também excluído) não impede os outros. */
+  "trash.restore": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => {
+    const out = { restored: 0, errors: [] as { id: string; message: string }[] };
+    for (const id of p.ids) {
+      try {
+        trash.restoreTrashItem(db, ctx, viewer(db, ctx), id);
+        out.restored++;
+      } catch (e) {
+        out.errors.push({ id, message: e instanceof Error ? e.message : String(e) });
+      }
+    }
+    return out;
+  },
+  /** Exclusão definitiva (administrador); devolve os arquivos de documentos a apagar. */
+  "trash.purge": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => {
+    assertRole(db, ctx, ADMIN, "a lixeira");
+    return trash.purgeTrash(db, ctx, p.ids, (ids) => docs.purgeDocuments(db, ctx, ids));
+  },
+  "trash.empty": (db: DatabaseSync, ctx: DbContext) => {
+    assertRole(db, ctx, ADMIN, "a lixeira");
+    return trash.purgeTrash(db, ctx, trash.allTrashIds(db, null), (ids) => docs.purgeDocuments(db, ctx, ids));
+  },
+  /** Prazo vencido (rotina ao abrir o CRM). */
+  "trash.purgeExpired": (db: DatabaseSync, ctx: DbContext) =>
+    trash.purgeTrash(db, ctx, trash.expiredTrashIds(db), (ids) => docs.purgeDocuments(db, ctx, ids)),
   /** Onde ler o arquivo de uma versão; registra a visualização ou o download. */
   "documents.file": (db: DatabaseSync, ctx: DbContext, p: { versionId: string; action: docs.DocumentAction | "index" }) => {
     const f = docs.versionFile(db, p.versionId);
@@ -439,7 +477,7 @@ export const methods = {
   },
   "activities.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
     assertActivityAccess(db, ctx, p.id);
-    activities.deleteActivity(db, ctx, p.id);
+    return activities.deleteActivity(db, ctx, p.id);
   },
 
   // Relatórios (respeitam a permissão do usuário)
@@ -509,7 +547,7 @@ export const methods = {
   },
   "fieldGroups.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
     assertRole(db, ctx, ADMIN, "campos personalizados");
-    cf.deleteFieldGroup(db, ctx, p.id);
+    return cf.deleteFieldGroup(db, ctx, p.id);
   },
   "fieldGroups.reorder": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => {
     assertRole(db, ctx, ADMIN, "campos personalizados");

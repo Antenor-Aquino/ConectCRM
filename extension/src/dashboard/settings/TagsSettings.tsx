@@ -139,7 +139,7 @@ export function TagsSettings() {
                         className="hover:text-error-600"
                         onClick={() => {
                           const n = usage[t.id] ?? 0;
-                          if (confirm(n ? `A tag "${t.name}" está em ${n} registro(s) e será removida deles. Excluir?` : `Excluir a tag "${t.name}"?`)) {
+                          if (confirm(n ? `A tag "${t.name}" está em ${n} registro(s) e será removida deles. Excluir? Vai para a lixeira, de onde pode ser restaurado.` : `Excluir a tag "${t.name}"? Vai para a lixeira, de onde pode ser restaurado.`)) {
                             void run(() => call("tags.delete", { id: t.id }));
                           }
                         }}

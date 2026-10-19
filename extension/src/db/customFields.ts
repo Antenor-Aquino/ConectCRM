@@ -10,6 +10,7 @@ import {
   ValidationError,
 } from "../lib/validate";
 import { insertRow, softDelete, updateRow, type DbContext } from "./repo";
+import { moveToTrash, type TrashNotice } from "./trash";
 import { many, one, withTransaction, type DatabaseSync } from "./sql";
 
 export type CustomFieldEntity = "person" | "organization" | "deal" | "ticket" | "project" | "activity" | "product";
@@ -318,8 +319,8 @@ export function renameFieldGroup(db: DatabaseSync, ctx: DbContext, id: string, n
 }
 
 /** Exclui a categoria; os campos dela ficam sem categoria (nada se perde). */
-export function deleteFieldGroup(db: DatabaseSync, ctx: DbContext, id: string): void {
-  withTransaction(db, () => {
+export function deleteFieldGroup(db: DatabaseSync, ctx: DbContext, id: string): TrashNotice {
+  return moveToTrash(db, ctx, "custom_field_group", id, () => {
     for (const f of many<{ id: string }>(db, "SELECT id FROM custom_field WHERE group_id = ? AND deleted_at IS NULL", id))
       updateRow(db, ctx, "custom_field", f.id, { group_id: null });
     softDelete(db, ctx, "custom_field_group", id);
@@ -330,8 +331,8 @@ export function reorderFieldGroups(db: DatabaseSync, ctx: DbContext, ids: string
   withTransaction(db, () => ids.forEach((id, i) => updateRow(db, ctx, "custom_field_group", id, { position: i })));
 }
 
-export function deleteCustomField(db: DatabaseSync, ctx: DbContext, id: string): void {
-  softDelete(db, ctx, "custom_field", id);
+export function deleteCustomField(db: DatabaseSync, ctx: DbContext, id: string): TrashNotice {
+  return moveToTrash(db, ctx, "custom_field", id, () => softDelete(db, ctx, "custom_field", id));
 }
 
 // ---------- Valores ----------

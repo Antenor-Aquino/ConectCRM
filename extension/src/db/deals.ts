@@ -11,6 +11,7 @@ import { isCardFieldKey } from "../lib/cardFields";
 import { normalizeText } from "../lib/search";
 import { OVERDUE_COND, overdueParams, startOfDay } from "../lib/taskTiming";
 import { getRow, insertRow, softDelete, updateRow, type DbContext } from "./repo";
+import { moveToTrash, type TrashNotice } from "./trash";
 import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
 import { createTag, getEntityTags, setEntityTags, type Tag } from "./tags";
 import { getUser, teammateIds, type Viewer } from "./users";
@@ -482,8 +483,14 @@ export function setCardStatus(
   });
 }
 
-export function deleteCard(db: DatabaseSync, ctx: DbContext, id: string): void {
-  softDelete(db, ctx, "deal", id);
+/** Para a lixeira, com as atividades e notas do cartão (voltam juntas ao restaurar). */
+export function deleteCard(db: DatabaseSync, ctx: DbContext, id: string): TrashNotice {
+  return moveToTrash(db, ctx, "deal", id, () => {
+    for (const a of many<{ id: string }>(db, "SELECT id FROM activity WHERE deal_id = ? AND deleted_at IS NULL", id)) softDelete(db, ctx, "activity", a.id);
+    for (const n of many<{ id: string }>(db, "SELECT id FROM note WHERE entity_type = ? AND entity_id = ? AND deleted_at IS NULL", "deal", id))
+      softDelete(db, ctx, "note", n.id);
+    softDelete(db, ctx, "deal", id);
+  });
 }
 
 // ---------- Itens (produtos e serviços) ----------

@@ -87,15 +87,15 @@ export function CustomFieldsSettings() {
     if (name && name !== g.name) void act(() => call("fieldGroups.rename", { id: g.id, name }));
   };
   const removeGroup = (g: CustomFieldGroup) => {
-    if (!confirm(`Excluir a categoria "${g.name}"?${g.field_count ? ` Os ${g.field_count} campo(s) dela continuam, sem categoria.` : ""}`)) return;
+    if (!confirm(`Excluir a categoria "${g.name}"?${g.field_count ? ` Os ${g.field_count} campo(s) dela continuam, sem categoria.` : ""} Vai para a lixeira, de onde pode ser restaurado.`)) return;
     void act(() => call("fieldGroups.delete", { id: g.id }));
   };
 
   const remove = async (f: CustomField) => {
     const used = await call("customFields.usage", { id: f.id });
     const msg = used
-      ? `O campo "${f.name}" tem valor em ${used} registro(s). Excluir mesmo assim? Os valores deixam de aparecer.`
-      : `Excluir o campo "${f.name}"?`;
+      ? `O campo "${f.name}" tem valor em ${used} registro(s). Excluir mesmo assim? Os valores deixam de aparecer. Vai para a lixeira, de onde pode ser restaurado.`
+      : `Excluir o campo "${f.name}"? Vai para a lixeira, de onde pode ser restaurado.`;
     if (!confirm(msg)) return;
     void act(() => call("customFields.delete", { id: f.id }));
   };

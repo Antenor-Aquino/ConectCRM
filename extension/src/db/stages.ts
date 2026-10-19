@@ -5,6 +5,7 @@ import { requireText, ValidationError } from "../lib/validate";
 import { moveCard } from "./deals";
 import { listStages } from "./pipelines";
 import { insertRow, softDelete, updateRow, type DbContext } from "./repo";
+import { mergeNotices, moveToTrash, type TrashNotice } from "./trash";
 import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
 
 export interface StageDraft {
@@ -24,8 +25,9 @@ export function saveStages(
   pipelineId: string,
   stages: StageDraft[],
   moveTo: Record<string, string> = {},
-): void {
+): TrashNotice | undefined {
   if (stages.length === 0) throw new ValidationError("O funil precisa de pelo menos uma etapa.");
+  const notices: TrashNotice[] = [];
   withTransaction(db, () => {
     if (!one(db, "SELECT 1 FROM pipeline WHERE id = ? AND deleted_at IS NULL", pipelineId)) throw new ValidationError("Funil não encontrado.");
     const current = listStages(db, pipelineId);
@@ -58,7 +60,8 @@ export function saveStages(
         }
         for (const c of cards) moveCard(db, ctx, c.id, { stageId: target });
       }
-      softDelete(db, ctx, "stage", removed.id);
+      notices.push(moveToTrash(db, ctx, "stage", removed.id, () => softDelete(db, ctx, "stage", removed.id)));
     }
   });
+  return mergeNotices(notices, "etapas");
 }

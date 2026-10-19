@@ -87,7 +87,7 @@ export function NotesPanel({
                 <Pin size={14} />
               </button>
               <button type="button" className="hover:text-error-600" title="Excluir" onClick={async () => {
-                if (!confirm("Excluir esta nota?")) return;
+                if (!confirm("Excluir esta nota? Vai para a lixeira, de onde pode ser restaurado.")) return;
                 await call("notes.delete", { id: n.id });
                 await after();
               }}>

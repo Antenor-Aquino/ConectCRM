@@ -293,8 +293,8 @@ describe("GED: versões, lixeira, arquivos repetidos e auditoria", () => {
     // Lixeira expira em 30 dias.
     const c = docs.createDocument(db, ctx, { name: "Velho", typeId: type("Outros"), file: file("v.pdf") });
     docs.trashDocument(db, ctx, c);
-    expect(docs.expiredTrash(db)).toEqual([]);
-    expect(docs.expiredTrash(db, new Date(Date.now() + 31 * 86400_000))).toEqual([c]);
+    expect(docs.expiredTrash(db, 30)).toEqual([]);
+    expect(docs.expiredTrash(db, 30, new Date(Date.now() + 31 * 86400_000))).toEqual([c]);
   });
 
   it("texto do PDF: fica pendente quando não lido e é gravado normalizado", async () => {

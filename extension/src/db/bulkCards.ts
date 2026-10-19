@@ -22,6 +22,7 @@ import {
   type DealStatus,
 } from "./deals";
 import { updateRow, type DbContext } from "./repo";
+import { mergeNotices, type TrashNotice } from "./trash";
 import { one, withTransaction, type DatabaseSync } from "./sql";
 import { getEntityTags, setEntityTags } from "./tags";
 import type { Viewer } from "./users";
@@ -48,26 +49,31 @@ export type BulkAction =
 export interface BulkResult {
   done: number;
   errors: { id: string; title: string; message: string }[];
+  /** Exclusão: aviso da lixeira. */
+  trash?: TrashNotice;
 }
 
 export function bulkCards(db: DatabaseSync, ctx: DbContext, viewer: Viewer | null, ids: string[], action: BulkAction): BulkResult {
   const out: BulkResult = { done: 0, errors: [] };
+  const notices: TrashNotice[] = [];
   if (action.type === "owner") assertCanAssign(db, viewer, action.ownerId);
   for (const id of [...new Set(ids)]) {
     const card = getCardRow(db, id);
     try {
       if (!card) throw new ValidationError("Cartão não encontrado.");
       assertCardAccess(db, viewer, id);
-      withTransaction(db, () => apply(db, ctx, viewer, id, action));
+      const notice = withTransaction(db, () => apply(db, ctx, viewer, id, action));
+      if (notice) notices.push(notice);
       out.done++;
     } catch (e) {
       out.errors.push({ id, title: card?.title ?? id, message: errorText(e) });
     }
   }
+  out.trash = mergeNotices(notices, "cartões");
   return out;
 }
 
-function apply(db: DatabaseSync, ctx: DbContext, viewer: Viewer | null, id: string, a: BulkAction): void {
+function apply(db: DatabaseSync, ctx: DbContext, viewer: Viewer | null, id: string, a: BulkAction): TrashNotice | void {
   const card = getCardRow(db, id)!;
   switch (a.type) {
     case "moveStage":
@@ -101,8 +107,7 @@ function apply(db: DatabaseSync, ctx: DbContext, viewer: Viewer | null, id: stri
         updateRow(db, ctx, "deal", id, { archived_at: a.type === "archive" ? new Date().toISOString() : null });
       return;
     case "delete":
-      deleteCard(db, ctx, id);
-      return;
+      return deleteCard(db, ctx, id);
     case "setField": {
       // Campo que não existe no tipo do cartão (SLA num negócio...) é ignorado.
       const kindOk =

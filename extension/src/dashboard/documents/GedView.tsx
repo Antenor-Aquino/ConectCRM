@@ -652,7 +652,7 @@ export function GedView() {
               {msg.text}
             </p>
           )}
-          {filter.trash && <p className="mt-3 text-theme-xs text-gray-500">Lixeira: documentos excluídos ficam aqui por 30 dias e depois são apagados.</p>}
+          {filter.trash && <p className="mt-3 text-theme-xs text-gray-500">Documentos excluídos ficam aqui e na Lixeira do CRM até o prazo da lixeira; depois são apagados.</p>}
 
           <p className="mt-3 text-theme-xs text-gray-500">
             {data.total} documento(s){filter.search ? ` para "${filter.search}"` : ""}

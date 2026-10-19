@@ -1,6 +1,7 @@
 import { isCardFieldKey, MAX_CARD_FIELDS } from "../lib/cardFields";
 import { PIPELINE_TYPE_ORDER } from "../lib/cardTypes";
 import { insertRow, softDelete, updateRow, type DbContext } from "./repo";
+import { moveToTrash, type TrashNotice } from "./trash";
 import { many, one, withTransaction, type DatabaseSync } from "./sql";
 
 export type PipelineType = "comercial" | "operacional" | "projeto";
@@ -129,10 +130,10 @@ export function updatePipeline(
   updateRow(db, ctx, "pipeline", id, data);
 }
 
-export function deletePipeline(db: DatabaseSync, ctx: DbContext, id: string): void {
+export function deletePipeline(db: DatabaseSync, ctx: DbContext, id: string): TrashNotice {
   const open = one<{ n: number }>(db, "SELECT COUNT(*) AS n FROM deal WHERE pipeline_id = ? AND deleted_at IS NULL", id);
   if ((open?.n ?? 0) > 0) throw new Error("Este funil tem cartões. Mova-os ou arquive o funil.");
-  withTransaction(db, () => {
+  return moveToTrash(db, ctx, "pipeline", id, () => {
     for (const s of listStages(db, id)) softDelete(db, ctx, "stage", s.id);
     softDelete(db, ctx, "pipeline", id);
   });
