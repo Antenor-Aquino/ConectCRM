@@ -3,6 +3,7 @@
 // anexos e tarefas) e descreve cada alteração em português, com o valor
 // antigo e o novo. Gravações do mesmo usuário em até 2 segundos viram um só
 // evento (ex.: salvar produtos também atualiza o valor do negócio).
+import { noteText } from "./notes";
 import { CARD_TEXT, OUTCOME_TEXT, PIPELINE_TYPE_BY_KIND } from "../lib/cardTypes";
 import { formatCents, formatDateTime } from "../lib/format";
 import type { DealKind } from "./pipelines";
@@ -242,10 +243,10 @@ export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
       return [];
     }
     if (t === "note") {
-      if (l.op === "insert") return [`Adicionou nota: "${clip(next.body)}"`];
-      if (l.op === "delete") return [`Excluiu nota: "${clip(next.body, 60)}"`];
+      if (l.op === "insert") return [`Adicionou nota: "${clip(noteText(String(next.body)))}"`];
+      if (l.op === "delete") return [`Excluiu nota: "${clip(noteText(String(next.body)), 60)}"`];
       if (ch.pinned) return [ch.pinned[1] ? "Fixou uma nota" : "Desafixou uma nota"];
-      if (ch.body) return [`Editou nota: "${clip(ch.body[0], 60)}" → "${clip(ch.body[1], 60)}"`];
+      if (ch.body) return [`Editou nota: "${clip(noteText(String(ch.body[0])), 60)}" → "${clip(noteText(String(ch.body[1])), 60)}"`];
       return [];
     }
     if (t === "attachment") {

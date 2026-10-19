@@ -272,6 +272,11 @@ Novo cadastro em **Configurações → Tags**:
   como "chips" coloridos; opção de criar tag nova direto no campo (só para
   administradores — a confirmar).
 - Filtro por tags no Kanban.
+- **Busca** (0.2.44): campo no topo da tela, sem diferenciar acentos e
+  maiúsculas. Filtra a aba aberta e mostra, em cada aba, quantas tags batem.
+  A aba **Todas** lista as tags de todos os tipos de cadastro, com o tipo ao
+  lado (busca geral); editar, ativar e excluir funcionam nela também. Criar
+  tag continua dentro da aba do tipo.
 
 ## 9. Campos personalizados
 

@@ -4,6 +4,7 @@
 // usuário (mesmas regras do quadro e das tarefas). Nomes de funil e de
 // responsável são resolvidos aqui; sem correspondência, a resposta traz as
 // opções existentes em vez de adivinhar.
+import { noteText } from "./notes";
 import { OUTCOME_TEXT, PIPELINE_TYPE_BY_KIND } from "../lib/cardTypes";
 import type { DealStatus } from "./deals";
 import type { DealKind } from "./pipelines";
@@ -173,7 +174,7 @@ export function cardDigest(db: DatabaseSync, viewer: Viewer | null, id: string, 
     `SELECT n.body, n.created_at, u.name AS author FROM note n LEFT JOIN app_user u ON u.id = n.created_by
      WHERE n.entity_type = 'deal' AND n.entity_id = ? AND n.deleted_at IS NULL ORDER BY n.created_at DESC LIMIT 10`,
     id,
-  );
+  ).map((n) => ({ ...n, body: noteText(n.body) }));
   const items = many<{ description: string; quantity: number; total_cents: number; recurrence: string }>(
     db,
     "SELECT description, quantity, total_cents, recurrence FROM deal_item WHERE deal_id = ? AND deleted_at IS NULL ORDER BY position",

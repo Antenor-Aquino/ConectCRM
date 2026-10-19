@@ -23,6 +23,14 @@ export interface Note {
   documents: { id: string; version_id: string; name: string; filename: string; mime: string }[];
 }
 
+/** Imagem colada na nota: o texto guarda o marcador e a imagem fica no GED. */
+export const NOTE_IMAGE_RE = /\[imagem:([\w-]+)\]/g;
+
+/** Texto da nota sem os marcadores de imagem (histórico, busca, copiloto). */
+export function noteText(body: string): string {
+  return body.replace(NOTE_IMAGE_RE, "[imagem]");
+}
+
 export function addNote(db: DatabaseSync, ctx: DbContext, entityType: NoteEntity, entityId: string, body: string, documentIds: string[] = []): string {
   if (!(entityType in TABLE)) throw new ValidationError("Tipo de cadastro inválido.");
   if (!getRow(db, TABLE[entityType], entityId)) throw new ValidationError("Registro não encontrado.");

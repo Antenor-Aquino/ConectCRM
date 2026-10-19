@@ -26,6 +26,7 @@ import { errorText } from "../../lib/errors";
 import { ACTIVE_CHANNELS, CHANNEL_LABEL, activeSettings, channelReady, loadNotifySettings, type Channel, type NotifySettings, type ReminderRule } from "../../lib/notify/settings";
 import { formatDateTime } from "../../lib/format";
 import { RemindersEditor } from "../ui/RemindersEditor";
+import { LinkedTextarea } from "../ui/LinkedTextarea";
 
 const KIND_LABEL = { deal: "Negócio", ticket: "Ticket", project: "Projeto" } as const;
 
@@ -348,11 +349,11 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
                   onChange={(e) => setTitle(e.target.value)}
                 />
               </div>
-              <textarea
+              <LinkedTextarea
                 className="ml-8 mt-2 min-h-[120px] w-[calc(100%-2rem)] resize-y border-none bg-transparent text-theme-sm text-gray-700 outline-none placeholder:text-gray-400 dark:text-gray-300"
                 placeholder="Adicionar descrição…"
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={setDescription}
               />
               {fields.some((f) => !f.hidden) && (
                 <div className="ml-8">

@@ -14,7 +14,10 @@ Modal largo em **duas colunas**, botão ✕ no canto.
   usuário completar ou trocar. Mudar o tipo troca só esse começo (o que foi
   digitado depois continua); se o nome foi reescrito, não muda. Ao editar
   uma atividade existente o nome nunca é alterado.
-- **Add descrição...** — texto longo logo abaixo, sem borda.
+- **Add descrição...** — texto longo logo abaixo, sem borda. Links
+  (http/https, www., e-mail) ficam clicáveis e abrem em outra aba; clicar fora
+  de um link volta a editar (0.2.44). O mesmo vale para a descrição de
+  tickets e projetos.
 - **Documentos**: "Anexar documentos" (vários) — viram documentos do GED com
   nome e classificação, vinculados à atividade, ao cartão, ao contato e à
   organização (spec 08). Numa atividade nova os arquivos aguardam e a janela

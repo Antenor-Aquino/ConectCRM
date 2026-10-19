@@ -1,6 +1,7 @@
 // Pesquisa geral (barra superior): cartões (título, contato, organização e
 // número do ticket), contatos, organizações, atividades, notas e documentos,
 // respeitando as permissões do usuário. Poucos resultados por grupo.
+import { noteText } from "./notes";
 import { normalizeText } from "../lib/search";
 import { listActivities } from "./activities";
 import { listOrganizations, listPersons, personVisibility } from "./contacts";
@@ -83,7 +84,7 @@ export function globalSearch(db: DatabaseSync, text: string, viewer: Viewer | nu
     ...scope.params,
     ...pv.params,
     LIMIT,
-  ).map(({ body, ...n }) => ({ ...n, text: snippet(body, term) }));
+  ).map(({ body, ...n }) => ({ ...n, text: snippet(noteText(body), term) }));
   const documents = listDocuments(db, { search: term, limit: LIMIT, viewer }).items.map((d) => ({ id: d.id, name: d.name, type_name: d.type_name }));
   return { cards, persons, organizations, activities, notes, documents };
 }

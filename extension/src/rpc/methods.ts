@@ -410,12 +410,13 @@ export const methods = {
   "trash.purgeExpired": (db: DatabaseSync, ctx: DbContext) =>
     trash.purgeTrash(db, ctx, trash.expiredTrashIds(db), (ids) => docs.purgeDocuments(db, ctx, ids)),
   /** Onde ler o arquivo de uma versão; registra a visualização ou o download. */
-  "documents.file": (db: DatabaseSync, ctx: DbContext, p: { versionId: string; action: docs.DocumentAction | "index" }) => {
+  "documents.file": (db: DatabaseSync, ctx: DbContext, p: { versionId: string; action: docs.DocumentAction | "index" | "inline" }) => {
     const f = docs.versionFile(db, p.versionId);
     if (!f) throw new ValidationError("Arquivo não encontrado.");
     docView(db, ctx, f.document_id, { includeTrash: true });
-    // "index" = leitura interna do texto do PDF (não entra na auditoria).
-    if (p.action !== "index") docs.logDocumentEvent(db, ctx, f.document_id, p.action, p.action === "download" ? f.filename : null);
+    // "index" = leitura interna do texto do PDF; "inline" = imagem mostrada dentro
+    // de uma nota (nenhuma das duas entra na auditoria).
+    if (p.action !== "index" && p.action !== "inline") docs.logDocumentEvent(db, ctx, f.document_id, p.action, p.action === "download" ? f.filename : null);
     const legacy = f.location === "legacy" ? (attachments.getDataUrls(db, [f.blob_id])[f.blob_id] ?? null) : null;
     return { ...f, legacyDataUrl: legacy };
   },

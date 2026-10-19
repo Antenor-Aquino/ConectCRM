@@ -48,6 +48,7 @@ import { UserModal } from "../settings/UsersSettings";
 import { useSession } from "../session";
 import { openCopilot } from "../copilot/CopilotPanel";
 import { DocumentsPanel } from "../documents/DocumentsPanel";
+import { LinkedTextarea } from "../ui/LinkedTextarea";
 import { NotesPanel } from "../ui/NotesPanel";
 import { TaskModal, type TaskRequest } from "../tasks/TaskModal";
 import { DocumentViewer } from "../documents/DocumentViewer";
@@ -338,10 +339,10 @@ export function CardDetail({
           }
           {pipeline.type !== "comercial" && (
             <Field label="Descrição">
-              <TaTextarea
-                rows={3}
+              <LinkedTextarea
+                className="min-h-[84px] w-full rounded-lg border border-gray-300 bg-transparent px-3.5 py-2.5 text-theme-sm text-gray-800 shadow-theme-xs outline-none focus:border-brand-300 focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:text-white/90"
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={setDescription}
                 onBlur={() => description !== (card.description ?? "") && void update({ description })}
               />
             </Field>
