@@ -432,6 +432,30 @@ export const methods = {
     assertEntityAccess(db, ctx, p.context.type, p.context.id);
     return waLog.logWhatsAppSend(db, ctx, p, p.phoneLabel);
   },
+  /** Revisão/envio manual: prepara (pendente) e depois confirma quando a mensagem sai. */
+  "documents.whatsappPrepare": (db: DatabaseSync, ctx: DbContext, p: waLog.WhatsAppSendLog & { phoneLabel: string; senderId?: string | null }) => {
+    docView(db, ctx, p.documentId);
+    assertEntityAccess(db, ctx, p.context.type, p.context.id);
+    return waLog.prepareWhatsAppSend(db, ctx, p, p.phoneLabel);
+  },
+  "documents.whatsappConfirm": (
+    db: DatabaseSync,
+    ctx: DbContext,
+    p: { sendId: string; phoneLabel: string; from?: string | null; senderId?: string | null; caption?: string | null; manual?: boolean },
+  ) => {
+    const c = waLog.whatsappSendContext(db, p.sendId);
+    assertEntityAccess(db, ctx, c.type, c.id);
+    return waLog.confirmWhatsAppSend(db, ctx, p.sendId, p);
+  },
+  "documents.whatsappPending": (db: DatabaseSync, ctx: DbContext, p: { type: docs.DocLinkType; id: string }) => {
+    assertEntityAccess(db, ctx, p.type, p.id);
+    return waLog.listPendingWhatsAppSends(db, p.type, p.id);
+  },
+  "documents.whatsappDiscard": (db: DatabaseSync, ctx: DbContext, p: { sendId: string }) => {
+    const c = waLog.whatsappSendContext(db, p.sendId);
+    assertEntityAccess(db, ctx, c.type, c.id);
+    return waLog.discardWhatsAppSend(db, ctx, p.sendId);
+  },
   "documents.bySha": (db: DatabaseSync, ctx: DbContext, p: { sha256: string }) => docs.documentsBySha(db, p.sha256, viewer(db, ctx)),
   /** O conteúdo já está guardado? (evita gravar de novo o mesmo arquivo). */
   "documents.blob": (db: DatabaseSync, _c: DbContext, p: { sha256: string }) => docs.blobBySha(db, p.sha256) ?? null,

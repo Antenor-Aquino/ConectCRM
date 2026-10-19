@@ -8,12 +8,17 @@ import { errorText } from "../../lib/errors";
 import { connectedWhatsAppNumber } from "../../lib/notify/waweb";
 import {
   askZapiPermission,
+  DEFAULT_SEND_PREFS,
+  DELAY_OPTIONS,
+  loadSendPrefs,
   loadSenders,
+  saveSendPrefs,
   sameNumber,
   saveSenders,
   SENDER_VIA_LABEL,
   ZAPI_HELP,
   zapiStatus,
+  type SendPrefs,
   type SenderVia,
   type WhatsAppSender,
 } from "../../lib/whatsappSenders";
@@ -37,10 +42,16 @@ export function WhatsAppSettings() {
   const [error, setError] = useState<string | null>(null);
   const [checks, setChecks] = useState<Record<string, { ok: boolean; text: string }>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  const [prefs, setPrefs] = useState<SendPrefs>(DEFAULT_SEND_PREFS);
 
   useEffect(() => {
     void loadSenders(user.id).then((r) => setList(r.senders));
+    void loadSendPrefs(user.id).then(setPrefs);
   }, [user.id]);
+  const changePrefs = (next: SendPrefs) => {
+    setPrefs(next);
+    void saveSendPrefs(user.id, next);
+  };
   if (!list) return null;
 
   const persist = async (next: WhatsAppSender[]) => {
@@ -235,6 +246,42 @@ export function WhatsAppSettings() {
           </TaButton>
           {draft.id && <TaButton onClick={() => setDraft(EMPTY)}>Cancelar</TaButton>}
         </div>
+      </div>
+      <div className="mt-5 rounded-xl border border-gray-200 p-4 dark:border-gray-800" data-wa-mode>
+        <p className="mb-2 text-theme-sm font-medium text-gray-800 dark:text-white/90">Ao enviar documento</p>
+        <label className="mb-2 flex cursor-pointer items-start gap-2.5 text-theme-sm text-gray-700 dark:text-gray-300">
+          <input type="radio" className="mt-1" name="wa-mode" checked={prefs.mode === "review"} onChange={() => changePrefs({ ...prefs, mode: "review" })} />
+          <span>
+            <b>Revisar no WhatsApp Web antes de enviar</b> (recomendado)
+            <span className="block text-theme-xs text-gray-500">
+              O CRM abre a conversa com o arquivo e a mensagem prontos; você confere e envia no botão verde. Até sair, o envio fica pendente no cartão.
+            </span>
+          </span>
+        </label>
+        <label className="flex cursor-pointer items-start gap-2.5 text-theme-sm text-gray-700 dark:text-gray-300">
+          <input type="radio" className="mt-1" name="wa-mode" checked={prefs.mode === "countdown"} onChange={() => changePrefs({ ...prefs, mode: "countdown" })} />
+          <span className="flex-1">
+            <span className="flex flex-wrap items-center gap-1.5">
+              <span>
+                <b>Enviar direto</b>, com
+              </span>
+              <select
+                aria-label="Segundos para cancelar"
+                value={prefs.delaySec}
+                onChange={(e) => changePrefs({ ...prefs, delaySec: Number(e.target.value) })}
+                className="rounded-md border border-gray-300 bg-transparent px-1.5 py-0.5 text-theme-sm dark:border-gray-700"
+              >
+                {DELAY_OPTIONS.map((n) => (
+                  <option key={n} value={n}>
+                    {n} s
+                  </option>
+                ))}
+              </select>
+              para cancelar
+            </span>
+            <span className="block text-theme-xs text-gray-500">Sai sem abrir a conversa. A Z-API sempre usa este modo (não tem tela de revisão).</span>
+          </span>
+        </label>
       </div>
       <p className="mt-4 text-theme-xs text-gray-500">
         O WhatsApp Web só aceita um número por perfil do Chrome, e o CRM só enxerga o perfil em que está instalado. O número que fica aberto em outro perfil

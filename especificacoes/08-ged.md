@@ -230,3 +230,32 @@ encher o "Também em" a cada envio.
   "número sem WhatsApp" pula só aquele contato.
 - No envio manual, a janela lista o link da conversa de cada contato; "Já
   enviei" registra uma atividade por contato.
+
+### Revisão antes de enviar e envio pendente (0.2.52)
+
+Configurações → WhatsApp → **Ao enviar documento**:
+
+- **Revisar no WhatsApp Web antes de enviar** (padrão, recomendado): ao clicar
+  em "Revisar no WhatsApp Web", o CRM
+  1. cria o envio **pendente** (tabela `whatsapp_send`) e uma **atividade
+     pendente** do tipo WhatsApp no cartão (`Enviar "Boleto" pelo WhatsApp
+     para Lindendorf`);
+  2. traz a aba do WhatsApp Web para a frente, abre a conversa e deixa o
+     arquivo na **tela de prévia**, com a mensagem como legenda (o arquivo é
+     colado na caixa de mensagem, como o usuário faria);
+  3. espera o usuário clicar no **botão verde** (até 15 min), conferindo a
+     cada 2 s se a mensagem com arquivo saiu na conversa;
+  4. ao sair: atividade **concluída** com a hora real do envio
+     (`Enviou "Boleto"…`) e registro na auditoria do documento.
+  Com vários contatos, um de cada vez ("1 de 3"): enviou, o CRM prepara o
+  próximo. Botões: Preparar de novo, Pular este contato, Fechar.
+- **Enviar direto, com 3, 5 (padrão) ou 10 s para cancelar**: a contagem
+  aparece com "Cancelar envio"; ao terminar, sai sem abrir a conversa.
+- A **Z-API** sempre usa a contagem (não tem tela de prévia). O **envio
+  manual** também fica pendente até "Já enviei".
+- **Envios pendentes**: quadro no alto da aba Documentos (cartão, contato,
+  organização, atividade) com **Enviar agora** (retoma só aquele contato) e
+  **Descartar** (a atividade pendente vai para a lixeira, restaurável). O que
+  não foi enviado nunca é registrado como enviado.
+- Se a prévia não abrir (o WhatsApp Web mudou), aparece o erro com **Enviar
+  direto (N s para cancelar)**.

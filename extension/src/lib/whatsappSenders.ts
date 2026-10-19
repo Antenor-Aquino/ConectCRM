@@ -38,7 +38,22 @@ export const ZAPI_HELP = "https://developer.z-api.io/";
 const ZAPI_BASE = "https://api.z-api.io/instances";
 
 const KEY = "conectcrm-whatsapp-senders";
-type Stored = Record<string, { senders: WhatsAppSender[]; lastId?: string }>;
+/**
+ * Como o documento sai:
+ * - "review": o CRM deixa o arquivo pronto no WhatsApp Web e o usuário envia
+ *   no botão verde (o envio fica pendente até sair de fato);
+ * - "countdown": envia direto, com alguns segundos para cancelar.
+ * A Z-API (sem tela de prévia) sempre usa a contagem.
+ */
+export type SendMode = "review" | "countdown";
+export interface SendPrefs {
+  mode: SendMode;
+  delaySec: number;
+}
+export const DEFAULT_SEND_PREFS: SendPrefs = { mode: "review", delaySec: 5 };
+export const DELAY_OPTIONS = [3, 5, 10];
+
+type Stored = Record<string, { senders: WhatsAppSender[]; lastId?: string; prefs?: SendPrefs }>;
 
 async function loadAll(): Promise<Stored> {
   return ((await chrome.storage.local.get(KEY))[KEY] as Stored | undefined) ?? {};
@@ -56,7 +71,16 @@ export async function saveSenders(userId: string, senders: WhatsAppSender[]): Pr
 /** Lembra o último número usado (vem escolhido no próximo envio). */
 export async function rememberSender(userId: string, id: string): Promise<void> {
   const all = await loadAll();
-  await chrome.storage.local.set({ [KEY]: { ...all, [userId]: { senders: all[userId]?.senders ?? [], lastId: id } } });
+  await chrome.storage.local.set({ [KEY]: { ...all, [userId]: { ...all[userId], senders: all[userId]?.senders ?? [], lastId: id } } });
+}
+
+export async function loadSendPrefs(userId: string): Promise<SendPrefs> {
+  return { ...DEFAULT_SEND_PREFS, ...(await loadAll())[userId]?.prefs };
+}
+
+export async function saveSendPrefs(userId: string, prefs: SendPrefs): Promise<void> {
+  const all = await loadAll();
+  await chrome.storage.local.set({ [KEY]: { ...all, [userId]: { ...all[userId], senders: all[userId]?.senders ?? [], prefs } } });
 }
 
 /** Sem nenhum número cadastrado, o envio usa o WhatsApp Web deste Chrome (como antes). */

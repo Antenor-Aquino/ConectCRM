@@ -3,10 +3,12 @@
 // documento já com os vínculos da tela; "Remover deste cadastro" tira só o
 // vínculo; a lixeira tira o documento de todos os cadastros.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Download, Eye, MessageCircle, Paperclip, Trash2, Unlink } from "lucide-react";
+import { Clock, Download, Eye, MessageCircle, Paperclip, Send, Trash2, Unlink, X } from "lucide-react";
 import { TaButton, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { DocLinkType, DocumentListItem, WhatsAppRecipient } from "../../db/documents";
+import type { WhatsAppPending } from "../../db/whatsappLog";
+import { formatPhone } from "../ui/PhoneInput";
 import { WhatsAppSendModal, type WhatsAppDoc } from "./WhatsAppSendModal";
 import { downloadVersion } from "../../lib/documentFiles";
 import { formatBytes } from "../../lib/files";
@@ -29,10 +31,14 @@ export function DocumentsPanel({ type, id, onChanged, compact }: { type: DocLink
   const input = useRef<HTMLInputElement>(null);
   const [recipients, setRecipients] = useState<WhatsAppRecipient[]>([]);
   const [sending, setSending] = useState<WhatsAppDoc | null>(null);
+  /** Envios pelo WhatsApp preparados e ainda não feitos (revisão / manual). */
+  const [pendings, setPendings] = useState<WhatsAppPending[]>([]);
+  const [resume, setResume] = useState<WhatsAppPending | null>(null);
 
   const load = useCallback(async () => {
     setList(await call("documents.forEntity", { type, id }));
     setRecipients(await call("documents.whatsappRecipients", { type, id }).catch(() => []));
+    setPendings(await call("documents.whatsappPending", { type, id }).catch(() => []));
   }, [type, id]);
   useEffect(() => {
     void load();
@@ -98,6 +104,46 @@ export function DocumentsPanel({ type, id, onChanged, compact }: { type: DocLink
         }}
       />
       {error && <p className="mb-2 rounded-lg bg-error-50 px-3 py-2 text-theme-xs text-error-700">{error}</p>}
+      {pendings.length > 0 && (
+        <div className="mb-3 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 dark:border-warning-500/30 dark:bg-warning-500/10" data-wa-pending>
+          <p className="mb-1 flex items-center gap-1.5 text-theme-xs font-semibold text-warning-700">
+            <Clock size={13} /> {pendings.length === 1 ? "Envio pendente pelo WhatsApp" : `${pendings.length} envios pendentes pelo WhatsApp`}
+          </p>
+          <ul>
+            {pendings.map((p) => {
+              const doc = list.find((d) => d.id === p.document_id);
+              return (
+                <li key={p.id} className="flex items-center gap-2 py-1 text-theme-xs text-gray-700 dark:text-gray-300" data-wa-pending-item>
+                  <MessageCircle size={13} className="shrink-0 text-success-600" />
+                  <span className="min-w-0 flex-1 truncate">
+                    <b>{p.document_name}</b> para {p.recipient_name} · {formatPhone(p.recipient_phone)}
+                  </span>
+                  {doc && (
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 font-medium text-brand-600 hover:underline"
+                      onClick={() => {
+                        setResume(p);
+                        setSending(doc);
+                      }}
+                    >
+                      <Send size={12} /> Enviar agora
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    title="Descartar (a atividade pendente vai para a lixeira)"
+                    className="inline-flex items-center gap-1 text-gray-500 hover:text-error-600"
+                    onClick={() => void run(() => call("documents.whatsappDiscard", { sendId: p.id }))}
+                  >
+                    <X size={12} /> Descartar
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
       <ul className={cn("divide-y divide-gray-100 dark:divide-gray-800", compact && "rounded-lg bg-gray-50 px-2.5 dark:bg-white/5")}>
         {list.map((d) => {
           const others = d.links.filter((l) => !(l.type === type && l.id === id));
@@ -144,7 +190,10 @@ export function DocumentsPanel({ type, id, onChanged, compact }: { type: DocLink
                     title={`Enviar pelo WhatsApp para ${recipients.length === 1 ? recipients[0]!.name : `um ou mais dos ${recipients.length} contatos`}`}
                     aria-label={`Enviar ${d.name} pelo WhatsApp`}
                     className="text-gray-400 hover:text-success-600"
-                    onClick={() => setSending(d)}
+                    onClick={() => {
+                      setResume(null);
+                      setSending(d);
+                    }}
                   >
                     <MessageCircle size={16} />
                   </button>
@@ -189,7 +238,21 @@ export function DocumentsPanel({ type, id, onChanged, compact }: { type: DocLink
         })}
         {list.length === 0 && <li className="py-2 text-theme-sm text-gray-400">Nenhum documento.</li>}
       </ul>
-      {sending && <WhatsAppSendModal doc={sending} recipients={recipients} context={{ type, id }} onClose={() => setSending(null)} onSent={() => void changed()} />}
+      {sending && (
+        <WhatsAppSendModal
+          key={resume?.id ?? sending.id}
+          doc={sending}
+          recipients={recipients}
+          pending={resume ?? undefined}
+          context={{ type, id }}
+          onClose={() => {
+            setSending(null);
+            setResume(null);
+            void changed();
+          }}
+          onSent={() => void changed()}
+        />
+      )}
       {upload && (
         <UploadModal
           files={upload}

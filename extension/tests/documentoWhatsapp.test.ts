@@ -74,3 +74,53 @@ describe("envio pelo WhatsApp vira atividade concluída", () => {
     expect(listActivities(db, {}).filter((x) => x.deal_id === card)).toHaveLength(2);
   });
 });
+
+describe("envio pelo WhatsApp com revisão: pendente até sair", () => {
+  it("prepara (pendente), confirma (concluída + auditoria) ou descarta (lixeira)", async () => {
+    const { getActivity } = await import("../src/db/activities");
+    const docs = await import("../src/db/documents");
+    const wa = await import("../src/db/whatsappLog");
+    const { restoreTrashItem } = await import("../src/db/trash");
+    const { db, ctx } = await freshDb();
+    const actx = { ...ctx, userId: createUser(db, ctx, { name: "Ana", role: "admin" }) };
+    const lin = createPerson(db, actx, { name: "Lindendorf", phone: "+5531999990000" });
+    const cam = createPerson(db, actx, { name: "Camila", phone: "+5532987010705" });
+    const p = createPipeline(db, actx, { name: "Certificados", type: "comercial", stages: [{ name: "Proposta" }] });
+    const card = createCard(db, actx, { pipelineId: p, title: "EE Amilcar Savassi", personId: lin });
+    const type = docs.listDocumentTypes(db)[0]!.id;
+    const doc = docs.createDocument(db, actx, {
+      name: "Boleto",
+      typeId: type,
+      links: [{ type: "deal", id: card }],
+      file: { sha256: "b".repeat(64), mime: "application/pdf", size: 10, filename: "Boleto.pdf", location: "browser" },
+    });
+    const prep = (id: string, name: string, phone: string) =>
+      wa.prepareWhatsAppSend(
+        db,
+        actx,
+        { documentId: doc, context: { type: "deal", id: card }, recipient: { kind: "person", id, name, phone }, caption: "Segue o boleto", senderId: "s1" },
+        phone,
+      );
+    const a = prep(lin, "Lindendorf", "(31) 99999-0000");
+    const b = prep(cam, "Camila", "(32) 98701-0705");
+    expect(getActivity(db, a.activityId)).toMatchObject({ title: 'Enviar "Boleto" pelo WhatsApp para Lindendorf', done: 0, deal_id: card });
+    expect(wa.listPendingWhatsAppSends(db, "deal", card).map((s) => s.recipient_name)).toEqual(["Lindendorf", "Camila"]);
+    expect(docs.documentAudit(db, doc).some((e) => e.text.includes("WhatsApp"))).toBe(false);
+
+    wa.confirmWhatsAppSend(db, actx, a.sendId, { phoneLabel: "(31) 99999-0000" });
+    expect(getActivity(db, a.activityId)).toMatchObject({ title: 'Enviou "Boleto" pelo WhatsApp para Lindendorf', done: 1 });
+    expect(getActivity(db, a.activityId)!.description).toBe("Para: Lindendorf · (31) 99999-0000\nMensagem: Segue o boleto");
+    expect(docs.documentAudit(db, doc).filter((e) => e.text.includes("Enviou pelo WhatsApp"))).toHaveLength(1);
+    // Confirmar de novo não duplica.
+    wa.confirmWhatsAppSend(db, actx, a.sendId, { phoneLabel: "(31) 99999-0000" });
+    expect(docs.documentAudit(db, doc).filter((e) => e.text.includes("Enviou pelo WhatsApp"))).toHaveLength(1);
+    expect(wa.listPendingWhatsAppSends(db, "deal", card).map((s) => s.recipient_name)).toEqual(["Camila"]);
+
+    const notice = wa.discardWhatsAppSend(db, actx, b.sendId);
+    expect(getActivity(db, b.activityId)).toBeUndefined();
+    expect(wa.listPendingWhatsAppSends(db, "deal", card)).toEqual([]);
+    expect(() => wa.discardWhatsAppSend(db, actx, a.sendId)).toThrow(/já foi feito/);
+    restoreTrashItem(db, actx, null, notice.ids[0]!);
+    expect(wa.listPendingWhatsAppSends(db, "deal", card).map((s) => s.recipient_name)).toEqual(["Camila"]);
+  });
+});

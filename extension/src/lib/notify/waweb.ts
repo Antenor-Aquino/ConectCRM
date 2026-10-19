@@ -14,7 +14,9 @@ export function waDigits(phone: string): string {
   return d.length <= 11 ? `55${d}` : d;
 }
 
-type SendResult = { ok: true; me?: string } | { ok: false; code: "not-ready" | "not-auth" | "not-on-whatsapp" | "self" | "wrong-number" | "error"; message?: string };
+type SendResult =
+  | { ok: true; me?: string }
+  | { ok: false; code: "not-ready" | "not-auth" | "not-on-whatsapp" | "self" | "wrong-number" | "stage-failed" | "error"; message?: string };
 
 const ERRORS: Record<Exclude<SendResult, { ok: true }>["code"], string> = {
   "not-ready": "o WhatsApp Web não terminou de carregar. Deixe a aba aberta e conectada.",
@@ -22,6 +24,7 @@ const ERRORS: Record<Exclude<SendResult, { ok: true }>["code"], string> = {
   "not-on-whatsapp": "o número indicado não tem WhatsApp. Confira o DDD e o número.",
   self: "o número indicado é o mesmo do WhatsApp Web; mensagem para você mesmo não toca no celular. Indique outro número.",
   "wrong-number": "o WhatsApp Web deste Chrome está conectado em outro número",
+  "stage-failed": "não foi possível deixar o arquivo pronto para envio",
   error: "não foi possível enviar.",
 };
 
@@ -82,6 +85,88 @@ async function waSend(digits: string, payload: WaPayload | null, waitMs: number,
   }
 }
 
+/**
+ * Revisão: abre a conversa e deixa o arquivo na tela de prévia do WhatsApp
+ * (colando o arquivo na caixa de mensagem, como o usuário faria), com a
+ * legenda. Quem envia é o usuário, no botão verde. Devolve a conversa e o
+ * horário (para conferir depois se a mensagem saiu).
+ */
+async function waStage(
+  digits: string,
+  file: { dataUrl: string; filename: string; mime: string },
+  caption: string,
+  waitMs: number,
+  from: string | null,
+): Promise<{ ok: true; chatId: string; since: number } | { ok: false; code: string; message?: string }> {
+  type Wid = { _serialized?: string; toString(): string; user?: string };
+  const WPP = (window as unknown as { WPP?: any }).WPP; // eslint-disable-line @typescript-eslint/no-explicit-any
+  if (!WPP) return { ok: false, code: "not-ready" };
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const until = Date.now() + waitMs;
+  while (!WPP.isFullReady && Date.now() < until) await sleep(250);
+  if (!WPP.isFullReady) return { ok: false, code: "not-auth" };
+  try {
+    if (!WPP.conn.isAuthenticated()) return { ok: false, code: "not-auth" };
+    const me = WPP.conn.getMyUserId() as Wid | undefined;
+    const meDigits = (me?.user ?? (me?._serialized ?? "").split("@")[0] ?? "").replace(/\D/g, "");
+    if (from && meDigits) {
+      const ddd = (d: string) => (d.startsWith("55") ? d.slice(2, 4) : d.slice(0, -8));
+      if (meDigits.slice(-8) !== from.slice(-8) || ddd(meDigits) !== ddd(from)) return { ok: false, code: "wrong-number", message: `+${meDigits}` };
+    }
+    const found = (await WPP.contact.queryWidExists(`${digits}@c.us`)) as { wid: Wid } | null;
+    if (!found) return { ok: false, code: "not-on-whatsapp" };
+    const id = found.wid._serialized ?? found.wid.toString();
+    if (me && (me._serialized ?? me.toString()) === id) return { ok: false, code: "self" };
+    const since = Math.floor(Date.now() / 1000) - 2;
+    await WPP.chat.openChatBottom(id);
+    // Caixa de mensagem da conversa aberta.
+    const editable = () => [...document.querySelectorAll<HTMLElement>('div[contenteditable="true"]')];
+    let box: HTMLElement | undefined;
+    for (let i = 0; i < 40 && !box; i++) {
+      box = editable().find((el) => el.closest("footer"));
+      if (!box) await sleep(150);
+    }
+    if (!box) return { ok: false, code: "stage-failed", message: "caixa de mensagem não encontrada" };
+    // data URL → arquivo (sem fetch: a página do WhatsApp restringe conexões).
+    const [head, b64] = file.dataUrl.split(",");
+    const bin = atob(b64 ?? "");
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const f = new File([bytes], file.filename, { type: file.mime || head?.match(/data:([^;]+)/)?.[1] || "application/octet-stream" });
+    const dt = new DataTransfer();
+    dt.items.add(f);
+    box.focus();
+    box.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    // Tela de prévia: aparece a caixa de legenda (fora da conversa e da lista lateral).
+    let cap: HTMLElement | undefined;
+    for (let i = 0; i < 40 && !cap; i++) {
+      await sleep(150);
+      cap = editable().find((el) => !el.closest("footer") && !el.closest("#side"));
+    }
+    if (!cap) return { ok: false, code: "stage-failed", message: "a tela de prévia do arquivo não abriu" };
+    if (caption) {
+      cap.focus();
+      document.execCommand("selectAll", false);
+      document.execCommand("insertText", false, caption);
+    }
+    return { ok: true, chatId: id, since };
+  } catch (e) {
+    return { ok: false, code: "stage-failed", message: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** A mensagem com arquivo saiu (enviada por este WhatsApp) depois de `since`? */
+async function waSentSince(chatId: string, since: number): Promise<boolean> {
+  const WPP = (window as unknown as { WPP?: any }).WPP; // eslint-disable-line @typescript-eslint/no-explicit-any
+  if (!WPP?.isFullReady) return false;
+  try {
+    const msgs = (await WPP.chat.getMessages(chatId, { count: 10 })) as { id?: { fromMe?: boolean }; t?: number; type?: string }[];
+    return msgs.some((m) => m.id?.fromMe && (m.t ?? 0) >= since && ["document", "image", "video", "audio"].includes(m.type ?? ""));
+  } catch {
+    return false;
+  }
+}
+
 // ---- Lado da extensão ----
 
 async function waitTabLoaded(tabId: number): Promise<void> {
@@ -111,9 +196,8 @@ async function whatsappTab(): Promise<chrome.tabs.Tab> {
   return tab;
 }
 
-async function sendPayload(phone: string, payload: WaPayload | null, waitMs: number, from?: string | null): Promise<string | undefined> {
-  const digits = phone ? waDigits(phone) : "";
-  if (payload && digits.length < 12) throw new Error("WhatsApp Web: informe o número com DDD.");
+/** Aba do WhatsApp com a biblioteca carregada (na versão certa). */
+async function preparedTab(): Promise<{ target: { tabId: number }; tab: chrome.tabs.Tab }> {
   const tab = await whatsappTab();
   const target = { tabId: tab.id! };
   try {
@@ -128,11 +212,22 @@ async function sendPayload(phone: string, payload: WaPayload | null, waitMs: num
   } catch (e) {
     throw new Error(`WhatsApp Web: não foi possível acessar a aba (${e instanceof Error ? e.message : String(e)}).`);
   }
+  return { target, tab };
+}
+
+function failure(r: { ok: false; code: keyof typeof ERRORS; message?: string } | undefined): Error {
+  const code = r?.code ?? "error";
+  return new Error(`WhatsApp Web: ${ERRORS[code] ?? ERRORS.error}${r?.message ? ` (${r.message})` : ""}`);
+}
+
+async function sendPayload(phone: string, payload: WaPayload | null, waitMs: number, from?: string | null): Promise<string | undefined> {
+  const digits = phone ? waDigits(phone) : "";
+  if (payload && digits.length < 12) throw new Error("WhatsApp Web: informe o número com DDD.");
+  const { target } = await preparedTab();
   const [res] = await chrome.scripting.executeScript({ target, world: "MAIN", func: waSend, args: [digits, payload, waitMs, from ? waDigits(from) : null] });
   const r = res?.result as SendResult | undefined;
   if (r?.ok) return r.me;
-  const code = r && !r.ok ? r.code : "error";
-  throw new Error(`WhatsApp Web: ${ERRORS[code]}${r && !r.ok && r.message ? ` (${r.message})` : ""}`);
+  throw failure(r && !r.ok ? r : undefined);
 }
 
 /** Envia `text` para `phone` pelo WhatsApp Web aberto neste Chrome. */
@@ -167,4 +262,60 @@ export async function sendFileViaWhatsAppWeb(
   if (file.blob.size > WHATSAPP_FILE_MAX) throw new Error("Arquivo grande demais para enviar pelo WhatsApp Web (máximo 64 MB).");
   const dataUrl = await blobToDataUrl(new Blob([file.blob], { type: file.mime || "application/octet-stream" }));
   await sendPayload(phone, { file: { dataUrl, filename: file.filename, mime: file.mime || "application/octet-stream" }, caption }, waitMs, from);
+}
+
+/** Envio em revisão aguardando o usuário clicar em enviar no WhatsApp Web. */
+export interface StagedSend {
+  tabId: number;
+  chatId: string;
+  since: number;
+}
+
+/**
+ * Revisão: traz a aba do WhatsApp Web para a frente, abre a conversa com
+ * `phone` e deixa o arquivo na tela de prévia com a legenda. Falhou ao montar
+ * a prévia → erro com "não foi possível deixar o arquivo pronto".
+ */
+export async function stageFileInWhatsAppWeb(
+  phone: string,
+  file: { blob: Blob; filename: string; mime: string },
+  caption: string,
+  from?: string | null,
+  waitMs = 20_000,
+): Promise<StagedSend> {
+  const digits = waDigits(phone);
+  if (digits.length < 12) throw new Error("WhatsApp Web: informe o número com DDD.");
+  if (file.blob.size > WHATSAPP_FILE_MAX) throw new Error("Arquivo grande demais para enviar pelo WhatsApp Web (máximo 64 MB).");
+  const { target, tab } = await preparedTab();
+  // A prévia só abre com a aba visível (foco na caixa de mensagem).
+  await chrome.tabs.update(target.tabId, { active: true });
+  if (tab.windowId !== undefined) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => undefined);
+  const mime = file.mime || "application/octet-stream";
+  const dataUrl = await blobToDataUrl(new Blob([file.blob], { type: mime }));
+  const [res] = await chrome.scripting.executeScript({
+    target,
+    world: "MAIN",
+    func: waStage,
+    args: [digits, { dataUrl, filename: file.filename, mime }, caption, waitMs, from ? waDigits(from) : null],
+  });
+  const r = res?.result as Awaited<ReturnType<typeof waStage>> | undefined;
+  if (r?.ok) return { tabId: target.tabId, chatId: r.chatId, since: r.since };
+  throw failure(r && !r.ok ? (r as { ok: false; code: keyof typeof ERRORS; message?: string }) : undefined);
+}
+
+/** O usuário já enviou (a mensagem com o arquivo apareceu na conversa)? */
+export async function stagedSendDone(s: StagedSend): Promise<boolean> {
+  try {
+    const [res] = await chrome.scripting.executeScript({ target: { tabId: s.tabId }, world: "MAIN", func: waSentSince, args: [s.chatId, s.since] });
+    return res?.result === true;
+  } catch {
+    return false;
+  }
+}
+
+/** Volta para a aba do CRM depois do envio. */
+export async function focusTab(tabId: number | undefined): Promise<void> {
+  if (tabId === undefined) return;
+  const t = await chrome.tabs.update(tabId, { active: true }).catch(() => undefined);
+  if (t?.windowId !== undefined) await chrome.windows.update(t.windowId, { focused: true }).catch(() => undefined);
 }
