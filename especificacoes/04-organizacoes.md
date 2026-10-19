@@ -60,3 +60,7 @@ Modal com rolagem interna, botão ✕ no topo, **Salvar** fixo no rodapé.
   1,5 s (a ReceitaWS às vezes trava e segurava a consulta para sempre).
 - Sem nenhuma fonte, a mensagem diz o que houve com cada uma (sem resposta,
   limite de consultas, CNPJ não encontrado...).
+- 0.2.50: CNPJ sem e-mail, telefone ou descrição do CNAE na Receita (comum em
+  escolas e órgãos públicos) fazia a consulta parar em silêncio. Os dados
+  combinados agora sempre têm todos os campos, e a tela mostra
+  "Consultando a Receita…" e, em qualquer falha, uma mensagem com o motivo.

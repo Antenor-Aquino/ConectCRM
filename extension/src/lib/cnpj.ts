@@ -123,17 +123,39 @@ function deepMerge(target: Raw, source: Raw): void {
     } else if (v && typeof v === "object") {
       target[k] ??= {};
       deepMerge(target[k], v);
-    } else if (v && !target[k]) target[k] = v;
+    } else if (v && !target[k]) target[k] = typeof v === "string" ? v : String(v);
   }
 }
 
+/** Dados vazios com todos os campos (fonte sem e-mail, telefone etc. não deixa campo faltando). */
+export function emptyCnpjData(): CnpjData {
+  return {
+    cnpj: "",
+    razaoSocial: "",
+    nomeFantasia: "",
+    situacao: "",
+    tipo: "",
+    abertura: "",
+    porte: "",
+    naturezaJuridica: "",
+    capitalSocial: "",
+    simples: "",
+    mei: "",
+    cnaePrincipal: { codigo: "", descricao: "" },
+    cnaesSecundarios: [],
+    endereco: { logradouro: "", numero: "", complemento: "", bairro: "", municipio: "", uf: "", cep: "" },
+    contato: { telefone1: "", telefone2: "", email: "" },
+    qsa: [],
+  };
+}
+
 export function mergeCnpjData(items: CnpjData[]): CnpjData {
-  const merged: Raw = {};
+  const merged: Raw = emptyCnpjData();
   for (const i of items) deepMerge(merged, i);
   const socios = new Map<string, Raw>();
   for (const s of items.flatMap((i) => i.qsa)) {
     if (!s.nome) continue;
-    const cur = socios.get(s.nome.toUpperCase()) ?? {};
+    const cur = socios.get(s.nome.toUpperCase()) ?? { nome: "", qualificacao: "" };
     deepMerge(cur, s);
     socios.set(s.nome.toUpperCase(), cur);
   }
@@ -203,7 +225,8 @@ export async function lookupCnpj(raw: string, fetchFn: typeof fetch = fetch, tim
 }
 
 /** Campos do cadastro de organização preenchidos pela consulta (spec 04). */
-export function cnpjToOrganizationFields(d: CnpjData) {
+export function cnpjToOrganizationFields(data: CnpjData) {
+  const d = mergeCnpjData([data]);
   return {
     name: d.nomeFantasia || d.razaoSocial,
     legalName: d.razaoSocial,

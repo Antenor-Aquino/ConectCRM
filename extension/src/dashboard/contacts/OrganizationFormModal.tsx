@@ -1,7 +1,7 @@
 // "Nova organização" / editar (spec 04): logo, nome fantasia, empresa (CNPJ
 // com consulta automática, site, razão social, segmento, responsável),
 // contato, endereço (CEP preenche), descrição, mais detalhes e contatos.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Loader2, Search, Star, X } from "lucide-react";
 import { TaButton, TaInput, TaModal, TaTextarea } from "@tailadmin";
 import { call } from "../../rpc/client";
@@ -72,7 +72,8 @@ export function OrganizationFormModal({
   const [persons, setPersons] = useState<{ id: string; name: string; is_primary?: number }[]>([]);
   const [segments, setSegments] = useState<string[]>([]);
   const [cnpjData, setCnpjData] = useState<CnpjData | null>(null);
-  const [cnpjMsg, setCnpjMsg] = useState<{ text: string; warn?: boolean } | null>(null);
+  const [cnpjMsg, setCnpjMsg] = useState<{ text: string; warn?: boolean; busy?: boolean } | null>(null);
+  const cnpjReq = useRef(0);
   const [lookingUp, setLookingUp] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -127,6 +128,8 @@ export function OrganizationFormModal({
   async function onCnpj(value: string) {
     const masked = formatCnpjInput(value);
     set({ cnpj: masked });
+    cnpjReq.current++;
+    setLookingUp(false);
     setCnpjMsg(null);
     const digits = cnpjDigits(masked);
     if (digits.length !== 14) return;
@@ -136,16 +139,26 @@ export function OrganizationFormModal({
   /** Consulta a Receita (ao completar o CNPJ, no botão Consultar ou ao abrir uma organização sem os dados). */
   async function consultCnpj(digits: string) {
     if (!isValidCnpj(digits)) return setCnpjMsg({ text: "CNPJ inválido.", warn: true });
-    const dup = await call("organizations.findByCnpj", { cnpj: digits });
-    if (dup && dup.id !== organizationId) return setCnpjMsg({ text: `CNPJ já cadastrado em "${dup.name}".`, warn: true });
+    const req = ++cnpjReq.current;
     setLookingUp(true);
-    setCnpjMsg(null);
-    const r = await lookupCnpj(digits);
-    setLookingUp(false);
-    if (!r.ok) return setCnpjMsg({ text: `${r.error} Preencha os dados manualmente ou tente de novo.`, warn: true });
-    setCnpjData(r.data);
-    fillEmpty(cnpjToOrganizationFields(r.data));
-    setCnpjMsg({ text: `Dados da Receita (${r.sources.join(", ")})${r.data.situacao ? ` · Situação: ${r.data.situacao}` : ""}` });
+    setCnpjMsg({ text: "Consultando a Receita…", busy: true });
+    try {
+      const dup = await call("organizations.findByCnpj", { cnpj: digits });
+      if (req !== cnpjReq.current) return;
+      if (dup && dup.id !== organizationId) return setCnpjMsg({ text: `CNPJ já cadastrado em "${dup.name}".`, warn: true });
+      const r = await lookupCnpj(digits);
+      if (req !== cnpjReq.current) return;
+      if (!r.ok) return setCnpjMsg({ text: `${r.error} Preencha os dados manualmente ou tente de novo.`, warn: true });
+      const fields = cnpjToOrganizationFields(r.data);
+      setCnpjData(r.data);
+      fillEmpty(fields);
+      const what = fields.legalName ? "" : " (sem razão social na resposta)";
+      setCnpjMsg({ text: `Dados da Receita (${r.sources.join(", ")})${r.data.situacao ? ` · Situação: ${r.data.situacao}` : ""}${what}` });
+    } catch (e) {
+      if (req === cnpjReq.current) setCnpjMsg({ text: `Não foi possível consultar o CNPJ: ${errorText(e)}. Preencha os dados manualmente ou tente de novo.`, warn: true });
+    } finally {
+      if (req === cnpjReq.current) setLookingUp(false);
+    }
   }
 
   async function onCep(value: string) {
@@ -230,7 +243,7 @@ export function OrganizationFormModal({
             <Field label="Site">{text("website", "empresa.com.br")}</Field>
           </div>
           {cnpjMsg && (
-            <p className={`-mt-1 mb-3 flex items-center gap-1.5 text-theme-xs ${cnpjMsg.warn ? "text-warning-700" : "text-success-700"}`}>
+            <p className={`-mt-1 mb-3 flex items-center gap-1.5 text-theme-xs ${cnpjMsg.warn ? "text-warning-700" : cnpjMsg.busy ? "text-gray-500" : "text-success-700"}`} data-cnpj-msg>
               {cnpjMsg.warn && <AlertTriangle size={13} />}
               {cnpjMsg.text}
             </p>
