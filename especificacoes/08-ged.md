@@ -203,3 +203,16 @@ Suporte), número e forma de envio:
   é isolado; a extensão só enxerga as abas do perfil onde está instalada, e
   instalá-la no outro perfil criaria outro CRM, com banco próprio. Para dois
   números automáticos, o segundo vai pela Z-API.
+
+### Envio vira atividade concluída (0.2.49)
+
+Cada envio (automático ou "Já enviei" no manual) cria uma **atividade
+concluída** do tipo **WhatsApp** (criado na primeira vez, ícone de conversa):
+- título: `Enviou "CONTRATO" pelo WhatsApp para Cristiane`;
+- descrição: Para (nome e celular), De (número de origem, "envio manual") e a
+  mensagem enviada;
+- fica no cartão da tela (ou no cartão da atividade); fora de um cartão, no
+  contato/organização; responsável = quem enviou; sem lembretes;
+- aparece na aba Atividades do cartão, na linha do tempo e nos relatórios.
+O documento não é vinculado à atividade (o título já diz qual foi), para não
+encher o "Também em" a cada envio.

@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, Copy, Download, ExternalLink, MessageCircle, Send } from "lucide-react";
 import { TaButton, TaModal, TaSelect, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
-import type { WhatsAppRecipient } from "../../db/documents";
+import type { DocLinkType, WhatsAppRecipient } from "../../db/documents";
 import { downloadVersion, fetchVersion } from "../../lib/documentFiles";
 import { openWhatsApp } from "../../lib/contactLinks";
 import { errorText } from "../../lib/errors";
@@ -35,7 +35,20 @@ export interface WhatsAppDoc {
   size?: number;
 }
 
-export function WhatsAppSendModal({ doc, recipients, onClose }: { doc: WhatsAppDoc; recipients: WhatsAppRecipient[]; onClose: () => void }) {
+export function WhatsAppSendModal({
+  doc,
+  recipients,
+  context,
+  onClose,
+  onSent,
+}: {
+  doc: WhatsAppDoc;
+  recipients: WhatsAppRecipient[];
+  /** Tela de onde se envia (o envio vira atividade concluída nela). */
+  context: { type: DocLinkType; id: string };
+  onClose: () => void;
+  onSent?: () => void;
+}) {
   const { user } = useSession();
   const [senders, setSenders] = useState<WhatsAppSender[] | null>(null);
   const [fromId, setFromId] = useState("");
@@ -55,11 +68,18 @@ export function WhatsAppSendModal({ doc, recipients, onClose }: { doc: WhatsAppD
   }, [user.id]);
   const from = senders?.find((s) => s.id === fromId) ?? null;
 
-  const log = (extra = "") =>
-    call("documents.logWhatsApp", {
-      id: doc.id,
-      to: `${target!.name} · ${formatPhone(target!.phone)}${from?.phone ? ` · de ${from.name}` : ""}${extra}`,
+  const log = async (manual = false) => {
+    await call("documents.logWhatsApp", {
+      documentId: doc.id,
+      context,
+      recipient: { kind: target!.kind, id: target!.id, name: target!.name, phone: target!.phone },
+      phoneLabel: formatPhone(target!.phone),
+      from: from?.phone ? `${from.name} · ${formatPhone(from.phone)}` : null,
+      caption,
+      manual,
     });
+    onSent?.();
+  };
 
   const send = async () => {
     if (!target || !from) return;
@@ -120,7 +140,7 @@ export function WhatsAppSendModal({ doc, recipients, onClose }: { doc: WhatsAppD
               Enviado para <b>{target?.name}</b> · {formatPhone(target?.phone ?? "")}
               {from?.phone ? ` (de ${from.name})` : ""}
             </p>
-            <p className="text-theme-xs text-gray-500">O envio ficou registrado na auditoria do documento no GED.</p>
+            <p className="text-theme-xs text-gray-500">Registrado como atividade concluída (tipo WhatsApp) e na auditoria do documento.</p>
             <TaButton className="mt-2" onClick={onClose}>
               Fechar
             </TaButton>
@@ -182,7 +202,7 @@ export function WhatsAppSendModal({ doc, recipients, onClose }: { doc: WhatsAppD
                 startIcon={<CheckCircle2 size={15} />}
                 onClick={() =>
                   void (async () => {
-                    await log(" (envio manual)");
+                    await log(true);
                     setState("sent");
                   })()
                 }

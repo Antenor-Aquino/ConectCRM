@@ -2,7 +2,7 @@
 // com consulta automática, site, razão social, segmento, responsável),
 // contato, endereço (CEP preenche), descrição, mais detalhes e contatos.
 import { useEffect, useState } from "react";
-import { AlertTriangle, Loader2, Star, X } from "lucide-react";
+import { AlertTriangle, Loader2, Search, Star, X } from "lucide-react";
 import { TaButton, TaInput, TaModal, TaTextarea } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { CustomField, CustomValue } from "../../db/customFields";
@@ -119,6 +119,8 @@ export function OrganizationFormModal({
       setValues(o.customValues);
       setPersons(o.persons);
       setLoaded(true);
+      // CNPJ salvo sem os dados da Receita (ex.: importado): consulta ao abrir.
+      if (o.cnpj && cnpjDigits(o.cnpj).length === 14 && !o.legal_name) void consultCnpj(cnpjDigits(o.cnpj));
     });
   }, [organizationId]);
 
@@ -128,13 +130,19 @@ export function OrganizationFormModal({
     setCnpjMsg(null);
     const digits = cnpjDigits(masked);
     if (digits.length !== 14) return;
+    await consultCnpj(digits);
+  }
+
+  /** Consulta a Receita (ao completar o CNPJ, no botão Consultar ou ao abrir uma organização sem os dados). */
+  async function consultCnpj(digits: string) {
     if (!isValidCnpj(digits)) return setCnpjMsg({ text: "CNPJ inválido.", warn: true });
     const dup = await call("organizations.findByCnpj", { cnpj: digits });
     if (dup && dup.id !== organizationId) return setCnpjMsg({ text: `CNPJ já cadastrado em "${dup.name}".`, warn: true });
     setLookingUp(true);
+    setCnpjMsg(null);
     const r = await lookupCnpj(digits);
     setLookingUp(false);
-    if (!r.ok) return setCnpjMsg({ text: `${r.error} Preencha os dados manualmente.`, warn: true });
+    if (!r.ok) return setCnpjMsg({ text: `${r.error} Preencha os dados manualmente ou tente de novo.`, warn: true });
     setCnpjData(r.data);
     fillEmpty(cnpjToOrganizationFields(r.data));
     setCnpjMsg({ text: `Dados da Receita (${r.sources.join(", ")})${r.data.situacao ? ` · Situação: ${r.data.situacao}` : ""}` });
@@ -201,8 +209,22 @@ export function OrganizationFormModal({
           <div className="grid grid-cols-2 gap-3">
             <Field label="CNPJ">
               <div className="relative">
-                <TaInput value={form.cnpj} placeholder="00.000.000/0000-00" onChange={(e) => void onCnpj(e.target.value)} />
-                {lookingUp && <Loader2 size={16} className="absolute right-3 top-3 animate-spin text-gray-400" />}
+                <TaInput className="pr-10" value={form.cnpj} placeholder="00.000.000/0000-00" onChange={(e) => void onCnpj(e.target.value)} aria-label="CNPJ" />
+                {lookingUp ? (
+                  <Loader2 size={16} className="absolute right-3 top-3 animate-spin text-gray-400" />
+                ) : (
+                  cnpjDigits(form.cnpj).length === 14 && (
+                    <button
+                      type="button"
+                      title="Consultar na Receita (preenche só os campos vazios)"
+                      aria-label="Consultar CNPJ"
+                      onClick={() => void consultCnpj(cnpjDigits(form.cnpj))}
+                      className="absolute right-2.5 top-2.5 text-gray-400 hover:text-brand-600"
+                    >
+                      <Search size={16} />
+                    </button>
+                  )
+                )}
               </div>
             </Field>
             <Field label="Site">{text("website", "empresa.com.br")}</Field>

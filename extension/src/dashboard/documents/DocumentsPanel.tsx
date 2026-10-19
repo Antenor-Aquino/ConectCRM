@@ -189,7 +189,7 @@ export function DocumentsPanel({ type, id, onChanged, compact }: { type: DocLink
         })}
         {list.length === 0 && <li className="py-2 text-theme-sm text-gray-400">Nenhum documento.</li>}
       </ul>
-      {sending && <WhatsAppSendModal doc={sending} recipients={recipients} onClose={() => setSending(null)} />}
+      {sending && <WhatsAppSendModal doc={sending} recipients={recipients} context={{ type, id }} onClose={() => setSending(null)} onSent={() => void changed()} />}
       {upload && (
         <UploadModal
           files={upload}

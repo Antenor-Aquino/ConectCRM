@@ -44,7 +44,8 @@ const brDate = (v: unknown) => {
   const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);
   return m ? `${m[3]}/${m[2]}/${m[1]}` : String(v);
 };
-const money = (v: unknown) => (v === null || v === undefined || v === "" || !Number.isFinite(Number(v)) ? "" : Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+const money = (v: unknown) =>
+  v === null || v === undefined || v === "" || !Number.isFinite(Number(v)) ? "" : Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const yesNo = (v: unknown) => (v === true ? "Sim" : v === false ? "Não" : "");
 const cnae = (v: unknown) => {
   const d = cnpjDigits(String(v ?? ""));
@@ -154,19 +155,50 @@ const PROVIDERS: { name: string; url: (c: string) => string; normalize: (d: Raw)
 
 export type CnpjLookup = { ok: true; data: CnpjData; sources: string[] } | { ok: false; error: string };
 
-export async function lookupCnpj(raw: string, fetchFn: typeof fetch = fetch): Promise<CnpjLookup> {
+/** Cada fonte tem este tempo para responder (a ReceitaWS às vezes trava ou demora). */
+export const CNPJ_TIMEOUT_MS = 10_000;
+
+/** Depois que uma fonte responde, as outras têm só este tempo a mais (para completar dados). */
+export const CNPJ_GRACE_MS = 1_500;
+
+export async function lookupCnpj(raw: string, fetchFn: typeof fetch = fetch, timeoutMs = CNPJ_TIMEOUT_MS, graceMs = CNPJ_GRACE_MS): Promise<CnpjLookup> {
   const cnpj = cnpjDigits(raw);
   if (!isValidCnpj(cnpj)) return { ok: false, error: "CNPJ inválido. Informe 14 dígitos válidos." };
+  const failures: string[] = [];
+  const ctrls = PROVIDERS.map(() => new AbortController());
+  let graceStarted = false;
   const settled = await Promise.allSettled(
-    PROVIDERS.map(async (p) => {
-      const res = await fetchFn(p.url(cnpj), { headers: { Accept: "application/json" } });
-      const payload = (await res.json().catch(() => null)) as Raw | null;
-      if (!res.ok || !payload || payload.status === "ERROR") throw new Error(payload?.message || `${p.name}: HTTP ${res.status}`);
-      return { source: p.name, data: p.normalize(payload) };
+    PROVIDERS.map(async (p, i) => {
+      const ctrl = ctrls[i]!;
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      try {
+        const res = await fetchFn(p.url(cnpj), { headers: { Accept: "application/json" }, signal: ctrl.signal });
+        const payload = (await res.json().catch(() => null)) as Raw | null;
+        if (res.status === 404) throw new Error(`${p.name}: CNPJ não encontrado`);
+        if (res.status === 429) throw new Error(`${p.name}: limite de consultas, tente em 1 minuto`);
+        if (!res.ok || !payload || payload.status === "ERROR") throw new Error(`${p.name}: ${payload?.message || `HTTP ${res.status}`}`);
+        const data = p.normalize(payload);
+        if (!graceStarted) {
+          graceStarted = true;
+          setTimeout(() => ctrls.forEach((c) => c.abort()), graceMs);
+        }
+        return { source: p.name, data };
+      } catch (e) {
+        failures[i] = ctrl.signal.aborted
+          ? `${p.name}: sem resposta`
+          : e instanceof Error
+            ? e.message.startsWith(p.name)
+              ? e.message
+              : `${p.name}: sem conexão`
+            : `${p.name}: erro`;
+        throw e;
+      } finally {
+        clearTimeout(timer);
+      }
     }),
   );
   const ok = settled.flatMap((s) => (s.status === "fulfilled" ? [s.value] : []));
-  if (ok.length === 0) return { ok: false, error: "Nenhuma fonte retornou dados para este CNPJ." };
+  if (ok.length === 0) return { ok: false, error: `Não foi possível consultar o CNPJ (${failures.filter(Boolean).join("; ")}).` };
   return { ok: true, data: mergeCnpjData(ok.map((o) => o.data)), sources: ok.map((o) => o.source) };
 }
 

@@ -50,3 +50,13 @@ Modal com rolagem interna, botão ✕ no topo, **Salvar** fixo no rodapé.
 ## 4. Decisões
 
 - O1: tags e campos personalizados em "Mais detalhes".
+
+## Consulta de CNPJ (0.2.49)
+
+- Além de consultar ao completar o CNPJ, o campo tem a lupa **Consultar**
+  (preenche só os campos vazios) e, ao abrir uma organização com CNPJ salvo e
+  sem razão social (ex.: importada), a consulta é feita sozinha.
+- Cada fonte tem até 10 s; quando a primeira responde, as outras têm só mais
+  1,5 s (a ReceitaWS às vezes trava e segurava a consulta para sempre).
+- Sem nenhuma fonte, a mensagem diz o que houve com cada uma (sem resposta,
+  limite de consultas, CNPJ não encontrado...).

@@ -26,6 +26,7 @@ import * as reports from "../db/reports";
 import * as similar from "../db/similar";
 import * as stages from "../db/stages";
 import * as trash from "../db/trash";
+import * as waLog from "../db/whatsappLog";
 import { rowHistory, type DataTable, type DbContext } from "../db/repo";
 import { many, one, type DatabaseSync } from "../db/sql";
 import { hashPin, verifyPin } from "../lib/pin";
@@ -425,10 +426,11 @@ export const methods = {
     assertEntityAccess(db, ctx, p.type, p.id);
     return docs.whatsappRecipients(db, p.type, p.id);
   },
-  /** Registra na auditoria do documento o envio pelo WhatsApp. */
-  "documents.logWhatsApp": (db: DatabaseSync, ctx: DbContext, p: Id & { to: string }) => {
-    docView(db, ctx, p.id);
-    docs.logDocumentEvent(db, ctx, p.id, "whatsapp", `para ${p.to}`);
+  /** Envio pelo WhatsApp: auditoria do documento + atividade concluída no cartão/cadastro. */
+  "documents.logWhatsApp": (db: DatabaseSync, ctx: DbContext, p: waLog.WhatsAppSendLog & { phoneLabel: string }) => {
+    docView(db, ctx, p.documentId);
+    assertEntityAccess(db, ctx, p.context.type, p.context.id);
+    return waLog.logWhatsAppSend(db, ctx, p, p.phoneLabel);
   },
   "documents.bySha": (db: DatabaseSync, ctx: DbContext, p: { sha256: string }) => docs.documentsBySha(db, p.sha256, viewer(db, ctx)),
   /** O conteúdo já está guardado? (evita gravar de novo o mesmo arquivo). */
