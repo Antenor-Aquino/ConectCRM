@@ -195,3 +195,16 @@ describe("WhatsApp Web", () => {
     expect(channelReady(withDefaults({ whatsapp: { enabled: true, via: "callmebot", phone: "41999998888", apikey: "" } }), "whatsapp")).toBe(false);
   });
 });
+
+describe("e-mail suspenso", () => {
+  it("as telas só oferecem Chrome e WhatsApp e o envio desliga o e-mail", async () => {
+    const { ACTIVE_CHANNELS, activeSettings } = await import("../src/lib/notify/settings");
+    expect(ACTIVE_CHANNELS).toEqual(["chrome", "whatsapp"]);
+    const s = activeSettings(withDefaults({ email: { enabled: true, to: "a@x.com" }, calendarEmailBackup: true }));
+    expect([s.email.enabled, s.calendarEmailBackup]).toEqual([false, false]);
+    const { db, actx, ana } = await setup();
+    createActivity(db, actx, { title: "Ligar", dueAt: "2026-11-02T13:00:00.000Z", reminders: [{ minutesBefore: 60, channels: ["email", "chrome"] }] });
+    const jobs = planNotifications(db, at("2026-11-02T12:05:00.000Z"), { [ana]: s }, ana);
+    expect(jobs.map((j) => j.channel)).toEqual(["chrome"]);
+  });
+});

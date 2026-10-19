@@ -4,7 +4,7 @@ import type { NotifyJob } from "../db/notifications";
 import { sendMail } from "../lib/calendar";
 import { sendCallMeBot } from "../lib/notify/callmebot";
 import { sendViaWhatsAppWeb } from "../lib/notify/waweb";
-import { CHANNEL_LABEL, loadAllNotifySettings, loadMailSender, withDefaults, type Channel } from "../lib/notify/settings";
+import { CHANNEL_LABEL, activeSettings, loadAllNotifySettings, loadMailSender, withDefaults, type Channel } from "../lib/notify/settings";
 import { addNotification } from "../lib/notifications";
 import { runClip, type ClipStartMessage } from "./clip";
 import { OFFSCREEN_PATH, type EnsureOffscreenMessage, type RpcRequest, type RpcResponse } from "../rpc/protocol";
@@ -105,7 +105,7 @@ async function runNotifications(): Promise<void> {
       await chrome.storage.local.set({ [SNOOZE_KEY]: snoozes.filter((x) => !due.includes(x)) });
       for (const x of due) chromeNotify(`task:${x.activityId}`, x.title, x.text, true);
     }
-    const settings = await loadAllNotifySettings();
+    const settings = Object.fromEntries(Object.entries(await loadAllNotifySettings()).map(([id, x]) => [id, activeSettings(x)]));
     const jobs = await rpc<NotifyJob[]>("notifications.plan", { settings }, userId);
     if (!jobs.length) return;
     const sender = await loadMailSender();
@@ -116,7 +116,12 @@ async function runNotifications(): Promise<void> {
       try {
         if (job.channel === "chrome") {
           const [title, ...rest] = job.text.split("\n");
-          chromeNotify(job.activityId && job.kind !== "missed" ? `task:${job.activityId}` : `notify:${job.key}`, job.title, rest.join("\n") || title || "", job.kind === "reminder");
+          chromeNotify(
+            job.activityId && job.kind !== "missed" ? `task:${job.activityId}` : `notify:${job.key}`,
+            job.title,
+            rest.join("\n") || title || "",
+            job.kind === "reminder",
+          );
           await addNotification({ kind: job.kind === "overdue" ? "error" : "info", title: job.title, message: rest.join(" · ") });
         } else if (job.channel === "email") {
           if (!sender) throw new Error("Conecte a conta que envia os e-mails em Configurações → Notificações.");

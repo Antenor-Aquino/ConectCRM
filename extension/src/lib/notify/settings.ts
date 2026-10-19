@@ -5,6 +5,10 @@
 
 export type Channel = "chrome" | "email" | "whatsapp";
 export const CHANNELS: Channel[] = ["chrome", "email", "whatsapp"];
+/** E-mail suspenso por enquanto (decisão de 19/10/2026): o código fica, a tela e o envio não usam. */
+export const EMAIL_CHANNEL_ENABLED = false;
+/** Canais oferecidos nas telas. */
+export const ACTIVE_CHANNELS: Channel[] = CHANNELS.filter((c) => c !== "email" || EMAIL_CHANNEL_ENABLED);
 export const CHANNEL_LABEL: Record<Channel, string> = { chrome: "Chrome", email: "E-mail", whatsapp: "WhatsApp" };
 
 export type WhatsAppVia = "web" | "callmebot";
@@ -36,7 +40,7 @@ export const DEFAULT_NOTIFY: NotifySettings = {
   email: { enabled: false, to: "" },
   whatsapp: { enabled: false, via: "web", phone: "", apikey: "" },
   defaults: [{ minutesBefore: 15, channels: ["chrome"] }],
-  digest: { enabled: false, time: "07:30", channels: ["email"] },
+  digest: { enabled: false, time: "07:30", channels: ["chrome"] },
   overdue: { enabled: false, channels: ["chrome"] },
   quiet: { enabled: false, from: "20:00", to: "07:00" },
   calendarEmailBackup: true,
@@ -55,6 +59,11 @@ export function withDefaults(s: Partial<NotifySettings> | undefined): NotifySett
     quiet: { ...DEFAULT_NOTIFY.quiet, ...s?.quiet },
     defaults: s?.defaults ?? DEFAULT_NOTIFY.defaults,
   };
+}
+
+/** Preferências como valem hoje: com o e-mail suspenso, ele fica desligado. */
+export function activeSettings(s: NotifySettings): NotifySettings {
+  return EMAIL_CHANNEL_ENABLED ? s : { ...s, email: { ...s.email, enabled: false }, calendarEmailBackup: false };
 }
 
 /** Canal ligado e configurado para o usuário. */

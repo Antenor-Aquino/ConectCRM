@@ -23,7 +23,7 @@ import { formatBytes, MAX_UPLOAD_BYTES } from "../../lib/files";
 import { DocumentsPanel } from "../documents/DocumentsPanel";
 import { UploadModal } from "../documents/UploadModal";
 import { errorText } from "../../lib/errors";
-import { CHANNEL_LABEL, CHANNELS, channelReady, loadNotifySettings, type Channel, type NotifySettings, type ReminderRule } from "../../lib/notify/settings";
+import { ACTIVE_CHANNELS, CHANNEL_LABEL, activeSettings, channelReady, loadNotifySettings, type Channel, type NotifySettings, type ReminderRule } from "../../lib/notify/settings";
 import { formatDateTime } from "../../lib/format";
 import { RemindersEditor } from "../ui/RemindersEditor";
 
@@ -180,7 +180,7 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
     });
     void call("customFields.list", { entity: "activity" }).then(setFields);
     void loadNotifySettings(user.id).then((n) => {
-      setNotify(n);
+      setNotify(activeSettings(n));
       if (!request.id) setReminders(n.defaults);
     });
     if (request.dealId) {
@@ -415,7 +415,7 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
                   value={reminders}
                   onChange={setReminders}
                   compact
-                  ready={notify ? (Object.fromEntries(CHANNELS.map((c) => [c, channelReady(notify, c)])) as Record<Channel, boolean>) : undefined}
+                  ready={notify ? (Object.fromEntries(ACTIVE_CHANNELS.map((c) => [c, channelReady(notify, c)])) as Record<Channel, boolean>) : undefined}
                 />
                 {deliveries.length > 0 && <DeliveryLog list={deliveries} />}
               </Field>

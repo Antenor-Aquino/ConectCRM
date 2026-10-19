@@ -3,7 +3,7 @@
 // lembretes padrão das Configurações → Notificações.
 import { Bell, Mail, MessageCircle, Plus, X } from "lucide-react";
 import { cn } from "@tailadmin";
-import { CHANNEL_LABEL, CHANNELS, type Channel, type ReminderRule } from "../../lib/notify/settings";
+import { ACTIVE_CHANNELS, CHANNEL_LABEL, type Channel, type ReminderRule } from "../../lib/notify/settings";
 import { inputClass } from "./form";
 
 const UNITS = [
@@ -66,7 +66,7 @@ export function RemindersEditor({
               ))}
             </select>
             <span className="text-theme-xs text-gray-500">antes</span>
-            {CHANNELS.map((c) => {
+            {ACTIVE_CHANNELS.map((c) => {
               const on = r.channels.includes(c);
               const warn = on && ready && ready[c] === false;
               return (

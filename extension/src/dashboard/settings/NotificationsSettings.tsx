@@ -10,7 +10,8 @@ import { CALLMEBOT_HELP, CALLMEBOT_ORIGIN, sendCallMeBot } from "../../lib/notif
 import { sendViaWhatsAppWeb } from "../../lib/notify/waweb";
 import {
   CHANNEL_LABEL,
-  CHANNELS,
+  ACTIVE_CHANNELS,
+  EMAIL_CHANNEL_ENABLED,
   channelReady,
   loadAllNotifySettings,
   loadMailSender,
@@ -39,7 +40,7 @@ async function askCallMeBotPermission(): Promise<boolean> {
 function ChannelChips({ value, onChange, label }: { value: Channel[]; onChange: (v: Channel[]) => void; label: string }) {
   return (
     <div className="flex flex-wrap gap-1.5" role="group" aria-label={label}>
-      {CHANNELS.map((c) => {
+      {ACTIVE_CHANNELS.map((c) => {
         const on = value.includes(c);
         return (
           <button
@@ -184,7 +185,7 @@ export function NotificationsSettings() {
       return "Mensagem enviada. Pode levar alguns segundos para chegar.";
     });
 
-  const ready = Object.fromEntries(CHANNELS.map((c) => [c, channelReady(s, c)])) as Record<Channel, boolean>;
+  const ready = Object.fromEntries(ACTIVE_CHANNELS.map((c) => [c, channelReady(s, c)])) as Record<Channel, boolean>;
 
   return (
     <div className="space-y-5" data-notify-settings>
@@ -194,7 +195,7 @@ export function NotificationsSettings() {
       >
         <p className="mb-4 rounded-lg bg-gray-50 px-3 py-2 text-theme-xs text-gray-600 dark:bg-white/5 dark:text-gray-400">
           Os avisos são enviados pelo ConectCRM enquanto o Chrome está aberto neste computador. Se o Chrome ficar fechado, ao reabrir chega um resumo único do
-          que passou; para não perder reuniões, os eventos criados no Google Agenda podem levar também o lembrete por e-mail do próprio Google (opção abaixo).
+          que passou.
         </p>
 
         {/* Chrome */}
@@ -211,74 +212,78 @@ export function NotificationsSettings() {
           <Note msg={msgs.chrome ?? null} />
         </section>
 
-        {/* E-mail */}
-        <section className="border-t border-gray-100 py-4 dark:border-gray-800" data-channel="email">
-          <div className="flex items-center justify-between gap-3">
-            <Toggle checked={s.email.enabled} onChange={(v) => patch({ email: { ...s.email, enabled: v } })}>
-              <Mail size={16} className="text-brand-500" /> E-mail
-            </Toggle>
-            <TaButton size="sm" startIcon={<Send size={14} />} disabled={busy === "email" || !sender} onClick={() => void testEmail()}>
-              Testar
-            </TaButton>
-          </div>
-          <div className="ml-6 mt-3 grid gap-x-4 md:grid-cols-2">
-            <Field label="Receber no e-mail">
-              <TaInput
-                type="email"
-                value={s.email.to}
-                placeholder="voce@empresa.com.br"
-                aria-label="E-mail que recebe os avisos"
-                onChange={(e) => patch({ email: { ...s.email, to: e.target.value } })}
-              />
-            </Field>
-            <Field label="Enviado pela conta" hint="A conta Gmail ou Outlook deste computador que envia os avisos.">
-              {sender ? (
-                <div className="flex h-10 items-center gap-2 text-theme-sm text-gray-700 dark:text-gray-300" data-mail-sender>
-                  <CheckCircle2 size={15} className="text-success-500" />
-                  <span className="min-w-0 flex-1 truncate">
-                    {sender.address} · {MAIL_LABEL[sender.provider]}
-                  </span>
-                  <TaButton
-                    size="sm"
-                    variant="ghost"
-                    title="Desconectar"
-                    onClick={async () => {
-                      await saveMailSender(null);
-                      setSender(null);
-                    }}
-                  >
-                    <Unplug size={14} />
-                  </TaButton>
-                </div>
-              ) : (
-                <div className="flex gap-2">
-                  <TaSelect value={provider} onChange={(e) => setProvider(e.target.value as CalendarProvider)} aria-label="Provedor de e-mail">
-                    <option value="google">Gmail</option>
-                    <option value="microsoft">Outlook / Microsoft 365</option>
-                  </TaSelect>
-                  <TaButton disabled={busy === "sender"} onClick={() => void connectSender()}>
-                    Conectar
-                  </TaButton>
-                </div>
+        {EMAIL_CHANNEL_ENABLED && (
+          <>
+            {/* E-mail */}
+            <section className="border-t border-gray-100 py-4 dark:border-gray-800" data-channel="email">
+              <div className="flex items-center justify-between gap-3">
+                <Toggle checked={s.email.enabled} onChange={(v) => patch({ email: { ...s.email, enabled: v } })}>
+                  <Mail size={16} className="text-brand-500" /> E-mail
+                </Toggle>
+                <TaButton size="sm" startIcon={<Send size={14} />} disabled={busy === "email" || !sender} onClick={() => void testEmail()}>
+                  Testar
+                </TaButton>
+              </div>
+              <div className="ml-6 mt-3 grid gap-x-4 md:grid-cols-2">
+                <Field label="Receber no e-mail">
+                  <TaInput
+                    type="email"
+                    value={s.email.to}
+                    placeholder="voce@empresa.com.br"
+                    aria-label="E-mail que recebe os avisos"
+                    onChange={(e) => patch({ email: { ...s.email, to: e.target.value } })}
+                  />
+                </Field>
+                <Field label="Enviado pela conta" hint="A conta Gmail ou Outlook deste computador que envia os avisos.">
+                  {sender ? (
+                    <div className="flex h-10 items-center gap-2 text-theme-sm text-gray-700 dark:text-gray-300" data-mail-sender>
+                      <CheckCircle2 size={15} className="text-success-500" />
+                      <span className="min-w-0 flex-1 truncate">
+                        {sender.address} · {MAIL_LABEL[sender.provider]}
+                      </span>
+                      <TaButton
+                        size="sm"
+                        variant="ghost"
+                        title="Desconectar"
+                        onClick={async () => {
+                          await saveMailSender(null);
+                          setSender(null);
+                        }}
+                      >
+                        <Unplug size={14} />
+                      </TaButton>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <TaSelect value={provider} onChange={(e) => setProvider(e.target.value as CalendarProvider)} aria-label="Provedor de e-mail">
+                        <option value="google">Gmail</option>
+                        <option value="microsoft">Outlook / Microsoft 365</option>
+                      </TaSelect>
+                      <TaButton disabled={busy === "sender"} onClick={() => void connectSender()}>
+                        Conectar
+                      </TaButton>
+                    </div>
+                  )}
+                </Field>
+              </div>
+              {!sender && provider === "google" && !googleClientConfigured() && (
+                <p className="ml-6 text-theme-xs text-warning-700">
+                  O login Google desta instalação ainda não foi configurado pelo administrador (client_id do Google no manifesto). Use Outlook ou peça a
+                  configuração.
+                </p>
               )}
-            </Field>
-          </div>
-          {!sender && provider === "google" && !googleClientConfigured() && (
-            <p className="ml-6 text-theme-xs text-warning-700">
-              O login Google desta instalação ainda não foi configurado pelo administrador (client_id do Google no manifesto). Use Outlook ou peça a
-              configuração.
-            </p>
-          )}
-          {!sender && provider === "microsoft" && (
-            <p className="ml-6 text-theme-xs text-gray-500">
-              Quem já tinha conectado o Outlook para a agenda vai autorizar de novo, agora com a permissão de enviar e-mail.
-            </p>
-          )}
-          <div className="ml-6">
-            <Note msg={msgs.sender ?? null} />
-            <Note msg={msgs.email ?? null} />
-          </div>
-        </section>
+              {!sender && provider === "microsoft" && (
+                <p className="ml-6 text-theme-xs text-gray-500">
+                  Quem já tinha conectado o Outlook para a agenda vai autorizar de novo, agora com a permissão de enviar e-mail.
+                </p>
+              )}
+              <div className="ml-6">
+                <Note msg={msgs.sender ?? null} />
+                <Note msg={msgs.email ?? null} />
+              </div>
+            </section>
+          </>
+        )}
 
         {/* WhatsApp */}
         <section className="border-t border-gray-100 py-4 dark:border-gray-800" data-channel="whatsapp">
@@ -391,14 +396,16 @@ export function NotificationsSettings() {
         subtitle="Vêm preenchidos em toda atividade nova; em cada atividade você pode mudar, incluir ou tirar lembretes."
       >
         <RemindersEditor value={s.defaults} ready={ready} onChange={(defaults) => patch({ defaults })} />
-        <div className="mt-4 border-t border-gray-100 pt-4 dark:border-gray-800">
-          <Toggle checked={s.calendarEmailBackup} onChange={(v) => patch({ calendarEmailBackup: v })}>
-            Reserva no Google Agenda
-          </Toggle>
-          <p className="ml-6 mt-1 text-theme-xs text-gray-500">
-            Reuniões criadas no Google Agenda levam também os lembretes por e-mail do próprio Google, que chegam mesmo com o Chrome fechado.
-          </p>
-        </div>
+        {EMAIL_CHANNEL_ENABLED && (
+          <div className="mt-4 border-t border-gray-100 pt-4 dark:border-gray-800">
+            <Toggle checked={s.calendarEmailBackup} onChange={(v) => patch({ calendarEmailBackup: v })}>
+              Reserva no Google Agenda
+            </Toggle>
+            <p className="ml-6 mt-1 text-theme-xs text-gray-500">
+              Reuniões criadas no Google Agenda levam também os lembretes por e-mail do próprio Google, que chegam mesmo com o Chrome fechado.
+            </p>
+          </div>
+        )}
       </TaPanel>
 
       <TaPanel title="Resumo e atrasos">
@@ -456,7 +463,7 @@ export function NotificationsSettings() {
                 onChange={(e) => patch({ quiet: { ...s.quiet, to: e.target.value } })}
               />
             </div>
-            <p className="ml-6 mt-1 text-theme-xs text-gray-500">Chrome e WhatsApp ficam em silêncio nesse período; o e-mail é enviado normalmente.</p>
+            <p className="ml-6 mt-1 text-theme-xs text-gray-500">Chrome e WhatsApp ficam em silêncio nesse período{EMAIL_CHANNEL_ENABLED ? "; o e-mail é enviado normalmente" : ""}.</p>
           </div>
         </div>
       </TaPanel>
@@ -477,7 +484,7 @@ export function NotificationsSettings() {
             <thead>
               <tr className="text-left text-theme-xs text-gray-500">
                 <th className="py-1.5 font-medium">Usuário</th>
-                {CHANNELS.map((c) => (
+                {ACTIVE_CHANNELS.map((c) => (
                   <th key={c} className="py-1.5 font-medium">
                     {CHANNEL_LABEL[c]}
                   </th>
@@ -492,7 +499,7 @@ export function NotificationsSettings() {
                   return (
                     <tr key={u.id} className="border-t border-gray-100 dark:border-gray-800">
                       <td className="py-1.5 text-gray-800 dark:text-white/90">{label(u)}</td>
-                      {CHANNELS.map((c) => (
+                      {ACTIVE_CHANNELS.map((c) => (
                         <td key={c} className="py-1.5">
                           {us ? (
                             <TaBadge color={channelReady(us, c) ? "green" : "slate"} label={channelReady(us, c) ? "Ativo" : "Desligado"} />

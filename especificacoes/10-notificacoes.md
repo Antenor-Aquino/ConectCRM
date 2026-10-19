@@ -4,6 +4,13 @@
 > por e-mail (conta Gmail ou Outlook) e pelo WhatsApp (WhatsApp Web ou CallMeBot), com
 > antecedência definida pelo usuário.
 
+> **Canal de e-mail suspenso (0.2.41):** por decisão de 19/10/2026 o e-mail
+> sai das telas e do envio; ficam Chrome e WhatsApp. O código continua no
+> projeto (`EMAIL_CHANNEL_ENABLED` em `src/lib/notify/settings.ts`) para
+> voltar quando houver envio próprio ou a conta Google configurada. A reserva
+> por e-mail do Google Agenda também fica desligada. O que está descrito abaixo
+> sobre e-mail vale quando o canal voltar.
+
 ## 1. Lembretes na atividade
 
 - Cada atividade tem **vários lembretes**. Cada lembrete tem:
