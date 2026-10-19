@@ -19,6 +19,8 @@ export interface Note {
   created_at: string;
   created_by: string | null;
   updated_at: string;
+  /** Última edição do texto (fixar/desafixar não conta); null = nunca editada. */
+  edited_at: string | null;
   /** Documentos de origem (ex.: o áudio transcrito), para abrir pela nota. */
   documents: { id: string; version_id: string; name: string; filename: string; mime: string }[];
 }
@@ -44,10 +46,17 @@ export function addNote(db: DatabaseSync, ctx: DbContext, entityType: NoteEntity
   });
 }
 
-export function updateNote(db: DatabaseSync, ctx: DbContext, id: string, patch: { body?: string; pinned?: boolean }): void {
-  const data: Record<string, string | number> = {};
+/** `documentIds` substitui os documentos da nota (ex.: imagens coladas na edição). */
+export function updateNote(db: DatabaseSync, ctx: DbContext, id: string, patch: { body?: string; pinned?: boolean; documentIds?: string[] }): void {
+  if (!getRow(db, "note", id)) throw new ValidationError("Nota não encontrada.");
+  const data: Record<string, string | number | null> = {};
   if (patch.body !== undefined) data.body = requireText(patch.body, "Escreva a nota.");
   if (patch.pinned !== undefined) data.pinned = patch.pinned ? 1 : 0;
+  if (patch.documentIds !== undefined) {
+    const docs = [...new Set(patch.documentIds)];
+    if (docs.some((d) => !getRow(db, "document", d))) throw new ValidationError("Documento da nota não encontrado.");
+    data.document_ids = docs.length ? JSON.stringify(docs) : null;
+  }
   updateRow(db, ctx, "note", id, data);
 }
 
@@ -58,7 +67,9 @@ export function deleteNote(db: DatabaseSync, ctx: DbContext, id: string): TrashN
 export function listNotes(db: DatabaseSync, entityType: NoteEntity, entityId: string): Note[] {
   const rows = many<Omit<Note, "documents"> & { document_ids: string | null }>(
     db,
-    `SELECT id, body, pinned, created_at, created_by, updated_at, document_ids FROM note
+    `SELECT id, body, pinned, created_at, created_by, updated_at, document_ids,
+       (SELECT MAX(l.at) FROM change_log l WHERE l.table_name = 'note' AND l.row_id = note.id AND l.op = 'update' AND l.changes LIKE '%"body"%') AS edited_at
+     FROM note
      WHERE entity_type = ? AND entity_id = ? AND deleted_at IS NULL ORDER BY pinned DESC, created_at DESC`,
     entityType,
     entityId,

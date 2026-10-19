@@ -96,3 +96,17 @@ Vale para as notas de cartões, contatos, organizações e atividades.
   - imagem excluída ou na lixeira: a nota mostra "[imagem excluída ou na
     lixeira]".
 - No histórico, na busca e no copiloto o marcador aparece como "[imagem]".
+
+### Editar nota (0.2.45)
+
+- Lápis no rodapé da nota abre o mesmo editor da nota nova, com o texto e as
+  imagens dela (as imagens aparecem como "[imagem N]" com miniatura, como ao
+  colar).
+- Dá para mudar o texto, colar ou arrastar imagens novas (vão para o GED) e
+  tirar imagens da nota no "x" — a imagem tirada continua no GED, vinculada ao
+  registro.
+- Salvar / Cancelar (Esc cancela). Os arquivos de origem da nota (áudio
+  transcrito, recorte) continuam nela.
+- A nota editada mostra "· editada" ao lado da data (passando o mouse, a data
+  da edição); fixar/desafixar não conta como edição. O histórico do cartão já
+  registra "Editou nota".
