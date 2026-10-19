@@ -1,5 +1,5 @@
 // Configurações → Notificações (spec 10): canais do usuário atual (Chrome,
-// e-mail pela conta Gmail/Outlook conectada, WhatsApp pelo CallMeBot), com
+// e-mail pela conta Gmail/Outlook conectada, WhatsApp pelo WhatsApp Web ou CallMeBot), com
 // botão de teste; lembretes padrão das atividades novas, resumo diário,
 // aviso de atrasadas e horário de silêncio. Ficam neste computador.
 import { useEffect, useState } from "react";
@@ -7,6 +7,7 @@ import { Bell, CheckCircle2, ExternalLink, Mail, MessageCircle, Send, Unplug } f
 import { TaBadge, TaButton, TaInput, TaPanel, TaSelect, cn } from "@tailadmin";
 import { connectMailSender, googleClientConfigured, sendMail, type CalendarProvider } from "../../lib/calendar";
 import { CALLMEBOT_HELP, CALLMEBOT_ORIGIN, sendCallMeBot } from "../../lib/notify/callmebot";
+import { sendViaWhatsAppWeb } from "../../lib/notify/waweb";
 import {
   CHANNEL_LABEL,
   CHANNELS,
@@ -19,6 +20,7 @@ import {
   type Channel,
   type MailSender,
   type NotifySettings,
+  type WhatsAppVia,
 } from "../../lib/notify/settings";
 import { errorText } from "../../lib/errors";
 import { useSession } from "../session";
@@ -86,11 +88,13 @@ export function NotificationsSettings() {
   const [msgs, setMsgs] = useState<Record<string, Msg>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [provider, setProvider] = useState<CalendarProvider>("google");
+  const [waTab, setWaTab] = useState<boolean | null>(null);
 
   useEffect(() => {
     void loadNotifySettings(user.id).then((x) => setS({ ...x, email: { ...x.email, to: x.email.to || user.email || "" } }));
     void loadMailSender().then(setSender);
     void loadAllNotifySettings().then(setAll);
+    void chrome.tabs.query({ url: "https://web.whatsapp.com/*" }).then((t) => setWaTab(t.length > 0));
   }, [user.id, user.email]);
   if (!s) return null;
 
@@ -104,7 +108,8 @@ export function NotificationsSettings() {
     setBusy("save");
     try {
       // A permissão do CallMeBot precisa do clique do usuário: pedida aqui.
-      if (s.whatsapp.enabled && !(await askCallMeBotPermission())) throw new Error("Sem a permissão de acesso ao CallMeBot o WhatsApp não funciona.");
+      if (s.whatsapp.enabled && s.whatsapp.via === "callmebot" && !(await askCallMeBotPermission()))
+        throw new Error("Sem a permissão de acesso ao CallMeBot o WhatsApp não funciona.");
       await saveNotifySettings(user.id, s);
       setAll(await loadAllNotifySettings());
       setDirty(false);
@@ -167,7 +172,13 @@ export function NotificationsSettings() {
 
   const testWhatsapp = () =>
     run("whatsapp", async () => {
-      if (!s.whatsapp.phone.trim() || !s.whatsapp.apikey.trim()) throw new Error("Informe o número e a chave (apikey) do CallMeBot.");
+      if (!s.whatsapp.phone.trim()) throw new Error("Informe o número que recebe os avisos.");
+      if (s.whatsapp.via === "web") {
+        await sendViaWhatsAppWeb(s.whatsapp.phone, "ConectCRM: teste de notificação. Os lembretes pelo WhatsApp estão funcionando.", 15_000);
+        setWaTab(true);
+        return `Mensagem enviada pelo WhatsApp Web para ${s.whatsapp.phone}.`;
+      }
+      if (!s.whatsapp.apikey.trim()) throw new Error("Informe a chave (apikey) do CallMeBot.");
       if (!(await askCallMeBotPermission())) throw new Error("Sem a permissão de acesso ao CallMeBot o WhatsApp não funciona.");
       await sendCallMeBot(s.whatsapp.phone, s.whatsapp.apikey, "ConectCRM: teste de notificação. Os lembretes pelo WhatsApp estão funcionando.");
       return "Mensagem enviada. Pode levar alguns segundos para chegar.";
@@ -273,48 +284,102 @@ export function NotificationsSettings() {
         <section className="border-t border-gray-100 py-4 dark:border-gray-800" data-channel="whatsapp">
           <div className="flex items-center justify-between gap-3">
             <Toggle checked={s.whatsapp.enabled} onChange={(v) => patch({ whatsapp: { ...s.whatsapp, enabled: v } })}>
-              <MessageCircle size={16} className="text-success-600" /> WhatsApp (CallMeBot)
+              <MessageCircle size={16} className="text-success-600" /> WhatsApp
             </Toggle>
             <TaButton size="sm" startIcon={<Send size={14} />} disabled={busy === "whatsapp"} onClick={() => void testWhatsapp()}>
               Testar
             </TaButton>
           </div>
-          <ol className="ml-10 mt-2 list-decimal space-y-0.5 text-theme-xs text-gray-600 dark:text-gray-400">
-            <li>Abra as instruções do CallMeBot (link abaixo) e salve o número do serviço nos contatos do celular que vai receber os avisos.</li>
-            <li>
-              Envie para ele pelo WhatsApp a mensagem: <code className="rounded bg-gray-100 px-1 dark:bg-white/10">I allow callmebot to send me messages</code>
-            </li>
-            <li>Você recebe uma chave (apikey). Cole abaixo com o seu número e clique em Testar.</li>
-          </ol>
-          <a
-            href={CALLMEBOT_HELP}
-            target="_blank"
-            rel="noopener"
-            className="ml-6 mt-1 inline-flex items-center gap-1 text-theme-xs text-brand-600 hover:underline"
-          >
-            Instruções do CallMeBot <ExternalLink size={12} />
-          </a>
           <div className="ml-6 mt-3 grid gap-x-4 md:grid-cols-2">
-            <Field label="Número do WhatsApp" hint="Com DDD. Sem o +55, assume Brasil.">
+            <Field label="Enviar pelo">
+              <TaSelect
+                value={s.whatsapp.via}
+                aria-label="Forma de envio do WhatsApp"
+                onChange={(e) => patch({ whatsapp: { ...s.whatsapp, via: e.target.value as WhatsAppVia } })}
+              >
+                <option value="web">WhatsApp Web aberto neste Chrome</option>
+                <option value="callmebot">CallMeBot (serviço gratuito)</option>
+              </TaSelect>
+            </Field>
+            <Field label="Número que recebe os avisos" hint="Com DDD. Sem o +55, assume Brasil.">
               <TaInput
                 value={s.whatsapp.phone}
                 placeholder="(41) 99999-8888"
                 aria-label="Número do WhatsApp"
-                onChange={(e) => patch({ whatsapp: { ...s.whatsapp, phone: e.target.value } })}
-              />
-            </Field>
-            <Field label="Chave (apikey)">
-              <TaInput
-                type="password"
-                autoComplete="off"
-                value={s.whatsapp.apikey}
-                placeholder="123456"
-                aria-label="Chave do CallMeBot"
-                onChange={(e) => patch({ whatsapp: { ...s.whatsapp, apikey: e.target.value } })}
+                onChange={(e) => {
+                  patch({ whatsapp: { ...s.whatsapp, phone: e.target.value } });
+                  note("whatsapp", null);
+                }}
               />
             </Field>
           </div>
-          <p className="ml-6 text-theme-xs text-gray-500">O CallMeBot é um serviço gratuito de terceiros e só envia para o número que fez a ativação.</p>
+          {s.whatsapp.via === "web" ? (
+            <div className="ml-6 space-y-1.5 text-theme-xs text-gray-600 dark:text-gray-400" data-waweb>
+              <p className="flex flex-wrap items-center gap-2">
+                {waTab === null ? null : waTab ? (
+                  <span className="inline-flex items-center gap-1 text-success-700">
+                    <CheckCircle2 size={13} /> WhatsApp Web aberto neste Chrome
+                  </span>
+                ) : (
+                  <>
+                    <span className="text-warning-700">WhatsApp Web não está aberto neste Chrome.</span>
+                    <button
+                      type="button"
+                      className="font-medium text-brand-600 hover:underline"
+                      onClick={async () => {
+                        await chrome.tabs.create({ url: "https://web.whatsapp.com/", pinned: true, active: false });
+                        setWaTab(true);
+                      }}
+                    >
+                      Abrir em aba fixa
+                    </button>
+                  </>
+                )}
+              </p>
+              <p>
+                A mensagem sai do número conectado no WhatsApp Web e chega no número acima como uma conversa normal, com notificação no celular. Deixe o
+                WhatsApp Web aberto (de preferência numa aba fixa). Use um número diferente do conectado: mensagem para você mesmo não toca no celular.
+              </p>
+              <p>
+                Para evitar bloqueios do WhatsApp, salve os dois números nos contatos um do outro e troque uma mensagem antes. Use só para lembretes, nunca para
+                enviar mensagens a clientes. As mensagens ficam no histórico do WhatsApp conectado.
+              </p>
+            </div>
+          ) : (
+            <>
+              <ol className="ml-10 list-decimal space-y-0.5 text-theme-xs text-gray-600 dark:text-gray-400">
+                <li>Abra as instruções do CallMeBot (link abaixo) e salve o número do serviço nos contatos do celular que vai receber os avisos.</li>
+                <li>
+                  Envie para ele pelo WhatsApp a mensagem:{" "}
+                  <code className="rounded bg-gray-100 px-1 dark:bg-white/10">I allow callmebot to send me messages</code>
+                </li>
+                <li>Você recebe uma chave (apikey). Cole abaixo e clique em Testar.</li>
+              </ol>
+              <a
+                href={CALLMEBOT_HELP}
+                target="_blank"
+                rel="noopener"
+                className="ml-6 mt-1 inline-flex items-center gap-1 text-theme-xs text-brand-600 hover:underline"
+              >
+                Instruções do CallMeBot <ExternalLink size={12} />
+              </a>
+              <div className="ml-6 mt-3 grid gap-x-4 md:grid-cols-2">
+                <Field label="Chave (apikey)">
+                  <TaInput
+                    type="password"
+                    autoComplete="off"
+                    value={s.whatsapp.apikey}
+                    placeholder="123456"
+                    aria-label="Chave do CallMeBot"
+                    onChange={(e) => patch({ whatsapp: { ...s.whatsapp, apikey: e.target.value } })}
+                  />
+                </Field>
+              </div>
+              <p className="ml-6 text-theme-xs text-gray-500">
+                O CallMeBot é um serviço gratuito de terceiros, só envia para o número que fez a ativação e às vezes fica sem vagas para novos números.
+              </p>
+            </>
+          )}
           <div className="ml-6">
             <Note msg={msgs.whatsapp ?? null} />
           </div>

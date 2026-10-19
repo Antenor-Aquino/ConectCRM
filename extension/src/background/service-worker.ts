@@ -3,6 +3,7 @@
 import type { NotifyJob } from "../db/notifications";
 import { sendMail } from "../lib/calendar";
 import { sendCallMeBot } from "../lib/notify/callmebot";
+import { sendViaWhatsAppWeb } from "../lib/notify/waweb";
 import { CHANNEL_LABEL, loadAllNotifySettings, loadMailSender, withDefaults, type Channel } from "../lib/notify/settings";
 import { addNotification } from "../lib/notifications";
 import { runClip, type ClipStartMessage } from "./clip";
@@ -121,7 +122,8 @@ async function runNotifications(): Promise<void> {
           if (!sender) throw new Error("Conecte a conta que envia os e-mails em Configurações → Notificações.");
           await sendMail(sender.provider, { to: s.email.to, subject: job.subject, html: job.html });
         } else {
-          await sendCallMeBot(s.whatsapp.phone, s.whatsapp.apikey, job.text);
+          if (s.whatsapp.via === "web") await sendViaWhatsAppWeb(s.whatsapp.phone, job.text);
+          else await sendCallMeBot(s.whatsapp.phone, s.whatsapp.apikey, job.text);
         }
       } catch (e) {
         error = e instanceof Error ? e.message : String(e);

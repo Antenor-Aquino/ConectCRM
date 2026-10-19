@@ -129,7 +129,7 @@ cadastro o link para o original (detalhes em
 Cada atividade tem vários lembretes (ex.: 1 dia antes por e-mail, 1 h antes no
 WhatsApp, 15 min antes no Chrome). Em **Configurações → Notificações** cada
 usuário liga os canais — Chrome, e-mail (pela conta Gmail ou Outlook conectada)
-e WhatsApp (pelo CallMeBot, gratuito) —, testa cada um e define os lembretes
+e WhatsApp (pelo WhatsApp Web aberto no Chrome, para o número indicado, ou pelo CallMeBot) —, testa cada um e define os lembretes
 padrão, o resumo diário da agenda, o aviso de atividades atrasadas e o horário
 de silêncio. Com o Chrome fechado, ao reabrir chega um resumo único; reuniões no
 Google Agenda levam também o lembrete por e-mail do Google (detalhes em

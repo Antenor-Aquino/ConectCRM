@@ -17,7 +17,7 @@ async function setup() {
   const full: Partial<NotifySettings> = {
     chrome: true,
     email: { enabled: true, to: "ana@x.com" },
-    whatsapp: { enabled: true, phone: "+5541999998888", apikey: "k" },
+    whatsapp: { enabled: true, via: "web", phone: "+5541999998888", apikey: "k" },
   };
   return { db, actx, ana, bia, settings: { [ana]: full, [bia]: { ...full, email: { enabled: true, to: "bia@x.com" } } } };
 }
@@ -179,5 +179,19 @@ describe("canais", () => {
     const { one } = await import("../src/db/sql");
     const id = one<{ id: string }>(db, "SELECT id FROM activity WHERE deal_id = ?", card)!.id;
     expect(listActivityReminders(db, id)).toEqual([{ minutesBefore: 60, channels: ["whatsapp"] }]);
+  });
+});
+
+describe("WhatsApp Web", () => {
+  it("número, forma de envio padrão e quem já usava o CallMeBot", async () => {
+    const { waDigits } = await import("../src/lib/notify/waweb");
+    expect(waDigits("(41) 99999-8888")).toBe("5541999998888");
+    expect(waDigits("+351 912 345 678")).toBe("351912345678");
+    expect(withDefaults(undefined).whatsapp.via).toBe("web");
+    const antigo = withDefaults({ whatsapp: { enabled: true, phone: "41999998888", apikey: "123" } as NotifySettings["whatsapp"] });
+    expect(antigo.whatsapp.via).toBe("callmebot");
+    const { channelReady } = await import("../src/lib/notify/settings");
+    expect(channelReady(withDefaults({ whatsapp: { enabled: true, via: "web", phone: "41999998888", apikey: "" } }), "whatsapp")).toBe(true);
+    expect(channelReady(withDefaults({ whatsapp: { enabled: true, via: "callmebot", phone: "41999998888", apikey: "" } }), "whatsapp")).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 # Especificação 10 — Notificações (lembretes das atividades)
 
-> Status: **implementado** (versão 0.2.39). Avisos das atividades no Chrome,
-> por e-mail (conta Gmail ou Outlook) e pelo WhatsApp (CallMeBot), com
+> Status: **implementado** (versões 0.2.39 e 0.2.40). Avisos das atividades no Chrome,
+> por e-mail (conta Gmail ou Outlook) e pelo WhatsApp (WhatsApp Web ou CallMeBot), com
 > antecedência definida pelo usuário.
 
 ## 1. Lembretes na atividade
@@ -42,14 +42,34 @@
   "Extensão do Chrome" no Google Cloud, com a Gmail API ativada). Outlook: quem já
   tinha conectado a agenda autoriza de novo, por causa da nova permissão.
 
-### 2.3 WhatsApp (CallMeBot)
-- Serviço gratuito de terceiros que envia mensagens **para o próprio número**
-  que fez a ativação: o usuário manda "I allow callmebot to send me messages"
-  para o número do CallMeBot e recebe a chave (apikey).
-- Configurações → Notificações: número (com DDD; sem +55 assume Brasil) e
-  chave. A permissão de acesso a `api.callmebot.com` é opcional e pedida ao
-  salvar ou testar.
-- A chave fica só neste computador (não vai para o backup).
+### 2.3 WhatsApp
+O usuário informa o **número que recebe** os avisos e escolhe como enviar:
+
+**a) Pelo WhatsApp Web aberto neste Chrome (padrão, desde a 0.2.40)**
+- A mensagem sai do número conectado no WhatsApp Web deste computador e chega
+  no número indicado como uma conversa normal (com notificação no celular).
+- Usa a biblioteca de código aberto WA-JS (`@wppconnect/wa-js`, Apache-2.0,
+  em `public/vendor/`), injetada na aba do WhatsApp só no momento do envio. Ela
+  envia **sem abrir a conversa**, então não atrapalha quem está usando o
+  WhatsApp. Configurada sem nome de aparelho próprio e sem estatísticas.
+- Confere se o número tem WhatsApp (resolve o 9º dígito dos celulares
+  brasileiros) e recusa o próprio número conectado (mensagem para si mesmo não
+  toca no celular).
+- Precisa da aba do `web.whatsapp.com` aberta e conectada. A tela mostra se a
+  aba está aberta e oferece **Abrir em aba fixa**. Aba suspensa pelo Chrome é
+  recarregada antes do envio. Sem aba, sem login ou carregando: a entrega
+  falha com o motivo e entra nas novas tentativas.
+- Cuidados exibidos na tela: automatizar o WhatsApp Web não é permitido
+  oficialmente pelo WhatsApp — usar só para lembretes, para um número salvo nos
+  contatos; as mensagens ficam no histórico do WhatsApp conectado.
+
+**b) CallMeBot** (serviço gratuito de terceiros)
+- Envia para o próprio número que fez a ativação: o usuário manda "I allow
+  callmebot to send me messages" para o número do CallMeBot e recebe a chave
+  (apikey). O serviço às vezes fica sem vagas para novos números.
+- A permissão de acesso a `api.callmebot.com` é opcional e pedida ao salvar ou
+  testar. A chave fica só neste computador (não vai para o backup).
+- Quem já tinha configurado o CallMeBot na 0.2.39 continua nele.
 
 ### 2.4 Testar
 Cada canal tem **Testar**, que envia na hora uma mensagem de teste e mostra o

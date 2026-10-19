@@ -7,6 +7,8 @@ export type Channel = "chrome" | "email" | "whatsapp";
 export const CHANNELS: Channel[] = ["chrome", "email", "whatsapp"];
 export const CHANNEL_LABEL: Record<Channel, string> = { chrome: "Chrome", email: "E-mail", whatsapp: "WhatsApp" };
 
+export type WhatsAppVia = "web" | "callmebot";
+
 export interface ReminderRule {
   minutesBefore: number;
   channels: Channel[];
@@ -15,7 +17,8 @@ export interface ReminderRule {
 export interface NotifySettings {
   chrome: boolean;
   email: { enabled: boolean; to: string };
-  whatsapp: { enabled: boolean; phone: string; apikey: string };
+  /** `via`: WhatsApp Web aberto neste Chrome (padrão) ou CallMeBot. `phone` = quem recebe. */
+  whatsapp: { enabled: boolean; via: WhatsAppVia; phone: string; apikey: string };
   /** Lembretes que vêm preenchidos em toda atividade nova. */
   defaults: ReminderRule[];
   /** "Sua agenda de hoje" no horário escolhido. */
@@ -31,7 +34,7 @@ export interface NotifySettings {
 export const DEFAULT_NOTIFY: NotifySettings = {
   chrome: true,
   email: { enabled: false, to: "" },
-  whatsapp: { enabled: false, phone: "", apikey: "" },
+  whatsapp: { enabled: false, via: "web", phone: "", apikey: "" },
   defaults: [{ minutesBefore: 15, channels: ["chrome"] }],
   digest: { enabled: false, time: "07:30", channels: ["email"] },
   overdue: { enabled: false, channels: ["chrome"] },
@@ -45,7 +48,8 @@ export function withDefaults(s: Partial<NotifySettings> | undefined): NotifySett
     ...DEFAULT_NOTIFY,
     ...s,
     email: { ...DEFAULT_NOTIFY.email, ...s?.email },
-    whatsapp: { ...DEFAULT_NOTIFY.whatsapp, ...s?.whatsapp },
+    // Quem configurou na 0.2.39 (só havia CallMeBot) continua no CallMeBot.
+    whatsapp: { ...DEFAULT_NOTIFY.whatsapp, ...(s?.whatsapp?.apikey && !s.whatsapp.via ? { via: "callmebot" as const } : {}), ...s?.whatsapp },
     digest: { ...DEFAULT_NOTIFY.digest, ...s?.digest },
     overdue: { ...DEFAULT_NOTIFY.overdue, ...s?.overdue },
     quiet: { ...DEFAULT_NOTIFY.quiet, ...s?.quiet },
@@ -57,7 +61,7 @@ export function withDefaults(s: Partial<NotifySettings> | undefined): NotifySett
 export function channelReady(s: NotifySettings, c: Channel): boolean {
   if (c === "chrome") return s.chrome;
   if (c === "email") return s.email.enabled && !!s.email.to.trim();
-  return s.whatsapp.enabled && !!s.whatsapp.phone.trim() && !!s.whatsapp.apikey.trim();
+  return s.whatsapp.enabled && !!s.whatsapp.phone.trim() && (s.whatsapp.via === "web" || !!s.whatsapp.apikey.trim());
 }
 
 const minutesOf = (hhmm: string) => {
