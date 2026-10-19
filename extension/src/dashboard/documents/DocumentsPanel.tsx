@@ -141,7 +141,7 @@ export function DocumentsPanel({ type, id, onChanged, compact }: { type: DocLink
                 {recipients.length > 0 && (
                   <button
                     type="button"
-                    title={`Enviar pelo WhatsApp para ${recipients.length === 1 ? recipients[0]!.name : "um contato"}`}
+                    title={`Enviar pelo WhatsApp para ${recipients.length === 1 ? recipients[0]!.name : `um ou mais dos ${recipients.length} contatos`}`}
                     aria-label={`Enviar ${d.name} pelo WhatsApp`}
                     className="text-gray-400 hover:text-success-600"
                     onClick={() => setSending(d)}

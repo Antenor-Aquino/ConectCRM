@@ -3,6 +3,7 @@
 // número: WhatsApp Web deste Chrome ou Z-API enviam sozinhos; "manual" prepara
 // o envio (arquivo baixado, mensagem e link copiados) para o usuário mandar no
 // outro perfil do Chrome ou no celular. O envio fica na auditoria do documento.
+// Com mais de um contato, nada vem marcado: o usuário escolhe um, vários ou todos.
 import { useEffect, useState } from "react";
 import { CheckCircle2, Copy, Download, ExternalLink, MessageCircle, Send } from "lucide-react";
 import { TaButton, TaModal, TaSelect, cn } from "@tailadmin";
@@ -52,12 +53,18 @@ export function WhatsAppSendModal({
   const { user } = useSession();
   const [senders, setSenders] = useState<WhatsAppSender[] | null>(null);
   const [fromId, setFromId] = useState("");
-  const [to, setTo] = useState(recipients[0]?.phone ?? "");
+  const [to, setTo] = useState<string[]>(recipients.length === 1 ? [recipients[0]!.phone] : []);
   const [caption, setCaption] = useState(doc.name);
   const [state, setState] = useState<"idle" | "sending" | "manual" | "sent">("idle");
   const [copied, setCopied] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const target = recipients.find((r) => r.phone === to);
+  /** Para quem já foi (num envio para vários, os que falharam continuam marcados). */
+  const [sentTo, setSentTo] = useState<WhatsAppRecipient[]>([]);
+  const targets = recipients.filter((r) => to.includes(r.phone));
+  const target = targets[0];
+  const many = recipients.length > 1;
+  const allChecked = many && targets.length === recipients.length;
+  const toggle = (phone: string) => setTo((cur) => (cur.includes(phone) ? cur.filter((p) => p !== phone) : [...cur, phone]));
 
   useEffect(() => {
     void loadSenders(user.id).then(({ senders: list, lastId }) => {
@@ -68,21 +75,20 @@ export function WhatsAppSendModal({
   }, [user.id]);
   const from = senders?.find((s) => s.id === fromId) ?? null;
 
-  const log = async (manual = false) => {
+  const log = async (r: WhatsAppRecipient, manual = false) => {
     await call("documents.logWhatsApp", {
       documentId: doc.id,
       context,
-      recipient: { kind: target!.kind, id: target!.id, name: target!.name, phone: target!.phone },
-      phoneLabel: formatPhone(target!.phone),
+      recipient: { kind: r.kind, id: r.id, name: r.name, phone: r.phone },
+      phoneLabel: formatPhone(r.phone),
       from: from?.phone ? `${from.name} · ${formatPhone(from.phone)}` : null,
       caption,
       manual,
     });
-    onSent?.();
   };
 
   const send = async () => {
-    if (!target || !from) return;
+    if (!targets.length || !from) return;
     setError(null);
     await rememberSender(user.id, from.id);
     if (from.via === "manual") {
@@ -91,22 +97,47 @@ export function WhatsAppSendModal({
       return;
     }
     setState("sending");
+    const ok: WhatsAppRecipient[] = [];
+    const failed: { r: WhatsAppRecipient; why: string }[] = [];
     try {
       const file = await fetchVersion(doc.version_id, "inline");
+      let dataUrl = "";
       if (from.via === "zapi") {
         if (!from.zapi) throw new Error("Z-API: complete a configuração do número em Configurações → WhatsApp.");
         if (!(await askZapiPermission())) throw new Error("Sem a permissão de acesso à Z-API.");
-        const dataUrl = await blobToDataUrl(new Blob([file.blob], { type: file.mime || "application/octet-stream" }));
-        await zapiSendFile(from.zapi, target.phone, { dataUrl, filename: file.filename, mime: file.mime }, caption.trim());
-      } else {
-        await sendFileViaWhatsAppWeb(target.phone, { blob: file.blob, filename: file.filename, mime: file.mime }, caption.trim(), 20_000, from.phone || null);
+        dataUrl = await blobToDataUrl(new Blob([file.blob], { type: file.mime || "application/octet-stream" }));
       }
-      await log();
-      setState("sent");
+      for (const [i, r] of targets.entries()) {
+        // Pequena pausa entre um contato e outro (envio em sequência rápida chama atenção do WhatsApp).
+        if (i > 0) await new Promise((res) => setTimeout(res, 1500));
+        try {
+          if (from.via === "zapi") await zapiSendFile(from.zapi!, r.phone, { dataUrl, filename: file.filename, mime: file.mime }, caption.trim());
+          else await sendFileViaWhatsAppWeb(r.phone, { blob: file.blob, filename: file.filename, mime: file.mime }, caption.trim(), 20_000, from.phone || null);
+          await log(r);
+          ok.push(r);
+        } catch (e) {
+          failed.push({ r, why: errorText(e) });
+          // Problema do WhatsApp/Z-API (não do contato): não adianta tentar os outros.
+          if (!/não tem WhatsApp|mesmo do WhatsApp Web/.test(errorText(e))) break;
+        }
+      }
     } catch (e) {
       setError(errorText(e));
       setState("idle");
+      return;
     }
+    if (ok.length) onSent?.();
+    setSentTo((cur) => [...cur, ...ok]);
+    if (ok.length === targets.length) return setState("sent");
+    const pending = targets.filter((t) => !ok.includes(t));
+    setTo(pending.map((t) => t.phone));
+    setError(
+      (ok.length ? `Enviado para ${ok.map((r) => r.name).join(", ")}. ` : "") +
+        (failed.length === 1 && targets.length === 1
+          ? failed[0]!.why
+          : `${failed.map((f) => `${f.r.name}: ${f.why}`).join(" ")}${pending.length > failed.length ? ` Não enviado para ${pending.filter((p) => !failed.some((f) => f.r === p)).map((p) => p.name).join(", ")}.` : ""}`),
+    );
+    setState("idle");
   };
 
   const copy = async (what: string, text: string) => {
@@ -117,7 +148,8 @@ export function WhatsAppSendModal({
   const waClosed = error?.includes("abra o web.whatsapp.com") || error?.includes("não está conectado ou");
   // Falha dentro do WhatsApp Web (ele mudou por dentro): plano B manual.
   const internalError = error?.includes("não foi possível enviar");
-  const chatLink = target ? `https://wa.me/${waDigits(target.phone)}` : "";
+  const chatLink = (r: WhatsAppRecipient) => `https://wa.me/${waDigits(r.phone)}`;
+  const names = (list: WhatsAppRecipient[]) => list.map((r) => r.name).join(", ");
 
   return (
     <TaModal isOpen onClose={onClose} title="Enviar pelo WhatsApp" width="max-w-lg">
@@ -137,10 +169,19 @@ export function WhatsAppSendModal({
           <div className="flex flex-col items-center gap-2 py-6 text-center" data-whatsapp-sent>
             <CheckCircle2 size={36} className="text-success-500" />
             <p className="text-theme-sm text-gray-800 dark:text-white/90">
-              Enviado para <b>{target?.name}</b> · {formatPhone(target?.phone ?? "")}
+              Enviado para{" "}
+              {sentTo.length === 1 ? (
+                <>
+                  <b>{sentTo[0]!.name}</b> · {formatPhone(sentTo[0]!.phone)}
+                </>
+              ) : (
+                <b>{names(sentTo)}</b>
+              )}
               {from?.phone ? ` (de ${from.name})` : ""}
             </p>
-            <p className="text-theme-xs text-gray-500">Registrado como atividade concluída (tipo WhatsApp) e na auditoria do documento.</p>
+            <p className="text-theme-xs text-gray-500">
+              {sentTo.length > 1 ? "Cada envio registrado" : "Registrado"} como atividade concluída (tipo WhatsApp) e na auditoria do documento.
+            </p>
             <TaButton className="mt-2" onClick={onClose}>
               Fechar
             </TaButton>
@@ -154,15 +195,21 @@ export function WhatsAppSendModal({
               <li className="flex items-start gap-2">
                 <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-500 text-[11px] text-white">1</span>
                 <span className="flex-1">
-                  Abra a conversa com {target.name}:{" "}
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1 font-medium text-brand-600 hover:underline"
-                    onClick={() => void copy("link", chatLink)}
-                  >
-                    <Copy size={13} /> {copied === "link" ? "Link copiado" : "Copiar o link da conversa"}
-                  </button>
-                  <span className="block text-theme-xs text-gray-500">{chatLink} — cole na barra de endereço do outro perfil.</span>
+                  {targets.length > 1 ? "Para cada contato, abra a conversa:" : `Abra a conversa com ${target.name}:`}
+                  {targets.map((r) => (
+                    <span key={r.phone} className="block">
+                      {targets.length > 1 && <span className="text-gray-800 dark:text-white/90">{r.name} </span>}
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 font-medium text-brand-600 hover:underline"
+                        onClick={() => void copy(`link-${r.phone}`, chatLink(r))}
+                      >
+                        <Copy size={13} /> {copied === `link-${r.phone}` ? "Link copiado" : "Copiar o link da conversa"}
+                      </button>
+                      <span className="block text-theme-xs text-gray-500">{chatLink(r)}</span>
+                    </span>
+                  ))}
+                  <span className="block text-theme-xs text-gray-500">Cole o link na barra de endereço do outro perfil.</span>
                 </span>
               </li>
               <li className="flex items-start gap-2">
@@ -202,7 +249,9 @@ export function WhatsAppSendModal({
                 startIcon={<CheckCircle2 size={15} />}
                 onClick={() =>
                   void (async () => {
-                    await log(true);
+                    for (const r of targets) await log(r, true);
+                    setSentTo(targets);
+                    onSent?.();
                     setState("sent");
                   })()
                 }
@@ -234,19 +283,42 @@ export function WhatsAppSendModal({
               </>
             )}
             <p className="mb-1.5 text-theme-sm font-medium text-gray-700 dark:text-gray-300">Para</p>
-            <div className="mb-4 space-y-1.5" role="radiogroup">
+            {many && <p className="mb-2 text-theme-xs text-gray-500">Este cartão tem {recipients.length} contatos com WhatsApp. Escolha para quem enviar.</p>}
+            <div className="mb-4 space-y-1.5" data-wa-recipients>
+              {many && (
+                <label
+                  className={cn(
+                    "flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2",
+                    allChecked ? "border-brand-300 bg-brand-25 dark:bg-brand-500/10" : "border-gray-200 hover:bg-gray-50 dark:border-gray-700",
+                  )}
+                >
+                  <input type="checkbox" checked={allChecked} onChange={() => setTo(allChecked ? [] : recipients.map((r) => r.phone))} aria-label="Todos os contatos" />
+                  <MessageCircle size={16} className="text-success-600" />
+                  <span className="text-theme-sm font-medium text-gray-800 dark:text-white/90">Todos os contatos ({recipients.length})</span>
+                </label>
+              )}
               {recipients.map((r) => (
                 <label
                   key={r.phone}
                   className={cn(
                     "flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2",
-                    to === r.phone ? "border-brand-300 bg-brand-25 dark:bg-brand-500/10" : "border-gray-200 hover:bg-gray-50 dark:border-gray-700",
+                    many && "ml-6",
+                    to.includes(r.phone) ? "border-brand-300 bg-brand-25 dark:bg-brand-500/10" : "border-gray-200 hover:bg-gray-50 dark:border-gray-700",
                   )}
                 >
-                  <input type="radio" name="wa-to" checked={to === r.phone} onChange={() => setTo(r.phone)} />
+                  <input
+                    type={many ? "checkbox" : "radio"}
+                    name="wa-to"
+                    checked={to.includes(r.phone)}
+                    onChange={() => (many ? toggle(r.phone) : setTo([r.phone]))}
+                    aria-label={r.name}
+                  />
                   <MessageCircle size={16} className="text-success-600" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-theme-sm text-gray-800 dark:text-white/90">{r.name}</span>
+                    <span className="block truncate text-theme-sm text-gray-800 dark:text-white/90">
+                      {r.name}
+                      {sentTo.includes(r) && <span className="ml-1.5 text-theme-xs text-success-700">· enviado</span>}
+                    </span>
                     <span className="block text-theme-xs text-gray-500">
                       {formatPhone(r.phone)} · {r.role}
                     </span>
@@ -305,8 +377,16 @@ export function WhatsAppSendModal({
             )}
             <div className="mt-5 flex justify-end gap-2">
               <TaButton onClick={onClose}>Cancelar</TaButton>
-              <TaButton variant="primary" startIcon={<Send size={15} />} disabled={!target || !from || state === "sending"} onClick={() => void send()}>
-                {state === "sending" ? "Enviando…" : from?.via === "manual" ? "Preparar envio" : "Enviar"}
+              <TaButton variant="primary" startIcon={<Send size={15} />} disabled={!targets.length || !from || state === "sending"} onClick={() => void send()}>
+                {state === "sending"
+                  ? "Enviando…"
+                  : from?.via === "manual"
+                    ? "Preparar envio"
+                    : targets.length > 1
+                      ? `Enviar para ${targets.length} contatos`
+                      : many && !targets.length
+                        ? "Escolha o contato"
+                        : "Enviar"}
               </TaButton>
             </div>
           </>

@@ -216,3 +216,17 @@ concluída** do tipo **WhatsApp** (criado na primeira vez, ícone de conversa):
 - aparece na aba Atividades do cartão, na linha do tempo e nos relatórios.
 O documento não é vinculado à atividade (o título já diz qual foi), para não
 encher o "Também em" a cada envio.
+
+### Vários contatos no cartão (0.2.51)
+
+- Com mais de um contato com WhatsApp (contato principal, outros contatos,
+  organização...), a janela de envio **não vem com ninguém marcado**: o usuário
+  escolhe um, vários ou **Todos os contatos (N)**. O botão mostra "Escolha o
+  contato" até haver escolha, e "Enviar para N contatos" com vários.
+- O envio é em sequência, com 1,5 s entre um contato e outro; cada envio vira
+  sua própria atividade concluída. Se um falhar, os já enviados ficam marcados
+  como "enviado" e só os que faltam continuam selecionados para tentar de novo.
+  Erro do próprio WhatsApp (aba fechada, desconectado) interrompe os demais;
+  "número sem WhatsApp" pula só aquele contato.
+- No envio manual, a janela lista o link da conversa de cada contato; "Já
+  enviei" registra uma atividade por contato.
