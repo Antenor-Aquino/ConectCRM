@@ -5,6 +5,8 @@
 // WhatsApp, que envia sem abrir a conversa (não atrapalha quem está usando).
 const WA_URL = "https://web.whatsapp.com/*";
 const LIB = "vendor/wppconnect-wa.js";
+/** Versão de public/vendor/wppconnect-wa.js (a aba com outra versão é recarregada). */
+export const WA_JS_VERSION = "4.7.1";
 
 /** "(41) 99999-8888" → "5541999998888" (sem o 55, assume Brasil). */
 export function waDigits(phone: string): string {
@@ -24,12 +26,13 @@ const ERRORS: Record<Exclude<SendResult, { ok: true }>["code"], string> = {
 
 // ---- Funções que rodam DENTRO da aba do WhatsApp (mundo da página) ----
 
-function waConfigure(): boolean {
-  const w = window as unknown as { WPP?: unknown; WPPConfig?: unknown };
-  if (w.WPP) return true;
+/** Versão da biblioteca já carregada na aba ("" = nenhuma; configura para carregar). */
+function waConfigure(): string {
+  const w = window as unknown as { WPP?: { version?: string }; WPPConfig?: unknown };
+  if (w.WPP) return w.WPP.version ?? "?";
   // Sem nome de aparelho próprio e sem estatísticas da biblioteca.
   w.WPPConfig = { deviceName: false, disableGoogleAnalytics: true, googleAnalyticsId: null, linkPreviewApiServers: null, poweredBy: null };
-  return false;
+  return "";
 }
 
 /** Texto, ou arquivo (data URL) com legenda. */
@@ -72,6 +75,16 @@ async function waSend(digits: string, payload: WaPayload, waitMs: number): Promi
 
 // ---- Lado da extensão ----
 
+async function waitTabLoaded(tabId: number): Promise<void> {
+  await new Promise((r) => setTimeout(r, 500));
+  const until = Date.now() + 30_000;
+  while (Date.now() < until) {
+    const t = await chrome.tabs.get(tabId);
+    if (t.status === "complete" && !t.discarded) return;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
+
 async function whatsappTab(): Promise<chrome.tabs.Tab> {
   const tabs = await chrome.tabs.query({ url: WA_URL });
   const tab = tabs.find((t) => !t.discarded) ?? tabs[0];
@@ -95,7 +108,13 @@ async function sendPayload(phone: string, payload: WaPayload, waitMs: number): P
   const tab = await whatsappTab();
   const target = { tabId: tab.id! };
   try {
-    const [cfg] = await chrome.scripting.executeScript({ target, world: "MAIN", func: waConfigure });
+    let [cfg] = await chrome.scripting.executeScript({ target, world: "MAIN", func: waConfigure });
+    if (cfg?.result && cfg.result !== WA_JS_VERSION) {
+      // Biblioteca antiga ainda carregada (extensão atualizada): recarrega a aba do WhatsApp.
+      await chrome.tabs.reload(target.tabId);
+      await waitTabLoaded(target.tabId);
+      [cfg] = await chrome.scripting.executeScript({ target, world: "MAIN", func: waConfigure });
+    }
     if (!cfg?.result) await chrome.scripting.executeScript({ target, world: "MAIN", files: [LIB] });
   } catch (e) {
     throw new Error(`WhatsApp Web: não foi possível acessar a aba (${e instanceof Error ? e.message : String(e)}).`);

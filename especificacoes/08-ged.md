@@ -171,6 +171,12 @@ salvo assim mesmo e a janela lista o motivo antes de fechar.
   "Abrir WhatsApp Web".
 - O envio fica na auditoria do documento: "Enviou pelo WhatsApp para
   Cristiane · (81) 98729-8285".
+- Se o WhatsApp Web mudar por dentro e o envio automático falhar, a janela
+  oferece o plano B: "Baixar o arquivo e abrir a conversa" com o contato, para
+  arrastar o arquivo manualmente.
+- Biblioteca WA-JS 4.7.1 (0.2.47, corrige o envio de arquivos depois de uma
+  mudança do WhatsApp Web). A aba do WhatsApp com uma versão anterior da
+  biblioteca é recarregada sozinha antes do envio.
 
 No cartão, o campo **Contato** (principal) mostra os ícones de WhatsApp e de
 e-mail quando o contato tem celular/e-mail, como os "Outros contatos".

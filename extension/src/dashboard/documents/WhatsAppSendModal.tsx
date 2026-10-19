@@ -6,7 +6,8 @@ import { CheckCircle2, ExternalLink, MessageCircle, Send } from "lucide-react";
 import { TaButton, TaModal, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { WhatsAppRecipient } from "../../db/documents";
-import { fetchVersion } from "../../lib/documentFiles";
+import { downloadVersion, fetchVersion } from "../../lib/documentFiles";
+import { openWhatsApp } from "../../lib/contactLinks";
 import { errorText } from "../../lib/errors";
 import { formatBytes } from "../../lib/files";
 import { sendFileViaWhatsAppWeb } from "../../lib/notify/waweb";
@@ -45,6 +46,8 @@ export function WhatsAppSendModal({ doc, recipients, onClose }: { doc: WhatsAppD
   };
 
   const waClosed = error?.includes("abra o web.whatsapp.com") || error?.includes("não está conectado");
+  // Falha dentro do WhatsApp Web (ele mudou por dentro): plano B manual.
+  const internalError = error?.includes("não foi possível enviar");
 
   return (
     <TaModal isOpen onClose={onClose} title="Enviar pelo WhatsApp" width="max-w-lg">
@@ -106,6 +109,24 @@ export function WhatsAppSendModal({ doc, recipients, onClose }: { doc: WhatsAppD
             {error && (
               <div className="mt-3 rounded-lg bg-error-50 px-3 py-2 text-theme-sm text-error-700" data-whatsapp-error>
                 {error}
+                {internalError && target && (
+                  <div className="mt-2">
+                    <p className="text-theme-xs">O WhatsApp Web mudou e o envio automático falhou. Envie manualmente:</p>
+                    <button
+                      type="button"
+                      className="mt-1 inline-flex items-center gap-1 font-medium underline"
+                      onClick={() =>
+                        void (async () => {
+                          await downloadVersion(doc.version_id);
+                          await openWhatsApp(target.phone);
+                        })()
+                      }
+                    >
+                      Baixar o arquivo e abrir a conversa com {target.name.split(" ")[0]} <ExternalLink size={12} />
+                    </button>
+                    <p className="mt-1 text-theme-xs">Depois é só arrastar o arquivo baixado para a conversa.</p>
+                  </div>
+                )}
                 {waClosed && (
                   <button
                     type="button"
