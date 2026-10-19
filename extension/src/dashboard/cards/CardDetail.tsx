@@ -2,16 +2,38 @@
 // resolvido/não resolvido, concluído/não concluído conforme o tipo),
 // notas, tarefas e histórico de alterações.
 import { useCallback, useEffect, useState } from "react";
-import { Check, CheckCircle2, Circle, Maximize2, Minimize2, Pencil, PlusCircle, RotateCcw, Sparkles, Trash2, Trophy, X, XCircle } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  ArrowLeftRight,
+  Check,
+  Copy,
+  CheckCircle2,
+  Circle,
+  Maximize2,
+  Minimize2,
+  Pencil,
+  PlusCircle,
+  Mail,
+  MessageCircle,
+  RotateCcw,
+  Sparkles,
+  Star,
+  Trash2,
+  Trophy,
+  X,
+  XCircle,
+} from "lucide-react";
 import { TaBadge, TaButton, TaInput, TaTextarea, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { ActivityListItem } from "../../db/activities";
 import type { CustomField, CustomValue } from "../../db/customFields";
 import type { CardDetail as CardData } from "../../db/deals";
+import type { CardCounts } from "../../db/cardCounts";
 import type { HistoryEvent, HistoryRef } from "../../db/cardHistory";
 import type { Pipeline, Stage } from "../../db/pipelines";
 import { CARD_TEXT, OUTCOME_TEXT } from "../../lib/cardTypes";
-import { formatCents, formatDateTime, fromDateInput, toDateInput } from "../../lib/format";
+import { formatCents, formatDateTime, formatPhone, fromDateInput, toDateInput } from "../../lib/format";
 import { Combobox, type ComboItem } from "../ui/Combobox";
 import { CustomFieldsForm } from "../ui/CustomFieldsForm";
 import { ErrorText, Field, SectionLabel } from "../ui/form";
@@ -26,6 +48,7 @@ import { UserModal } from "../settings/UsersSettings";
 import { useSession } from "../session";
 import { openCopilot } from "../copilot/CopilotPanel";
 import { DocumentsPanel } from "../documents/DocumentsPanel";
+import { LinkedTextarea } from "../ui/LinkedTextarea";
 import { NotesPanel } from "../ui/NotesPanel";
 import { TaskModal, type TaskRequest } from "../tasks/TaskModal";
 import { DocumentViewer } from "../documents/DocumentViewer";
@@ -33,9 +56,12 @@ import { ActivityIcon } from "../../lib/activityIcons";
 import { taskTiming } from "../../lib/taskTiming";
 import { ItemsEditor, type ItemDraft } from "./ItemsEditor";
 import { LostModal } from "./LostModal";
+import { ChangePipelineModal } from "./ChangePipelineModal";
 import { createOrganizationQuick, createPersonQuick, searchOrganizations, searchPersons } from "./searchers";
+import { EmailLink, PhoneLink } from "../ui/ContactLinks";
 import { errorText } from "../../lib/errors";
 import { RECURRENCE_LABEL, type Recurrence } from "../../db/products";
+import { ExternalOrigin } from "../ui/ExternalOrigin";
 
 type Tab = "notas" | "tarefas" | "documentos" | "historico";
 
@@ -48,9 +74,15 @@ export function CardDetail({
   onChanged,
   mode = "drawer",
   onToggleMode,
+  pipelines = [],
+  onGoToCard,
 }: {
   cardId: string;
   pipeline: Pipeline;
+  /** Funis para "Mudar de funil" (só os do mesmo tipo aparecem). */
+  pipelines?: Pipeline[];
+  /** Depois de mudar de funil ou clonar: a tela abre o funil com o cartão (o mesmo ou a cópia). */
+  onGoToCard?: (pipelineId: string, cardId: string) => void;
   onClose: () => void;
   onChanged: () => void;
   /** drawer = painel lateral sobre o quadro; full = ocupa a área do quadro. */
@@ -69,6 +101,11 @@ export function CardDetail({
   const [docOpen, setDocOpen] = useState<string | null>(null);
   const [itemsOpen, setItemsOpen] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
+  const [pipelineAction, setPipelineAction] = useState<"move" | "clone" | null>(null);
+  // Quantidades nas abas (balão verde) e atividades atrasadas (balão vermelho).
+  const [counts, setCounts] = useState<CardCounts | null>(null);
+  const [countsKey, setCountsKey] = useState(0);
+  const recount = () => setCountsKey((k) => k + 1);
   // Cadastro aberto a partir do nome do contato, da organização ou do responsável.
   const [editing, setEditing] = useState<{ kind: "person" | "organization" | "user"; id: string } | null>(null);
   const { user: me, users, reloadUsers } = useSession();
@@ -104,6 +141,12 @@ export function CardDetail({
   };
   const update = (patch: Record<string, unknown>) => run(() => call("cards.update", { id: cardId, patch }));
 
+  useEffect(() => {
+    void call("cards.counts", { id: cardId })
+      .then(setCounts)
+      .catch(() => setCounts(null));
+  }, [cardId, card?.version, countsKey, tab]);
+
   if (!card) {
     return (
       <Shell onClose={onClose} mode={mode} onToggleMode={onToggleMode}>
@@ -115,6 +158,8 @@ export function CardDetail({
   const outcome = OUTCOME_TEXT[pipeline.type];
   const status = card.status === "open" ? null : { color: card.status === "won" ? ("green" as const) : ("red" as const), label: outcome[card.status] };
   const person: ComboItem | null = card.person_id ? { id: card.person_id, label: card.person_name ?? "" } : null;
+  const others = card.contacts.filter((c) => !c.is_primary);
+  const primary = card.contacts.find((c) => c.is_primary);
   const org: ComboItem | null = card.organization_id ? { id: card.organization_id, label: card.organization_name ?? "" } : null;
   const items: ItemDraft[] = card.items.map((i) => ({
     id: i.id,
@@ -127,7 +172,7 @@ export function CardDetail({
   }));
 
   return (
-    <Shell onClose={onClose} mode={mode} onToggleMode={onToggleMode}>
+    <Shell onClose={onClose} mode={mode} onToggleMode={onToggleMode} ticketNumber={card.kind === "ticket" ? card.ticket_number : null} cardId={card.id}>
       {/* Cabeçalho */}
       <div className={cn("flex items-start gap-3", onToggleMode ? "pr-20" : "pr-8")}>
         <input
@@ -138,8 +183,20 @@ export function CardDetail({
         />
         {status && <TaBadge color={status.color} label={status.label} />}
       </div>
-      <p className="mb-4 px-1 text-theme-xs text-gray-500">
-        {pipeline.name} · criado em {formatDateTime(card.created_at)}
+      <p className="mb-4 flex flex-wrap items-center gap-1 px-1 text-theme-xs text-gray-500">
+        {onGoToCard ? (
+          <button
+            type="button"
+            title="Mudar de funil"
+            onClick={() => setPipelineAction("move")}
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-brand-600 hover:bg-brand-50 dark:text-brand-400 dark:hover:bg-brand-500/10"
+          >
+            {pipeline.name} <ArrowLeftRight size={12} />
+          </button>
+        ) : (
+          pipeline.name
+        )}
+        <span>· criado em {formatDateTime(card.created_at)}</span>
       </p>
 
       {/* Etapas: clicar move o cartão */}
@@ -195,16 +252,34 @@ export function CardDetail({
         >
           Perguntar ao Copiloto
         </TaButton>
+        {onGoToCard && (
+          <TaButton variant="ghost" startIcon={<Copy size={15} />} onClick={() => setPipelineAction("clone")}>
+            Clonar
+          </TaButton>
+        )}
+        <TaButton
+          variant="ghost"
+          startIcon={card.archived_at ? <ArchiveRestore size={15} /> : <Archive size={15} />}
+          title={card.archived_at ? "Volta para o quadro" : "Sai do quadro, mas continua nos relatórios, na busca e na ficha do contato"}
+          onClick={() => void run(() => call("cards.archive", { id: cardId, archived: !card.archived_at }))}
+        >
+          {card.archived_at ? "Desarquivar" : "Arquivar"}
+        </TaButton>
         <TaButton
           variant="ghost"
           startIcon={<Trash2 size={15} />}
           onClick={() => {
-            if (confirm(`Excluir este ${text.noun}?`)) void run(() => call("cards.delete", { id: cardId })).then(onClose);
+            if (confirm(`Excluir este ${text.noun}? Vai para a lixeira com as atividades e notas, de onde pode ser restaurado.`)) void run(() => call("cards.delete", { id: cardId })).then(onClose);
           }}
         >
           Excluir
         </TaButton>
       </div>
+      {card.archived_at && (
+        <p className="mb-4 flex items-center gap-2 rounded-lg border border-warning-300 bg-warning-50 px-3 py-2 text-theme-sm text-warning-800 dark:border-warning-500/40 dark:bg-warning-500/10 dark:text-warning-300" data-archived>
+          <Archive size={15} /> Arquivado em {formatDateTime(card.archived_at)}: não aparece no quadro (filtro “Arquivados” mostra).
+        </p>
+      )}
       {card.status !== "open" && (
         // Faixa do desfecho: verde (ganho/resolvido/concluído) ou vermelha (perdido/não…), com data e motivo.
         <div
@@ -265,10 +340,10 @@ export function CardDetail({
           }
           {pipeline.type !== "comercial" && (
             <Field label="Descrição">
-              <TaTextarea
-                rows={3}
+              <LinkedTextarea
+                className="min-h-[84px] w-full rounded-lg border border-gray-300 bg-transparent px-3.5 py-2.5 text-theme-sm text-gray-800 shadow-theme-xs outline-none focus:border-brand-300 focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:text-white/90"
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={setDescription}
                 onBlur={() => description !== (card.description ?? "") && void update({ description })}
               />
             </Field>
@@ -300,6 +375,81 @@ export function CardDetail({
               createLabel="Criar contato"
               onOpenValue={(i) => setEditing({ kind: "person", id: i.id })}
               openTitle="Editar o cadastro do contato"
+              valueActions={
+                primary && (primary.phone || primary.email) ? (
+                  <span className="flex items-center gap-2.5 pr-1" data-primary-contact-actions>
+                    {primary.phone && (
+                      <PhoneLink phone={primary.phone} className="text-gray-400 hover:text-success-600 hover:no-underline">
+                        <MessageCircle size={15} />
+                      </PhoneLink>
+                    )}
+                    {primary.email && (
+                      <EmailLink iconOnly email={primary.email} className="text-gray-400 hover:no-underline">
+                        <Mail size={15} />
+                      </EmailLink>
+                    )}
+                  </span>
+                ) : null
+              }
+            />
+          </Field>
+          <Field
+            label={`Outros contatos${others.length ? ` (${others.length})` : ""}`}
+            hint={others.length ? undefined : "Decisor, financeiro, técnico… Todos aparecem no cartão e na ficha de cada contato."}
+          >
+            {others.map((c) => (
+              <div key={c.id} className="mb-1.5 flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-700" data-card-contact={c.name}>
+                <button
+                  type="button"
+                  title="Editar o cadastro do contato"
+                  onClick={() => setEditing({ kind: "person", id: c.id })}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <span className="block truncate text-theme-sm font-medium text-brand-600 hover:underline">{c.name}</span>
+                  {(c.organization_name || c.phone || c.email) && (
+                    <span className="block truncate text-theme-xs text-gray-500">{[c.organization_name, formatPhone(c.phone), c.email].filter(Boolean).join(" · ")}</span>
+                  )}
+                </button>
+                {c.phone && (
+                  <PhoneLink phone={c.phone} className="text-gray-400 hover:text-success-600 hover:no-underline">
+                    <MessageCircle size={15} />
+                  </PhoneLink>
+                )}
+                {c.email && (
+                  <EmailLink iconOnly email={c.email} className="text-gray-400 hover:no-underline">
+                    <Mail size={15} />
+                  </EmailLink>
+                )}
+                <button
+                  type="button"
+                  title="Tornar o contato principal"
+                  onClick={() => void run(() => call("cards.contacts.setPrimary", { id: cardId, personId: c.id }))}
+                  className="text-gray-400 hover:text-warning-500"
+                >
+                  <Star size={15} />
+                </button>
+                <button
+                  type="button"
+                  title="Remover do cartão"
+                  onClick={() => void run(() => call("cards.contacts.remove", { id: cardId, personId: c.id }))}
+                  className="text-gray-400 hover:text-error-600"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            ))}
+            <Combobox
+              value={null}
+              onChange={(i) => i && void run(() => call("cards.contacts.add", { id: cardId, personId: i.id }))}
+              search={searchPersons}
+              placeholder="Buscar por nome, telefone ou e-mail"
+              onCreate={createPersonQuick}
+              createLabel="Criar contato"
+              dashed={
+                <>
+                  <PlusCircle size={15} /> Adicionar outro contato
+                </>
+              }
             />
           </Field>
           <Field label="Organização">
@@ -366,26 +516,67 @@ export function CardDetail({
                 ["tarefas", "Atividades"],
                 ["documentos", "Documentos"],
               ] as [Tab, string][]
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => {
-                  setTab(id);
-                  setNoteFocus(null);
-                }}
-                className={cn(
-                  "flex-1 rounded-md py-1.5 text-theme-sm font-medium",
-                  tab === id ? "bg-white text-brand-600 shadow-theme-xs dark:bg-gray-900" : "text-gray-600 dark:text-gray-400",
-                )}
-              >
-                {label}
-              </button>
-            ))}
+            ).map(([id, label]) => {
+              const count = counts && { historico: counts.history, notas: counts.notes, tarefas: counts.activities, documentos: counts.documents }[id];
+              const overdue = id === "tarefas" ? (counts?.activitiesOverdue ?? 0) : 0;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  data-tab={id}
+                  onClick={() => {
+                    setTab(id);
+                    setNoteFocus(null);
+                  }}
+                  className={cn(
+                    "flex flex-1 items-center justify-center gap-1.5 rounded-md py-1.5 text-theme-sm font-medium",
+                    tab === id ? "bg-white text-brand-600 shadow-theme-xs dark:bg-gray-900" : "text-gray-600 dark:text-gray-400",
+                  )}
+                >
+                  {label}
+                  {count != null && (
+                    <span
+                      className="min-w-5 rounded-full bg-success-500 px-1.5 text-center text-[11px] font-semibold leading-5 text-white"
+                      title="Quantidade"
+                      data-count
+                    >
+                      {count}
+                    </span>
+                  )}
+                  {overdue > 0 && (
+                    <span
+                      className="min-w-5 rounded-full bg-error-500 px-1.5 text-center text-[11px] font-semibold leading-5 text-white"
+                      title="Atividades atrasadas"
+                      data-overdue
+                    >
+                      {overdue}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
-          {tab === "notas" && <NotesPanel entityType="deal" entityId={cardId} onChanged={onChanged} highlightId={noteFocus} />}
-          {tab === "tarefas" && <TasksTab cardId={cardId} onChanged={onChanged} />}
-          {tab === "documentos" && <DocumentsPanel type="deal" id={cardId} />}
+          {tab === "notas" && (
+            <NotesPanel
+              entityType="deal"
+              entityId={cardId}
+              onChanged={() => {
+                onChanged();
+                recount();
+              }}
+              highlightId={noteFocus}
+            />
+          )}
+          {tab === "tarefas" && (
+            <TasksTab
+              cardId={cardId}
+              onChanged={() => {
+                onChanged();
+                recount();
+              }}
+            />
+          )}
+          {tab === "documentos" && <DocumentsPanel type="deal" id={cardId} onChanged={recount} />}
           {tab === "historico" && (
             <HistoryTab
               cardId={cardId}
@@ -461,6 +652,22 @@ export function CardDetail({
           }}
         />
       )}
+      {pipelineAction && onGoToCard && (
+        <ChangePipelineModal
+          mode={pipelineAction}
+          cardId={cardId}
+          cardTitle={card.title}
+          pipeline={pipeline}
+          currentStage={stages.find((x) => x.id === card.stage_id)}
+          pipelines={pipelines}
+          onClose={() => setPipelineAction(null)}
+          onDone={(pipelineId, id) => {
+            setPipelineAction(null);
+            onChanged();
+            onGoToCard(pipelineId, id);
+          }}
+        />
+      )}
       <LostModal
         cardId={lostOpen ? cardId : null}
         type={pipeline.type}
@@ -525,27 +732,54 @@ function ItemsSummary({ items, onEdit }: { items: CardData["items"]; onEdit: () 
   );
 }
 
-function Shell({ children, onClose, mode, onToggleMode }: { children: React.ReactNode; onClose: () => void; mode: CardDetailMode; onToggleMode?: () => void }) {
+function Shell({
+  children,
+  onClose,
+  mode,
+  onToggleMode,
+  ticketNumber,
+  cardId,
+}: {
+  children: React.ReactNode;
+  onClose: () => void;
+  mode: CardDetailMode;
+  onToggleMode?: () => void;
+  /** Tickets (funil Operacional): "Ticket: 123" abaixo do X. */
+  ticketNumber?: number | null;
+  /** Para "Importado do Pipedrive ↗" abaixo do X. */
+  cardId?: string;
+}) {
   const buttons = (
-    <div className="absolute right-5 top-5 flex gap-1.5">
-      {onToggleMode && (
+    <div className="absolute right-5 top-5 flex flex-col items-end gap-1.5">
+      <div className="flex gap-1.5">
+        {onToggleMode && (
+          <button
+            type="button"
+            onClick={onToggleMode}
+            title={mode === "full" ? "Voltar ao painel lateral" : "Abrir em tela cheia (no lugar do quadro)"}
+            className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-white/5"
+          >
+            {mode === "full" ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
+        )}
         <button
           type="button"
-          onClick={onToggleMode}
-          title={mode === "full" ? "Voltar ao painel lateral" : "Abrir em tela cheia (no lugar do quadro)"}
+          onClick={onClose}
+          title="Fechar"
           className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-white/5"
         >
-          {mode === "full" ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          <X size={18} />
         </button>
+      </div>
+      {ticketNumber != null && (
+        <span
+          className="rounded-md bg-purple-50 px-2 py-0.5 text-theme-xs font-semibold text-purple-700 dark:bg-purple-500/10 dark:text-purple-300"
+          data-ticket-number
+        >
+          Ticket: {ticketNumber}
+        </span>
       )}
-      <button
-        type="button"
-        onClick={onClose}
-        title="Fechar"
-        className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-white/5"
-      >
-        <X size={18} />
-      </button>
+      {cardId && <ExternalOrigin localId={cardId} />}
     </div>
   );
   if (mode === "full") {

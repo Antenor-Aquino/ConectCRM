@@ -1,10 +1,18 @@
 // Operações expostas pelo documento offscreen (dono do banco) às telas.
 // Cada entrada recebe (db, ctx, params) e devolve dados serializáveis.
 import * as activities from "../db/activities";
+import { cardCounts } from "../db/cardCounts";
+import { globalSearch } from "../db/globalSearch";
 import { cardHistory } from "../db/cardHistory";
 import { cardFieldValues } from "../db/cardFieldValues";
 import * as attachments from "../db/attachments";
 import * as importer from "../db/importer";
+import * as cardImporter from "../db/cardImporter";
+import * as bulk from "../db/bulkCards";
+import * as cardContacts from "../db/cardContacts";
+import * as notify from "../db/notifications";
+import type { NotifySettings } from "../lib/notify/settings";
+import * as ext from "../db/externalImport";
 import * as merge from "../db/merge";
 import * as contacts from "../db/contacts";
 import * as copilot from "../db/copilot";
@@ -17,11 +25,14 @@ import * as products from "../db/products";
 import * as reports from "../db/reports";
 import * as similar from "../db/similar";
 import * as stages from "../db/stages";
+import * as trash from "../db/trash";
+import * as waLog from "../db/whatsappLog";
 import { rowHistory, type DataTable, type DbContext } from "../db/repo";
 import { many, one, type DatabaseSync } from "../db/sql";
 import { hashPin, verifyPin } from "../lib/pin";
 import { ValidationError } from "../lib/validate";
 import * as tags from "../db/tags";
+import * as docCard from "../db/docCard";
 import * as users from "../db/users";
 
 type Handler = (db: DatabaseSync, ctx: DbContext, params: never) => unknown;
@@ -39,6 +50,10 @@ function assertRole(db: DatabaseSync, ctx: DbContext, roles: users.Role[], what:
   if (v && !roles.includes(v.role)) throw new ValidationError(`Sem permissão para alterar ${what}.`);
 }
 const ADMIN: users.Role[] = ["admin"];
+/** Integrações (importar do Pipedrive...): só administrador. */
+function assertIntegrations(db: DatabaseSync, ctx: DbContext): void {
+  if (viewer(db, ctx)?.role !== "admin") throw new ValidationError("Apenas administradores podem usar as integrações.");
+}
 const MANAGERS: users.Role[] = ["admin", "gestor"];
 
 /** Tarefa fora do escopo do usuário (vendedor: só as suas; gestor: equipe). */
@@ -117,7 +132,7 @@ export const methods = {
   },
   "teams.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
     assertAdmin(db, ctx);
-    users.deleteTeam(db, ctx, p.id);
+    return users.deleteTeam(db, ctx, p.id);
   },
 
   // Funis
@@ -134,6 +149,8 @@ export const methods = {
   // Cartões (negócio / ticket / etapa de projeto)
   "board.get": (db: DatabaseSync, ctx: DbContext, p: { pipelineId: string } & Omit<NonNullable<Parameters<typeof deals.getBoard>[2]>, "viewer">) =>
     deals.getBoard(db, p.pipelineId, { ...p, viewer: viewer(db, ctx) }),
+  "board.hiddenByFilter": (db: DatabaseSync, ctx: DbContext, p: { pipelineId: string } & Omit<NonNullable<Parameters<typeof deals.boardHiddenByFilter>[2]>, "viewer">) =>
+    deals.boardHiddenByFilter(db, p.pipelineId, { ...p, viewer: viewer(db, ctx) }),
   /** Prévia dos campos do cartão (Editar funil → Cartão) no cartão mais recente do funil. */
   "cards.previewFields": (db: DatabaseSync, ctx: DbContext, p: { pipelineId: string; keys: string[] }) => {
     const scope = deals.cardScope(db, viewer(db, ctx));
@@ -153,6 +170,44 @@ export const methods = {
     deals.assertCanAssign(db, v, p.ownerId === undefined ? ctx.userId : p.ownerId);
     return deals.createCard(db, ctx, p);
   },
+  /** Copiloto: cartão a partir de um documento, depois da confirmação do usuário (spec 12). */
+  "copilot.createFromDocument": (db: DatabaseSync, ctx: DbContext, p: docCard.DocCardInput) => {
+    const v = viewer(db, ctx);
+    deals.assertCanAssign(db, v, ctx.userId);
+    return docCard.createCardFromDocument(db, ctx, v, p);
+  },
+  /** Origem de um registro criado por automação (cartão, contato, organização). */
+  "origins.of": (db: DatabaseSync, _c: DbContext, p: Id) => docCard.recordOrigin(db, p.id),
+  "cards.import": (db: DatabaseSync, ctx: DbContext, p: cardImporter.CardImportInput) => {
+    const v = viewer(db, ctx);
+    return cardImporter.importCards(db, ctx, p, (ownerId) => deals.assertCanAssign(db, v, ownerId));
+  },
+  // Integrações (spec 09): só administradores.
+  "integrations.check": (db: DatabaseSync, ctx: DbContext, p: { provider: ext.ExternalProvider; entity: ext.ExternalEntity; items: ext.ExternalCheckItem[] }) => {
+    assertIntegrations(db, ctx);
+    return ext.checkExternal(db, p.provider, p.entity, p.items);
+  },
+  "integrations.links": (db: DatabaseSync, ctx: DbContext, p: { provider: ext.ExternalProvider; entity: ext.ExternalEntity; externalIds: string[] }) => {
+    assertIntegrations(db, ctx);
+    return [...ext.externalLinks(db, p.provider, p.entity, p.externalIds).values()];
+  },
+  "integrations.refsOf": (db: DatabaseSync, _c: DbContext, p: Id) => ext.externalRefsOf(db, p.id),
+  "integrations.importOrganizations": (db: DatabaseSync, ctx: DbContext, p: ext.ExternalImportInput<ext.ExternalOrganizationRow>) => {
+    assertIntegrations(db, ctx);
+    return ext.importExternalOrganizations(db, ctx, p);
+  },
+  "integrations.importPersons": (db: DatabaseSync, ctx: DbContext, p: ext.ExternalImportInput<ext.ExternalPersonRow>) => {
+    assertIntegrations(db, ctx);
+    return ext.importExternalPersons(db, ctx, p);
+  },
+  "integrations.importNotes": (db: DatabaseSync, ctx: DbContext, p: { provider: ext.ExternalProvider; rows: ext.ExternalNoteRow[] }) => {
+    assertIntegrations(db, ctx);
+    return ext.importExternalNotes(db, ctx, p);
+  },
+  "integrations.importDeals": (db: DatabaseSync, ctx: DbContext, p: ext.ExternalImportInput<ext.ExternalDealRow>) => {
+    assertIntegrations(db, ctx);
+    return ext.importExternalDeals(db, ctx, p);
+  },
   "cards.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Parameters<typeof deals.updateCard>[3] }) => {
     const v = viewer(db, ctx);
     deals.assertCardAccess(db, v, p.id);
@@ -163,6 +218,19 @@ export const methods = {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);
     deals.moveCard(db, ctx, p.id, p);
   },
+  "cards.changePipeline": (db: DatabaseSync, ctx: DbContext, p: Id & { pipelineId: string; stageId?: string | null }) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    return deals.changeCardPipeline(db, ctx, p.id, p);
+  },
+  "search.global": (db: DatabaseSync, ctx: DbContext, p: { text: string }) => globalSearch(db, p.text, viewer(db, ctx)),
+  "cards.counts": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    return cardCounts(db, p.id);
+  },
+  "cards.clone": (db: DatabaseSync, ctx: DbContext, p: Id & { pipelineId: string; stageId?: string | null; title?: string | null }) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    return deals.cloneCard(db, ctx, p.id, p);
+  },
   "cards.setStatus": (db: DatabaseSync, ctx: DbContext, p: Id & Parameters<typeof deals.setCardStatus>[3]) => {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);
     deals.setCardStatus(db, ctx, p.id, p);
@@ -171,9 +239,26 @@ export const methods = {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);
     deals.setDealItems(db, ctx, p.id, p.items);
   },
+  "cards.bulk": (db: DatabaseSync, ctx: DbContext, p: { ids: string[]; action: bulk.BulkAction }) => bulk.bulkCards(db, ctx, viewer(db, ctx), p.ids, p.action),
+  "cards.archive": (db: DatabaseSync, ctx: DbContext, p: Id & { archived: boolean }) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    bulk.setCardArchived(db, ctx, p.id, p.archived);
+  },
+  "cards.contacts.add": (db: DatabaseSync, ctx: DbContext, p: Id & { personId: string }) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    cardContacts.addCardContact(db, ctx, p.id, p.personId);
+  },
+  "cards.contacts.remove": (db: DatabaseSync, ctx: DbContext, p: Id & { personId: string }) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    cardContacts.removeCardContact(db, ctx, p.id, p.personId);
+  },
+  "cards.contacts.setPrimary": (db: DatabaseSync, ctx: DbContext, p: Id & { personId: string }) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    cardContacts.setPrimaryCardContact(db, ctx, p.id, p.personId);
+  },
   "cards.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);
-    deals.deleteCard(db, ctx, p.id);
+    return deals.deleteCard(db, ctx, p.id);
   },
   "lossReasons.list": (db: DatabaseSync, _c: DbContext, p: { includeInactive?: boolean } = {}) => deals.listLossReasons(db, p),
   // Criar motivo fica liberado: o vendedor cria direto ao marcar "Perdido".
@@ -226,7 +311,7 @@ export const methods = {
   },
   "documentTypes.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
     assertRole(db, ctx, MANAGERS, "tipos de documento");
-    docs.deleteDocumentType(db, ctx, p.id);
+    return docs.deleteDocumentType(db, ctx, p.id);
   },
   "documents.list": (db: DatabaseSync, ctx: DbContext, p: Omit<docs.DocumentFilter, "viewer"> = {}) => docs.listDocuments(db, { ...p, viewer: viewer(db, ctx) }),
   "documents.forEntity": (db: DatabaseSync, ctx: DbContext, p: { type: docs.DocLinkType; id: string }) => {
@@ -281,7 +366,10 @@ export const methods = {
       docView(db, ctx, id);
       docs.assertDocumentOwner(db, viewer(db, ctx), id);
     }
-    for (const id of p.ids) docs.trashDocument(db, ctx, id);
+    return trash.mergeNotices(
+      p.ids.map((id) => docs.trashDocument(db, ctx, id)),
+      "documentos",
+    );
   },
   "documents.restore": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => {
     for (const id of p.ids) {
@@ -296,16 +384,86 @@ export const methods = {
     return docs.purgeDocuments(db, ctx, p.ids);
   },
   /** Lixeira com mais de 30 dias (rotina ao abrir o GED). */
-  "documents.purgeExpired": (db: DatabaseSync, ctx: DbContext) => docs.purgeDocuments(db, ctx, docs.expiredTrash(db)),
+  "documents.purgeExpired": (db: DatabaseSync, ctx: DbContext) => docs.purgeDocuments(db, ctx, docs.expiredTrash(db, trash.retentionDays(db))),
+
+  // Lixeira (spec 11)
+  "trash.list": (db: DatabaseSync, ctx: DbContext, p: { entity?: string; search?: string } = {}) => trash.listTrash(db, viewer(db, ctx), p),
+  "trash.count": (db: DatabaseSync, ctx: DbContext) => trash.trashCount(db, viewer(db, ctx)),
+  "trash.settings": (db: DatabaseSync) => ({ days: trash.retentionDays(db) }),
+  "trash.setRetention": (db: DatabaseSync, ctx: DbContext, p: { days: number }) => {
+    assertRole(db, ctx, ADMIN, "o prazo da lixeira");
+    trash.setRetentionDays(db, ctx, p.days);
+  },
+  /** Restaura cada item; um erro (ex.: funil também excluído) não impede os outros. */
+  "trash.restore": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => {
+    const out = { restored: 0, errors: [] as { id: string; message: string }[] };
+    for (const id of p.ids) {
+      try {
+        trash.restoreTrashItem(db, ctx, viewer(db, ctx), id);
+        out.restored++;
+      } catch (e) {
+        out.errors.push({ id, message: e instanceof Error ? e.message : String(e) });
+      }
+    }
+    return out;
+  },
+  /** Exclusão definitiva (administrador); devolve os arquivos de documentos a apagar. */
+  "trash.purge": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => {
+    assertRole(db, ctx, ADMIN, "a lixeira");
+    return trash.purgeTrash(db, ctx, p.ids, (ids) => docs.purgeDocuments(db, ctx, ids));
+  },
+  "trash.empty": (db: DatabaseSync, ctx: DbContext) => {
+    assertRole(db, ctx, ADMIN, "a lixeira");
+    return trash.purgeTrash(db, ctx, trash.allTrashIds(db, null), (ids) => docs.purgeDocuments(db, ctx, ids));
+  },
+  /** Prazo vencido (rotina ao abrir o CRM). */
+  "trash.purgeExpired": (db: DatabaseSync, ctx: DbContext) =>
+    trash.purgeTrash(db, ctx, trash.expiredTrashIds(db), (ids) => docs.purgeDocuments(db, ctx, ids)),
   /** Onde ler o arquivo de uma versão; registra a visualização ou o download. */
-  "documents.file": (db: DatabaseSync, ctx: DbContext, p: { versionId: string; action: docs.DocumentAction | "index" }) => {
+  "documents.file": (db: DatabaseSync, ctx: DbContext, p: { versionId: string; action: docs.DocumentAction | "index" | "inline" }) => {
     const f = docs.versionFile(db, p.versionId);
     if (!f) throw new ValidationError("Arquivo não encontrado.");
     docView(db, ctx, f.document_id, { includeTrash: true });
-    // "index" = leitura interna do texto do PDF (não entra na auditoria).
-    if (p.action !== "index") docs.logDocumentEvent(db, ctx, f.document_id, p.action, p.action === "download" ? f.filename : null);
+    // "index" = leitura interna do texto do PDF; "inline" = imagem mostrada dentro
+    // de uma nota (nenhuma das duas entra na auditoria).
+    if (p.action !== "index" && p.action !== "inline") docs.logDocumentEvent(db, ctx, f.document_id, p.action, p.action === "download" ? f.filename : null);
     const legacy = f.location === "legacy" ? (attachments.getDataUrls(db, [f.blob_id])[f.blob_id] ?? null) : null;
     return { ...f, legacyDataUrl: legacy };
+  },
+  /** Quem pode receber um documento pelo WhatsApp a partir desta tela. */
+  "documents.whatsappRecipients": (db: DatabaseSync, ctx: DbContext, p: { type: docs.DocLinkType; id: string }) => {
+    assertEntityAccess(db, ctx, p.type, p.id);
+    return docs.whatsappRecipients(db, p.type, p.id);
+  },
+  /** Envio pelo WhatsApp: auditoria do documento + atividade concluída no cartão/cadastro. */
+  "documents.logWhatsApp": (db: DatabaseSync, ctx: DbContext, p: waLog.WhatsAppSendLog & { phoneLabel: string }) => {
+    docView(db, ctx, p.documentId);
+    assertEntityAccess(db, ctx, p.context.type, p.context.id);
+    return waLog.logWhatsAppSend(db, ctx, p, p.phoneLabel);
+  },
+  /** Revisão/envio manual: prepara (pendente) e depois confirma quando a mensagem sai. */
+  "documents.whatsappPrepare": (db: DatabaseSync, ctx: DbContext, p: waLog.WhatsAppSendLog & { phoneLabel: string; senderId?: string | null }) => {
+    docView(db, ctx, p.documentId);
+    assertEntityAccess(db, ctx, p.context.type, p.context.id);
+    return waLog.prepareWhatsAppSend(db, ctx, p, p.phoneLabel);
+  },
+  "documents.whatsappConfirm": (
+    db: DatabaseSync,
+    ctx: DbContext,
+    p: { sendId: string; phoneLabel: string; from?: string | null; senderId?: string | null; caption?: string | null; manual?: boolean },
+  ) => {
+    const c = waLog.whatsappSendContext(db, p.sendId);
+    assertEntityAccess(db, ctx, c.type, c.id);
+    return waLog.confirmWhatsAppSend(db, ctx, p.sendId, p);
+  },
+  "documents.whatsappPending": (db: DatabaseSync, ctx: DbContext, p: { type: docs.DocLinkType; id: string }) => {
+    assertEntityAccess(db, ctx, p.type, p.id);
+    return waLog.listPendingWhatsAppSends(db, p.type, p.id);
+  },
+  "documents.whatsappDiscard": (db: DatabaseSync, ctx: DbContext, p: { sendId: string }) => {
+    const c = waLog.whatsappSendContext(db, p.sendId);
+    assertEntityAccess(db, ctx, c.type, c.id);
+    return waLog.discardWhatsAppSend(db, ctx, p.sendId);
   },
   "documents.bySha": (db: DatabaseSync, ctx: DbContext, p: { sha256: string }) => docs.documentsBySha(db, p.sha256, viewer(db, ctx)),
   /** O conteúdo já está guardado? (evita gravar de novo o mesmo arquivo). */
@@ -343,6 +501,11 @@ export const methods = {
   /** Usado pelo service worker (lembretes). */
   "activities.dueReminders": (db: DatabaseSync, ctx: DbContext) => activities.dueReminders(db, ctx.userId),
   "activities.markReminded": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => activities.markReminded(db, ctx, p.ids),
+  // Notificações (spec 10): o service worker pergunta o que avisar e registra o resultado.
+  "notifications.plan": (db: DatabaseSync, ctx: DbContext, p: { settings: Record<string, Partial<NotifySettings>>; now?: string }) =>
+    notify.planNotifications(db, p.now ? new Date(p.now) : new Date(), p.settings, ctx.userId),
+  "notifications.record": (db: DatabaseSync, _c: DbContext, p: { results: Parameters<typeof notify.recordDeliveries>[1] }) => notify.recordDeliveries(db, p.results),
+  "notifications.forActivity": (db: DatabaseSync, _c: DbContext, p: Id) => notify.activityDeliveries(db, p.id),
   "activities.setExternalEvent": (db: DatabaseSync, ctx: DbContext, p: Id & Parameters<typeof activities.setActivityExternalEvent>[3]) => {
     assertActivityAccess(db, ctx, p.id);
     activities.setActivityExternalEvent(db, ctx, p.id, p);
@@ -360,7 +523,7 @@ export const methods = {
   },
   "activities.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
     assertActivityAccess(db, ctx, p.id);
-    activities.deleteActivity(db, ctx, p.id);
+    return activities.deleteActivity(db, ctx, p.id);
   },
 
   // Relatórios (respeitam a permissão do usuário)
@@ -387,7 +550,7 @@ export const methods = {
   "notes.list": (db: DatabaseSync, _c: DbContext, p: { entityType: notes.NoteEntity; entityId: string }) => notes.listNotes(db, p.entityType, p.entityId),
   "notes.add": (db: DatabaseSync, ctx: DbContext, p: { entityType: notes.NoteEntity; entityId: string; body: string; documentIds?: string[] }) =>
     notes.addNote(db, ctx, p.entityType, p.entityId, p.body, p.documentIds),
-  "notes.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: { body?: string; pinned?: boolean } }) => notes.updateNote(db, ctx, p.id, p.patch),
+  "notes.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: { body?: string; pinned?: boolean; documentIds?: string[] } }) => notes.updateNote(db, ctx, p.id, p.patch),
   "notes.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => notes.deleteNote(db, ctx, p.id),
 
   // Tags
@@ -419,6 +582,23 @@ export const methods = {
   },
 
   "customFields.usage": (db: DatabaseSync, _c: DbContext, p: Id) => cf.customFieldUsage(db, p.id),
+  "fieldGroups.list": (db: DatabaseSync, _c: DbContext, p: { entity: cf.CustomFieldEntity }) => cf.listFieldGroups(db, p.entity),
+  "fieldGroups.create": (db: DatabaseSync, ctx: DbContext, p: { entity: cf.CustomFieldEntity; name: string }) => {
+    assertRole(db, ctx, ADMIN, "campos personalizados");
+    return cf.createFieldGroup(db, ctx, p);
+  },
+  "fieldGroups.rename": (db: DatabaseSync, ctx: DbContext, p: Id & { name: string }) => {
+    assertRole(db, ctx, ADMIN, "campos personalizados");
+    cf.renameFieldGroup(db, ctx, p.id, p.name);
+  },
+  "fieldGroups.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    assertRole(db, ctx, ADMIN, "campos personalizados");
+    return cf.deleteFieldGroup(db, ctx, p.id);
+  },
+  "fieldGroups.reorder": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => {
+    assertRole(db, ctx, ADMIN, "campos personalizados");
+    cf.reorderFieldGroups(db, ctx, p.ids);
+  },
   "customFields.reorder": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => {
     assertRole(db, ctx, ADMIN, "campos personalizados");
     cf.reorderCustomFields(db, ctx, p.ids);

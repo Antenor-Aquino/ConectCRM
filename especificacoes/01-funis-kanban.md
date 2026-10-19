@@ -183,11 +183,15 @@ pergunta antes de criar (**Criar mesmo assim**).
 ### 6.0 Cabeçalho das etapas e recolher
 
 - O nome da etapa aparece numa "pílula" na cor da etapa (texto branco),
-  com a quantidade ao lado e o valor total abaixo. No topo da coluna: **⋮**
-  abre "Editar funil e etapas" e **‹** recolhe a etapa.
+  com a quantidade entre parênteses e o valor total ao lado: **Contato (1) -
+  R$ 200,00** (o valor sempre no comercial; nos outros tipos quando há valor).
+  Quando os cartões da etapa têm atividades atrasadas, um **relógio com um
+  balão vermelho** mostra quantas são (soma de todos os cartões; concluídas e
+  futuras não contam). No topo da coluna: **⋮** abre "Editar funil e etapas"
+  e **‹** recolhe a etapa.
 - Em "Novo funil" e "Editar funil", a **Prévia no quadro** mostra os nomes
   com as cores escolhidas antes de salvar.
-- Etapa recolhida mostra nome, quantidade e **valor total** (na vertical),
+- Etapa recolhida mostra nome, quantidade, o relógio de atrasadas e **valor total** (na vertical),
   numa coluna da largura do texto (não uma faixa larga).
 - A pílula tem folga nas laterais; quantidade de cartões e valor em negrito.
 
@@ -268,6 +272,11 @@ Novo cadastro em **Configurações → Tags**:
   como "chips" coloridos; opção de criar tag nova direto no campo (só para
   administradores — a confirmar).
 - Filtro por tags no Kanban.
+- **Busca** (0.2.44): campo no topo da tela, sem diferenciar acentos e
+  maiúsculas. Filtra a aba aberta e mostra, em cada aba, quantas tags batem.
+  A aba **Todas** lista as tags de todos os tipos de cadastro, com o tipo ao
+  lado (busca geral); editar, ativar e excluir funcionam nela também. Criar
+  tag continua dentro da aba do tipo.
 
 ## 9. Campos personalizados
 
@@ -291,6 +300,21 @@ Proposta adicional: restringir o campo a **funis específicos** (ex.: campo
 Dados: `custom_fields` ganha `description`, `placeholder_key` (única),
 `always_show`, `hidden`, `required`, `pipeline_ids`.
 
+### 9.1 Categorias de campos (0.2.37)
+
+- Cada entidade pode ter **categorias** (ex.: em Contato, "Dados
+  profissionais" e "Dados pessoais"). Em Configurações → Campos
+  personalizados: **Nova categoria**, renomear, excluir (os campos ficam sem
+  categoria, nada se perde), subir/descer, "+" para criar um campo já na
+  categoria e um seletor de categoria em cada campo. Na janela do campo, o
+  campo **Categoria** (com "Nova").
+- Nos cadastros (contato, organização, cartão, tarefa) os campos aparecem
+  **agrupados por categoria**, com o nome da categoria como título: primeiro
+  os sem categoria, depois as categorias na ordem definida. Sem categorias,
+  todos ficam juntos como antes.
+- Dados: tabela `custom_field_group` (entidade, nome, ordem) e
+  `custom_field.group_id`.
+
 ## 10. Configuração de funis e etapas
 
 Em **Configurações → Funis** (e pelo menu ⋯ do quadro):
@@ -300,9 +324,15 @@ Em **Configurações → Funis** (e pelo menu ⋯ do quadro):
   em dias para considerar o item parado.
 - Excluir etapa com itens: pede para mover os itens para outra etapa.
 - **Filtrar** do quadro (status, responsável, tags): o último filtro escolhido
-  fica salvo por funil e por usuário e volta a valer ao reabrir. Ao lado do
+  fica salvo por usuário e vale em **todos os funis de todas as categorias**
+  (também ao reabrir). As tags são de cada tipo de cartão: a tag de negócio
+  escolhida vale nos funis comerciais; nos outros tipos, as tags deles. Ao lado do
   botão aparecem a quantidade e as opções ativas, ex.: "Filtrar (3) Todos ·
-  Antenor · Teste" (o status só aparece quando não é o padrão "Abertos").
+  Antenor · Teste" (o status aparece sempre, inclusive "Abertos").
+- Quando o filtro de responsáveis/tags esconde cartões do funil (com a mesma
+  situação e pesquisa), aparece acima do quadro: "1 cartão não aparece por
+  causa do filtro (Antenor · Teste). Mostrar todos" — o botão limpa
+  responsáveis e tags.
 - Lista de funis (tela Funis e seletores): agrupada por categoria —
   **Comercial**, **Projeto**, **Operacional** (título em negrito com uma linha
   abaixo) — e, dentro de cada uma, por nome.
@@ -328,6 +358,133 @@ no cartão mais recente do funil.
   previsão, próxima atividade) ficam em vermelho.
 - Até 12 campos. **Restaurar padrão** volta ao cartão original (valor,
   contato e responsável; no operacional, SLA; no projeto, prazo).
+
+## 10.1.0 Abas do detalhe, número do ticket e pesquisa geral
+
+- Abas do detalhe do cartão com a quantidade num balão verde: **Histórico (n)**,
+  **Notas (n)**, **Atividades (n)** e **Documentos (n)**; em Atividades, um
+  segundo balão **vermelho** com as atrasadas (só quando há).
+- **Número do ticket**: todo cartão de funil Operacional recebe um número
+  sequencial, mostrado no canto superior direito do detalhe, abaixo do X:
+  "Ticket: 123". Os tickets existentes são numerados na ordem de criação; um
+  cartão que vira ticket (Mudar de funil) recebe o próximo número e o mantém se
+  sair e voltar; a cópia de um ticket ganha número novo. A pesquisa do funil
+  aceita "123", "#123" ou "Ticket: 123".
+- **Pesquisa geral** na barra superior (Ctrl+K ou "/"): cartões (título,
+  contato, organização e número do ticket), contatos, organizações, atividades,
+  notas e documentos, respeitando as permissões. Setas e Enter escolhem; o
+  resultado abre o cartão no funil, o contato, a organização, a atividade ou a
+  prévia do documento. Em telas menores que 1536 px aparece só a lupa.
+
+## 10.1.1 Mudar o cartão de funil e clonar
+
+- No detalhe do cartão, o nome do funil (⇄) abre **Mudar de funil**: lista
+  os funis de **todos os tipos**, agrupados por categoria.
+- Mudando de tipo (negócio ↔ ticket ↔ etapa de projeto), o cartão passa a ser
+  do tipo do funil de destino; tags e campos personalizados de **mesmo nome**
+  são levados (tags que faltam são criadas no novo tipo; listas pelo rótulo da
+  opção). Os campos só do tipo antigo (previsão de fechamento, SLA,
+  início/prazo) ficam guardados, mas não aparecem. Arrastar no quadro continua
+  só dentro do funil.
+- **Clonar** (botão no detalhe): nome da cópia e funil de destino (o atual ou
+  outro, de qualquer tipo), com as mesmas regras de etapa. Vão para a cópia
+  valor, produtos, contato, organização, responsável, origem, tags e campos
+  personalizados; as datas do tipo só quando o tipo é o mesmo. Atividades,
+  notas, documentos e histórico ficam no original. A tela abre a cópia.
+- Se o funil de destino tiver uma etapa com o **mesmo nome** (sem diferença de
+  acento/maiúsculas), ela já vem escolhida; senão o usuário escolhe a etapa.
+- Depois de mudar, a tela abre o funil de destino com o cartão aberto. O
+  histórico registra "Mudou de funil: Vendas › Proposta → Parcerias › Proposta"
+  (com "(agora ticket)" quando o tipo muda).
+
+## 10.1.2 Importar cartões por planilha (de-para)
+
+- No quadro, **⋯ → Importar planilha…** importa cartões (negócios, tickets ou
+  etapas de projeto) de um Excel (.xlsx) ou CSV para o funil aberto. A
+  primeira linha tem os nomes das colunas. **Baixar planilha modelo** gera um
+  .xlsx com as colunas do funil, incluindo os campos personalizados.
+- **1. De-para das colunas**: para cada campo do cartão (nome, etapa,
+  situação, valor, responsável, contato, e-mail e celular do contato,
+  organização, previsão de fechamento / SLA / início e prazo conforme o tipo,
+  origem, tags, descrição e os campos personalizados do funil) o usuário
+  escolhe a coluna da planilha. O sistema sugere pelo cabeçalho, sem
+  diferença de acento/maiúsculas ("Negócio", "Fase", "Vendedor", "Cliente",
+  "Empresa"...), e mostra o valor da primeira linha como exemplo. Só o nome é
+  obrigatório, além dos campos personalizados obrigatórios.
+- **2. De-para dos valores**: para as colunas de etapa, situação,
+  responsável e campos de lista/múltipla escolha, cada valor diferente da
+  planilha aparece com o número de linhas e o destino escolhido. O destino é
+  sugerido pelo nome (etapa de mesmo nome; "Ganho/Vendido/Fechado",
+  "Perdido/Cancelado", "Resolvido", "Em andamento"...; usuário pelo nome ou
+  e-mail; opção pelo rótulo). Valores não reconhecidos ficam destacados e
+  vão para o padrão: a etapa escolhida em "Etapa para linhas sem etapa"
+  (primeira etapa), Aberto, quem importa, ou campo vazio.
+- Cada linha é gravada por inteiro ou nada (transação):
+  - contato achado pelo e-mail ou celular, depois pelo nome; se não existir,
+    é criado. Organização achada pelo nome ou criada, e vinculada ao contato;
+  - tags separadas por ";" ou ","; as que não existem são criadas no tipo do
+    cartão;
+  - valores como "R$ 1.500,00", "1500,5" ou "1,500.00"; datas em dd/mm/aaaa
+    (ou datas do próprio Excel); no CSV o texto é lido como está (01/02/2026 é
+    1º de fevereiro);
+  - responsável respeita as permissões (vendedor só a si, gestor à equipe);
+  - situação Ganho/Perdido grava o desfecho sem motivo; tickets recebem o
+    número sequencial normalmente.
+- Por padrão, linhas cujo nome já existe no funil (inclusive repetidas na
+  própria planilha) são **ignoradas**; a opção pode ser desmarcada.
+- Importa em lotes de 200 com o progresso na tela. O resumo mostra quantos
+  cartões foram criados, os ignorados e os erros com o **número da linha** da
+  planilha e o motivo.
+
+## 10.1.3 Seleção de cartões e ações em lote (0.2.37)
+
+- **Selecionar**: caixa no canto do cartão (aparece ao passar o mouse; com
+  algum selecionado, fica visível e clicar no cartão marca/desmarca), caixa
+  no cabeçalho da etapa (todos da etapa) e, na lista, caixa por linha e no
+  cabeçalho (todos). Esc limpa. A seleção some ao trocar de funil, de
+  situação, de visão ou de modo.
+- Com seleção, a barra de ferramentas vira a **barra de ações**: quantidade,
+  "Selecionar todos (N)", soma dos valores e:
+  - **Mover para etapa** (do funil aberto);
+  - **Mudar de funil** — qualquer funil, de qualquer categoria; usa a etapa
+    de mesmo nome quando existe (opção) e, para os demais, a etapa escolhida;
+    mudar de categoria segue as regras de 10.1.1 (tipo, tags e campos);
+  - **Responsável** (respeita as permissões: vendedor só a si, gestor à
+    equipe);
+  - **Ganho / Perdido** (motivo e observação) e **Reabrir**, conforme a
+    situação dos selecionados;
+  - **Mais**: adicionar ou remover tags, **atualizar campo** (previsão,
+    SLA, início, prazo, origem ou campo personalizado do funil; em branco
+    apaga), **adicionar contato** (vira principal onde não há; nos demais,
+    "outros contatos"), **agendar atividade** (a mesma em cada cartão, para o
+    responsável de cada um ou para mim), **exportar para Excel**,
+    **arquivar/desarquivar** e **excluir** (com confirmação).
+- Cada cartão é alterado na sua transação: um erro (sem permissão, campo
+  que não existe no tipo…) não impede os outros. O aviso mostra quantos
+  foram alterados e, dos que falharam, o nome e o motivo (eles continuam
+  selecionados).
+- **Arquivar** (também no detalhe do cartão): o cartão sai do quadro e da
+  lista, mas continua nos relatórios, na busca e na ficha do contato; o
+  filtro de situação ganhou **Arquivados** (só eles) e **Todos** passa a
+  incluí-los. O cartão arquivado aparece em **amarelo** com uma tarja no
+  canto superior direito com o símbolo de arquivo (no lugar do canto de
+  ganho/perdido; a dica mostra a data). Na lista, a linha fica amarela com
+  o selo "Arquivado". O detalhe mostra a faixa amarela "Arquivado em …" e o
+  botão **Desarquivar**. O histórico registra.
+
+## 10.1.4 Vários contatos no cartão (0.2.37)
+
+- O cartão tem o **contato principal** (campo Contato) e **outros
+  contatos** (decisor, financeiro, técnico…), no detalhe e na criação do
+  cartão: adicionar (buscar ou criar), abrir o cadastro, WhatsApp/e-mail,
+  **tornar principal** (o atual vai para "outros") e remover (saindo o
+  principal, o próximo assume). Sem principal, o primeiro adicionado vira o
+  principal.
+- No quadro o contato aparece como "Ana Souza +2". A busca do quadro acha o
+  cartão por qualquer contato; a ficha de cada contato lista o cartão.
+  Clonar leva os outros contatos. O histórico registra "Adicionou/Removeu o
+  contato …".
+- Dados: `deal_participant` (já existia) com `person_id`.
 
 ## 10.2 Detalhe do negócio: produtos e histórico
 

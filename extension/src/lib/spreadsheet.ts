@@ -6,8 +6,8 @@ import * as XLSX from "xlsx";
 export async function readSpreadsheet(file: File): Promise<{ headers: string[]; rows: string[][] }> {
   const buffer = await file.arrayBuffer();
   const wb = /\.(csv|txt)$/i.test(file.name)
-    ? XLSX.read(decodeCsv(buffer), { type: "string", cellDates: true })
-    : XLSX.read(buffer, { type: "array", cellDates: true });
+    ? XLSX.read(decodeCsv(buffer), { type: "string", raw: true })
+    : XLSX.read(buffer, { type: "array", cellDates: true, dateNF: "yyyy-mm-dd" });
   const sheet = wb.Sheets[wb.SheetNames[0]!]!;
   const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: false, defval: "" });
   const [head = [], ...body] = matrix;

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Building2, Sparkles, CalendarDays, CircleCheck, Filter, FolderArchive, LineChart, Settings, User, Workflow } from "lucide-react";
+import { Building2, Sparkles, CalendarDays, Trash2, CircleCheck, Filter, FolderArchive, LineChart, Settings, User, Workflow } from "lucide-react";
 import { AppLayout, TopNavBar, cn, type TopNavItem } from "@tailadmin";
-import { call, exportDatabase, systemCall } from "../rpc/client";
+import { call, DATA_CHANGED_EVENT, exportDatabase, systemCall, TRASH_EVENT } from "../rpc/client";
 import { checkAutoBackup, type AutoBackupCheck } from "../lib/autoBackup";
-import { backupDocuments, checkDocumentExpiry } from "../lib/documentFiles";
+import { backupDocuments, checkDocumentExpiry, deleteOrphans } from "../lib/documentFiles";
 import type { OpenCardMessage } from "../rpc/protocol";
 import type { DbEnv } from "../lib/environment";
 import type { Pipeline, PipelineType } from "../db/pipelines";
@@ -23,7 +23,9 @@ import { LockScreen } from "./components/LockScreen";
 import { DocumentNavProvider, type DocumentNav } from "./documents/docUi";
 import { GedView } from "./documents/GedView";
 import { ReportsView } from "./reports/ReportsView";
-import { SettingsView } from "./settings/SettingsView";
+import { SettingsView, type Section as SettingsSection } from "./settings/SettingsView";
+import { TrashView } from "./trash/TrashView";
+import { TrashToaster } from "./components/TrashToaster";
 import { OrganizationDetail } from "./contacts/OrganizationDetail";
 import { OrganizationFormModal } from "./contacts/OrganizationFormModal";
 import { OrganizationsView } from "./contacts/OrganizationsView";
@@ -34,6 +36,8 @@ import { TaskModal } from "./tasks/TaskModal";
 import { TasksView } from "./tasks/TasksView";
 import { SessionProvider, useSession } from "./session";
 import { errorText } from "../lib/errors";
+import { GlobalSearch } from "./components/GlobalSearch";
+import { DocumentViewer } from "./documents/DocumentViewer";
 
 // Menu principal (spec 01, seção 1).
 const NAV: TopNavItem[] = [
@@ -76,6 +80,8 @@ function Main() {
   };
   /** Tarefa aberta a partir de um vínculo de documento. */
   const [taskOpen, setTaskOpen] = useState<string | null>(null);
+  // Documento aberto pela pesquisa geral.
+  const [docOpen, setDocOpen] = useState<string | null>(null);
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [activeTypes, setActiveTypes] = useState<PipelineType[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(() => {
@@ -140,11 +146,21 @@ function Main() {
 
   // Ambiente (Produção/Teste) e backup automático ao abrir o CRM (só em Produção).
   const [env, setEnv] = useState<DbEnv | null>(null);
+  const [trashCount, setTrashCount] = useState(0);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>(undefined);
+  const refreshTrashCount = useCallback(() => {
+    void call("trash.count").then(setTrashCount).catch(() => {});
+  }, []);
   const [backupPending, setBackupPending] = useState<Extract<AutoBackupCheck, { status: "needs-permission" }> | null>(null);
   useEffect(() => {
     void systemCall<DbEnv>("system.env").then((e) => {
       setEnv(e);
       void checkDocumentExpiry().catch(() => {});
+      // Lixeira: o que passou do prazo é excluído definitivamente.
+      void call("trash.purgeExpired")
+        .then((r) => deleteOrphans(r.orphans))
+        .then(refreshTrashCount)
+        .catch(() => {});
       if (e !== "production") return;
       void checkAutoBackup(exportDatabase, backupDocuments).then((r) => {
         if (r.status === "needs-permission") setBackupPending(r);
@@ -175,6 +191,25 @@ function Main() {
       setError(errorText(err));
     }
   }, []);
+
+  // Exclusões e restaurações: atualiza o contador e as telas abertas.
+  useEffect(() => {
+    refreshTrashCount();
+    const onTrash = () => refreshTrashCount();
+    const onChanged = () => {
+      refreshTrashCount();
+      setRefreshKey((k) => k + 1);
+      setTasksKey((k) => k + 1);
+      setContactsKey((k) => k + 1);
+      void reload();
+    };
+    window.addEventListener(TRASH_EVENT, onTrash);
+    window.addEventListener(DATA_CHANGED_EVENT, onChanged);
+    return () => {
+      window.removeEventListener(TRASH_EVENT, onTrash);
+      window.removeEventListener(DATA_CHANGED_EVENT, onChanged);
+    };
+  }, [refreshTrashCount, reload, user.id]);
 
   useEffect(() => {
     void reload();
@@ -233,6 +268,17 @@ function Main() {
             activeId={tab}
             onSelect={setTab}
             beforeNavEnd={<QuickCreateMenu activeTypes={activeTypes} onSelect={onQuickCreate} />}
+            search={
+              <GlobalSearch
+                nav={{
+                  openCard: openCardFrom,
+                  openPerson: documentNav.openPerson,
+                  openOrganization: documentNav.openOrganization,
+                  openTask: setTaskOpen,
+                  openDocument: setDocOpen,
+                }}
+              />
+            }
             actions={
               <>
                 {env && <EnvironmentSwitch env={env} />}
@@ -259,10 +305,27 @@ function Main() {
                 </button>
                 <button
                   type="button"
+                  className={cn(iconButton, "relative", tab === "lixeira" && "bg-brand-50 text-brand-600 dark:bg-brand-500/15")}
+                  title={trashCount ? `Lixeira (${trashCount})` : "Lixeira"}
+                  aria-label="Lixeira"
+                  onClick={() => setTab("lixeira")}
+                >
+                  <Trash2 size={18} />
+                  {trashCount > 0 && (
+                    <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-gray-500 px-1 text-[10px] font-semibold text-white" data-trash-count>
+                      {trashCount > 99 ? "99+" : trashCount}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
                   className={cn(iconButton, tab === "configuracoes" && "bg-brand-50 text-brand-600 dark:bg-brand-500/15")}
                   title="Configurações"
                   aria-label="Configurações"
-                  onClick={() => setTab("configuracoes")}
+                  onClick={() => {
+                    setSettingsSection(undefined);
+                    setTab("configuracoes");
+                  }}
                 >
                   <Settings size={18} />
                 </button>
@@ -276,7 +339,14 @@ function Main() {
           <div className="mb-4 rounded-xl border border-error-200 bg-error-50 px-4 py-3 text-theme-sm text-error-700">Não foi possível abrir o banco local: {error}</div>
         )}
         {tab === "configuracoes" ? (
-          env && <SettingsView env={env} />
+          env && <SettingsView key={settingsSection ?? "-"} env={env} initialSection={settingsSection} />
+        ) : tab === "lixeira" ? (
+          <TrashView
+            onOpenSettings={() => {
+              setSettingsSection("lixeira");
+              setTab("configuracoes");
+            }}
+          />
         ) : tab === "tarefas" ? (
           <TasksView
             refreshKey={tasksKey}
@@ -328,6 +398,7 @@ function Main() {
             if (open) setOpenCardId(id);
           }}
         />
+        <TrashToaster onOpenTrash={() => setTab("lixeira")} />
         <ComingSoonModal feature={comingSoon} onClose={() => setComingSoon(null)} />
         <CopilotPanel
           open={copilotOpen}
@@ -344,6 +415,7 @@ function Main() {
           }}
         />
         {backupPending && <AutoBackupPermissionModal handle={backupPending.handle} settings={backupPending.settings} onClose={() => setBackupPending(null)} />}
+        {docOpen && <DocumentViewer documentId={docOpen} onClose={() => setDocOpen(null)} />}
         {taskOpen && (
           <TaskModal
             request={{ id: taskOpen }}

@@ -3,6 +3,7 @@
 import { normalizeCnpj, normalizeEmail, normalizePhone, optionalText, requireText, ValidationError } from "../lib/validate";
 import { getCustomValues, setCustomValues, type CustomValue } from "./customFields";
 import { getRow, insertRow, softDelete, updateRow, type DbContext } from "./repo";
+import { moveToTrash, type TrashNotice } from "./trash";
 import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
 import { getEntityTags, setEntityTags, type Tag } from "./tags";
 import { getUser, type Viewer } from "./users";
@@ -167,8 +168,13 @@ export function updatePerson(db: DatabaseSync, ctx: DbContext, id: string, patch
   });
 }
 
-export function deletePerson(db: DatabaseSync, ctx: DbContext, id: string): void {
-  withTransaction(db, () => {
+/** Para a lixeira, com as notas e as atividades ligadas só ao contato. */
+export function deletePerson(db: DatabaseSync, ctx: DbContext, id: string): TrashNotice {
+  return moveToTrash(db, ctx, "person", id, () => {
+    for (const n of many<{ id: string }>(db, "SELECT id FROM note WHERE entity_type = ? AND entity_id = ? AND deleted_at IS NULL", "person", id))
+      softDelete(db, ctx, "note", n.id);
+    for (const a of many<{ id: string }>(db, "SELECT id FROM activity WHERE person_id = ? AND deal_id IS NULL AND deleted_at IS NULL", id))
+      softDelete(db, ctx, "activity", a.id);
     for (const link of many<{ organization_id: string }>(db, "SELECT organization_id FROM person_organization WHERE person_id = ? AND deleted_at IS NULL", id)) {
       unlinkPersonOrganization(db, ctx, id, link.organization_id);
     }
@@ -433,8 +439,17 @@ export function updateOrganization(db: DatabaseSync, ctx: DbContext, id: string,
   });
 }
 
-export function deleteOrganization(db: DatabaseSync, ctx: DbContext, id: string): void {
-  withTransaction(db, () => {
+/** Para a lixeira, com as notas e as atividades ligadas só à organização. */
+export function deleteOrganization(db: DatabaseSync, ctx: DbContext, id: string): TrashNotice {
+  return moveToTrash(db, ctx, "organization", id, () => {
+    for (const n of many<{ id: string }>(db, "SELECT id FROM note WHERE entity_type = ? AND entity_id = ? AND deleted_at IS NULL", "organization", id))
+      softDelete(db, ctx, "note", n.id);
+    for (const a of many<{ id: string }>(
+      db,
+      "SELECT id FROM activity WHERE organization_id = ? AND deal_id IS NULL AND person_id IS NULL AND deleted_at IS NULL",
+      id,
+    ))
+      softDelete(db, ctx, "activity", a.id);
     for (const link of many<{ person_id: string }>(db, "SELECT person_id FROM person_organization WHERE organization_id = ? AND deleted_at IS NULL", id)) {
       unlinkPersonOrganization(db, ctx, link.person_id, id);
     }

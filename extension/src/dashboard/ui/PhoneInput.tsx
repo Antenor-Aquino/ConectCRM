@@ -1,6 +1,8 @@
 // Telefone com seletor de país (bandeira), padrão Brasil +55 (specs 03 e 04).
+import { MessageCircle } from "lucide-react";
 import { cn } from "@tailadmin";
 import { formatPhone } from "../../lib/format";
+import { openWhatsApp, whatsappDigits } from "../../lib/contactLinks";
 import { inputClass } from "./form";
 
 export const COUNTRIES = [
@@ -29,13 +31,19 @@ export function PhoneInput({
   country,
   onChange,
   placeholder,
+  whatsapp = false,
 }: {
   value: string;
   country: string;
   onChange: (value: string, country: string) => void;
   placeholder?: string;
+  /** Botão para abrir a conversa no WhatsApp Web (como no cartão). */
+  whatsapp?: boolean;
 }) {
   const current = COUNTRIES.find((c) => c.code === country) ?? COUNTRIES[0]!;
+  // Número completo (com o código do país) para o link do WhatsApp.
+  const full = value.trim() ? `${current.dial}${value.replace(/\D/g, "")}` : "";
+  const canChat = whatsapp && !!whatsappDigits(full) && value.replace(/\D/g, "").length >= 8;
   return (
     <div className={cn(inputClass, "flex items-center gap-2 px-2 py-0 focus-within:border-brand-300 focus-within:ring-4 focus-within:ring-brand-500/10")}>
       <select
@@ -57,6 +65,18 @@ export function PhoneInput({
         value={value}
         onChange={(e) => onChange(e.target.value, current.code)}
       />
+      {canChat && (
+        <button
+          type="button"
+          title="Abrir conversa no WhatsApp"
+          aria-label="Abrir conversa no WhatsApp"
+          data-whatsapp={whatsappDigits(full)}
+          onClick={() => void openWhatsApp(full)}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-success-500 text-white shadow-theme-xs hover:bg-success-600"
+        >
+          <MessageCircle size={15} />
+        </button>
+      )}
     </div>
   );
 }

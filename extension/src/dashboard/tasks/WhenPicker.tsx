@@ -23,6 +23,7 @@ export function WhenPicker({
   duration = 0,
   reminder = null,
   simple,
+  hideReminder,
   onChange,
 }: {
   value: Date;
@@ -30,6 +31,8 @@ export function WhenPicker({
   reminder?: number | null;
   /** Só data e hora (sem duração e lembrete), ex.: finalização. */
   simple?: boolean;
+  /** Os lembretes ficam num campo próprio (vários, com canais). */
+  hideReminder?: boolean;
   onChange: (v: { when: Date; duration: number; reminder: number | null }) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -113,6 +116,7 @@ export function WhenPicker({
               <span className="pointer-events-none absolute right-3 top-2.5 text-theme-xs text-gray-400">min</span>
             </span>
           </label>
+          {!hideReminder && (
           <label className="flex items-center justify-between gap-3 text-theme-sm text-gray-700 dark:text-gray-300">
             <span className="flex items-center gap-1">
               Lembrete
@@ -133,6 +137,7 @@ export function WhenPicker({
               <span className="pointer-events-none absolute right-3 top-2.5 text-theme-xs text-gray-400">min</span>
             </span>
           </label>
+          )}
           </>
           )}
         </div>

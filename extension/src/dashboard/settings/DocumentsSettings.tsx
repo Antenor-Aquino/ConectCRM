@@ -269,7 +269,7 @@ function TypesPanel() {
                 title="Excluir tipo"
                 className="text-gray-400 hover:text-error-600"
                 onClick={() =>
-                  confirm(`Excluir o tipo "${t.name}"? Os documentos dele ficam como "não classificados".`) &&
+                  confirm(`Excluir o tipo "${t.name}"? Os documentos dele ficam como "não classificados". Vai para a lixeira, de onde pode ser restaurado.`) &&
                   void run(() => call("documentTypes.delete", { id: t.id }))
                 }
               >

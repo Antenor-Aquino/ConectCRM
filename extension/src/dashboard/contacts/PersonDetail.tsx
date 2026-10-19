@@ -95,7 +95,7 @@ export function PersonDetail({
           className="ml-auto"
           startIcon={<Trash2 size={15} />}
           onClick={async () => {
-            if (!confirm(`Excluir o contato "${p.name}"?`)) return;
+            if (!confirm(`Excluir o contato "${p.name}"? Vai para a lixeira com as notas e as atividades ligadas só a ele, de onde pode ser restaurado.`)) return;
             try {
               await call("persons.delete", { id: p.id });
               onChanged();

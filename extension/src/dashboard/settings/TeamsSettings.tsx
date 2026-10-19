@@ -48,7 +48,7 @@ export function TeamsSettings() {
                     title="Excluir"
                     className="text-gray-400 hover:text-error-600"
                     onClick={async () => {
-                      if (!confirm(`Excluir a equipe "${t.name}"?`)) return;
+                      if (!confirm(`Excluir a equipe "${t.name}"? Vai para a lixeira, de onde pode ser restaurado.`)) return;
                       await call("teams.delete", { id: t.id });
                       await load();
                     }}

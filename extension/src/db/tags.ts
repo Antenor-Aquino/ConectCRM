@@ -3,6 +3,7 @@
 import { badgePalette } from "../../../shared/tailadmin/src/tokens";
 import { requireText, ValidationError } from "../lib/validate";
 import { insertRow, softDelete, updateRow, type DbContext } from "./repo";
+import { moveToTrash, type TrashNotice } from "./trash";
 import { many, one, withTransaction, type DatabaseSync } from "./sql";
 
 export type TagEntity = "person" | "organization" | "deal" | "ticket" | "project" | "activity" | "document";
@@ -63,8 +64,8 @@ export function updateTag(db: DatabaseSync, ctx: DbContext, id: string, patch: {
 }
 
 /** Exclui a tag e a remove dos registros que a usavam. */
-export function deleteTag(db: DatabaseSync, ctx: DbContext, id: string): void {
-  withTransaction(db, () => {
+export function deleteTag(db: DatabaseSync, ctx: DbContext, id: string): TrashNotice {
+  return moveToTrash(db, ctx, "tag", id, () => {
     for (const link of many<{ id: string }>(db, "SELECT id FROM entity_tag WHERE tag_id = ? AND deleted_at IS NULL", id)) {
       softDelete(db, ctx, "entity_tag", link.id);
     }

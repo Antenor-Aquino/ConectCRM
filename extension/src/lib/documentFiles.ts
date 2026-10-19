@@ -54,7 +54,7 @@ export interface OpenedFile {
 }
 
 /** Lê o arquivo de uma versão (registra visualização ou download na auditoria). */
-export async function fetchVersion(versionId: string, action: "view" | "download" | "index"): Promise<OpenedFile> {
+export async function fetchVersion(versionId: string, action: "view" | "download" | "index" | "inline"): Promise<OpenedFile> {
   const info = await call("documents.file", { versionId, action });
   const blob = info.legacyDataUrl ? await (await fetch(info.legacyDataUrl)).blob() : await readContent(await currentEnv(), info);
   return { blob, filename: info.filename, mime: info.mime };

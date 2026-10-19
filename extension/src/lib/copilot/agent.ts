@@ -299,3 +299,82 @@ export async function askCopilot(settings: AiSettings, history: CopilotMessage[]
 export function cardToHistory(card: CopilotCard): string {
   return stringify({ titulo: card.titulo, subtitulo: card.subtitulo, tabela: card.tabela, insights: card.insights, acoesSugeridas: card.acoes.map((a) => a.rotulo) });
 }
+
+// ---------- Uma chamada com ferramenta obrigatória (extração estruturada) ----------
+
+/**
+ * Pede à IA uma única chamada de `tool` (resposta estruturada no esquema dela),
+ * com texto e, se houver, imagens PNG em base64 (cabeçalho, páginas escaneadas).
+ * Devolve os argumentos da chamada.
+ */
+export async function forcedToolCall(settings: AiSettings, system: string, text: string, images: string[], tool: ToolDef): Promise<Record<string, unknown>> {
+  const { prov, key, model } = credentials(settings);
+  const label = AI_LABELS[prov];
+  if (prov === "claude") {
+    const json = await post(
+      "https://api.anthropic.com/v1/messages",
+      { "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+      {
+        model,
+        max_tokens: 4096,
+        system,
+        messages: [
+          {
+            role: "user",
+            content: [...images.map((data) => ({ type: "image", source: { type: "base64", media_type: "image/png", data } })), { type: "text", text }],
+          },
+        ],
+        tools: [{ name: tool.name, description: tool.description, input_schema: jsonSchema(tool.parameters) }],
+        tool_choice: { type: "tool", name: tool.name },
+      },
+      label,
+    );
+    const use = (json.content ?? []).find((b: any) => b.type === "tool_use");
+    if (!use) throw new Error(`O ${label} não devolveu os dados.`);
+    return use.input ?? {};
+  }
+  if (prov === "gemini") {
+    const json = await post(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+      { "x-goog-api-key": key },
+      {
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: "user", parts: [...images.map((data) => ({ inline_data: { mime_type: "image/png", data } })), { text }] }],
+        tools: [{ functionDeclarations: [{ name: tool.name, description: tool.description, parameters: geminiSchema(tool.parameters) }] }],
+        toolConfig: { functionCallingConfig: { mode: "ANY", allowedFunctionNames: [tool.name] } },
+      },
+      label,
+    );
+    const fc = (json.candidates?.[0]?.content?.parts ?? []).find((p: any) => p.functionCall)?.functionCall;
+    if (!fc) throw new Error(`O ${label} não devolveu os dados.`);
+    return fc.args ?? {};
+  }
+  // OpenAI e DeepSeek (DeepSeek não lê imagens: vai só o texto).
+  const url = prov === "openai" ? "https://api.openai.com/v1/chat/completions" : "https://api.deepseek.com/chat/completions";
+  const content =
+    prov === "openai" && images.length
+      ? [...images.map((data) => ({ type: "image_url", image_url: { url: `data:image/png;base64,${data}` } })), { type: "text", text }]
+      : text;
+  const json = await postChat(
+    url,
+    { Authorization: `Bearer ${key}` },
+    {
+      model,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content },
+      ],
+      tools: [{ type: "function", function: { name: tool.name, description: tool.description, parameters: jsonSchema(tool.parameters) } }],
+      tool_choice: { type: "function", function: { name: tool.name } },
+    },
+    label,
+    model,
+  );
+  const call = json.choices?.[0]?.message?.tool_calls?.[0];
+  if (!call) throw new Error(`O ${label} não devolveu os dados.`);
+  try {
+    return JSON.parse(call.function.arguments || "{}");
+  } catch {
+    throw new Error(`O ${label} devolveu os dados num formato inválido. Tente de novo.`);
+  }
+}

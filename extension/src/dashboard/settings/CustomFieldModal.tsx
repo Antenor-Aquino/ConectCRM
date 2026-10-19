@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Asterisk, Eye, GripVertical, Lock, Plus, Trash2 } from "lucide-react";
 import { TaButton, TaInput, TaModal, TaSelect, TaTextarea } from "@tailadmin";
 import { call } from "../../rpc/client";
-import { CUSTOM_FIELD_TYPE_LABEL, type CustomField, type CustomFieldEntity, type CustomFieldType } from "../../db/customFields";
+import { CUSTOM_FIELD_TYPE_LABEL, type CustomField, type CustomFieldEntity, type CustomFieldGroup, type CustomFieldType } from "../../db/customFields";
 import type { Pipeline } from "../../db/pipelines";
 import { placeholderKeyFromName } from "../../lib/validate";
 import { ErrorText, Field, SectionLabel } from "../ui/form";
@@ -28,11 +28,14 @@ const isList = (t: CustomFieldType) => t === "select" || t === "multiselect";
 export function CustomFieldModal({
   field,
   defaultEntity,
+  defaultGroupId,
   onClose,
   onSaved,
 }: {
   field: CustomField | null;
   defaultEntity: CustomFieldEntity;
+  /** Categoria já escolhida ao criar (ex.: "+ campo" dentro de uma categoria). */
+  defaultGroupId?: string | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -49,7 +52,26 @@ export function CustomFieldModal({
   const [options, setOptions] = useState<{ id?: string; label: string }[]>(field?.options.map((o) => ({ id: o.id, label: o.label })) ?? []);
   const [pipelineIds, setPipelineIds] = useState<string[]>(field?.pipelineIds ?? []);
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
+  const [groupId, setGroupId] = useState(field?.group_id ?? defaultGroupId ?? "");
+  const [groups, setGroups] = useState<CustomFieldGroup[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void call("fieldGroups.list", { entity }).then(setGroups);
+  }, [entity]);
+
+  /** "+ Nova categoria" dentro da janela. */
+  async function newGroup() {
+    const name = prompt("Nome da nova categoria (ex.: Dados profissionais):")?.trim();
+    if (!name) return;
+    try {
+      const id = await call("fieldGroups.create", { entity, name });
+      setGroups(await call("fieldGroups.list", { entity }));
+      setGroupId(id);
+    } catch (e) {
+      setError(errorText(e));
+    }
+  }
 
   useEffect(() => {
     void call("pipelines.list", { includeArchived: true }).then(setPipelines);
@@ -71,6 +93,7 @@ export function CustomFieldModal({
       required,
       ...(isList(type) ? { options: options.filter((o) => o.label.trim()) } : {}),
       ...(PIPELINE_TYPE[entity] ? { pipelineIds } : {}),
+      groupId: groupId || null,
     };
     try {
       if (field) await call("customFields.update", { id: field.id, patch: { ...common, active } });
@@ -105,6 +128,7 @@ export function CustomFieldModal({
           onChange={(e) => {
             setEntity(e.target.value as CustomFieldEntity);
             setPipelineIds([]);
+            setGroupId("");
           }}
         >
           {(Object.keys(ENTITY_LABEL) as CustomFieldEntity[]).map((en) => (
@@ -113,6 +137,21 @@ export function CustomFieldModal({
             </option>
           ))}
         </TaSelect>
+      </Field>
+      <Field label="Categoria" hint="Agrupa os campos no cadastro. Sem categoria, o campo aparece junto com os demais.">
+        <div className="flex gap-2">
+          <TaSelect value={groupId} onChange={(e) => setGroupId(e.target.value)} aria-label="Categoria do campo">
+            <option value="">Sem categoria</option>
+            {groups.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name}
+              </option>
+            ))}
+          </TaSelect>
+          <TaButton startIcon={<Plus size={15} />} onClick={() => void newGroup()}>
+            Nova
+          </TaButton>
+        </div>
       </Field>
       <Field label="Chave reservada" hint="Chave placeholder que identifica esse campo no chat para ser substituído pelo valor do campo.">
         <div className="flex items-center rounded-lg border border-gray-300 font-mono text-theme-sm shadow-theme-xs focus-within:border-brand-300 focus-within:ring-4 focus-within:ring-brand-500/10 dark:border-gray-700">

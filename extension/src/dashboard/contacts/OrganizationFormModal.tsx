@@ -1,8 +1,8 @@
 // "Nova organização" / editar (spec 04): logo, nome fantasia, empresa (CNPJ
 // com consulta automática, site, razão social, segmento, responsável),
 // contato, endereço (CEP preenche), descrição, mais detalhes e contatos.
-import { useEffect, useState } from "react";
-import { AlertTriangle, Loader2, Star, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { AlertTriangle, Loader2, Search, Star, X } from "lucide-react";
 import { TaButton, TaInput, TaModal, TaTextarea } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { CustomField, CustomValue } from "../../db/customFields";
@@ -20,6 +20,8 @@ import { localPart, PhoneInput } from "../ui/PhoneInput";
 import { TagPicker } from "../ui/TagPicker";
 import { UserSelect } from "../ui/UserSelect";
 import { errorText } from "../../lib/errors";
+import { EmailInput } from "../ui/ContactLinks";
+import { ExternalOrigin } from "../ui/ExternalOrigin";
 
 type Form = {
   name: string;
@@ -70,7 +72,8 @@ export function OrganizationFormModal({
   const [persons, setPersons] = useState<{ id: string; name: string; is_primary?: number }[]>([]);
   const [segments, setSegments] = useState<string[]>([]);
   const [cnpjData, setCnpjData] = useState<CnpjData | null>(null);
-  const [cnpjMsg, setCnpjMsg] = useState<{ text: string; warn?: boolean } | null>(null);
+  const [cnpjMsg, setCnpjMsg] = useState<{ text: string; warn?: boolean; busy?: boolean } | null>(null);
+  const cnpjReq = useRef(0);
   const [lookingUp, setLookingUp] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -117,25 +120,45 @@ export function OrganizationFormModal({
       setValues(o.customValues);
       setPersons(o.persons);
       setLoaded(true);
+      // CNPJ salvo sem os dados da Receita (ex.: importado): consulta ao abrir.
+      if (o.cnpj && cnpjDigits(o.cnpj).length === 14 && !o.legal_name) void consultCnpj(cnpjDigits(o.cnpj));
     });
   }, [organizationId]);
 
   async function onCnpj(value: string) {
     const masked = formatCnpjInput(value);
     set({ cnpj: masked });
+    cnpjReq.current++;
+    setLookingUp(false);
     setCnpjMsg(null);
     const digits = cnpjDigits(masked);
     if (digits.length !== 14) return;
+    await consultCnpj(digits);
+  }
+
+  /** Consulta a Receita (ao completar o CNPJ, no botão Consultar ou ao abrir uma organização sem os dados). */
+  async function consultCnpj(digits: string) {
     if (!isValidCnpj(digits)) return setCnpjMsg({ text: "CNPJ inválido.", warn: true });
-    const dup = await call("organizations.findByCnpj", { cnpj: digits });
-    if (dup && dup.id !== organizationId) return setCnpjMsg({ text: `CNPJ já cadastrado em "${dup.name}".`, warn: true });
+    const req = ++cnpjReq.current;
     setLookingUp(true);
-    const r = await lookupCnpj(digits);
-    setLookingUp(false);
-    if (!r.ok) return setCnpjMsg({ text: `${r.error} Preencha os dados manualmente.`, warn: true });
-    setCnpjData(r.data);
-    fillEmpty(cnpjToOrganizationFields(r.data));
-    setCnpjMsg({ text: `Dados da Receita (${r.sources.join(", ")})${r.data.situacao ? ` · Situação: ${r.data.situacao}` : ""}` });
+    setCnpjMsg({ text: "Consultando a Receita…", busy: true });
+    try {
+      const dup = await call("organizations.findByCnpj", { cnpj: digits });
+      if (req !== cnpjReq.current) return;
+      if (dup && dup.id !== organizationId) return setCnpjMsg({ text: `CNPJ já cadastrado em "${dup.name}".`, warn: true });
+      const r = await lookupCnpj(digits);
+      if (req !== cnpjReq.current) return;
+      if (!r.ok) return setCnpjMsg({ text: `${r.error} Preencha os dados manualmente ou tente de novo.`, warn: true });
+      const fields = cnpjToOrganizationFields(r.data);
+      setCnpjData(r.data);
+      fillEmpty(fields);
+      const what = fields.legalName ? "" : " (sem razão social na resposta)";
+      setCnpjMsg({ text: `Dados da Receita (${r.sources.join(", ")})${r.data.situacao ? ` · Situação: ${r.data.situacao}` : ""}${what}` });
+    } catch (e) {
+      if (req === cnpjReq.current) setCnpjMsg({ text: `Não foi possível consultar o CNPJ: ${errorText(e)}. Preencha os dados manualmente ou tente de novo.`, warn: true });
+    } finally {
+      if (req === cnpjReq.current) setLookingUp(false);
+    }
   }
 
   async function onCep(value: string) {
@@ -183,6 +206,7 @@ export function OrganizationFormModal({
         <p className="text-theme-sm text-gray-500">Carregando…</p>
       ) : (
         <>
+          {organizationId && <ExternalOrigin localId={organizationId} className="mb-3" />}
           <ImageUpload value={logoId} onChange={setLogoId} shape="square" entityType="organization" />
           <Field label="Nome da organização" required>
             <TaInput autoFocus={!organizationId} value={form.name} placeholder="Nome fantasia" onChange={(e) => set({ name: e.target.value })} />
@@ -198,14 +222,28 @@ export function OrganizationFormModal({
           <div className="grid grid-cols-2 gap-3">
             <Field label="CNPJ">
               <div className="relative">
-                <TaInput value={form.cnpj} placeholder="00.000.000/0000-00" onChange={(e) => void onCnpj(e.target.value)} />
-                {lookingUp && <Loader2 size={16} className="absolute right-3 top-3 animate-spin text-gray-400" />}
+                <TaInput className="pr-10" value={form.cnpj} placeholder="00.000.000/0000-00" onChange={(e) => void onCnpj(e.target.value)} aria-label="CNPJ" />
+                {lookingUp ? (
+                  <Loader2 size={16} className="absolute right-3 top-3 animate-spin text-gray-400" />
+                ) : (
+                  cnpjDigits(form.cnpj).length === 14 && (
+                    <button
+                      type="button"
+                      title="Consultar na Receita (preenche só os campos vazios)"
+                      aria-label="Consultar CNPJ"
+                      onClick={() => void consultCnpj(cnpjDigits(form.cnpj))}
+                      className="absolute right-2.5 top-2.5 text-gray-400 hover:text-brand-600"
+                    >
+                      <Search size={16} />
+                    </button>
+                  )
+                )}
               </div>
             </Field>
             <Field label="Site">{text("website", "empresa.com.br")}</Field>
           </div>
           {cnpjMsg && (
-            <p className={`-mt-1 mb-3 flex items-center gap-1.5 text-theme-xs ${cnpjMsg.warn ? "text-warning-700" : "text-success-700"}`}>
+            <p className={`-mt-1 mb-3 flex items-center gap-1.5 text-theme-xs ${cnpjMsg.warn ? "text-warning-700" : cnpjMsg.busy ? "text-gray-500" : "text-success-700"}`} data-cnpj-msg>
               {cnpjMsg.warn && <AlertTriangle size={13} />}
               {cnpjMsg.text}
             </p>
@@ -226,10 +264,10 @@ export function OrganizationFormModal({
           <SectionLabel>Contato</SectionLabel>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Telefone">
-              <PhoneInput value={form.phone} country={form.phoneCountry} onChange={(v, c) => set({ phone: v, phoneCountry: c })} placeholder="(11) 3333-4444" />
+              <PhoneInput whatsapp value={form.phone} country={form.phoneCountry} onChange={(v, c) => set({ phone: v, phoneCountry: c })} placeholder="(11) 3333-4444" />
             </Field>
             <Field label="E-mail">
-              <TaInput type="email" value={form.email} placeholder="contato@empresa.com.br" onChange={(e) => set({ email: e.target.value })} />
+              <EmailInput value={form.email} placeholder="contato@empresa.com.br" onChange={(v) => set({ email: v })} />
             </Field>
           </div>
 

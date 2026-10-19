@@ -3,16 +3,19 @@
 import { nowIso } from "../lib/ids";
 import { normalizeCents, normalizeIsoDate, optionalText, requireText, ValidationError } from "../lib/validate";
 import { primaryOrganizationId } from "./contacts";
-import { getCustomValues, setCustomValues, type CustomValue } from "./customFields";
+import { getCustomField, getCustomValues, listCustomFields, setCustomValues, type CustomValue } from "./customFields";
 import { KIND_BY_PIPELINE_TYPE, type DealKind, type PipelineType } from "./pipelines";
 import { getProduct, RECURRENCES, type Recurrence } from "./products";
 import { cardFieldValues, type CardFieldValue } from "./cardFieldValues";
 import { isCardFieldKey } from "../lib/cardFields";
+import { normalizeText } from "../lib/search";
 import { OVERDUE_COND, overdueParams, startOfDay } from "../lib/taskTiming";
 import { getRow, insertRow, softDelete, updateRow, type DbContext } from "./repo";
+import { moveToTrash, type TrashNotice } from "./trash";
 import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
-import { getEntityTags, setEntityTags, type Tag } from "./tags";
+import { createTag, getEntityTags, setEntityTags, type Tag } from "./tags";
 import { getUser, teammateIds, type Viewer } from "./users";
+import { copyCardContacts, listCardContacts, type CardContact } from "./cardContacts";
 
 export type DealStatus = "open" | "won" | "lost";
 
@@ -71,11 +74,15 @@ export interface Card {
   organization_id: string | null;
   owner_id: string | null;
   status: DealStatus;
+  /** Arquivado: fora do quadro (filtro "Arquivados"), mas nos relatórios. */
+  archived_at: string | null;
   loss_reason_id: string | null;
   loss_note: string | null;
   closed_at: string | null;
   stage_entered_at: string;
   origin: string | null;
+  /** Só nos tickets (funil Operacional): número sequencial. */
+  ticket_number: number | null;
   created_at: string;
   updated_at: string;
   version: number;
@@ -93,6 +100,8 @@ export interface DealItem {
 }
 
 export interface CardDetail extends Card {
+  /** Contatos do cartão: o principal primeiro, depois os demais. */
+  contacts: CardContact[];
   person_name: string | null;
   organization_name: string | null;
   loss_reason_name: string | null;
@@ -112,8 +121,8 @@ function pipelineOf(db: DatabaseSync, pipelineId: string): { id: string; type: P
   return p;
 }
 
-function stageOf(db: DatabaseSync, stageId: string): { id: string; pipeline_id: string } {
-  const s = one<{ id: string; pipeline_id: string }>(db, "SELECT id, pipeline_id FROM stage WHERE id = ? AND deleted_at IS NULL", stageId);
+function stageOf(db: DatabaseSync, stageId: string): { id: string; pipeline_id: string; name: string } {
+  const s = one<{ id: string; pipeline_id: string; name: string }>(db, "SELECT id, pipeline_id, name FROM stage WHERE id = ? AND deleted_at IS NULL", stageId);
   if (!s) throw new ValidationError("Etapa não encontrada.");
   return s;
 }
@@ -138,6 +147,17 @@ function checkKindFields(kind: DealKind, input: Partial<CardInput>): void {
   reject(kind !== "deal" && !!input.expectedCloseAt, "Data prevista de fechamento");
   reject(kind !== "ticket" && !!input.slaAt, "SLA");
   reject(kind !== "project" && (!!input.startAt || !!input.dueAt), "Início/prazo");
+}
+
+/** "234525", "#234525" ou "Ticket: 234525" → 234525 (busca pelo número do ticket). */
+export function ticketNumberQuery(text: string): number | null {
+  const m = text.trim().match(/^(?:ticket\s*:?\s*)?#?\s*(\d{1,12})$/i);
+  return m ? Number(m[1]) : null;
+}
+
+/** Próximo número de ticket (contando os excluídos, para não repetir). */
+function nextTicketNumber(db: DatabaseSync): number {
+  return (one<{ n: number | null }>(db, "SELECT MAX(ticket_number) AS n FROM deal")?.n ?? 0) + 1;
 }
 
 function columnEdgePosition(db: DatabaseSync, stageId: string, edge: "top" | "bottom", exceptId = ""): number {
@@ -219,6 +239,7 @@ export function createCard(db: DatabaseSync, ctx: DbContext, input: CardInput): 
       owner_id: ownerId,
       stage_entered_at: at,
       origin: optionalText(input.origin),
+      ...(kind === "ticket" ? { ticket_number: nextTicketNumber(db) } : {}),
     });
     insertRow(db, ctx, "deal_stage_history", { deal_id: id, stage_id: stageId, entered_at: at });
     if (input.items?.length) setDealItems(db, ctx, id, input.items);
@@ -260,7 +281,12 @@ export function updateCard(
     if (patch.startAt !== undefined) data.start_at = normalizeIsoDate(patch.startAt, "Início");
     if (patch.dueAt !== undefined) data.due_at = normalizeIsoDate(patch.dueAt, "Prazo");
     if (patch.expectedCloseAt !== undefined) data.expected_close_at = normalizeIsoDate(patch.expectedCloseAt, "Previsão de fechamento");
-    if (patch.personId !== undefined) data.person_id = checkRef(db, "person", patch.personId, "Contato não encontrado.");
+    if (patch.personId !== undefined) {
+      data.person_id = checkRef(db, "person", patch.personId, "Contato não encontrado.");
+      // Virou principal: sai de "outros contatos".
+      const dup = data.person_id && one<{ id: string }>(db, "SELECT id FROM deal_participant WHERE deal_id = ? AND person_id = ? AND deleted_at IS NULL", id, data.person_id);
+      if (dup) softDelete(db, ctx, "deal_participant", dup.id);
+    }
     if (patch.organizationId !== undefined) data.organization_id = checkRef(db, "organization", patch.organizationId, "Organização não encontrada.");
     if (patch.ownerId !== undefined) data.owner_id = checkRef(db, "app_user", patch.ownerId, "Responsável não encontrado.");
     if (patch.origin !== undefined) data.origin = optionalText(patch.origin);
@@ -273,12 +299,14 @@ export function updateCard(
 /** Move o cartão para uma etapa (do mesmo funil ou de outro funil do mesmo
  * tipo), antes do cartão `beforeId` ou no fim da coluna. Mudança de etapa
  * fica registrada em deal_stage_history. */
-export function moveCard(db: DatabaseSync, ctx: DbContext, id: string, target: { stageId: string; beforeId?: string | null }): void {
+export function moveCard(db: DatabaseSync, ctx: DbContext, id: string, target: { stageId: string; beforeId?: string | null }, opts: { changeKind?: boolean } = {}): void {
   withTransaction(db, () => {
     const card = requireCard(db, id);
     const stage = stageOf(db, target.stageId);
     const pipeline = pipelineOf(db, stage.pipeline_id);
-    if (KIND_BY_PIPELINE_TYPE[pipeline.type] !== card.kind) throw new ValidationError("Só é possível mover para um funil do mesmo tipo.");
+    const kind = KIND_BY_PIPELINE_TYPE[pipeline.type];
+    // Arrastar só entre funis do mesmo tipo; "Mudar de funil" pode trocar o tipo.
+    if (kind !== card.kind && !opts.changeKind) throw new ValidationError("Só é possível mover para um funil do mesmo tipo.");
 
     let position: number;
     if (target.beforeId) {
@@ -308,7 +336,129 @@ export function moveCard(db: DatabaseSync, ctx: DbContext, id: string, target: {
       insertRow(db, ctx, "deal_stage_history", { deal_id: id, stage_id: stage.id, entered_at: at });
       Object.assign(data, { stage_id: stage.id, pipeline_id: pipeline.id, stage_entered_at: at });
     }
+    if (kind !== card.kind) {
+      data.kind = kind;
+      // Virou ticket: ganha número (mantém o que já tinha, se voltar a ser ticket).
+      if (kind === "ticket" && card.ticket_number == null) data.ticket_number = nextTicketNumber(db);
+    }
     updateRow(db, ctx, "deal", id, data);
+  });
+}
+
+/** Etapa do funil de destino com o mesmo nome (sem acento/maiúsculas) da etapa de origem. */
+export function matchingStageId(db: DatabaseSync, fromStageId: string, pipelineId: string): string | null {
+  const from = stageOf(db, fromStageId);
+  const key = normalizeText(from.name);
+  const target = many<{ id: string; name: string }>(db, "SELECT id, name FROM stage WHERE pipeline_id = ? AND deleted_at IS NULL ORDER BY position", pipelineId);
+  return target.find((s) => normalizeText(s.name) === key)?.id ?? null;
+}
+
+/** Funil de destino e etapa: a informada ou a de mesmo nome; sem ela, pede a escolha. */
+function resolveTarget(db: DatabaseSync, fromStageId: string, input: { pipelineId: string; stageId?: string | null }) {
+  const target = pipelineOf(db, input.pipelineId);
+  if (target.archived_at) throw new ValidationError("Este funil está arquivado.");
+  const stageId = input.stageId ?? matchingStageId(db, fromStageId, target.id);
+  if (!stageId) throw new ValidationError("O funil de destino não tem uma etapa com o mesmo nome. Escolha a etapa.");
+  if (stageOf(db, stageId).pipeline_id !== target.id) throw new ValidationError("A etapa não pertence ao funil de destino.");
+  return { target, kind: KIND_BY_PIPELINE_TYPE[target.type], stageId };
+}
+
+/** Tags do cartão no tipo de destino: as de mesmo nome; as que faltam são criadas (mesma cor). */
+function tagsForKind(db: DatabaseSync, ctx: DbContext, cardId: string, kind: DealKind): string[] {
+  return getEntityTags(db, cardId).map((t) => {
+    if (t.entity === kind) return t.id;
+    const same = many<{ id: string; name: string }>(db, "SELECT id, name FROM tag WHERE entity = ? AND deleted_at IS NULL", kind).find(
+      (x) => normalizeText(x.name) === normalizeText(t.name),
+    );
+    return same?.id ?? createTag(db, ctx, { entity: kind, name: t.name, color: t.color ?? undefined });
+  });
+}
+
+/**
+ * Campos personalizados no destino: valor levado para o campo de mesmo nome e
+ * tipo que vale no funil de destino (listas pelo rótulo da opção).
+ */
+function customValuesFor(db: DatabaseSync, cardId: string, kind: DealKind, pipelineId: string): Record<string, CustomValue> {
+  const targets = listCustomFields(db, kind, { pipelineId });
+  const out: Record<string, CustomValue> = {};
+  for (const [fieldId, value] of Object.entries(getCustomValues(db, cardId))) {
+    const from = getCustomField(db, fieldId);
+    if (!from || value === null) continue;
+    const to = targets.find((f) => f.field_type === from.field_type && normalizeText(f.name) === normalizeText(from.name));
+    if (!to) continue;
+    if (to.id === from.id) out[to.id] = value;
+    else if (from.field_type === "select" || from.field_type === "multiselect") {
+      const label = (id: string) => from.options.find((o) => o.id === id)?.label;
+      const map = (id: string) => to.options.find((o) => normalizeText(o.label) === normalizeText(label(id) ?? "\u0000"))?.id;
+      const ids = (Array.isArray(value) ? value : [String(value)]).map(map).filter((x): x is string => !!x);
+      if (ids.length) out[to.id] = from.field_type === "multiselect" ? ids : ids[0]!;
+    } else out[to.id] = value;
+  }
+  return out;
+}
+
+/**
+ * Leva o cartão para outro funil, inclusive de outro tipo (negócio ↔ ticket ↔
+ * etapa de projeto). Sem `stageId`, vai para a etapa de mesmo nome; se o destino
+ * não tiver, é preciso escolher. Mudando de tipo, tags e campos personalizados
+ * de mesmo nome são levados; os campos só do tipo antigo ficam guardados.
+ */
+export function changeCardPipeline(db: DatabaseSync, ctx: DbContext, id: string, input: { pipelineId: string; stageId?: string | null }): string {
+  return withTransaction(db, () => {
+    const card = requireCard(db, id);
+    if (input.pipelineId === card.pipeline_id) throw new ValidationError("O cartão já está neste funil.");
+    const { target, kind, stageId } = resolveTarget(db, card.stage_id, input);
+    const changeKind = kind !== card.kind;
+    const tags = changeKind ? tagsForKind(db, ctx, id, kind) : [];
+    const custom = changeKind ? customValuesFor(db, id, kind, target.id) : {};
+    moveCard(db, ctx, id, { stageId }, { changeKind });
+    if (changeKind) {
+      setEntityTags(db, ctx, kind, id, tags);
+      setCustomValues(db, ctx, kind, id, custom, { pipelineId: target.id });
+    }
+    return stageId;
+  });
+}
+
+/**
+ * Cópia do cartão em qualquer funil (mesmas regras de etapa e tipo): título,
+ * descrição, valor, produtos, contato, organização, responsável, origem, tags e
+ * campos personalizados; datas próprias do tipo só se o tipo for o mesmo.
+ * Atividades, notas, documentos e histórico não são copiados.
+ */
+export function cloneCard(db: DatabaseSync, ctx: DbContext, id: string, input: { pipelineId: string; stageId?: string | null; title?: string | null }): string {
+  return withTransaction(db, () => {
+    const card = requireCard(db, id);
+    const { target, kind, stageId } = resolveTarget(db, card.stage_id, input);
+    const same = kind === card.kind;
+    const items = listDealItems(db, id);
+    const newId = createCard(db, ctx, {
+      pipelineId: target.id,
+      stageId,
+      title: input.title?.trim() || card.title,
+      description: card.description,
+      valueCents: items.length ? undefined : card.value_cents,
+      items: items.map((i) => ({
+        productId: i.product_id,
+        description: i.description,
+        quantity: i.quantity,
+        unitPriceCents: i.unit_price_cents,
+        discountCents: i.discount_cents,
+        recurrence: i.recurrence,
+      })),
+      expectedCloseAt: same && kind === "deal" ? card.expected_close_at : null,
+      slaAt: same && kind === "ticket" ? card.sla_at : null,
+      startAt: same && kind === "project" ? card.start_at : null,
+      dueAt: same && kind === "project" ? card.due_at : null,
+      personId: card.person_id,
+      organizationId: card.organization_id,
+      ownerId: card.owner_id,
+      origin: card.origin,
+      tagIds: tagsForKind(db, ctx, id, kind),
+      customValues: customValuesFor(db, id, kind, target.id),
+    });
+    copyCardContacts(db, ctx, id, newId);
+    return newId;
   });
 }
 
@@ -333,8 +483,14 @@ export function setCardStatus(
   });
 }
 
-export function deleteCard(db: DatabaseSync, ctx: DbContext, id: string): void {
-  softDelete(db, ctx, "deal", id);
+/** Para a lixeira, com as atividades e notas do cartão (voltam juntas ao restaurar). */
+export function deleteCard(db: DatabaseSync, ctx: DbContext, id: string): TrashNotice {
+  return moveToTrash(db, ctx, "deal", id, () => {
+    for (const a of many<{ id: string }>(db, "SELECT id FROM activity WHERE deal_id = ? AND deleted_at IS NULL", id)) softDelete(db, ctx, "activity", a.id);
+    for (const n of many<{ id: string }>(db, "SELECT id FROM note WHERE entity_type = ? AND entity_id = ? AND deleted_at IS NULL", "deal", id))
+      softDelete(db, ctx, "note", n.id);
+    softDelete(db, ctx, "deal", id);
+  });
 }
 
 // ---------- Itens (produtos e serviços) ----------
@@ -402,6 +558,7 @@ export function getCard(db: DatabaseSync, id: string, viewer?: Viewer | null): C
   return {
     ...card,
     ...names,
+    contacts: listCardContacts(db, id),
     items: listDealItems(db, id),
     tags: getEntityTags(db, id),
     customValues: getCustomValues(db, id),
@@ -442,6 +599,9 @@ export interface BoardCard {
   act_today: number;
   act_pending: number;
   notes_count: number;
+  /** Outros contatos além do principal ("+2" no cartão). */
+  extra_contacts: number;
+  archived_at: string | null;
   /** Campos configurados no funil (lib/cardFields), já formatados. */
   fields: Record<string, CardFieldValue>;
 }
@@ -452,6 +612,8 @@ export interface BoardColumn {
   color: string | null;
   count: number;
   total_cents: number;
+  /** Atividades atrasadas dos cartões da etapa (relógio vermelho no cabeçalho). */
+  overdue_activities: number;
   cards: BoardCard[];
 }
 
@@ -465,25 +627,19 @@ const SORT_SQL: Record<BoardSort, string> = {
 
 /** Quadro do funil: colunas com quantidade, soma e cartões (spec 01, tela inicial).
  * Visões: *Fluxo geral* (all), *Meu fluxo* (mine), *Minha equipe* (team). */
-export function getBoard(
-  db: DatabaseSync,
-  pipelineId: string,
-  opts: {
-    view?: BoardView;
-    viewer?: Viewer | null;
-    search?: string;
-    status?: DealStatus | "all";
-    sort?: BoardSort;
-    ownerIds?: string[];
-    tagIds?: string[];
-    /** Visão em lista: colunas escolhidas pelo usuário (no lugar dos campos do cartão). */
-    fieldKeys?: string[];
-  } = {},
-): BoardColumn[] {
+/** Situação do filtro do quadro; "archived" mostra só os arquivados. */
+export type BoardStatusFilter = DealStatus | "all" | "archived";
+type BoardFilterOpts = { view?: BoardView; viewer?: Viewer | null; search?: string; status?: BoardStatusFilter; ownerIds?: string[]; tagIds?: string[] };
+
+/** Condições do quadro (situação, visão, responsáveis, tags e pesquisa). */
+function boardWhere(db: DatabaseSync, pipelineId: string, opts: BoardFilterOpts): { where: string[]; params: SqlValue[] } {
   const where = ["d.pipeline_id = ?", "d.deleted_at IS NULL"];
   const params: SqlValue[] = [pipelineId];
   const status = opts.status ?? "open";
-  if (status !== "all") {
+  // "Todos" mostra também os arquivados (sinalizados em amarelo); "Arquivados", só eles.
+  if (status === "archived") where.push("d.archived_at IS NOT NULL");
+  else if (status !== "all") where.push("d.archived_at IS NULL");
+  if (status !== "all" && status !== "archived") {
     where.push("d.status = ?");
     params.push(status);
   }
@@ -504,9 +660,56 @@ export function getBoard(
   }
   if (opts.search?.trim()) {
     const q = `%${opts.search.trim()}%`;
-    where.push("(d.title LIKE ? OR p.name LIKE ? OR o.name LIKE ?)");
-    params.push(q, q, q);
+    const ticket = ticketNumberQuery(opts.search);
+    // Também pelos outros contatos do cartão.
+    where.push(
+      `(d.title LIKE ? OR p.name LIKE ? OR o.name LIKE ?${ticket !== null ? " OR d.ticket_number = ?" : ""}
+        OR EXISTS (SELECT 1 FROM deal_participant dp JOIN person pp ON pp.id = dp.person_id AND pp.deleted_at IS NULL
+                   WHERE dp.deal_id = d.id AND dp.deleted_at IS NULL AND pp.name LIKE ?))`,
+    );
+    params.push(q, q, q, ...(ticket !== null ? [ticket] : []), q);
   }
+  return { where, params };
+}
+
+/**
+ * Quantos cartões o filtro de responsáveis/tags está escondendo (mesma
+ * situação, visão e pesquisa): o quadro avisa para o cartão não "sumir".
+ */
+export function boardHiddenByFilter(db: DatabaseSync, pipelineId: string, opts: BoardFilterOpts): number {
+  if (!opts.ownerIds?.length && !opts.tagIds?.length) return 0;
+  const scope = cardScope(db, opts.viewer);
+  const count = (o: BoardFilterOpts) => {
+    const { where, params } = boardWhere(db, pipelineId, o);
+    return (
+      one<{ n: number }>(
+        db,
+        `SELECT COUNT(*) AS n FROM deal d LEFT JOIN person p ON p.id = d.person_id LEFT JOIN organization o ON o.id = d.organization_id
+         WHERE ${where.join(" AND ")}${scope.sql}`,
+        ...params,
+        ...scope.params,
+      )?.n ?? 0
+    );
+  };
+  return count({ ...opts, ownerIds: [], tagIds: [] }) - count(opts);
+}
+
+export function getBoard(
+  db: DatabaseSync,
+  pipelineId: string,
+  opts: {
+    view?: BoardView;
+    viewer?: Viewer | null;
+    search?: string;
+    status?: BoardStatusFilter;
+    sort?: BoardSort;
+    ownerIds?: string[];
+    tagIds?: string[];
+    /** Visão em lista: colunas escolhidas pelo usuário (no lugar dos campos do cartão). */
+    fieldKeys?: string[];
+  } = {},
+): BoardColumn[] {
+  const { where, params } = boardWhere(db, pipelineId, opts);
   const scope = cardScope(db, opts.viewer);
   const now = new Date();
   const today0 = startOfDay(now).toISOString();
@@ -522,7 +725,10 @@ export function getBoard(
        (SELECT COUNT(*) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0 AND NOT ${OVERDUE_COND}
           AND ((a.due_at >= ? AND a.due_at < ?) OR (a.end_at IS NOT NULL AND a.end_at >= ? AND a.end_at < ?))) AS act_today,
        (SELECT COUNT(*) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 0) AS act_pending,
-       (SELECT COUNT(*) FROM note n WHERE n.entity_type = 'deal' AND n.entity_id = d.id AND n.deleted_at IS NULL) AS notes_count
+       (SELECT COUNT(*) FROM note n WHERE n.entity_type = 'deal' AND n.entity_id = d.id AND n.deleted_at IS NULL) AS notes_count,
+       (SELECT COUNT(*) FROM deal_participant dp JOIN person pp ON pp.id = dp.person_id AND pp.deleted_at IS NULL
+          WHERE dp.deal_id = d.id AND dp.deleted_at IS NULL) AS extra_contacts,
+       d.archived_at
      FROM deal d
      LEFT JOIN person p ON p.id = d.person_id
      LEFT JOIN organization o ON o.id = d.organization_id
@@ -548,7 +754,13 @@ export function getBoard(
   for (const c of cards) c.fields = values.get(c.id) ?? {};
   return stages.map((s) => {
     const inStage = cards.filter((c) => c.stage_id === s.id).map(({ stage_id: _s, ...c }) => c);
-    return { ...s, count: inStage.length, total_cents: inStage.reduce((acc, c) => acc + c.value_cents, 0), cards: inStage };
+    return {
+      ...s,
+      count: inStage.length,
+      total_cents: inStage.reduce((acc, c) => acc + c.value_cents, 0),
+      overdue_activities: inStage.reduce((acc, c) => acc + c.act_overdue, 0),
+      cards: inStage,
+    };
   });
 }
 
@@ -578,7 +790,10 @@ export function listCardsForEntity(
   f: { personId?: string; organizationId?: string },
   viewer?: Viewer | null,
 ): { id: string; title: string; kind: DealKind; status: DealStatus; value_cents: number; pipeline_id: string; pipeline_name: string; stage_name: string; updated_at: string }[] {
-  const col = f.personId ? "d.person_id" : "d.organization_id";
+  // Contato: principal ou um dos outros contatos do cartão.
+  const col = f.personId
+    ? "(d.person_id = ?1 OR EXISTS (SELECT 1 FROM deal_participant dp WHERE dp.deal_id = d.id AND dp.person_id = ?1 AND dp.deleted_at IS NULL))"
+    : "d.organization_id = ?1";
   const id = f.personId ?? f.organizationId;
   if (!id) return [];
   const scope = cardScope(db, viewer);
@@ -586,7 +801,7 @@ export function listCardsForEntity(
     db,
     `SELECT d.id, d.title, d.kind, d.status, d.value_cents, d.pipeline_id, p.name AS pipeline_name, s.name AS stage_name, d.updated_at
      FROM deal d JOIN pipeline p ON p.id = d.pipeline_id JOIN stage s ON s.id = d.stage_id
-     WHERE ${col} = ? AND d.deleted_at IS NULL${scope.sql}
+     WHERE ${col} AND d.deleted_at IS NULL${scope.sql}
      ORDER BY d.status = 'open' DESC, d.updated_at DESC`,
     id,
     ...scope.params,

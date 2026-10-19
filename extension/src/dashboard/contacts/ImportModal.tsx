@@ -1,7 +1,7 @@
 // Importar planilha (Excel/CSV): escolher arquivo → conferir de qual coluna
 // vem cada campo (sugerido pelo cabeçalho) → importar → resumo.
 // Colunas com o mesmo nome de um campo personalizado entram automaticamente.
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { FileSpreadsheet } from "lucide-react";
 import { TaButton, TaModal, TaSelect } from "@tailadmin";
 import type { ImportSummary } from "../../db/importer";
@@ -36,7 +36,9 @@ export function ImportModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const customColumns = sheet ? sheet.headers.map((h, i) => [h, i] as const).filter(([h]) => customFieldNames.some((n) => n.toLowerCase() === h.toLowerCase())) : [];
+  const customColumns = sheet
+    ? sheet.headers.map((h, i) => [h, i] as const).filter(([h]) => customFieldNames.some((n) => n.toLowerCase() === h.toLowerCase()))
+    : [];
 
   async function pick(file: File) {
     setError(null);
@@ -73,38 +75,7 @@ export function ImportModal({
   return (
     <TaModal isOpen onClose={onClose} title={title} width="max-w-2xl">
       {summary ? (
-        <div className="text-theme-sm text-gray-700 dark:text-gray-300">
-          <p className="mb-3 rounded-lg bg-success-50 px-3 py-2 text-success-700">{summary.created} registro(s) importado(s).</p>
-          {summary.skipped.length > 0 && (
-            <>
-              <p className="mb-1 font-medium">Ignorados por já existirem ({summary.skipped.length}):</p>
-              <ul className="mb-3 max-h-32 overflow-y-auto text-theme-xs text-gray-500">
-                {summary.skipped.map((s) => (
-                  <li key={s.row}>
-                    Linha {s.row}: {s.reason}
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-          {summary.errors.length > 0 && (
-            <>
-              <p className="mb-1 font-medium text-error-700">Com erro ({summary.errors.length}):</p>
-              <ul className="mb-3 max-h-32 overflow-y-auto text-theme-xs text-error-600">
-                {summary.errors.map((e) => (
-                  <li key={e.row}>
-                    Linha {e.row}: {e.message}
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-          <div className="flex justify-end">
-            <TaButton variant="primary" onClick={onClose}>
-              Concluir
-            </TaButton>
-          </div>
-        </div>
+        <ImportSummaryView summary={summary} onClose={onClose} />
       ) : !sheet ? (
         <label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed border-gray-300 px-6 py-10 text-center hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/5">
           <FileSpreadsheet size={32} className="text-success-600" />
@@ -158,5 +129,69 @@ export function ImportModal({
         </>
       )}
     </TaModal>
+  );
+}
+
+/** Resumo da importação: criados, atualizados/vinculados (integrações), ignorados, avisos e erros. */
+export function ImportSummaryView({
+  summary,
+  onClose,
+  extra,
+}: {
+  summary: ImportSummary & { updated?: number; linked?: number; warnings?: { row: number; message: string }[] };
+  onClose: () => void;
+  extra?: ReactNode;
+}) {
+  const warnings = summary.warnings ?? [];
+  return (
+    <div className="text-theme-sm text-gray-700 dark:text-gray-300" data-import-summary>
+      <p className="mb-3 rounded-lg bg-success-50 px-3 py-2 text-success-700">
+        {summary.created} registro(s) importado(s).
+        {summary.updated ? ` ${summary.updated} atualizado(s).` : ""}
+        {summary.linked ? ` ${summary.linked} vinculado(s) a cadastros existentes.` : ""}
+      </p>
+      {extra}
+      {warnings.length > 0 && (
+        <>
+          <p className="mb-1 font-medium text-warning-700">Importados com aviso ({warnings.length}):</p>
+          <ul className="mb-3 max-h-32 overflow-y-auto text-theme-xs text-warning-700">
+            {warnings.map((w) => (
+              <li key={w.row}>
+                {w.row}. {w.message}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {summary.skipped.length > 0 && (
+        <>
+          <p className="mb-1 font-medium">Ignorados por já existirem ({summary.skipped.length}):</p>
+          <ul className="mb-3 max-h-32 overflow-y-auto text-theme-xs text-gray-500">
+            {summary.skipped.map((s) => (
+              <li key={s.row}>
+                Linha {s.row}: {s.reason}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {summary.errors.length > 0 && (
+        <>
+          <p className="mb-1 font-medium text-error-700">Com erro ({summary.errors.length}):</p>
+          <ul className="mb-3 max-h-32 overflow-y-auto text-theme-xs text-error-600">
+            {summary.errors.map((e) => (
+              <li key={e.row}>
+                {summary.updated !== undefined ? `${e.row}.` : `Linha ${e.row}:`} {e.message}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      <div className="flex justify-end">
+        <TaButton variant="primary" onClick={onClose}>
+          Concluir
+        </TaButton>
+      </div>
+    </div>
   );
 }

@@ -113,6 +113,44 @@ pode ser **transcrito com IA** (opcional): áudio, PDF e imagem viram uma nota
 no cadastro; a janela avisa antes o que é extenso, complexo ou não dá para
 transcrever.
 
+### Integrações (Pipedrive)
+
+Em **Configurações → Integrações** (só administradores) o Pipedrive é conectado
+com a chave da API. **Importar do Pipedrive** traz leads e negócios (como cartões
+nos funis comerciais, com de-para das etapas), contatos e organizações, com as
+notas, buscando pelo nome ou pela data de
+criação, com de-para dos campos e dos valores. O CRM sabe o que já foi
+importado (e oferece atualizar), aponta possíveis duplicados e mostra no
+cadastro o link para o original (detalhes em
+[`especificacoes/09-integracoes.md`](especificacoes/09-integracoes.md)).
+
+### Notificações
+
+Cada atividade tem vários lembretes (ex.: 1 dia antes e 1 h antes no WhatsApp,
+15 min antes no Chrome). Em **Configurações → Notificações** cada
+usuário liga os canais — Chrome e WhatsApp (pelo WhatsApp Web aberto no Chrome, para o número indicado, ou pelo CallMeBot) —, testa cada um e define os lembretes
+padrão, o resumo diário da agenda, o aviso de atividades atrasadas e o horário
+de silêncio. Com o Chrome fechado, ao reabrir chega um resumo único. O canal de
+e-mail está suspenso por enquanto (detalhes em
+[`especificacoes/10-notificacoes.md`](especificacoes/10-notificacoes.md)).
+
+### Lixeira
+
+Toda exclusão vai para a **Lixeira** (ícone no menu superior e em
+Configurações → Lixeira), com um aviso "enviado para a lixeira, pode ser
+restaurado em até N dias" e o botão **Restaurar**. O cartão leva junto as
+atividades e notas, e tudo volta junto. Depois do prazo (padrão 30 dias,
+configurável pelo administrador), o item é excluído definitivamente (detalhes
+em [`especificacoes/11-lixeira.md`](especificacoes/11-lixeira.md)).
+
+### Cartão a partir de documento (Copiloto)
+
+No Copiloto, anexe um documento (PDF, Word, planilha, foto): ele identifica
+cliente, contato, pedido e tags, mostra tudo para conferir e pergunta em qual
+funil/etapa criar. Ao confirmar, cria organização, contato, tags e o cartão,
+guarda o arquivo no GED e registra a origem no histórico (detalhes em
+[`especificacoes/12-copiloto-documento.md`](especificacoes/12-copiloto-documento.md)).
+
 ### Cadastros duplicados
 
 Ao criar contato, organização ou cartão, o CRM procura nomes parecidos (mais

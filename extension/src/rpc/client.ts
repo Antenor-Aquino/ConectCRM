@@ -34,6 +34,7 @@ export async function call<M extends MethodName>(method: M, ...args: MethodParam
       const response = (await chrome.runtime.sendMessage(request)) as RpcResponse | undefined;
       if (!response) throw new Error("Não foi possível conectar ao banco local do CRM. Recarregue a página.");
       if (!response.ok) throw new RpcError(response.error);
+      announceTrash(response.result);
       return response.result as MethodResult<M>;
     } catch (err) {
       if (err instanceof RpcError || attempt >= 20) throw err;
@@ -45,6 +46,18 @@ export async function call<M extends MethodName>(method: M, ...args: MethodParam
 }
 
 export class RpcError extends Error {}
+
+/** Evento das telas: algo foi para a lixeira (o aviso com "Restaurar" escuta). */
+export const TRASH_EVENT = "conectcrm:trash";
+/** Evento das telas: dados mudaram por fora (ex.: restaurado da lixeira). */
+export const DATA_CHANGED_EVENT = "conectcrm:data-changed";
+
+function announceTrash(result: unknown): void {
+  if (typeof window === "undefined" || !result || typeof result !== "object") return;
+  const r = result as { __trash?: boolean; trash?: { __trash?: boolean } };
+  const notice = r.__trash ? r : r.trash?.__trash ? r.trash : null;
+  if (notice) window.dispatchEvent(new CustomEvent(TRASH_EVENT, { detail: notice }));
+}
 
 type SystemMethod =
   | "system.env"

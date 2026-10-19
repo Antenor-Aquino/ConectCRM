@@ -1,6 +1,7 @@
 // Produtos e serviços (catálogo usado nos itens do negócio).
 import { normalizeCents, optionalText, requireText, ValidationError } from "../lib/validate";
 import { insertRow, softDelete, updateRow, type DbContext } from "./repo";
+import { moveToTrash, type TrashNotice } from "./trash";
 import { many, one, type DatabaseSync, type SqlValue } from "./sql";
 
 export type ProductKind = "produto" | "servico";
@@ -75,8 +76,8 @@ export function updateProduct(db: DatabaseSync, ctx: DbContext, id: string, patc
   updateRow(db, ctx, "product", id, productData(db, patch, false, id));
 }
 
-export function deleteProduct(db: DatabaseSync, ctx: DbContext, id: string): void {
-  softDelete(db, ctx, "product", id);
+export function deleteProduct(db: DatabaseSync, ctx: DbContext, id: string): TrashNotice {
+  return moveToTrash(db, ctx, "product", id, () => softDelete(db, ctx, "product", id));
 }
 
 export function getProduct(db: DatabaseSync, id: string): Product | undefined {
@@ -115,11 +116,11 @@ export function renameProductCategory(db: DatabaseSync, ctx: DbContext, id: stri
   updateRow(db, ctx, "product_category", id, { name: requireText(name, "Informe o nome da categoria.") });
 }
 
-export function deleteProductCategory(db: DatabaseSync, ctx: DbContext, id: string): void {
+export function deleteProductCategory(db: DatabaseSync, ctx: DbContext, id: string): TrashNotice {
   if (one(db, "SELECT 1 FROM product WHERE category_id = ? AND deleted_at IS NULL", id)) {
     throw new ValidationError("Há produtos nesta categoria.");
   }
-  softDelete(db, ctx, "product_category", id);
+  return moveToTrash(db, ctx, "product_category", id, () => softDelete(db, ctx, "product_category", id));
 }
 
 /** Quantos itens de negócio usam cada produto. */

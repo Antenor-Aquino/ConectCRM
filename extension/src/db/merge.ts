@@ -39,6 +39,7 @@ export function mergePersons(db: DatabaseSync, ctx: DbContext, keepId: string, r
     repoint(db, ctx, "deal_participant", "person_id", removeId, keepId);
     repoint(db, ctx, "activity", "person_id", removeId, keepId);
     repoint(db, ctx, "whatsapp_capture", "person_id", removeId, keepId);
+    repoint(db, ctx, "whatsapp_send", "recipient_id", removeId, keepId, " AND recipient_kind = 'person'");
     repoint(db, ctx, "note", "entity_id", removeId, keepId, " AND entity_type = 'person'");
     const orgs = many<{ organization_id: string }>(db, "SELECT organization_id FROM person_organization WHERE person_id = ? AND deleted_at IS NULL", removeId);
     for (const o of orgs) linkPersonOrganization(db, ctx, keepId, o.organization_id);
@@ -58,6 +59,7 @@ export function mergeOrganizations(db: DatabaseSync, ctx: DbContext, keepId: str
     if (!keep || !remove) throw new ValidationError("Organização não encontrada.");
     repoint(db, ctx, "deal", "organization_id", removeId, keepId);
     repoint(db, ctx, "activity", "organization_id", removeId, keepId);
+    repoint(db, ctx, "whatsapp_send", "recipient_id", removeId, keepId, " AND recipient_kind = 'organization'");
     repoint(db, ctx, "note", "entity_id", removeId, keepId, " AND entity_type = 'organization'");
     const links = many<{ person_id: string; is_primary: number }>(
       db,

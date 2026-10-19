@@ -23,6 +23,10 @@ import { formatBytes, MAX_UPLOAD_BYTES } from "../../lib/files";
 import { DocumentsPanel } from "../documents/DocumentsPanel";
 import { UploadModal } from "../documents/UploadModal";
 import { errorText } from "../../lib/errors";
+import { ACTIVE_CHANNELS, CHANNEL_LABEL, activeSettings, channelReady, loadNotifySettings, type Channel, type NotifySettings, type ReminderRule } from "../../lib/notify/settings";
+import { formatDateTime } from "../../lib/format";
+import { RemindersEditor } from "../ui/RemindersEditor";
+import { LinkedTextarea } from "../ui/LinkedTextarea";
 
 const KIND_LABEL = { deal: "Negócio", ticket: "Ticket", project: "Projeto" } as const;
 
@@ -138,7 +142,9 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
   const [pending, setPending] = useState<File[]>([]);
   const [uploadAfter, setUploadAfter] = useState<{ taskId: string; files: File[] } | null>(null);
   const [duration, setDuration] = useState(5);
-  const [reminder, setReminder] = useState<number | null>(5);
+  const [reminders, setReminders] = useState<ReminderRule[]>([]);
+  const [notify, setNotify] = useState<NotifySettings | null>(null);
+  const [deliveries, setDeliveries] = useState<Awaited<ReturnType<typeof call<"notifications.forActivity">>>>([]);
   const [link, setLink] = useState<ComboItem | null>(null);
   const [fields, setFields] = useState<CustomField[]>([]);
   const [values, setValues] = useState<Record<string, CustomValue>>({});
@@ -174,6 +180,10 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
       }
     });
     void call("customFields.list", { entity: "activity" }).then(setFields);
+    void loadNotifySettings(user.id).then((n) => {
+      setNotify(activeSettings(n));
+      if (!request.id) setReminders(n.defaults);
+    });
     if (request.dealId) {
       void call("cards.get", { id: request.dealId }).then((c) => c && setLink({ id: c.id, label: c.title }));
     }
@@ -190,7 +200,8 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
       setEndAt(a.end_at ? new Date(a.end_at) : null);
       setTagIds(a.tagIds);
       setDuration(a.duration_min);
-      setReminder(a.reminder_min);
+      setReminders(a.reminders);
+      void call("notifications.forActivity", { id: a.id }).then(setDeliveries);
       setValues(a.customValues);
       setGuests(a.guests ? (JSON.parse(a.guests) as string[]) : []);
       if (a.deal_id) {
@@ -261,7 +272,7 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
       endAt: endAt ? endAt.toISOString() : null,
       tagIds,
       durationMin: duration,
-      reminderMin: reminder,
+      reminders,
       done,
       dealId: link?.id ?? null,
       ...(request.personId && !link ? { personId: request.personId } : {}),
@@ -291,7 +302,8 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
           end: new Date(when.getTime() + Math.max(duration, 15) * 60_000),
           guests,
           online,
-          reminderMin: reminder,
+          reminderMin: popupLead(reminders),
+          emailReminders: notify?.calendarEmailBackup ? reminders.filter((r) => r.channels.includes("email")).map((r) => r.minutesBefore) : [],
         });
         await call("activities.setExternalEvent", { id, provider, eventId: ev.id, meetingUrl: ev.link, guests });
       } catch (e) {
@@ -337,11 +349,11 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
                   onChange={(e) => setTitle(e.target.value)}
                 />
               </div>
-              <textarea
+              <LinkedTextarea
                 className="ml-8 mt-2 min-h-[120px] w-[calc(100%-2rem)] resize-y border-none bg-transparent text-theme-sm text-gray-700 outline-none placeholder:text-gray-400 dark:text-gray-300"
                 placeholder="Adicionar descrição…"
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={setDescription}
               />
               {fields.some((f) => !f.hidden) && (
                 <div className="ml-8">
@@ -391,14 +403,22 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
                 <WhenPicker
                   value={when}
                   duration={duration}
-                  reminder={reminder}
+                  hideReminder
                   onChange={(v) => {
                     setWhen(v.when);
                     setDuration(v.duration);
-                    setReminder(v.reminder);
                     setSlots(null);
                   }}
                 />
+              </Field>
+              <Field label="Lembretes" hint="Quanto tempo antes do início e por onde avisar.">
+                <RemindersEditor
+                  value={reminders}
+                  onChange={setReminders}
+                  compact
+                  ready={notify ? (Object.fromEntries(ACTIVE_CHANNELS.map((c) => [c, channelReady(notify, c)])) as Record<Channel, boolean>) : undefined}
+                />
+                {deliveries.length > 0 && <DeliveryLog list={deliveries} />}
               </Field>
               <Field label="Finalização" hint="Opcional. Sem finalização, a atividade nunca fica atrasada.">
                 <EndPicker value={endAt} start={when} onChange={setEndAt} />
@@ -507,7 +527,7 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
                 className="ml-auto"
                 startIcon={<Trash2 size={15} />}
                 onClick={async () => {
-                  if (!confirm("Excluir esta atividade?")) return;
+                  if (!confirm("Excluir esta atividade? Vai para a lixeira, de onde pode ser restaurado.")) return;
                   await call("activities.delete", { id: request.id! });
                   onSaved();
                 }}
@@ -519,6 +539,35 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
         </>
       )}
     </TaModal>
+  );
+}
+
+/** Lembrete da própria agenda (popup): o menor com Chrome, senão o menor de todos. */
+function popupLead(rules: ReminderRule[]): number | null {
+  const pick = (list: ReminderRule[]) => (list.length ? Math.min(...list.map((r) => r.minutesBefore)) : null);
+  return pick(rules.filter((r) => r.channels.includes("chrome"))) ?? pick(rules.filter((r) => r.channels.length));
+}
+
+const KIND_TEXT = { reminder: "Lembrete", overdue: "Atraso", digest: "Resumo", missed: "Resumo" } as const;
+
+/** Histórico de envio dos avisos desta atividade. */
+function DeliveryLog({ list }: { list: { channel: Channel; kind: keyof typeof KIND_TEXT; status: string; sent_at: string | null; last_error: string | null; updated_at: string }[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-2" data-delivery-log>
+      <button type="button" className="text-theme-xs text-gray-500 hover:underline" onClick={() => setOpen((o) => !o)}>
+        {open ? "Ocultar" : "Ver"} avisos enviados ({list.length})
+      </button>
+      {open && (
+        <ul className="mt-1 space-y-0.5 text-theme-xs">
+          {list.map((d, i) => (
+            <li key={i} className={d.status === "sent" ? "text-gray-600 dark:text-gray-400" : "text-error-600"}>
+              {KIND_TEXT[d.kind]} · {CHANNEL_LABEL[d.channel]} · {d.status === "sent" ? `enviado ${formatDateTime(d.sent_at ?? d.updated_at)}` : `falhou: ${d.last_error ?? "erro"}`}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

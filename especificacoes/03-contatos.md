@@ -13,7 +13,7 @@ Modal com rolagem interna, botão ✕ no topo, **Salvar** fixo no rodapé.
 | CANAIS | **E-mail** | Validação de formato. Placeholder "nome@empresa.com.br" |
 | | **Celular** | Seletor de país com bandeira (padrão 🇧🇷 **+55**), máscara do país; gravado normalizado (`+5511999998888`) para casar com o WhatsApp |
 | ORGANIZAÇÕES | **Vincular organização** | Área tracejada "Vincule a empresa em que esse contato trabalha"; busca ou cria organização; permite **mais de uma**; a primeira vinculada vira a **principal** (ver spec 04) |
-| NOTAS | Notas | Área de texto em destaque amarelo — "Escreva algo sobre esse contato..." |
+| NOTAS | Notas | Área de texto em destaque amarelo — "Escreva algo sobre esse contato..." Links clicáveis; imagens coladas ou arrastadas (ver abaixo) |
 | | **Contato privado** (?) | Visível apenas para o responsável/criador (e administradores) |
 | MAIS DETALHES | Responsável, Tags | Responsável com tipo ("Antenor (vendedor)"); tags da entidade **Contato** |
 | CAMPOS PERSONALIZADOS (n) | Campos da entidade **Contato** | Grade de **duas colunas**; o título mostra a quantidade. Ex.: Empresa, Cargo, Valor Power, Site/Instagram, Origem do Lead, Turma aluno, Filho(a) 1, Filho(a) 2 |
@@ -65,6 +65,9 @@ Modal com rolagem interna, botão ✕ no topo, **Salvar** fixo no rodapé.
     nenhum, oferece o aplicativo do computador e indica a configuração.
 - **Organização** no cartão: com **site** cadastrado, o nome abre o site numa
   nova aba (sem "https://", ele é acrescentado); sem site, é texto comum.
+- No formulário de contato e de organização, os campos de telefone e e-mail
+  têm um botão (WhatsApp verde / envelope) com o mesmo comportamento; clicar
+  no campo continua editando.
 - O clique no telefone/e-mail/organização não abre o cartão.
 
 ## 4. Decisões e pendências
@@ -72,3 +75,38 @@ Modal com rolagem interna, botão ✕ no topo, **Salvar** fixo no rodapé.
 - C1: **sem sincronização com o Google** (decisão do cliente); o toggle do sistema de referência não entra.
 - C2: responsável e tags entram em "Mais detalhes".
 - C3: um e-mail e um celular por contato na v1 (mais canais depois).
+
+## Notas: links e imagens (0.2.44)
+
+Vale para as notas de cartões, contatos, organizações e atividades.
+
+- Links (http/https, www., e-mail) ficam clicáveis e abrem em outra aba.
+- **Imagem colada (Ctrl+V) ou arrastada** para o campo da nota:
+  - aparece como miniatura abaixo do campo e um marcador "[imagem 1]" no
+    texto, no lugar onde foi colada (pode mover o marcador ou remover a
+    imagem no "x");
+  - ao salvar, vira documento no GED: nome "Imagem da nota - dd/mm/aaaa hh:mm",
+    tipo "Foto/imagem" (ou o primeiro tipo ativo), vinculado ao registro da
+    nota com os vínculos automáticos de sempre (ex.: cartão → contato e
+    organização); a mesma imagem já existente no GED só ganha o vínculo;
+  - na nota, a imagem aparece no lugar do marcador (até 25 MB por imagem);
+    clicar abre o documento no GED (prévia, versões, auditoria, editar
+    classificação);
+  - mostrar a imagem na nota não conta como visualização na auditoria do GED;
+  - imagem excluída ou na lixeira: a nota mostra "[imagem excluída ou na
+    lixeira]".
+- No histórico, na busca e no copiloto o marcador aparece como "[imagem]".
+
+### Editar nota (0.2.45)
+
+- Lápis no rodapé da nota abre o mesmo editor da nota nova, com o texto e as
+  imagens dela (as imagens aparecem como "[imagem N]" com miniatura, como ao
+  colar).
+- Dá para mudar o texto, colar ou arrastar imagens novas (vão para o GED) e
+  tirar imagens da nota no "x" — a imagem tirada continua no GED, vinculada ao
+  registro.
+- Salvar / Cancelar (Esc cancela). Os arquivos de origem da nota (áudio
+  transcrito, recorte) continuam nela.
+- A nota editada mostra "· editada" ao lado da data (passando o mouse, a data
+  da edição); fixar/desafixar não conta como edição. O histórico do cartão já
+  registra "Editou nota".

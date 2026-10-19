@@ -2,6 +2,7 @@
 // para atribuição e controle (PLANEJAMENTO.md, seção 5).
 import { normalizeEmail, requireText, ValidationError } from "../lib/validate";
 import { insertRow, softDelete, updateRow, type DbContext } from "./repo";
+import { moveToTrash, type TrashNotice } from "./trash";
 import { many, one, withTransaction, type DatabaseSync } from "./sql";
 
 export type Role = "admin" | "gestor" | "vendedor";
@@ -138,8 +139,8 @@ export function renameTeam(db: DatabaseSync, ctx: DbContext, id: string, name: s
   updateRow(db, ctx, "team", id, { name: requireText(name, "Informe o nome da equipe.") });
 }
 
-export function deleteTeam(db: DatabaseSync, ctx: DbContext, id: string): void {
-  withTransaction(db, () => {
+export function deleteTeam(db: DatabaseSync, ctx: DbContext, id: string): TrashNotice {
+  return moveToTrash(db, ctx, "team", id, () => {
     setTeamMembers(db, ctx, id, []);
     softDelete(db, ctx, "team", id);
   });

@@ -9,6 +9,14 @@ import migration0006 from "./migrations/0006_note_documents.sql?raw";
 import migration0007 from "./migrations/0007_tipo_prazo_final.sql?raw";
 import migration0008 from "./migrations/0008_indice_atividade_cartao.sql?raw";
 import migration0009 from "./migrations/0009_indices_volume.sql?raw";
+import migration0010 from "./migrations/0010_numero_ticket.sql?raw";
+import migration0011 from "./migrations/0011_vinculo_externo.sql?raw";
+import migration0012 from "./migrations/0012_categorias_campos.sql?raw";
+import migration0013 from "./migrations/0013_arquivar_cartao.sql?raw";
+import migration0014 from "./migrations/0014_lembretes_notificacoes.sql?raw";
+import migration0015 from "./migrations/0015_lixeira.sql?raw";
+import migration0016 from "./migrations/0016_envio_whatsapp.sql?raw";
+import migration0017 from "./migrations/0017_origem_registro.sql?raw";
 
 export const MIGRATIONS: { name: string; sql: string }[] = [
   { name: "0000_init.sql", sql: migration0000 },
@@ -21,6 +29,14 @@ export const MIGRATIONS: { name: string; sql: string }[] = [
   { name: "0007_tipo_prazo_final.sql", sql: migration0007 },
   { name: "0008_indice_atividade_cartao.sql", sql: migration0008 },
   { name: "0009_indices_volume.sql", sql: migration0009 },
+  { name: "0010_numero_ticket.sql", sql: migration0010 },
+  { name: "0011_vinculo_externo.sql", sql: migration0011 },
+  { name: "0012_categorias_campos.sql", sql: migration0012 },
+  { name: "0013_arquivar_cartao.sql", sql: migration0013 },
+  { name: "0014_lembretes_notificacoes.sql", sql: migration0014 },
+  { name: "0015_lixeira.sql", sql: migration0015 },
+  { name: "0016_envio_whatsapp.sql", sql: migration0016 },
+  { name: "0017_origem_registro.sql", sql: migration0017 },
 ];
 
 /** Aplica as migrations pendentes; devolve quantas rodaram. */

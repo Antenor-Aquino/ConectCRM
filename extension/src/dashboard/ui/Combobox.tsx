@@ -24,6 +24,7 @@ export function Combobox({
   emptyText = "Nada encontrado.",
   onOpenValue,
   openTitle = "Abrir o cadastro",
+  valueActions,
 }: {
   value: ComboItem | null;
   onChange: (item: ComboItem | null) => void;
@@ -38,6 +39,8 @@ export function Combobox({
   /** Com valor: clicar no nome abre o cadastro (ex.: editar o contato); a busca vai para o botão "trocar". */
   onOpenValue?: (item: ComboItem) => void;
   openTitle?: string;
+  /** Botões extras ao lado do valor escolhido (ex.: WhatsApp e e-mail do contato). */
+  valueActions?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
@@ -77,6 +80,7 @@ export function Combobox({
             {value.sublabel && <span className="truncate text-theme-xs text-gray-400">{value.sublabel}</span>}
             <Pencil size={12} className="shrink-0 opacity-0 transition group-hover:opacity-70" />
           </button>
+          {valueActions}
           <button type="button" title="Trocar" className="text-gray-400 hover:text-gray-600" onClick={() => setOpen(true)}>
             <ArrowLeftRight size={14} />
           </button>

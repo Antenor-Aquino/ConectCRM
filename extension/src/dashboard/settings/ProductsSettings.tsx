@@ -98,7 +98,7 @@ export function ProductsSettings() {
                         className="hover:text-error-600"
                         onClick={async () => {
                           const n = usage[p.id] ?? 0;
-                          if (!confirm(n ? `"${p.name}" está em ${n} negócio(s); os itens continuam neles. Excluir do catálogo?` : `Excluir "${p.name}"?`)) return;
+                          if (!confirm(n ? `"${p.name}" está em ${n} negócio(s); os itens continuam neles. Excluir do catálogo? Vai para a lixeira, de onde pode ser restaurado.` : `Excluir "${p.name}"? Vai para a lixeira, de onde pode ser restaurado.`)) return;
                           try {
                             await call("products.delete", { id: p.id });
                             await load();
@@ -258,7 +258,7 @@ function CategoriesModal({ categories, onClose, onChanged }: { categories: { id:
         {categories.map((c) => (
           <li key={c.id} className="flex items-center gap-2 py-2">
             <TaInput defaultValue={c.name} onBlur={(e) => e.target.value !== c.name && void run(() => call("productCategories.rename", { id: c.id, name: e.target.value }))} />
-            <button type="button" title="Excluir" className="text-gray-400 hover:text-error-600" onClick={() => confirm(`Excluir a categoria "${c.name}"?`) && void run(() => call("productCategories.delete", { id: c.id }))}>
+            <button type="button" title="Excluir" className="text-gray-400 hover:text-error-600" onClick={() => confirm(`Excluir a categoria "${c.name}"? Vai para a lixeira, de onde pode ser restaurado.`) && void run(() => call("productCategories.delete", { id: c.id }))}>
               <Trash2 size={15} />
             </button>
           </li>

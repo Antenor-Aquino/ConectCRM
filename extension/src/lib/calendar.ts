@@ -14,7 +14,8 @@ import { translateError } from "./errors";
 export type CalendarProvider = "google" | "microsoft";
 
 export const MICROSOFT_CLIENT_ID = "a1831519-7677-413a-be79-726b20328d12";
-const MICROSOFT_SCOPES = "openid profile email offline_access User.Read Calendars.ReadWrite OnlineMeetings.ReadWrite";
+// Mail.Send: lembretes por e-mail (Configurações → Notificações).
+const MICROSOFT_SCOPES = "openid profile email offline_access User.Read Calendars.ReadWrite OnlineMeetings.ReadWrite Mail.Send";
 const MICROSOFT_REDIRECT_PATH = "microsoft";
 const MS_KEY = "conectcrm-ms-token";
 
@@ -34,21 +35,21 @@ export function computeFreeSlots(dayStart: Date, dayEnd: Date, busy: { start: st
 
 // ---------- Google ----------
 
-function googleClientConfigured(): boolean {
+export function googleClientConfigured(): boolean {
   const id = chrome.runtime.getManifest().oauth2?.client_id ?? "";
   return !!id && !id.startsWith("COLE_AQUI");
 }
 
-function googleToken(interactive: boolean): Promise<string> {
+function googleToken(interactive: boolean, scopes?: string[]): Promise<string> {
   if (!googleClientConfigured()) {
     return Promise.reject(
       new Error(`Google Agenda ainda não configurado: crie no Google Cloud um OAuth Client do tipo "Extensão do Chrome" com o ID ${chrome.runtime.id} e informe o client_id no manifest.json.`),
     );
   }
   return new Promise((resolve, reject) => {
-    chrome.identity.getAuthToken({ interactive }, (result) => {
+    chrome.identity.getAuthToken({ interactive, ...(scopes ? { scopes } : {}) }, (result) => {
       const token = typeof result === "string" ? result : (result as { token?: string } | undefined)?.token;
-      if (chrome.runtime.lastError || !token) reject(new Error(translateError(chrome.runtime.lastError?.message ?? "Conecte o Google Agenda.")));
+      if (chrome.runtime.lastError || !token) reject(new Error(translateError(chrome.runtime.lastError?.message ?? (scopes ? "Conecte a conta Google." : "Conecte o Google Agenda."))));
       else resolve(token);
     });
   });
@@ -57,7 +58,7 @@ function googleToken(interactive: boolean): Promise<string> {
 /** Erro HTTP da agenda em português (as mensagens das APIs vêm em inglês). */
 function calendarHttpError(service: string, status: number, raw: string | undefined): Error {
   if (status === 401) return new Error(`A conexão com o ${service} expirou. Conecte de novo.`);
-  if (status === 403) return new Error(`Sem permissão no ${service}. Conecte de novo e autorize o acesso à agenda.`);
+  if (status === 403) return new Error(`Sem permissão no ${service}. Conecte de novo e autorize o acesso.`);
   if (status === 404) return new Error(`Evento ou agenda não encontrado no ${service}.`);
   if (status === 429) return new Error(`Muitas solicitações ao ${service}. Tente novamente em alguns minutos.`);
   if (status >= 500) return new Error(`O ${service} está indisponível no momento. Tente novamente.`);
@@ -161,6 +162,67 @@ async function mFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   return json;
 }
 
+// ---------- Envio de e-mail (lembretes) ----------
+
+const GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.send", "https://www.googleapis.com/auth/userinfo.email"];
+
+/** Conecta a conta que envia os e-mails e devolve o endereço dela. */
+export async function connectMailSender(provider: CalendarProvider): Promise<string> {
+  if (provider === "google") {
+    const token = await googleToken(true, GMAIL_SCOPES);
+    const res = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", { headers: { Authorization: `Bearer ${token}` } });
+    const json = (await res.json().catch(() => ({}))) as { email?: string };
+    if (!json.email) throw new Error("Não foi possível ler o e-mail da conta Google.");
+    return json.email;
+  }
+  await microsoftToken(true);
+  const me = await mFetch<{ mail?: string; userPrincipalName?: string }>("/me?$select=mail,userPrincipalName");
+  return me.mail ?? me.userPrincipalName ?? "";
+}
+
+const b64utf8 = (s: string) => btoa(unescape(encodeURIComponent(s)));
+
+/** Envia um e-mail HTML pela conta conectada (Gmail ou Outlook). `interactive` = pode abrir o login. */
+export async function sendMail(provider: CalendarProvider, msg: { to: string; subject: string; html: string }, interactive = false): Promise<void> {
+  if (provider === "google") {
+    const raw = [
+      `To: ${msg.to}`,
+      `Subject: =?UTF-8?B?${b64utf8(msg.subject)}?=`,
+      "MIME-Version: 1.0",
+      'Content-Type: text/html; charset="UTF-8"',
+      "Content-Transfer-Encoding: base64",
+      "",
+      b64utf8(msg.html),
+    ].join("\r\n");
+    let token = await googleToken(interactive, GMAIL_SCOPES);
+    const go = (t: string) =>
+      fetch("https://www.googleapis.com/gmail/v1/users/me/messages/send", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ raw: b64utf8(raw).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "") }),
+      });
+    let res = await go(token);
+    if (res.status === 401) {
+      await new Promise<void>((r) => chrome.identity.removeCachedAuthToken({ token }, () => r()));
+      token = await googleToken(interactive, GMAIL_SCOPES);
+      res = await go(token);
+    }
+    if (!res.ok) {
+      const json = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+      throw calendarHttpError("Gmail", res.status, json.error?.message);
+    }
+    return;
+  }
+  await mFetch("/me/sendMail", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message: { subject: msg.subject, body: { contentType: "HTML", content: msg.html }, toRecipients: [{ emailAddress: { address: msg.to } }] },
+      saveToSentItems: false,
+    }),
+  });
+}
+
 // ---------- API comum ----------
 
 export async function connectCalendar(provider: CalendarProvider): Promise<string | null> {
@@ -224,6 +286,8 @@ export interface NewEvent {
   /** Criar link do Meet (Google) ou Teams (Outlook). */
   online: boolean;
   reminderMin: number | null;
+  /** Google Agenda: lembretes por e-mail do próprio Google (minutos antes), que saem mesmo com o Chrome fechado. */
+  emailReminders?: number[];
 }
 
 export async function createCalendarEvent(provider: CalendarProvider, ev: NewEvent): Promise<{ id: string; link: string | null }> {
@@ -260,8 +324,8 @@ export async function createCalendarEvent(provider: CalendarProvider, ev: NewEve
     attendees: ev.guests.map((email) => ({ email })),
     reminders:
       ev.reminderMin === null
-        ? { useDefault: false, overrides: [] }
-        : { useDefault: false, overrides: [{ method: "popup", minutes: ev.reminderMin }] },
+        ? { useDefault: false, overrides: (ev.emailReminders ?? []).slice(0, 5).map((minutes) => ({ method: "email", minutes })) }
+        : { useDefault: false, overrides: [{ method: "popup", minutes: ev.reminderMin }, ...(ev.emailReminders ?? []).slice(0, 4).map((minutes) => ({ method: "email", minutes }))] },
   };
   if (ev.online) event.conferenceData = { createRequest: { requestId: `conectcrm-${Date.now()}`, conferenceSolutionKey: { type: "hangoutsMeet" } } };
   const params = new URLSearchParams({ sendUpdates: "all", ...(ev.online ? { conferenceDataVersion: "1" } : {}) });

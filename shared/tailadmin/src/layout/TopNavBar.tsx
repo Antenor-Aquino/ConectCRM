@@ -19,6 +19,7 @@ export function TopNavBar({
   brandName = "ConectCRM",
   brandIcon = <Leaf size={16} />,
   beforeNavEnd,
+  search,
   actionItems = [],
 }: {
   items: TopNavItem[];
@@ -33,6 +34,8 @@ export function TopNavBar({
   brandIcon?: ReactNode;
   /** Conteúdo logo após os itens do menu (ex.: botão "+" de cadastro rápido). */
   beforeNavEnd?: ReactNode;
+  /** Pesquisa geral, entre o menu e as ações (fora do nav rolável, para o dropdown não ser cortado). */
+  search?: ReactNode;
   /** Telas abertas por botões em `actions` (ex.: Configurações): só para o subtítulo. */
   actionItems?: TopNavItem[];
 }) {
@@ -90,6 +93,8 @@ export function TopNavBar({
           })}
           {beforeNavEnd}
         </nav>
+
+        {search}
 
         {/* Fora do nav com overflow-x-auto: dentro dele o dropdown era
          * recortado pela área rolável e parecia não abrir. */}

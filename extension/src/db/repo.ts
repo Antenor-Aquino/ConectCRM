@@ -32,12 +32,16 @@ export const DATA_TABLES = [
   "deal_item",
   "activity_type",
   "activity",
+  "activity_reminder",
   "note",
   "attachment",
   "whatsapp_capture",
+  "whatsapp_send",
+  "record_origin",
   "tag",
   "entity_tag",
   "custom_field",
+  "custom_field_group",
   "custom_field_option",
   "custom_field_pipeline",
   "custom_field_value",
@@ -47,6 +51,7 @@ export const DATA_TABLES = [
   "document",
   "document_version",
   "document_link",
+  "external_ref",
 ] as const;
 export type DataTable = (typeof DATA_TABLES)[number];
 

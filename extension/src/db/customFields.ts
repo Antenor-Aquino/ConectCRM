@@ -10,6 +10,7 @@ import {
   ValidationError,
 } from "../lib/validate";
 import { insertRow, softDelete, updateRow, type DbContext } from "./repo";
+import { moveToTrash, type TrashNotice } from "./trash";
 import { many, one, withTransaction, type DatabaseSync } from "./sql";
 
 export type CustomFieldEntity = "person" | "organization" | "deal" | "ticket" | "project" | "activity" | "product";
@@ -75,6 +76,10 @@ export interface CustomField {
   active: number;
   options: CustomFieldOption[];
   pipelineIds: string[];
+  /** Categoria (grupo nos formulários); null = sem categoria. */
+  group_id: string | null;
+  group_name: string | null;
+  group_position: number | null;
 }
 
 export interface CustomFieldInput {
@@ -90,10 +95,21 @@ export interface CustomFieldInput {
   options?: { id?: string; label: string; color?: string | null }[];
   /** Só para negócio/ticket/projeto; vazio = todos os funis do tipo. */
   pipelineIds?: string[];
+  /** Categoria (da mesma entidade); null/vazio = sem categoria. */
+  groupId?: string | null;
 }
 
 type FieldRow = Omit<CustomField, "options" | "pipelineIds">;
-const FIELD_COLS = "id, entity, name, description, field_type, placeholder_key, always_show, hidden, required, position, active";
+const BASE_COLS = "id, entity, name, description, field_type, placeholder_key, always_show, hidden, required, position, active";
+const GROUP_COLS =
+  ", group_id, (SELECT g.name FROM custom_field_group g WHERE g.id = custom_field.group_id AND g.deleted_at IS NULL) AS group_name" +
+  ", (SELECT g.position FROM custom_field_group g WHERE g.id = custom_field.group_id AND g.deleted_at IS NULL) AS group_position";
+/** Bancos de antes das categorias (migration 0012) só aparecem no meio de uma migração. */
+const hasGroups = new WeakMap<DatabaseSync, boolean>();
+function fieldCols(db: DatabaseSync): string {
+  if (!hasGroups.has(db)) hasGroups.set(db, many<{ name: string }>(db, "PRAGMA table_info(custom_field)").some((c) => c.name === "group_id"));
+  return hasGroups.get(db) ? BASE_COLS + GROUP_COLS : `${BASE_COLS}, NULL AS group_id, NULL AS group_name, NULL AS group_position`;
+}
 
 function withDetails(db: DatabaseSync, rows: FieldRow[]): CustomField[] {
   return rows.map((f) => ({
@@ -119,7 +135,7 @@ export function listCustomFields(
 ): CustomField[] {
   const rows = many<FieldRow>(
     db,
-    `SELECT ${FIELD_COLS} FROM custom_field WHERE entity = ? AND deleted_at IS NULL ${opts.includeInactive ? "" : "AND active = 1"}
+    `SELECT ${fieldCols(db)} FROM custom_field WHERE entity = ? AND deleted_at IS NULL ${opts.includeInactive ? "" : "AND active = 1"}
      ORDER BY position, name COLLATE NOCASE`,
     entity,
   );
@@ -129,7 +145,7 @@ export function listCustomFields(
 }
 
 export function getCustomField(db: DatabaseSync, id: string): CustomField | undefined {
-  const row = one<FieldRow>(db, `SELECT ${FIELD_COLS} FROM custom_field WHERE id = ? AND deleted_at IS NULL`, id);
+  const row = one<FieldRow>(db, `SELECT ${fieldCols(db)} FROM custom_field WHERE id = ? AND deleted_at IS NULL`, id);
   return row ? withDetails(db, [row])[0] : undefined;
 }
 
@@ -212,6 +228,7 @@ export function createCustomField(db: DatabaseSync, ctx: DbContext, input: Custo
       hidden: input.hidden ? 1 : 0,
       required: input.required ? 1 : 0,
       position: (last?.p ?? -1) + 1,
+      ...(input.groupId ? { group_id: checkGroup(db, input.entity, input.groupId) } : {}),
     });
     if (isList(input.fieldType)) syncOptions(db, ctx, id, options);
     syncPipelines(db, ctx, id, pipelineIds);
@@ -240,6 +257,7 @@ export function updateCustomField(
     if (patch.required !== undefined) data.required = patch.required ? 1 : 0;
     if (patch.active !== undefined) data.active = patch.active ? 1 : 0;
     if (patch.position !== undefined) data.position = patch.position;
+    if (patch.groupId !== undefined) data.group_id = checkGroup(db, field.entity, patch.groupId);
     updateRow(db, ctx, "custom_field", id, data);
     if (patch.options !== undefined) {
       if (!isList(field.field_type)) throw new ValidationError("Só campos de lista têm opções.");
@@ -253,8 +271,68 @@ export function updateCustomField(
   });
 }
 
-export function deleteCustomField(db: DatabaseSync, ctx: DbContext, id: string): void {
-  softDelete(db, ctx, "custom_field", id);
+// ---------- Categorias ----------
+
+export interface CustomFieldGroup {
+  id: string;
+  entity: CustomFieldEntity;
+  name: string;
+  position: number;
+  /** Campos ativos na categoria. */
+  field_count: number;
+}
+
+function checkGroup(db: DatabaseSync, entity: CustomFieldEntity, groupId: string | null | undefined): string | null {
+  if (!groupId) return null;
+  const g = one<{ entity: string }>(db, "SELECT entity FROM custom_field_group WHERE id = ? AND deleted_at IS NULL", groupId);
+  if (!g) throw new ValidationError("Categoria não encontrada.");
+  if (g.entity !== entity) throw new ValidationError("A categoria é de outro tipo de cadastro.");
+  return groupId;
+}
+
+export function listFieldGroups(db: DatabaseSync, entity: CustomFieldEntity): CustomFieldGroup[] {
+  return many<CustomFieldGroup>(
+    db,
+    `SELECT g.id, g.entity, g.name, g.position,
+       (SELECT COUNT(*) FROM custom_field f WHERE f.group_id = g.id AND f.deleted_at IS NULL) AS field_count
+     FROM custom_field_group g WHERE g.entity = ? AND g.deleted_at IS NULL ORDER BY g.position, g.name COLLATE NOCASE`,
+    entity,
+  );
+}
+
+export function createFieldGroup(db: DatabaseSync, ctx: DbContext, input: { entity: CustomFieldEntity; name: string }): string {
+  if (!CUSTOM_FIELD_ENTITIES.includes(input.entity)) throw new ValidationError("Entidade inválida.");
+  const name = requireText(input.name, "Informe o nome da categoria.");
+  if (one(db, "SELECT 1 FROM custom_field_group WHERE entity = ? AND name = ? COLLATE NOCASE AND deleted_at IS NULL", input.entity, name))
+    throw new ValidationError("Já existe uma categoria com esse nome.");
+  const last = one<{ p: number | null }>(db, "SELECT MAX(position) AS p FROM custom_field_group WHERE entity = ? AND deleted_at IS NULL", input.entity);
+  return insertRow(db, ctx, "custom_field_group", { entity: input.entity, name, position: (last?.p ?? -1) + 1 });
+}
+
+export function renameFieldGroup(db: DatabaseSync, ctx: DbContext, id: string, name: string): void {
+  const g = one<{ entity: string }>(db, "SELECT entity FROM custom_field_group WHERE id = ? AND deleted_at IS NULL", id);
+  if (!g) throw new ValidationError("Categoria não encontrada.");
+  const clean = requireText(name, "Informe o nome da categoria.");
+  if (one(db, "SELECT 1 FROM custom_field_group WHERE entity = ? AND name = ? COLLATE NOCASE AND id <> ? AND deleted_at IS NULL", g.entity, clean, id))
+    throw new ValidationError("Já existe uma categoria com esse nome.");
+  updateRow(db, ctx, "custom_field_group", id, { name: clean });
+}
+
+/** Exclui a categoria; os campos dela ficam sem categoria (nada se perde). */
+export function deleteFieldGroup(db: DatabaseSync, ctx: DbContext, id: string): TrashNotice {
+  return moveToTrash(db, ctx, "custom_field_group", id, () => {
+    for (const f of many<{ id: string }>(db, "SELECT id FROM custom_field WHERE group_id = ? AND deleted_at IS NULL", id))
+      updateRow(db, ctx, "custom_field", f.id, { group_id: null });
+    softDelete(db, ctx, "custom_field_group", id);
+  });
+}
+
+export function reorderFieldGroups(db: DatabaseSync, ctx: DbContext, ids: string[]): void {
+  withTransaction(db, () => ids.forEach((id, i) => updateRow(db, ctx, "custom_field_group", id, { position: i })));
+}
+
+export function deleteCustomField(db: DatabaseSync, ctx: DbContext, id: string): TrashNotice {
+  return moveToTrash(db, ctx, "custom_field", id, () => softDelete(db, ctx, "custom_field", id));
 }
 
 // ---------- Valores ----------

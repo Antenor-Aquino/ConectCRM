@@ -152,3 +152,110 @@ salvo assim mesmo e a janela lista o motivo antes de fechar.
 - OCR automático de todas as imagens e PDFs escaneados para a busca —
   decisão do usuário: depois (hoje só quando se pede a transcrição com IA
   no envio, seção 2.1).
+
+## Enviar documento pelo WhatsApp (0.2.46)
+
+- Na aba Documentos do cartão, do contato, da organização e da atividade,
+  cada documento ganha o ícone de WhatsApp quando há alguém com celular:
+  - cartão: contato principal, outros contatos do cartão e a organização;
+  - contato: ele mesmo; organização: ela e os contatos dela;
+  - atividade: os do cartão vinculado, o contato e a organização dela.
+- A janela "Enviar pelo WhatsApp" mostra o documento, para quem enviar
+  (nome, celular e papel: contato principal, outro contato…) e a mensagem que
+  vai junto (começa com o nome do documento).
+- O envio sai do WhatsApp conectado no WhatsApp Web deste Chrome, sem abrir a
+  conversa (mesma biblioteca dos lembretes, spec 10). Imagem PNG/JPG/WebP vai
+  como foto com legenda; o resto, como documento com o nome do arquivo. Até
+  64 MB.
+- Sem a aba do WhatsApp Web aberta e conectada, a janela explica e oferece
+  "Abrir WhatsApp Web".
+- O envio fica na auditoria do documento: "Enviou pelo WhatsApp para
+  Cristiane · (81) 98729-8285".
+- Se o WhatsApp Web mudar por dentro e o envio automático falhar, a janela
+  oferece o plano B: "Baixar o arquivo e abrir a conversa" com o contato, para
+  arrastar o arquivo manualmente.
+- Biblioteca WA-JS 4.7.1 (0.2.47, corrige o envio de arquivos depois de uma
+  mudança do WhatsApp Web). A aba do WhatsApp com uma versão anterior da
+  biblioteca é recarregada sozinha antes do envio.
+
+No cartão, o campo **Contato** (principal) mostra os ícones de WhatsApp e de
+e-mail quando o contato tem celular/e-mail, como os "Outros contatos".
+
+## Vários números de origem do WhatsApp (0.2.48)
+
+**Configurações → WhatsApp**: cada usuário cadastra os números de onde envia
+(neste computador, como os provedores de e-mail): nome (ex.: Comercial,
+Suporte), número e forma de envio:
+
+| Forma | Como envia |
+|---|---|
+| WhatsApp Web deste Chrome | Sozinho, pelo WhatsApp Web aberto neste perfil do Chrome. Só um por perfil (o WhatsApp Web aceita um número por perfil). O CRM confere se o número conectado é o cadastrado (DDD e 8 últimos dígitos, com ou sem o 9) e recusa se for outro |
+| Manual | Para o número aberto em outro perfil do Chrome ou no celular: o CRM baixa o arquivo e mostra os passos com "Copiar o link da conversa" (wa.me) e "Copiar a mensagem"; "Já enviei" registra o envio |
+| Z-API | Sozinho, pela API da Z-API (instância, token e Client-Token; permissão de acesso a api.z-api.io pedida ao salvar). Funciona com qualquer perfil aberto |
+
+- **Testar**: WhatsApp Web confere o número conectado; Z-API consulta se a
+  instância está conectada.
+- No envio do documento, com mais de um número, aparece **Enviar de**; vem
+  escolhido o último usado. Sem nenhum número cadastrado, tudo sai do WhatsApp
+  Web deste Chrome, como antes.
+- A auditoria registra o número de origem: "… · de Suporte (envio manual)".
+- **Por que não há dois automáticos pelo WhatsApp Web:** cada perfil do Chrome
+  é isolado; a extensão só enxerga as abas do perfil onde está instalada, e
+  instalá-la no outro perfil criaria outro CRM, com banco próprio. Para dois
+  números automáticos, o segundo vai pela Z-API.
+
+### Envio vira atividade concluída (0.2.49)
+
+Cada envio (automático ou "Já enviei" no manual) cria uma **atividade
+concluída** do tipo **WhatsApp** (criado na primeira vez, ícone de conversa):
+- título: `Enviou "CONTRATO" pelo WhatsApp para Cristiane`;
+- descrição: Para (nome e celular), De (número de origem, "envio manual") e a
+  mensagem enviada;
+- fica no cartão da tela (ou no cartão da atividade); fora de um cartão, no
+  contato/organização; responsável = quem enviou; sem lembretes;
+- aparece na aba Atividades do cartão, na linha do tempo e nos relatórios.
+O documento não é vinculado à atividade (o título já diz qual foi), para não
+encher o "Também em" a cada envio.
+
+### Vários contatos no cartão (0.2.51)
+
+- Com mais de um contato com WhatsApp (contato principal, outros contatos,
+  organização...), a janela de envio **não vem com ninguém marcado**: o usuário
+  escolhe um, vários ou **Todos os contatos (N)**. O botão mostra "Escolha o
+  contato" até haver escolha, e "Enviar para N contatos" com vários.
+- O envio é em sequência, com 1,5 s entre um contato e outro; cada envio vira
+  sua própria atividade concluída. Se um falhar, os já enviados ficam marcados
+  como "enviado" e só os que faltam continuam selecionados para tentar de novo.
+  Erro do próprio WhatsApp (aba fechada, desconectado) interrompe os demais;
+  "número sem WhatsApp" pula só aquele contato.
+- No envio manual, a janela lista o link da conversa de cada contato; "Já
+  enviei" registra uma atividade por contato.
+
+### Revisão antes de enviar e envio pendente (0.2.52)
+
+Configurações → WhatsApp → **Ao enviar documento**:
+
+- **Revisar no WhatsApp Web antes de enviar** (padrão, recomendado): ao clicar
+  em "Revisar no WhatsApp Web", o CRM
+  1. cria o envio **pendente** (tabela `whatsapp_send`) e uma **atividade
+     pendente** do tipo WhatsApp no cartão (`Enviar "Boleto" pelo WhatsApp
+     para Lindendorf`);
+  2. traz a aba do WhatsApp Web para a frente, abre a conversa e deixa o
+     arquivo na **tela de prévia**, com a mensagem como legenda (o arquivo é
+     colado na caixa de mensagem, como o usuário faria);
+  3. espera o usuário clicar no **botão verde** (até 15 min), conferindo a
+     cada 2 s se a mensagem com arquivo saiu na conversa;
+  4. ao sair: atividade **concluída** com a hora real do envio
+     (`Enviou "Boleto"…`) e registro na auditoria do documento.
+  Com vários contatos, um de cada vez ("1 de 3"): enviou, o CRM prepara o
+  próximo. Botões: Preparar de novo, Pular este contato, Fechar.
+- **Enviar direto, com 3, 5 (padrão) ou 10 s para cancelar**: a contagem
+  aparece com "Cancelar envio"; ao terminar, sai sem abrir a conversa.
+- A **Z-API** sempre usa a contagem (não tem tela de prévia). O **envio
+  manual** também fica pendente até "Já enviei".
+- **Envios pendentes**: quadro no alto da aba Documentos (cartão, contato,
+  organização, atividade) com **Enviar agora** (retoma só aquele contato) e
+  **Descartar** (a atividade pendente vai para a lixeira, restaurável). O que
+  não foi enviado nunca é registrado como enviado.
+- Se a prévia não abrir (o WhatsApp Web mudou), aparece o erro com **Enviar
+  direto (N s para cancelar)**.

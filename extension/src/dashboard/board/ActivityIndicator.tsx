@@ -69,15 +69,20 @@ export function ActivityIndicator({
     const close = (e: MouseEvent) => {
       if (!panel.current?.contains(e.target as Node) && !btn.current?.contains(e.target as Node)) setPos(null);
     };
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setPos(null);
+    // Esc fecha só este menu (captura antes da janela/painel por baixo, que também fecha com Esc).
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopImmediatePropagation();
+      setPos(null);
+    };
     // Rolar o quadro fecha (o painel ficaria solto); rolar a lista do painel, não.
     const off = (e: Event) => !panel.current?.contains(e.target as Node) && setPos(null);
     document.addEventListener("mousedown", close);
-    document.addEventListener("keydown", esc);
+    window.addEventListener("keydown", esc, true);
     window.addEventListener("scroll", off, true);
     return () => {
       document.removeEventListener("mousedown", close);
-      document.removeEventListener("keydown", esc);
+      window.removeEventListener("keydown", esc, true);
       window.removeEventListener("scroll", off, true);
     };
   }, [pos]);
@@ -112,7 +117,7 @@ export function ActivityIndicator({
           <div
             ref={panel}
             onClick={(e) => e.stopPropagation()}
-            className="fixed z-[9000] w-80 rounded-xl border border-gray-200 bg-white shadow-theme-lg dark:border-gray-700 dark:bg-gray-900"
+            className="fixed z-[100000] w-80 rounded-xl border border-gray-200 bg-white shadow-theme-lg dark:border-gray-700 dark:bg-gray-900"
             style={{ top: pos.top, left: pos.left }}
           >
             <div className="max-h-64 overflow-y-auto p-1.5 custom-scrollbar">
