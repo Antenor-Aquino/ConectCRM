@@ -5,6 +5,7 @@
 // evento (ex.: salvar produtos também atualiza o valor do negócio).
 import { noteText } from "./notes";
 import { CARD_TEXT, OUTCOME_TEXT, PIPELINE_TYPE_BY_KIND } from "../lib/cardTypes";
+import { originLines, type OriginSummary } from "./docCard";
 import { formatCents, formatDateTime } from "../lib/format";
 import type { DealKind } from "./pipelines";
 import { many, type DatabaseSync } from "./sql";
@@ -147,6 +148,7 @@ export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
     { table: "document_link", sql: "SELECT id FROM document_link WHERE entity_type = 'deal' AND entity_id = ?" },
     { table: "activity", sql: "SELECT id FROM activity WHERE deal_id = ?" },
     { table: "deal_participant", sql: "SELECT id FROM deal_participant WHERE deal_id = ?" },
+    { table: "record_origin", sql: "SELECT id FROM record_origin WHERE entity_type = 'deal' AND local_id = ?" },
   ];
   const ids: string[] = [cardId];
   for (const o of owned) ids.push(...many<{ id: string }>(db, o.sql, cardId).map((r) => r.id));
@@ -193,6 +195,14 @@ export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
     const next = { ...prev, ...Object.fromEntries(Object.entries(ch).map(([k, [, b]]) => [k, b])) };
     state.set(l.row_id, next);
     const t = l.table_name;
+    if (t === "record_origin") {
+      if (l.op !== "insert") return [];
+      try {
+        return originLines(JSON.parse(String(next.summary)) as OriginSummary);
+      } catch {
+        return [];
+      }
+    }
     if (t === "deal") {
       if (l.op === "insert") return [`Criou o cartão "${next.title}" na etapa ${name(stages, next.stage_id)}`];
       if (l.op === "delete") return ["Excluiu o cartão"];
@@ -287,24 +297,34 @@ export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
   const refOf = (l: LogRow): HistoryRef | null => {
     if (l.table_name === "note" && liveNotes.has(l.row_id)) return { kind: "note", id: l.row_id };
     if (l.table_name === "activity" && liveTasks.has(l.row_id)) return { kind: "activity", id: l.row_id };
-    const docId = l.table_name === "document_link" ? String(state.get(l.row_id)?.document_id ?? "") : "";
+    const docId = l.table_name === "document_link" || l.table_name === "record_origin" ? String(state.get(l.row_id)?.document_id ?? "") : "";
     if (docId && liveDocs.has(docId)) return { kind: "document", id: docId };
     return null;
   };
 
   const events: HistoryEvent[] = [];
+  // Criação por automação (Copiloto a partir de documento): o evento mostra só o resumo.
+  const summaries = new Map<HistoryEvent, { lines: string[]; refs: (HistoryRef | null)[] }>();
   for (const l of logs) {
     const lines = describe(l);
     if (!lines.length) continue;
     const ref = refOf(l);
     const refs = lines.map(() => ref);
     const last = events.at(-1);
+    let ev: HistoryEvent;
     if (last && last.userId === l.user_id && new Date(l.at).getTime() - new Date(last.at).getTime() <= WINDOW_MS) {
       last.lines.push(...lines);
       last.refs.push(...refs);
+      ev = last;
     } else {
-      events.push({ at: l.at, userId: l.user_id, userName: l.user_id ? (users.get(l.user_id) ?? "Usuário removido") : "Sistema", lines, refs });
+      ev = { at: l.at, userId: l.user_id, userName: l.user_id ? (users.get(l.user_id) ?? "Usuário removido") : "Sistema", lines, refs };
+      events.push(ev);
     }
+    if (l.table_name === "record_origin") summaries.set(ev, { lines, refs });
+  }
+  for (const [ev, sum] of summaries) {
+    ev.lines = sum.lines;
+    ev.refs = sum.refs;
   }
   return events.reverse();
 }

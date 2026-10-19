@@ -121,7 +121,7 @@ const DOC_PROMPT = `Transcreva na íntegra o texto das imagens a seguir (página
 - Responda apenas com a transcrição. Se não houver nenhum texto, responda exatamente: ${NO_TEXT}`;
 
 /** Imagem → PNG em base64 (no máximo 2000 px no maior lado). */
-async function imageToPng(file: Blob): Promise<string> {
+export async function imageToPng(file: Blob): Promise<string> {
   const bmp = await createImageBitmap(file);
   const scale = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
   const canvas = document.createElement("canvas");
@@ -132,7 +132,7 @@ async function imageToPng(file: Blob): Promise<string> {
   return dataUrlBase64(canvas.toDataURL("image/png"));
 }
 
-async function pdfPages(file: Blob, limit: number, mode: "text" | "image"): Promise<string[]> {
+export async function pdfPages(file: Blob, limit: number, mode: "text" | "image"): Promise<string[]> {
   const doc = await loadPdf(file);
   try {
     const out: string[] = [];

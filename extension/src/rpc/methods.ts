@@ -32,6 +32,7 @@ import { many, one, type DatabaseSync } from "../db/sql";
 import { hashPin, verifyPin } from "../lib/pin";
 import { ValidationError } from "../lib/validate";
 import * as tags from "../db/tags";
+import * as docCard from "../db/docCard";
 import * as users from "../db/users";
 
 type Handler = (db: DatabaseSync, ctx: DbContext, params: never) => unknown;
@@ -169,6 +170,14 @@ export const methods = {
     deals.assertCanAssign(db, v, p.ownerId === undefined ? ctx.userId : p.ownerId);
     return deals.createCard(db, ctx, p);
   },
+  /** Copiloto: cartão a partir de um documento, depois da confirmação do usuário (spec 12). */
+  "copilot.createFromDocument": (db: DatabaseSync, ctx: DbContext, p: docCard.DocCardInput) => {
+    const v = viewer(db, ctx);
+    deals.assertCanAssign(db, v, ctx.userId);
+    return docCard.createCardFromDocument(db, ctx, v, p);
+  },
+  /** Origem de um registro criado por automação (cartão, contato, organização). */
+  "origins.of": (db: DatabaseSync, _c: DbContext, p: Id) => docCard.recordOrigin(db, p.id),
   "cards.import": (db: DatabaseSync, ctx: DbContext, p: cardImporter.CardImportInput) => {
     const v = viewer(db, ctx);
     return cardImporter.importCards(db, ctx, p, (ownerId) => deals.assertCanAssign(db, v, ownerId));

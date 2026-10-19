@@ -37,6 +37,7 @@ export const DATA_TABLES = [
   "attachment",
   "whatsapp_capture",
   "whatsapp_send",
+  "record_origin",
   "tag",
   "entity_tag",
   "custom_field",

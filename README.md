@@ -143,6 +143,14 @@ atividades e notas, e tudo volta junto. Depois do prazo (padrão 30 dias,
 configurável pelo administrador), o item é excluído definitivamente (detalhes
 em [`especificacoes/11-lixeira.md`](especificacoes/11-lixeira.md)).
 
+### Cartão a partir de documento (Copiloto)
+
+No Copiloto, anexe um documento (PDF, Word, planilha, foto): ele identifica
+cliente, contato, pedido e tags, mostra tudo para conferir e pergunta em qual
+funil/etapa criar. Ao confirmar, cria organização, contato, tags e o cartão,
+guarda o arquivo no GED e registra a origem no histórico (detalhes em
+[`especificacoes/12-copiloto-documento.md`](especificacoes/12-copiloto-documento.md)).
+
 ### Cadastros duplicados
 
 Ao criar contato, organização ou cartão, o CRM procura nomes parecidos (mais

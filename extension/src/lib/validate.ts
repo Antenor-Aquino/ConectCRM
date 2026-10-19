@@ -100,3 +100,15 @@ export function normalizeCents(value: number | null | undefined, label: string):
   if (!Number.isInteger(v) || v < 0) throw new ValidationError(`${label}: valor inválido.`);
   return v;
 }
+
+/** Sem repetir (sem diferenciar maiúsculas), mantendo a primeira grafia. */
+export function uniqueNames(names: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const n of names.map((x) => x.trim()).filter(Boolean)) {
+    if (seen.has(n.toLowerCase())) continue;
+    seen.add(n.toLowerCase());
+    out.push(n);
+  }
+  return out;
+}

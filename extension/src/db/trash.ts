@@ -369,6 +369,8 @@ const POLYMORPHIC: { table: DataTable; column: string }[] = [
   { table: "note", column: "entity_id" },
   { table: "attachment", column: "entity_id" },
   { table: "external_ref", column: "local_id" },
+  { table: "record_origin", column: "local_id" },
+  { table: "whatsapp_send", column: "activity_id" },
 ];
 
 class Blocked extends Error {}
