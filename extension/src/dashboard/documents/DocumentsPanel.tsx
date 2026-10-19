@@ -3,10 +3,11 @@
 // documento já com os vínculos da tela; "Remover deste cadastro" tira só o
 // vínculo; a lixeira tira o documento de todos os cadastros.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Download, Eye, Paperclip, Trash2, Unlink } from "lucide-react";
+import { Download, Eye, MessageCircle, Paperclip, Trash2, Unlink } from "lucide-react";
 import { TaButton, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
-import type { DocLinkType, DocumentListItem } from "../../db/documents";
+import type { DocLinkType, DocumentListItem, WhatsAppRecipient } from "../../db/documents";
+import { WhatsAppSendModal, type WhatsAppDoc } from "./WhatsAppSendModal";
 import { downloadVersion } from "../../lib/documentFiles";
 import { formatBytes } from "../../lib/files";
 import { formatDateTime } from "../../lib/format";
@@ -26,8 +27,13 @@ export function DocumentsPanel({ type, id, onChanged, compact }: { type: DocLink
   const [error, setError] = useState<string | null>(null);
   const [drag, setDrag] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const [recipients, setRecipients] = useState<WhatsAppRecipient[]>([]);
+  const [sending, setSending] = useState<WhatsAppDoc | null>(null);
 
-  const load = useCallback(async () => setList(await call("documents.forEntity", { type, id })), [type, id]);
+  const load = useCallback(async () => {
+    setList(await call("documents.forEntity", { type, id }));
+    setRecipients(await call("documents.whatsappRecipients", { type, id }).catch(() => []));
+  }, [type, id]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -132,6 +138,17 @@ export function DocumentsPanel({ type, id, onChanged, compact }: { type: DocLink
                 <button type="button" title="Visualizar" className="text-gray-400 hover:text-brand-600" onClick={() => setOpen(d.id)}>
                   <Eye size={16} />
                 </button>
+                {recipients.length > 0 && (
+                  <button
+                    type="button"
+                    title={`Enviar pelo WhatsApp para ${recipients.length === 1 ? recipients[0]!.name : "um contato"}`}
+                    aria-label={`Enviar ${d.name} pelo WhatsApp`}
+                    className="text-gray-400 hover:text-success-600"
+                    onClick={() => setSending(d)}
+                  >
+                    <MessageCircle size={16} />
+                  </button>
+                )}
                 <button
                   type="button"
                   title={`Baixar ${d.filename}`}
@@ -172,6 +189,7 @@ export function DocumentsPanel({ type, id, onChanged, compact }: { type: DocLink
         })}
         {list.length === 0 && <li className="py-2 text-theme-sm text-gray-400">Nenhum documento.</li>}
       </ul>
+      {sending && <WhatsAppSendModal doc={sending} recipients={recipients} onClose={() => setSending(null)} />}
       {upload && (
         <UploadModal
           files={upload}

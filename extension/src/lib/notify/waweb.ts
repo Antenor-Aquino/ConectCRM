@@ -1,5 +1,6 @@
-// WhatsApp pelo WhatsApp Web aberto neste Chrome (spec 10): a mensagem sai do
-// número conectado no WhatsApp Web e vai para o número indicado pelo usuário.
+// WhatsApp pelo WhatsApp Web aberto neste Chrome (specs 08 e 10): a mensagem
+// (lembrete ou documento) sai do número conectado no WhatsApp Web e vai para o
+// número indicado.
 // Usa a biblioteca WA-JS (public/vendor/wppconnect-wa.js), injetada na aba do
 // WhatsApp, que envia sem abrir a conversa (não atrapalha quem está usando).
 const WA_URL = "https://web.whatsapp.com/*";
@@ -31,7 +32,10 @@ function waConfigure(): boolean {
   return false;
 }
 
-async function waSend(digits: string, text: string, waitMs: number): Promise<SendResult> {
+/** Texto, ou arquivo (data URL) com legenda. */
+type WaPayload = { text: string } | { file: { dataUrl: string; filename: string; mime: string }; caption: string };
+
+async function waSend(digits: string, payload: WaPayload, waitMs: number): Promise<SendResult> {
   type Wid = { _serialized?: string; toString(): string; user?: string };
   const WPP = (window as unknown as { WPP?: any }).WPP; // eslint-disable-line @typescript-eslint/no-explicit-any
   if (!WPP) return { ok: false, code: "not-ready" };
@@ -53,7 +57,13 @@ async function waSend(digits: string, text: string, waitMs: number): Promise<Sen
     if (!found) return { ok: false, code: "not-on-whatsapp" };
     const id = found.wid._serialized ?? found.wid.toString();
     if (me && (me._serialized ?? me.toString()) === id) return { ok: false, code: "self" };
-    await WPP.chat.sendTextMessage(id, text, { createChat: true, linkPreview: false });
+    if ("text" in payload) await WPP.chat.sendTextMessage(id, payload.text, { createChat: true, linkPreview: false });
+    else {
+      const { dataUrl, filename, mime } = payload.file;
+      // Imagem vai como foto (com legenda); o resto, como documento.
+      const type = /^image\/(png|jpe?g|webp)$/.test(mime) ? "image" : "document";
+      await WPP.chat.sendFileMessage(id, dataUrl, { type, filename, mimetype: mime, caption: payload.caption || undefined, createChat: true });
+    }
     return { ok: true };
   } catch (e) {
     return { ok: false, code: "error", message: e instanceof Error ? e.message : String(e) };
@@ -79,8 +89,7 @@ async function whatsappTab(): Promise<chrome.tabs.Tab> {
   return tab;
 }
 
-/** Envia `text` para `phone` pelo WhatsApp Web aberto neste Chrome. */
-export async function sendViaWhatsAppWeb(phone: string, text: string, waitMs = 30_000): Promise<void> {
+async function sendPayload(phone: string, payload: WaPayload, waitMs: number): Promise<void> {
   const digits = waDigits(phone);
   if (digits.length < 12) throw new Error("WhatsApp Web: informe o número com DDD.");
   const tab = await whatsappTab();
@@ -91,9 +100,32 @@ export async function sendViaWhatsAppWeb(phone: string, text: string, waitMs = 3
   } catch (e) {
     throw new Error(`WhatsApp Web: não foi possível acessar a aba (${e instanceof Error ? e.message : String(e)}).`);
   }
-  const [res] = await chrome.scripting.executeScript({ target, world: "MAIN", func: waSend, args: [digits, text, waitMs] });
+  const [res] = await chrome.scripting.executeScript({ target, world: "MAIN", func: waSend, args: [digits, payload, waitMs] });
   const r = res?.result as SendResult | undefined;
   if (r?.ok) return;
   const code = r && !r.ok ? r.code : "error";
   throw new Error(`WhatsApp Web: ${ERRORS[code]}${r && !r.ok && r.message ? ` (${r.message})` : ""}`);
+}
+
+/** Envia `text` para `phone` pelo WhatsApp Web aberto neste Chrome. */
+export function sendViaWhatsAppWeb(phone: string, text: string, waitMs = 30_000): Promise<void> {
+  return sendPayload(phone, { text }, waitMs);
+}
+
+const blobToDataUrl = (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(r.error ?? new Error("Não foi possível ler o arquivo."));
+    r.readAsDataURL(blob);
+  });
+
+/** Até 64 MB (limite de documentos do WhatsApp é maior, mas a aba precisa receber o arquivo inteiro). */
+export const WHATSAPP_FILE_MAX = 64 * 1024 * 1024;
+
+/** Envia um arquivo (documento ou imagem) com legenda para `phone` pelo WhatsApp Web aberto neste Chrome. */
+export async function sendFileViaWhatsAppWeb(phone: string, file: { blob: Blob; filename: string; mime: string }, caption: string, waitMs = 20_000): Promise<void> {
+  if (file.blob.size > WHATSAPP_FILE_MAX) throw new Error("Arquivo grande demais para enviar pelo WhatsApp Web (máximo 64 MB).");
+  const dataUrl = await blobToDataUrl(new Blob([file.blob], { type: file.mime || "application/octet-stream" }));
+  await sendPayload(phone, { file: { dataUrl, filename: file.filename, mime: file.mime || "application/octet-stream" }, caption }, waitMs);
 }

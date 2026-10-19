@@ -464,7 +464,7 @@ export function assertDocumentOwner(db: DatabaseSync, viewer: Viewer | null | un
 
 // ---------- Auditoria (acessos sem alteração) ----------
 
-export type DocumentAction = "view" | "download";
+export type DocumentAction = "view" | "download" | "whatsapp";
 
 export function logDocumentEvent(db: DatabaseSync, ctx: DbContext, documentId: string, action: DocumentAction, detail?: string | null): void {
   run(
@@ -478,6 +478,67 @@ export function logDocumentEvent(db: DatabaseSync, ctx: DbContext, documentId: s
     ctx.userId,
     nowIso(),
   );
+}
+
+// ---------- Enviar pelo WhatsApp ----------
+
+export interface WhatsAppRecipient {
+  /** Contato ou organização. */
+  id: string;
+  kind: "person" | "organization";
+  name: string;
+  phone: string;
+  /** "Contato principal", "Outro contato", "Organização". */
+  role: string;
+}
+
+/** Quem pode receber um documento pelo WhatsApp a partir desta tela (só quem tem celular). */
+export function whatsappRecipients(db: DatabaseSync, type: DocLinkType, id: string): WhatsAppRecipient[] {
+  const out: WhatsAppRecipient[] = [];
+  const add = (r: WhatsAppRecipient) => {
+    if (r.phone && !out.some((x) => x.phone === r.phone)) out.push(r);
+  };
+  const person = (pid: string | null, role: string) => {
+    const p = pid ? one<{ id: string; name: string; phone: string | null }>(db, "SELECT id, name, phone FROM person WHERE id = ? AND deleted_at IS NULL", pid) : undefined;
+    if (p?.phone) add({ id: p.id, kind: "person", name: p.name, phone: p.phone, role });
+  };
+  const org = (oid: string | null) => {
+    const o = oid ? one<{ id: string; name: string; phone: string | null }>(db, "SELECT id, name, phone FROM organization WHERE id = ? AND deleted_at IS NULL", oid) : undefined;
+    if (o?.phone) add({ id: o.id, kind: "organization", name: o.name, phone: o.phone, role: "Organização" });
+  };
+  const card = (dealId: string) => {
+    const d = one<{ person_id: string | null; organization_id: string | null }>(db, "SELECT person_id, organization_id FROM deal WHERE id = ?", dealId);
+    if (!d) return;
+    person(d.person_id, "Contato principal");
+    for (const r of many<{ person_id: string }>(
+      db,
+      "SELECT person_id FROM deal_participant WHERE deal_id = ? AND deleted_at IS NULL ORDER BY created_at",
+      dealId,
+    ))
+      person(r.person_id, "Outro contato do cartão");
+    org(d.organization_id);
+  };
+  if (type === "deal") card(id);
+  else if (type === "person") person(id, "Contato");
+  else if (type === "organization") {
+    org(id);
+    for (const r of many<{ person_id: string }>(
+      db,
+      "SELECT person_id FROM person_organization WHERE organization_id = ? AND deleted_at IS NULL ORDER BY is_primary DESC, created_at",
+      id,
+    ))
+      person(r.person_id, "Contato da organização");
+  } else {
+    const a = one<{ deal_id: string | null; person_id: string | null; organization_id: string | null }>(
+      db,
+      "SELECT deal_id, person_id, organization_id FROM activity WHERE id = ?",
+      id,
+    );
+    if (a?.deal_id) card(a.deal_id);
+    person(a?.person_id ?? null, "Contato da atividade");
+    org(a?.organization_id ?? null);
+  }
+  return out;
 }
 
 // ---------- Consulta ----------
@@ -821,7 +882,7 @@ export interface AuditEntry {
   text: string;
 }
 
-const ACTION_TEXT: Record<string, string> = { view: "Visualizou", download: "Baixou" };
+const ACTION_TEXT: Record<string, string> = { view: "Visualizou", download: "Baixou", whatsapp: "Enviou pelo WhatsApp" };
 /** "ao cartão" / "do cartão", "à tarefa" / "da tarefa"... */
 const LINK_LABEL: Record<DocLinkType, { to: string; from: string }> = {
   deal: { to: "ao cartão", from: "do cartão" },

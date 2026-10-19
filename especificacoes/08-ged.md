@@ -152,3 +152,25 @@ salvo assim mesmo e a janela lista o motivo antes de fechar.
 - OCR automático de todas as imagens e PDFs escaneados para a busca —
   decisão do usuário: depois (hoje só quando se pede a transcrição com IA
   no envio, seção 2.1).
+
+## Enviar documento pelo WhatsApp (0.2.46)
+
+- Na aba Documentos do cartão, do contato, da organização e da atividade,
+  cada documento ganha o ícone de WhatsApp quando há alguém com celular:
+  - cartão: contato principal, outros contatos do cartão e a organização;
+  - contato: ele mesmo; organização: ela e os contatos dela;
+  - atividade: os do cartão vinculado, o contato e a organização dela.
+- A janela "Enviar pelo WhatsApp" mostra o documento, para quem enviar
+  (nome, celular e papel: contato principal, outro contato…) e a mensagem que
+  vai junto (começa com o nome do documento).
+- O envio sai do WhatsApp conectado no WhatsApp Web deste Chrome, sem abrir a
+  conversa (mesma biblioteca dos lembretes, spec 10). Imagem PNG/JPG/WebP vai
+  como foto com legenda; o resto, como documento com o nome do arquivo. Até
+  64 MB.
+- Sem a aba do WhatsApp Web aberta e conectada, a janela explica e oferece
+  "Abrir WhatsApp Web".
+- O envio fica na auditoria do documento: "Enviou pelo WhatsApp para
+  Cristiane · (81) 98729-8285".
+
+No cartão, o campo **Contato** (principal) mostra os ícones de WhatsApp e de
+e-mail quando o contato tem celular/e-mail, como os "Outros contatos".

@@ -420,6 +420,16 @@ export const methods = {
     const legacy = f.location === "legacy" ? (attachments.getDataUrls(db, [f.blob_id])[f.blob_id] ?? null) : null;
     return { ...f, legacyDataUrl: legacy };
   },
+  /** Quem pode receber um documento pelo WhatsApp a partir desta tela. */
+  "documents.whatsappRecipients": (db: DatabaseSync, ctx: DbContext, p: { type: docs.DocLinkType; id: string }) => {
+    assertEntityAccess(db, ctx, p.type, p.id);
+    return docs.whatsappRecipients(db, p.type, p.id);
+  },
+  /** Registra na auditoria do documento o envio pelo WhatsApp. */
+  "documents.logWhatsApp": (db: DatabaseSync, ctx: DbContext, p: Id & { to: string }) => {
+    docView(db, ctx, p.id);
+    docs.logDocumentEvent(db, ctx, p.id, "whatsapp", `para ${p.to}`);
+  },
   "documents.bySha": (db: DatabaseSync, ctx: DbContext, p: { sha256: string }) => docs.documentsBySha(db, p.sha256, viewer(db, ctx)),
   /** O conteúdo já está guardado? (evita gravar de novo o mesmo arquivo). */
   "documents.blob": (db: DatabaseSync, _c: DbContext, p: { sha256: string }) => docs.blobBySha(db, p.sha256) ?? null,

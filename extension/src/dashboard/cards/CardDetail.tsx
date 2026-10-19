@@ -159,6 +159,7 @@ export function CardDetail({
   const status = card.status === "open" ? null : { color: card.status === "won" ? ("green" as const) : ("red" as const), label: outcome[card.status] };
   const person: ComboItem | null = card.person_id ? { id: card.person_id, label: card.person_name ?? "" } : null;
   const others = card.contacts.filter((c) => !c.is_primary);
+  const primary = card.contacts.find((c) => c.is_primary);
   const org: ComboItem | null = card.organization_id ? { id: card.organization_id, label: card.organization_name ?? "" } : null;
   const items: ItemDraft[] = card.items.map((i) => ({
     id: i.id,
@@ -374,6 +375,22 @@ export function CardDetail({
               createLabel="Criar contato"
               onOpenValue={(i) => setEditing({ kind: "person", id: i.id })}
               openTitle="Editar o cadastro do contato"
+              valueActions={
+                primary && (primary.phone || primary.email) ? (
+                  <span className="flex items-center gap-2.5 pr-1" data-primary-contact-actions>
+                    {primary.phone && (
+                      <PhoneLink phone={primary.phone} className="text-gray-400 hover:text-success-600 hover:no-underline">
+                        <MessageCircle size={15} />
+                      </PhoneLink>
+                    )}
+                    {primary.email && (
+                      <EmailLink iconOnly email={primary.email} className="text-gray-400 hover:no-underline">
+                        <Mail size={15} />
+                      </EmailLink>
+                    )}
+                  </span>
+                ) : null
+              }
             />
           </Field>
           <Field
