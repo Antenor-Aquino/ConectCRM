@@ -124,6 +124,17 @@ importado (e oferece atualizar), aponta possíveis duplicados e mostra no
 cadastro o link para o original (detalhes em
 [`especificacoes/09-integracoes.md`](especificacoes/09-integracoes.md)).
 
+### Notificações
+
+Cada atividade tem vários lembretes (ex.: 1 dia antes por e-mail, 1 h antes no
+WhatsApp, 15 min antes no Chrome). Em **Configurações → Notificações** cada
+usuário liga os canais — Chrome, e-mail (pela conta Gmail ou Outlook conectada)
+e WhatsApp (pelo CallMeBot, gratuito) —, testa cada um e define os lembretes
+padrão, o resumo diário da agenda, o aviso de atividades atrasadas e o horário
+de silêncio. Com o Chrome fechado, ao reabrir chega um resumo único; reuniões no
+Google Agenda levam também o lembrete por e-mail do Google (detalhes em
+[`especificacoes/10-notificacoes.md`](especificacoes/10-notificacoes.md)).
+
 ### Cadastros duplicados
 
 Ao criar contato, organização ou cartão, o CRM procura nomes parecidos (mais

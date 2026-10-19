@@ -13,6 +13,7 @@ import migration0010 from "./migrations/0010_numero_ticket.sql?raw";
 import migration0011 from "./migrations/0011_vinculo_externo.sql?raw";
 import migration0012 from "./migrations/0012_categorias_campos.sql?raw";
 import migration0013 from "./migrations/0013_arquivar_cartao.sql?raw";
+import migration0014 from "./migrations/0014_lembretes_notificacoes.sql?raw";
 
 export const MIGRATIONS: { name: string; sql: string }[] = [
   { name: "0000_init.sql", sql: migration0000 },
@@ -29,6 +30,7 @@ export const MIGRATIONS: { name: string; sql: string }[] = [
   { name: "0011_vinculo_externo.sql", sql: migration0011 },
   { name: "0012_categorias_campos.sql", sql: migration0012 },
   { name: "0013_arquivar_cartao.sql", sql: migration0013 },
+  { name: "0014_lembretes_notificacoes.sql", sql: migration0014 },
 ];
 
 /** Aplica as migrations pendentes; devolve quantas rodaram. */

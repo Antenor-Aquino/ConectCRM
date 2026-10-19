@@ -3,6 +3,7 @@
 // permissão, campo obrigatório...) não impede os outros, e o resumo diz qual
 // falhou e por quê.
 import { errorText } from "../lib/errors";
+import type { ReminderRule } from "../lib/notify/settings";
 import { ValidationError } from "../lib/validate";
 import { createActivity } from "./activities";
 import { addCardContact } from "./cardContacts";
@@ -42,7 +43,7 @@ export type BulkAction =
   | { type: "setCustom"; fieldId: string; value: CustomValue }
   | { type: "addContact"; personId: string }
   /** Mesma atividade em cada cartão (ex.: "Ligar para retomar" amanhã às 9h). */
-  | { type: "activity"; typeId?: string; title: string; dueAt: string; endAt?: string | null; ownerFromCard?: boolean };
+  | { type: "activity"; typeId?: string; title: string; dueAt: string; endAt?: string | null; ownerFromCard?: boolean; reminders?: ReminderRule[] };
 
 export interface BulkResult {
   done: number;
@@ -130,6 +131,7 @@ function apply(db: DatabaseSync, ctx: DbContext, viewer: Viewer | null, id: stri
         dealId: id,
         personId: card.person_id,
         organizationId: card.organization_id,
+        ...(a.reminders ? { reminders: a.reminders } : {}),
       });
       return;
     }

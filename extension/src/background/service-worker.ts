@@ -1,6 +1,9 @@
 // Service worker: cria o documento offscreen (dono do banco) sob demanda e
 // dispara os lembretes de tarefas (notificação do Chrome, mesmo com o CRM fechado).
-import type { Activity } from "../db/activities";
+import type { NotifyJob } from "../db/notifications";
+import { sendMail } from "../lib/calendar";
+import { sendCallMeBot } from "../lib/notify/callmebot";
+import { CHANNEL_LABEL, loadAllNotifySettings, loadMailSender, withDefaults, type Channel } from "../lib/notify/settings";
 import { addNotification } from "../lib/notifications";
 import { runClip, type ClipStartMessage } from "./clip";
 import { OFFSCREEN_PATH, type EnsureOffscreenMessage, type RpcRequest, type RpcResponse } from "../rpc/protocol";
@@ -70,33 +73,98 @@ async function rpc<T>(method: string, params: unknown, userId: string | null): P
   }
 }
 
-async function checkReminders(): Promise<void> {
-  const userId = ((await chrome.storage.local.get("conectcrm-current-user"))["conectcrm-current-user"] as string | undefined) ?? null;
-  const due = await rpc<Activity[]>("activities.dueReminders", {}, userId);
-  if (due.length === 0) return;
-  for (const a of due) {
-    const when = new Date(a.due_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-    chrome.notifications.create(`task:${a.id}`, {
-      type: "basic",
-      iconUrl: chrome.runtime.getURL("icons/icon128.png"),
-      title: `Lembrete: ${a.title}`,
-      message: `Atividade às ${when}${a.meeting_url ? " · reunião online" : ""}`,
-      priority: 2,
-      requireInteraction: true,
-    });
-    await addNotification({ kind: "info", title: `Lembrete: ${a.title}`, message: `Atividade às ${when}${a.meeting_url ? " · reunião online" : ""}` });
+// Lembretes e avisos (spec 10): a cada minuto pergunta ao banco o que avisar,
+// envia por Chrome, e-mail (Gmail/Outlook) e WhatsApp (CallMeBot) e registra
+// o resultado (falhas tentam de novo; a última vira aviso no sino).
+let running = false;
+const SNOOZE_KEY = "conectcrm-snoozes";
+type Snooze = { activityId: string; at: string; title: string; text: string };
+
+function chromeNotify(id: string, title: string, message: string, withButtons: boolean): void {
+  chrome.notifications.create(id, {
+    type: "basic",
+    iconUrl: chrome.runtime.getURL("icons/icon128.png"),
+    title,
+    message,
+    priority: 2,
+    requireInteraction: true,
+    ...(withButtons ? { buttons: [{ title: "Concluir" }, { title: "Adiar 10 min" }] } : {}),
+  });
+}
+
+async function runNotifications(): Promise<void> {
+  if (running) return;
+  running = true;
+  try {
+    const userId = ((await chrome.storage.local.get("conectcrm-current-user"))["conectcrm-current-user"] as string | undefined) ?? null;
+    // Adiados ("Adiar 10 min") que venceram.
+    const snoozes = ((await chrome.storage.local.get(SNOOZE_KEY))[SNOOZE_KEY] as Snooze[] | undefined) ?? [];
+    const due = snoozes.filter((x) => x.at <= new Date().toISOString());
+    if (due.length) {
+      await chrome.storage.local.set({ [SNOOZE_KEY]: snoozes.filter((x) => !due.includes(x)) });
+      for (const x of due) chromeNotify(`task:${x.activityId}`, x.title, x.text, true);
+    }
+    const settings = await loadAllNotifySettings();
+    const jobs = await rpc<NotifyJob[]>("notifications.plan", { settings }, userId);
+    if (!jobs.length) return;
+    const sender = await loadMailSender();
+    const results = [];
+    for (const job of jobs) {
+      const s = withDefaults(settings[job.userId ?? ""]);
+      let error: string | undefined;
+      try {
+        if (job.channel === "chrome") {
+          const [title, ...rest] = job.text.split("\n");
+          chromeNotify(job.activityId && job.kind !== "missed" ? `task:${job.activityId}` : `notify:${job.key}`, job.title, rest.join("\n") || title || "", job.kind === "reminder");
+          await addNotification({ kind: job.kind === "overdue" ? "error" : "info", title: job.title, message: rest.join(" · ") });
+        } else if (job.channel === "email") {
+          if (!sender) throw new Error("Conecte a conta que envia os e-mails em Configurações → Notificações.");
+          await sendMail(sender.provider, { to: s.email.to, subject: job.subject, html: job.html });
+        } else {
+          await sendCallMeBot(s.whatsapp.phone, s.whatsapp.apikey, job.text);
+        }
+      } catch (e) {
+        error = e instanceof Error ? e.message : String(e);
+      }
+      results.push({ key: job.key, channel: job.channel, kind: job.kind, userId: job.userId, activityId: job.activityId, title: job.title, ok: !error, error });
+    }
+    const { finalFailures } = await rpc<{ finalFailures: { title: string; channel: string; error: string }[] }>("notifications.record", { results }, userId);
+    for (const f of finalFailures)
+      await addNotification({ kind: "error", title: `Não foi possível avisar por ${CHANNEL_LABEL[f.channel as Channel]}`, message: `${f.title}: ${f.error}` });
+  } finally {
+    running = false;
   }
-  await rpc("activities.markReminded", { ids: due.map((a) => a.id) }, userId);
 }
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === ALARM) void checkReminders().catch((e) => console.warn("Lembretes:", e));
+  if (alarm.name === ALARM) void runNotifications().catch((e) => console.warn("Notificações:", e));
+});
+
+// Botões da notificação do lembrete: Concluir / Adiar 10 min.
+chrome.notifications.onButtonClicked.addListener((notificationId, button) => {
+  if (!notificationId.startsWith("task:")) return;
+  const activityId = notificationId.slice(5);
+  chrome.notifications.clear(notificationId);
+  void (async () => {
+    const userId = ((await chrome.storage.local.get("conectcrm-current-user"))["conectcrm-current-user"] as string | undefined) ?? null;
+    if (button === 0) {
+      await rpc("activities.setDone", { id: activityId, done: true }, userId);
+      return;
+    }
+    const a = await rpc<{ title: string; due_at: string } | null>("activities.get", { id: activityId }, userId);
+    if (!a) return;
+    const snoozes = ((await chrome.storage.local.get(SNOOZE_KEY))[SNOOZE_KEY] as Snooze[] | undefined) ?? [];
+    const when = new Date(a.due_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    snoozes.push({ activityId, at: new Date(Date.now() + 10 * 60_000).toISOString(), title: `Lembrete: ${a.title}`, text: `Atividade às ${when} (adiado)` });
+    await chrome.storage.local.set({ [SNOOZE_KEY]: snoozes });
+  })().catch((e) => console.warn("Notificação:", e));
 });
 
 // Clique na notificação: abre (ou foca) o CRM já na tarefa.
 chrome.notifications.onClicked.addListener((notificationId) => {
-  if (!notificationId.startsWith("task:")) return;
-  const url = chrome.runtime.getURL(`${DASHBOARD}?tarefa=${notificationId.slice(5)}`);
+  if (!notificationId.startsWith("task:") && !notificationId.startsWith("notify:")) return;
+  const query = notificationId.startsWith("task:") ? `?tarefa=${notificationId.slice(5)}` : "";
+  const url = chrome.runtime.getURL(`${DASHBOARD}${query}`);
   void chrome.tabs.query({ url: chrome.runtime.getURL(`${DASHBOARD}*`) }).then(async (tabs) => {
     const tab = tabs[0];
     if (tab?.id) {

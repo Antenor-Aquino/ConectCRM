@@ -10,6 +10,8 @@ import { documentScope } from "./documents";
 import { getEntityTags, setEntityTags } from "./tags";
 import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
 import { getUser, teammateIds, type Viewer } from "./users";
+import { listActivityReminders, setActivityReminders } from "./notifications";
+import type { ReminderRule } from "../lib/notify/settings";
 
 export interface ActivityType {
   id: string;
@@ -76,6 +78,8 @@ export interface ActivityInput {
   endAt?: string | null;
   durationMin?: number;
   reminderMin?: number | null;
+  /** Lembretes (antecedência + canais). Sem eles, `reminderMin` vira um lembrete do Chrome. */
+  reminders?: ReminderRule[];
   done?: boolean;
   ownerId?: string | null;
   /** "Vinculado a": negócio, ticket ou etapa de projeto (opcional). */
@@ -183,7 +187,7 @@ export function createActivity(db: DatabaseSync, ctx: DbContext, input: Activity
       due_at: start,
       end_at: checkEnd(start, normalizeIsoDate(input.endAt, "Finalização")),
       duration_min: minutes(input.durationMin ?? 5, "Duração", false),
-      reminder_min: minutes(input.reminderMin === undefined ? 5 : input.reminderMin, "Lembrete", true),
+      reminder_min: input.reminders ? firstLead(input.reminders) : minutes(input.reminderMin === undefined ? 5 : input.reminderMin, "Lembrete", true),
       done: done ? 1 : 0,
       done_at: done ? nowIso() : null,
       owner_id: ownerId,
@@ -194,14 +198,27 @@ export function createActivity(db: DatabaseSync, ctx: DbContext, input: Activity
     });
     setCustomValues(db, ctx, "activity", id, input.customValues ?? {}, { checkRequired: true });
     if (input.tagIds?.length) setEntityTags(db, ctx, "activity", id, input.tagIds);
+    const rules = input.reminders ?? (input.reminderMin === null ? [] : [{ minutesBefore: input.reminderMin ?? 5, channels: ["chrome" as const] }]);
+    setActivityReminders(db, ctx, id, rules);
     return id;
   });
 }
 
-export function getActivity(db: DatabaseSync, id: string): (Activity & { customValues: Record<string, CustomValue>; tagIds: string[] }) | undefined {
+export function getActivity(
+  db: DatabaseSync,
+  id: string,
+): (Activity & { customValues: Record<string, CustomValue>; tagIds: string[]; reminders: ReminderRule[] }) | undefined {
   const a = one<Activity>(db, "SELECT * FROM activity WHERE id = ? AND deleted_at IS NULL", id);
-  return a ? { ...a, customValues: getCustomValues(db, id), tagIds: getEntityTags(db, id).map((t) => t.id) } : undefined;
+  return a
+    ? { ...a, customValues: getCustomValues(db, id), tagIds: getEntityTags(db, id).map((t) => t.id), reminders: listActivityReminders(db, id) }
+    : undefined;
 }
+
+/** Menor antecedência (coluna reminder_min, usada no evento da agenda). */
+const firstLead = (rules: ReminderRule[]) => {
+  const leads = rules.filter((r) => r.channels.length).map((r) => r.minutesBefore);
+  return leads.length ? Math.min(...leads) : null;
+};
 
 export function updateActivity(db: DatabaseSync, ctx: DbContext, id: string, patch: Partial<ActivityInput>): void {
   withTransaction(db, () => {
@@ -222,6 +239,7 @@ export function updateActivity(db: DatabaseSync, ctx: DbContext, id: string, pat
     }
     if (patch.durationMin !== undefined) data.duration_min = minutes(patch.durationMin, "Duração", false);
     if (patch.reminderMin !== undefined) data.reminder_min = minutes(patch.reminderMin, "Lembrete", true);
+    if (patch.reminders) data.reminder_min = firstLead(patch.reminders);
     if (patch.ownerId !== undefined) {
       if (patch.ownerId && !getUser(db, patch.ownerId)) throw new ValidationError("Responsável não encontrado.");
       data.owner_id = patch.ownerId;
@@ -233,6 +251,9 @@ export function updateActivity(db: DatabaseSync, ctx: DbContext, id: string, pat
     updateRow(db, ctx, "activity", id, data);
     if (patch.customValues) setCustomValues(db, ctx, "activity", id, patch.customValues, { checkRequired: true });
     if (patch.tagIds) setEntityTags(db, ctx, "activity", id, patch.tagIds);
+    if (patch.reminders) setActivityReminders(db, ctx, id, patch.reminders);
+    else if (patch.reminderMin !== undefined)
+      setActivityReminders(db, ctx, id, patch.reminderMin === null ? [] : [{ minutesBefore: patch.reminderMin, channels: ["chrome"] }]);
   });
 }
 

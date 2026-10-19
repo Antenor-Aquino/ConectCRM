@@ -41,8 +41,10 @@ Modal largo em **duas colunas**, botão ✕ no canto.
   meses em cinza.
 - **Hora:** campo `hh:mm`.
 - **Duração:** número em **min** (padrão 5).
-- **Lembrete** (?): número em **min antes** (padrão 5) — dispara notificação
-  do Chrome (via `chrome.alarms`) mesmo com o CRM fechado.
+- **Lembretes** (campo próprio, desde a 0.2.39): vários por atividade, cada um
+  com a antecedência (min, horas ou dias) e os canais (Chrome, e-mail,
+  WhatsApp). Atividade nova vem com os lembretes padrão do usuário. Regras em
+  [`10-notificacoes.md`](10-notificacoes.md).
 - Também aceita digitar direto no campo "Quando".
 
 ## 3. Tipos de atividade
@@ -104,8 +106,6 @@ E-mail**.
 - T2: seletor do SLA e seletor da atividade coexistem, cada um como no mockup.
 - Permissão: administrador vê todas as atividades; gestor, as da equipe;
   vendedor, as suas (atividades sem responsável aparecem para todos).
-- Lembrete: notificação do Chrome a cada minuto (service worker), só para as
-  atividades do usuário atual desta instalação; atividades vencidas há mais de um
-  dia não são notificadas. Mudar a data ou o lembrete reativa o aviso.
+- Lembretes: ver [`10-notificacoes.md`](10-notificacoes.md).
 - Agenda: tipos marcados como "Reunião" podem criar o evento no Google Agenda
   ou Outlook, com convidados, link do Meet/Teams e horários livres do dia.

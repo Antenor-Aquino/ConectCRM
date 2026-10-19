@@ -262,6 +262,7 @@ personalizados, tarefas, backup e WhatsApp).
 - `especificacoes/07-copiloto-ia.md` — copiloto de IA (Fase 11): consultas, card de resposta, ações sugeridas, permissões.
 - `especificacoes/08-ged.md` — GED: documentos, classificação, vínculos automáticos, busca, prévia, versões, auditoria, armazenamento.
 - `especificacoes/09-integracoes.md` — integrações: Pipedrive (leads, contatos, organizações), de-para, já importados, atualização.
+- `especificacoes/10-notificacoes.md` — lembretes das atividades: vários por atividade, canais Chrome/e-mail/WhatsApp, resumo diário, atrasos, silêncio.
 
 ## 11. Dúvidas
 

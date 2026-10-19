@@ -10,6 +10,8 @@ import * as importer from "../db/importer";
 import * as cardImporter from "../db/cardImporter";
 import * as bulk from "../db/bulkCards";
 import * as cardContacts from "../db/cardContacts";
+import * as notify from "../db/notifications";
+import type { NotifySettings } from "../lib/notify/settings";
 import * as ext from "../db/externalImport";
 import * as merge from "../db/merge";
 import * as contacts from "../db/contacts";
@@ -415,6 +417,11 @@ export const methods = {
   /** Usado pelo service worker (lembretes). */
   "activities.dueReminders": (db: DatabaseSync, ctx: DbContext) => activities.dueReminders(db, ctx.userId),
   "activities.markReminded": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => activities.markReminded(db, ctx, p.ids),
+  // Notificações (spec 10): o service worker pergunta o que avisar e registra o resultado.
+  "notifications.plan": (db: DatabaseSync, ctx: DbContext, p: { settings: Record<string, Partial<NotifySettings>>; now?: string }) =>
+    notify.planNotifications(db, p.now ? new Date(p.now) : new Date(), p.settings, ctx.userId),
+  "notifications.record": (db: DatabaseSync, _c: DbContext, p: { results: Parameters<typeof notify.recordDeliveries>[1] }) => notify.recordDeliveries(db, p.results),
+  "notifications.forActivity": (db: DatabaseSync, _c: DbContext, p: Id) => notify.activityDeliveries(db, p.id),
   "activities.setExternalEvent": (db: DatabaseSync, ctx: DbContext, p: Id & Parameters<typeof activities.setActivityExternalEvent>[3]) => {
     assertActivityAccess(db, ctx, p.id);
     activities.setActivityExternalEvent(db, ctx, p.id, p);

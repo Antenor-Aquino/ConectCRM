@@ -38,6 +38,8 @@ import { FieldInput } from "../ui/CustomFieldsForm";
 import { Field } from "../ui/form";
 import { Popover } from "../ui/Popover";
 import { TagPicker } from "../ui/TagPicker";
+import { RemindersEditor } from "../ui/RemindersEditor";
+import { loadNotifySettings, type ReminderRule } from "../../lib/notify/settings";
 import { createPersonQuick, searchPersons } from "../cards/searchers";
 import { StagePill } from "../ui/StageSelect";
 
@@ -555,6 +557,11 @@ function ActivityDialog({ busy, n, onClose, onApply }: { busy: boolean; n: numbe
   );
   const [time, setTime] = useState("09:00");
   const [ownerFromCard, setOwnerFromCard] = useState(true);
+  const { user } = useSession();
+  const [reminders, setReminders] = useState<ReminderRule[]>([]);
+  useEffect(() => {
+    void loadNotifySettings(user.id).then((n) => setReminders(n.defaults));
+  }, [user.id]);
   useEffect(() => {
     void call("activityTypes.list", {}).then((t) => {
       const list = t.filter((x) => x.active);
@@ -589,12 +596,17 @@ function ActivityDialog({ busy, n, onClose, onApply }: { busy: boolean; n: numbe
         <input type="checkbox" checked={ownerFromCard} onChange={(e) => setOwnerFromCard(e.target.checked)} />
         Para o responsável de cada cartão (desmarcado: para mim)
       </label>
+      <div className="mt-3">
+        <Field label="Lembretes">
+          <RemindersEditor compact value={reminders} onChange={setReminders} />
+        </Field>
+      </div>
       <Footer
         busy={busy}
         onClose={onClose}
         label="Agendar"
         disabled={!title.trim() || !dueAt}
-        onOk={() => void onApply({ type: "activity", typeId: typeId || undefined, title: title.trim(), dueAt, ownerFromCard }, "com a atividade agendada")}
+        onOk={() => void onApply({ type: "activity", typeId: typeId || undefined, title: title.trim(), dueAt, ownerFromCard, reminders }, "com a atividade agendada")}
       />
     </TaModal>
   );
