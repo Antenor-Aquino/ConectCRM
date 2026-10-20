@@ -41,6 +41,11 @@ export function ClientFinancePanel({
   const today = new Date().toLocaleDateString("sv-SE");
   return (
     <div className="space-y-3" data-client-finance>
+      {sync?.status === "package" && (
+        <p className="text-theme-xs text-gray-500">
+          Modo pacote: valores conforme o último retorno importado da Gestão Financeira{data.syncedAt ? ` (${formatDateTime(data.syncedAt)})` : " (nenhum ainda)"}.
+        </p>
+      )}
       {sync?.status === "off" && <p className="text-theme-xs text-gray-500">Gestão Financeira não conectada (Configurações → Integrações).{data.syncedAt && ` Cópia de ${formatDateTime(data.syncedAt)}.`}</p>}
       {sync?.status === "offline" && (
         <p className="rounded-lg bg-gray-100 px-3 py-2 text-theme-xs text-gray-600 dark:bg-white/5 dark:text-gray-400">
@@ -51,7 +56,7 @@ export function ClientFinancePanel({
         <p className="text-theme-sm text-gray-400">Nenhum lançamento na Gestão Financeira pelos cartões deste cliente.</p>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-2 text-theme-xs sm:grid-cols-4" data-client-finance-totals>
+          <div className="grid grid-cols-2 gap-2 text-theme-xs" data-client-finance-totals>
             <Stat label="Receitas" value={t.incomeCents} sub={`recebido ${formatCents(t.incomePaidCents)}`} tone="good" />
             <Stat label="Despesas" value={t.expenseCents} sub={`pago ${formatCents(t.expensePaidCents)}`} tone="bad" />
             <Stat label="Resultado" value={t.resultCents} sub={t.margin == null ? "" : `margem ${(t.margin * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`} tone={t.resultCents >= 0 ? "good" : "bad"} />
@@ -65,12 +70,18 @@ export function ClientFinancePanel({
                 {data.receivables.map((e) => {
                   const due = e.dueDate ?? e.competenceDate;
                   return (
-                    <li key={e.id} className="flex items-center gap-3 px-3 py-2 text-theme-sm">
-                      <span className="min-w-0 flex-1 truncate">
-                        {e.description} <span className="text-theme-xs text-gray-500">· {e.cardTitle}</span>
+                    <li key={e.id} className="flex items-center gap-3 px-3 py-2 text-theme-sm" data-client-receivable>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-gray-800 dark:text-white/90" title={e.description}>
+                          {e.description}
+                        </span>
+                        <span className={cn("block text-theme-xs", due < today ? "font-medium text-error-600" : "text-gray-500")}>
+                          {due < today ? `atrasado desde ${day(due)}` : `vence ${day(due)}`}
+                          {/* O cartão só quando a descrição não é o próprio título dele. */}
+                          {e.cardTitle !== e.description && <span className="font-normal text-gray-500"> · cartão {e.cardTitle}</span>}
+                        </span>
                       </span>
-                      <span className={cn("text-theme-xs", due < today ? "font-medium text-error-600" : "text-gray-500")}>{due < today ? `atrasado desde ${day(due)}` : `vence ${day(due)}`}</span>
-                      <span className="font-semibold text-success-600">{formatCents(e.amountCents)}</span>
+                      <span className="shrink-0 font-semibold text-success-600">{formatCents(e.amountCents)}</span>
                     </li>
                   );
                 })}
@@ -85,12 +96,14 @@ export function ClientFinancePanel({
                 <li key={c.id}>
                   <button type="button" onClick={() => onOpenCard(c.pipelineId, c.id)} className="flex w-full items-center gap-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-white/5">
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-theme-sm font-medium text-brand-600">{c.title}</span>
-                      <span className="block text-theme-xs text-gray-500">
+                      <span className="block truncate text-theme-sm font-medium text-brand-600" title={c.title}>
+                        {c.title}
+                      </span>
+                      <span className="block truncate text-theme-xs text-gray-500">
                         {c.pipelineName} · receitas {formatCents(c.incomeCents)} · despesas {formatCents(c.expenseCents)}
                       </span>
                     </span>
-                    <span className={cn("text-theme-sm font-semibold", c.resultCents >= 0 ? "text-success-600" : "text-error-600")}>{formatCents(c.resultCents)}</span>
+                    <span className={cn("shrink-0 text-theme-sm font-semibold", c.resultCents >= 0 ? "text-success-600" : "text-error-600")}>{formatCents(c.resultCents)}</span>
                   </button>
                 </li>
               ))}

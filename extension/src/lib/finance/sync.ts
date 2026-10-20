@@ -5,12 +5,12 @@ import { call } from "../../rpc/client";
 import { errorText } from "../errors";
 import { listAllFromCrm, loadGfSettings, pushPendingContactsVia } from "./gfBridge";
 
-export type FinanceSyncResult = { status: "ok"; at: string } | { status: "off" } | { status: "offline"; message: string };
+export type FinanceSyncResult = { status: "ok"; at: string } | { status: "off" } | { status: "package" } | { status: "offline"; message: string };
 
 /** Lê tudo da Gestão Financeira e grava a cópia; não lança erro. */
 export async function syncAllFinance(): Promise<FinanceSyncResult> {
   const s = await loadGfSettings();
-  if (!s.gfId || !s.direct) return { status: "off" };
+  if (!s.gfId || !s.direct) return s.package ? { status: "package" } : { status: "off" };
   try {
     const r = await listAllFromCrm(s.gfId, () => call("finance.cardIds"));
     await call("finance.replaceAll", { items: r.items, env: r.env, at: r.at });

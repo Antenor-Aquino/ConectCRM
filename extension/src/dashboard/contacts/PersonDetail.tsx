@@ -117,8 +117,8 @@ export function PersonDetail({
       </div>
       <ErrorText>{error}</ErrorText>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
-        <div>
+      <div className="grid gap-6 lg:grid-cols-[minmax(260px,2fr)_minmax(0,3fr)]">
+        <div className="min-w-0">
           <SectionLabel className="mt-0">Dados</SectionLabel>
           <InfoRow label="E-mail">{p.email && <EmailLink email={p.email} className="text-brand-600">{p.email}</EmailLink>}</InfoRow>
           <InfoRow label="Celular">{p.phone && <PhoneLink phone={p.phone} className="text-brand-600">{formatPhone(p.phone)}</PhoneLink>}</InfoRow>
@@ -156,7 +156,7 @@ export function PersonDetail({
             </p>
           )}
         </div>
-        <div>
+        <div className="min-w-0">
           <Tabs<Tab>
             tabs={[
               ["negocios", "Negócios"],

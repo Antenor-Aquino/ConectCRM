@@ -29,7 +29,7 @@ export function DrawerShell({ children, onClose }: { children: ReactNode; onClos
 
 export function InfoRow({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="grid grid-cols-[130px_1fr] gap-2 py-1.5 text-theme-sm">
+    <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-2 py-1.5 text-theme-sm">
       <span className="text-gray-500">{label}</span>
       <span className="min-w-0 break-words text-gray-800 dark:text-white/90">{children || <span className="text-gray-400">—</span>}</span>
     </div>
@@ -203,13 +203,13 @@ export function ChangeLogList({ table, id }: { table: DataTable; id: string }) {
 
 export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: [T, string][]; value: T; onChange: (t: T) => void }) {
   return (
-    <div className="mb-3 flex gap-1 rounded-lg bg-gray-100 p-1 dark:bg-white/5">
+    <div className="mb-3 flex flex-wrap gap-1 rounded-lg bg-gray-100 p-1 dark:bg-white/5">
       {tabs.map(([id, label]) => (
         <button
           key={id}
           type="button"
           onClick={() => onChange(id)}
-          className={cn("flex-1 rounded-md py-1.5 text-theme-sm font-medium", value === id ? "bg-white text-brand-600 shadow-theme-xs dark:bg-gray-900" : "text-gray-600 dark:text-gray-400")}
+          className={cn("flex-1 whitespace-nowrap rounded-md px-2.5 py-1.5 text-theme-sm font-medium", value === id ? "bg-white text-brand-600 shadow-theme-xs dark:bg-gray-900" : "text-gray-600 dark:text-gray-400")}
         >
           {label}
         </button>

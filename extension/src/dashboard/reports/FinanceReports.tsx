@@ -302,6 +302,14 @@ function SyncNotice({ sync, syncing, report }: { sync: FinanceSyncResult | null;
   if (syncing && !report) return <p className={cn(base, "bg-gray-100 text-gray-600 dark:bg-white/5")}>Lendo os lançamentos da Gestão Financeira…</p>;
   const when = report?.syncedAt ? formatDateTime(report.syncedAt) : null;
   const demo = report?.env === "demo" && <span className="ml-1 font-medium">A Gestão Financeira está no Ambiente de Teste: estes valores não são os reais.</span>;
+  if (sync?.status === "package")
+    return (
+      <p className={cn(base, "bg-gray-100 text-gray-600 dark:bg-white/5 dark:text-gray-400")} data-finance-sync="package">
+        Modo pacote: valores conforme o último retorno importado da Gestão Financeira{when ? ` (${when})` : " (nenhum ainda)"} — Configurações → Integrações →
+        Gestão Financeira → Importar retorno.
+        {demo}
+      </p>
+    );
   if (sync?.status === "off")
     return (
       <p className={cn(base, "bg-gray-100 text-gray-600 dark:bg-white/5 dark:text-gray-400")} data-finance-sync="off">

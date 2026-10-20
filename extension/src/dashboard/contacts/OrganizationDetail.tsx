@@ -124,8 +124,8 @@ export function OrganizationDetail({
       </div>
       <ErrorText>{error}</ErrorText>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
-        <div>
+      <div className="grid gap-6 lg:grid-cols-[minmax(260px,2fr)_minmax(0,3fr)]">
+        <div className="min-w-0">
           <SectionLabel className="mt-0">Empresa</SectionLabel>
           <InfoRow label="CNPJ">{o.cnpj && formatCnpj(o.cnpj)}</InfoRow>
           <InfoRow label="Segmento">{o.segment}</InfoRow>
@@ -157,7 +157,7 @@ export function OrganizationDetail({
             </>
           )}
         </div>
-        <div>
+        <div className="min-w-0">
           <Tabs<Tab>
             tabs={[
               ["contatos", `Contatos (${o.persons.length})`],
