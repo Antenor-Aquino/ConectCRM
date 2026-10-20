@@ -64,8 +64,8 @@ export type IntegrationRequest =
   | { type: "ping"; protocol: number }
   /** Abre a janela de lançamento (receita/despesa) preenchida. */
   | { type: "openLaunch"; protocol: number; launch: LaunchRequest }
-  /** Lançamentos destes cartões (ids do CRM). */
-  | { type: "listByOrigin"; protocol: number; refs: string[] };
+  /** Lançamentos destes cartões (ids do CRM); sem `refs`, todos os lançamentos vindos do CRM. */
+  | { type: "listByOrigin"; protocol: number; refs?: string[] };
 
 export type GfEnv = "production" | "demo";
 
@@ -81,7 +81,8 @@ export function isIntegrationRequest(v: unknown): v is IntegrationRequest {
   const m = v as Record<string, unknown>;
   if (m.type === "ping") return typeof m.protocol === "number";
   if (m.type === "openLaunch") return typeof m.protocol === "number" && isLaunchRequest(m.launch);
-  if (m.type === "listByOrigin") return typeof m.protocol === "number" && Array.isArray(m.refs) && m.refs.length <= 500 && m.refs.every((r) => typeof r === "string");
+  if (m.type === "listByOrigin")
+    return typeof m.protocol === "number" && (m.refs === undefined || (Array.isArray(m.refs) && m.refs.length <= 500 && m.refs.every((r) => typeof r === "string")));
   if (m.type === "hello") return m.app === "conectcrm" && typeof m.appVersion === "string" && typeof m.protocol === "number";
   return false;
 }

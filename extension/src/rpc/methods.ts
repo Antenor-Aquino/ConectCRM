@@ -194,6 +194,25 @@ export const methods = {
     for (const id of p.dealIds) deals.assertCardAccess(db, v, id);
     finance.replaceFinance(db, ctx, p.dealIds, p.items, p.env, p.at);
   },
+  // Leitura geral (relatórios, financeiro do cliente): a cópia vale para todos; cada tela filtra pela permissão.
+  "finance.replaceAll": (db: DatabaseSync, ctx: DbContext, p: { items: FinanceItem[]; env: string; at: string }) => finance.replaceAllFinance(db, ctx, p.items, p.env, p.at),
+  "finance.syncedAt": (db: DatabaseSync) => finance.financeSyncedAt(db),
+  // Todos os cartões (só ids): a leitura em lotes precisa de todos, senão a cópia geral perderia os dos colegas.
+  "finance.cardIds": (db: DatabaseSync) => many<{ id: string }>(db, "SELECT id FROM deal WHERE deleted_at IS NULL").map((r) => r.id),
+  "finance.report": (
+    db: DatabaseSync,
+    ctx: DbContext,
+    p: Omit<finance.FinanceReportFilter, "viewer" | "ownerIds"> & { ownerId?: string | null; teamId?: string | null },
+  ) => {
+    let ownerIds: string[] | null = null;
+    if (p.ownerId) ownerIds = [p.ownerId];
+    else if (p.teamId) {
+      ownerIds = many<{ user_id: string }>(db, "SELECT user_id FROM team_member WHERE team_id = ? AND deleted_at IS NULL", p.teamId).map((r) => r.user_id);
+      if (!ownerIds.length) ownerIds = ["-"];
+    }
+    return finance.financeReport(db, { ...p, ownerIds, viewer: viewer(db, ctx) });
+  },
+  "finance.client": (db: DatabaseSync, ctx: DbContext, p: { organizationId?: string; personId?: string }) => finance.clientFinance(db, p, viewer(db, ctx)),
   "cards.import": (db: DatabaseSync, ctx: DbContext, p: cardImporter.CardImportInput) => {
     const v = viewer(db, ctx);
     return cardImporter.importCards(db, ctx, p, (ownerId) => deals.assertCanAssign(db, v, ownerId));

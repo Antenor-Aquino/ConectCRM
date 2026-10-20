@@ -15,6 +15,7 @@ import { NotesPanel } from "../ui/NotesPanel";
 import { formatPhone } from "../ui/PhoneInput";
 import { TagChip } from "../ui/TagPicker";
 import { DocumentsPanel } from "../documents/DocumentsPanel";
+import { ClientFinancePanel } from "./ClientFinancePanel";
 import { ChangeLogList, CustomValuesView, DrawerShell, InfoRow, RelatedCards, RelatedTasks, Tabs } from "./detailParts";
 import { MergeModal } from "./MergeModal";
 import { OrganizationFormModal } from "./OrganizationFormModal";
@@ -22,7 +23,7 @@ import { errorText } from "../../lib/errors";
 import { EmailLink, PhoneLink } from "../ui/ContactLinks";
 import { websiteUrl } from "../../lib/contactLinks";
 
-type Tab = "contatos" | "negocios" | "tarefas" | "documentos" | "notas" | "historico";
+type Tab = "contatos" | "negocios" | "tarefas" | "documentos" | "notas" | "historico" | "financeiro";
 
 export function OrganizationDetail({
   organizationId,
@@ -156,6 +157,7 @@ export function OrganizationDetail({
               ["negocios", "Negócios"],
               ["tarefas", "Atividades"],
               ["documentos", "Documentos"],
+              ["financeiro", "Financeiro"],
               ["notas", "Notas"],
               ["historico", "Histórico"],
             ]}
@@ -179,6 +181,7 @@ export function OrganizationDetail({
             ))}
           {tab === "negocios" && <RelatedCards filter={{ organizationId: o.id }} onOpenCard={onOpenCard} />}
           {tab === "tarefas" && <RelatedTasks filter={{ organizationId: o.id }} />}
+          {tab === "financeiro" && <ClientFinancePanel filter={{ organizationId: o.id }} onOpenCard={onOpenCard} />}
           {tab === "documentos" && <DocumentsPanel type="organization" id={o.id} />}
           {tab === "notas" && <NotesPanel entityType="organization" entityId={o.id} />}
           {tab === "historico" && <ChangeLogList table="organization" id={o.id} />}

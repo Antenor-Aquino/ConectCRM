@@ -101,3 +101,29 @@ banco novo e mostram "Os dados foram alterados em outra janela · Atualizar".
   Ambiente de Teste e grava pelo banco sincronizado (o painel aberto recebe
   a alteração). Só edita lançamentos daquele cartão.
 - Em Lançamentos, etiqueta **ConectCRM** nos lançamentos vindos do CRM.
+
+## Fase 3 (CRM 0.2.56 · Gestão Financeira 0.0.6) — visão financeira no CRM
+
+- **Leitura geral**: `listByOrigin` sem `refs` devolve todos os lançamentos
+  vindos do CRM (Gestão Financeira 0.0.6). Com a 0.0.5, o CRM pede em lotes de
+  500 cartões. A cópia local é substituída inteira (`finance.replaceAll`) e
+  marca a hora da leitura; cada tela filtra pela permissão do usuário.
+- **Cartão**: abaixo do valor, faixa com Receitas, Despesas, Resultado (e
+  margem) e atrasados; clicar abre a aba Financeiro.
+- **Relatórios → Financeiro** (seletor Comercial / Financeiro no topo):
+  - filtros: período, **base** (Competência; Vencimento; Caixa = só o que foi
+    pago/recebido, pela data do pagamento), funil (todos os tipos), situação
+    do cartão, responsável/equipe;
+  - indicadores: receitas, despesas, resultado e margem, realizado (recebido −
+    pago), a receber e a pagar (com atrasados);
+  - receitas × despesas por mês; resultado por cliente (organização do
+    cartão, senão o contato principal), por cartão (com o valor do cartão
+    para comparar), por funil e por categoria/subcategoria;
+  - **Ganhos com receita a lançar**: cartões ganhos no período cujo valor
+    ainda não foi todo lançado como receita;
+  - exportação para Excel (uma aba por relatório). Lê da Gestão Financeira ao
+    abrir e no "Atualizar"; sem ela, usa a última cópia (e avisa).
+- **Organização e contato → aba Financeiro**: totais do cliente (receitas,
+  despesas, resultado, a receber e atrasado), receitas em aberto por
+  vencimento e o resultado de cada cartão (organização: cartões dela;
+  contato: cartões em que é o contato principal).

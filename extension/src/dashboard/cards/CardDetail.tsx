@@ -30,6 +30,7 @@ import type { ActivityListItem } from "../../db/activities";
 import type { CustomField, CustomValue } from "../../db/customFields";
 import type { CardDetail as CardData } from "../../db/deals";
 import type { CardCounts } from "../../db/cardCounts";
+import type { CardFinance } from "../../db/finance";
 import type { HistoryEvent, HistoryRef } from "../../db/cardHistory";
 import type { Pipeline, Stage } from "../../db/pipelines";
 import { CARD_TEXT, OUTCOME_TEXT } from "../../lib/cardTypes";
@@ -108,6 +109,8 @@ export function CardDetail({
   const [pipelineAction, setPipelineAction] = useState<"move" | "clone" | null>(null);
   // Quantidades nas abas (balão verde) e atividades atrasadas (balão vermelho).
   const [counts, setCounts] = useState<CardCounts | null>(null);
+  // Resultado financeiro (cópia dos lançamentos da Gestão Financeira).
+  const [finance, setFinance] = useState<CardFinance | null>(null);
   const [countsKey, setCountsKey] = useState(0);
   const recount = useCallback(() => setCountsKey((k) => k + 1), []);
   // Cadastro aberto a partir do nome do contato, da organização ou do responsável.
@@ -151,6 +154,9 @@ export function CardDetail({
     void call("cards.counts", { id: cardId })
       .then(setCounts)
       .catch(() => setCounts(null));
+    void call("finance.card", { id: cardId })
+      .then(setFinance)
+      .catch(() => setFinance(null));
   }, [cardId, card?.version, countsKey, tab]);
 
   if (!card) {
@@ -351,6 +357,24 @@ export function CardDetail({
                 </button>
               </div>
               {card.items.length > 0 && <ItemsSummary items={card.items} onEdit={() => setItemsOpen(true)} />}
+              {finance && finance.entries.length > 0 && (
+                <button
+                  type="button"
+                  data-card-result
+                  onClick={() => setTab("financeiro")}
+                  className="mt-2 flex w-full flex-wrap items-center gap-x-3 gap-y-0.5 rounded-lg bg-gray-50 px-3 py-2 text-left text-theme-xs text-gray-600 hover:bg-gray-100 dark:bg-white/5 dark:text-gray-400"
+                  title="Lançamentos na Gestão Financeira (ver aba Financeiro)"
+                >
+                  <span>Receitas <b className="text-success-600">{formatCents(finance.summary.incomeCents)}</b></span>
+                  <span>Despesas <b className="text-error-600">{formatCents(finance.summary.expenseCents)}</b></span>
+                  <span>
+                    Resultado{" "}
+                    <b className={finance.summary.resultCents >= 0 ? "text-success-600" : "text-error-600"}>{formatCents(finance.summary.resultCents)}</b>
+                    {finance.summary.incomeCents > 0 && ` (${Math.round((finance.summary.resultCents / finance.summary.incomeCents) * 100)}%)`}
+                  </span>
+                  {finance.summary.overdueCount > 0 && <span className="font-medium text-error-600">{finance.summary.overdueCount} atrasado(s)</span>}
+                </button>
+              )}
             </>
           }
           {pipeline.type !== "comercial" && (

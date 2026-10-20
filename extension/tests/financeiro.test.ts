@@ -83,3 +83,82 @@ describe("cópia dos lançamentos", () => {
     expect(summarize([]).resultCents).toBe(0);
   });
 });
+
+describe("Fase 3: relatório financeiro e financeiro do cliente", async () => {
+  const { setCardStatus } = await import("../src/db/deals");
+  const { clientFinance, financeReport, financeSyncedAt, replaceAllFinance } = await import("../src/db/finance");
+
+  it("leitura geral substitui tudo; relatório por base, escopo e grupos; ganhos com receita a lançar", async () => {
+    const { db, actx, card } = await setup();
+    const org = createOrganization(db, actx, { name: "Escola A" });
+    const pessoa = createPerson(db, actx, { name: "Maria" });
+    const a = card("Projeto A", { organizationId: org, valueCents: 200000 });
+    const b = card("Projeto B", { personId: pessoa, valueCents: 50000 });
+    const c = card("Sem lançamento", { organizationId: org, valueCents: 70000 });
+    setCardStatus(db, actx, a, { status: "won" });
+    setCardStatus(db, actx, c, { status: "won" });
+    replaceFinance(db, actx, [a], [item({ id: "velho", ref: a, type: "income", amountCents: 1 })], "production", "2026-01-01T00:00:00Z");
+
+    replaceAllFinance(db, actx, [
+      item({ id: "r1", ref: a, type: "income", amountCents: 120000, status: "paid", competenceDate: "2026-09-10", dueDate: "2026-09-20", paymentDate: "2026-10-02", category: "Vendas" }),
+      item({ id: "r2", ref: a, type: "income", amountCents: 30000, competenceDate: "2026-10-05", dueDate: "2026-10-01", category: "Vendas" }),
+      item({ id: "d1", ref: a, type: "expense", amountCents: 40000, status: "paid", competenceDate: "2026-10-03", dueDate: "2026-10-03", paymentDate: "2026-10-03", category: "Terceiros", subcategory: "Instalação" }),
+      item({ id: "r3", ref: b, type: "income", amountCents: 50000, competenceDate: "2026-10-15", dueDate: "2026-11-15" }),
+      item({ id: "x", ref: "cartao-apagado", type: "income", amountCents: 999, competenceDate: "2026-10-01" }),
+    ], "production", "2026-10-20T12:00:00.000Z");
+    expect(financeSyncedAt(db)).toEqual({ at: "2026-10-20T12:00:00.000Z", env: "production" });
+    expect(cardFinance(db, a).entries.map((e) => e.id).sort()).toEqual(["d1", "r1", "r2"]); // "velho" saiu
+
+    const f = { start: "2026-10-01", end: "2026-10-31", today: "2026-10-20" } as const;
+    const comp = financeReport(db, { ...f, basis: "competencia" });
+    expect(comp.totals).toMatchObject({ incomeCents: 80000, expenseCents: 40000, resultCents: 40000, margin: 0.5, receivableCents: 80000, overdueReceivableCents: 30000 });
+    expect(comp.cards.map((x) => [x.title, x.resultCents])).toEqual([["Projeto B", 50000], ["Projeto A", -10000]]);
+    expect(comp.clients.map((x) => [x.name, x.cards, x.resultCents])).toEqual([["Maria", 1, 50000], ["Escola A", 1, -10000]]);
+    expect(comp.categories).toEqual([
+      { type: "income", name: "Sem categoria", amountCents: 50000 },
+      { type: "income", name: "Vendas", amountCents: 30000 },
+      { type: "expense", name: "Terceiros › Instalação", amountCents: 40000 },
+    ]);
+    expect(comp.months).toEqual([{ month: "2026-10", incomeCents: 80000, expenseCents: 40000, resultCents: 40000 }]);
+
+    // Caixa: só o que foi pago/recebido, pela data do pagamento (r1 recebido em 02/10).
+    const caixa = financeReport(db, { ...f, basis: "caixa" });
+    expect(caixa.totals).toMatchObject({ incomeCents: 120000, expenseCents: 40000, resultCents: 80000 });
+    // Vencimento: r2 vence 01/10, r3 em novembro (fora).
+    expect(financeReport(db, { ...f, basis: "vencimento" }).totals.incomeCents).toBe(30000);
+    // Filtro pela situação do cartão.
+    expect(financeReport(db, { ...f, basis: "competencia", cardStatus: "won" }).cards.map((x) => x.title)).toEqual(["Projeto A"]);
+
+    // Ganhos no período com receita por lançar (tudo o que já foi lançado conta, de qualquer data).
+    const hoje = new Date().toLocaleDateString("sv-SE");
+    const bill = financeReport(db, { start: hoje, end: hoje, basis: "competencia" }).toBill;
+    expect(bill.map((x) => [x.title, x.launchedCents, x.missingCents])).toEqual([["Sem lançamento", 0, 70000], ["Projeto A", 150000, 50000]]);
+
+    // Vendedor só vê os cartões dele.
+    const vend = createUser(db, actx, { name: "Vend", role: "vendedor" });
+    const { getViewer } = await import("../src/db/users");
+    expect(financeReport(db, { ...f, basis: "competencia", viewer: getViewer(db, vend) }).cards).toEqual([]);
+  });
+
+  it("financeiro do cliente: cartões da organização / do contato principal e o que falta receber", async () => {
+    const { db, actx, card } = await setup();
+    const org = createOrganization(db, actx, { name: "Escola A" });
+    const pessoa = createPerson(db, actx, { name: "Maria" });
+    const a = card("A", { organizationId: org, personId: pessoa });
+    const b = card("B", { organizationId: org });
+    const c = card("C", { personId: pessoa });
+    replaceAllFinance(db, actx, [
+      item({ id: "1", ref: a, type: "income", amountCents: 1000, dueDate: "2000-01-01" }),
+      item({ id: "2", ref: b, type: "income", amountCents: 500, status: "paid", paymentDate: "2026-10-01" }),
+      item({ id: "3", ref: b, type: "expense", amountCents: 200 }),
+      item({ id: "4", ref: c, type: "income", amountCents: 300, dueDate: "2999-01-01" }),
+    ], "production", "2026-10-20T00:00:00Z");
+    const o = clientFinance(db, { organizationId: org }, null, "2026-10-20");
+    expect(o.totals).toMatchObject({ incomeCents: 1500, expenseCents: 200, resultCents: 1300, receivableCents: 1000, overdueReceivableCents: 1000 });
+    expect(o.cards.map((x) => [x.title, x.resultCents])).toEqual([["A", 1000], ["B", 300]]);
+    expect(o.receivables.map((r) => [r.id, r.cardTitle])).toEqual([["1", "A"]]);
+    const p = clientFinance(db, { personId: pessoa }, null, "2026-10-20");
+    expect(p.cards.map((x) => x.title).sort()).toEqual(["A", "C"]);
+    expect(p.receivables.map((r) => r.id)).toEqual(["1", "4"]);
+  });
+});

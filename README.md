@@ -161,7 +161,10 @@ organização do cartão, senão o contato principal) e a aba mostra os
 lançamentos do cartão e o resultado (receitas − despesas, previsto e
 realizado), com cópia local quando a Gestão Financeira não responde. Ao
 marcar um cartão como ganho, o CRM oferece lançar a receita. O contato tem
-CPF opcional (plano e fases em
+CPF opcional. Em **Relatórios → Financeiro**: receitas, despesas, resultado e
+margem por cartão, cliente, funil, mês e categoria (base competência,
+vencimento ou caixa), a receber/a pagar e os ganhos com receita ainda por
+lançar; organização e contato têm a aba **Financeiro** do cliente (plano e fases em
 [`especificacoes/13-gestao-financeira.md`](especificacoes/13-gestao-financeira.md)).
 
 ### Cadastros duplicados

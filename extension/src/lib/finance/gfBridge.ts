@@ -90,6 +90,25 @@ export async function listByOrigin(gfId: string, refs: string[]): Promise<{ item
   throw new GfError(responseText(r) || "A Gestão Financeira não devolveu os lançamentos.");
 }
 
+/**
+ * Todos os lançamentos vindos do CRM. A Gestão Financeira 0.0.5 só aceita a
+ * lista de cartões: nela, pede em lotes os cartões que `cardIds()` devolve.
+ */
+export async function listAllFromCrm(gfId: string, cardIds: () => Promise<string[]>): Promise<{ items: FinanceItem[]; env: GfEnv; at: string }> {
+  const r = await sendToGf(gfId, { type: "listByOrigin", protocol: PROTOCOL }, 20000);
+  if (r.ok && r.status === "items") return { items: r.items, env: r.env, at: r.at };
+  if (r.ok || r.error !== "invalid") throw new GfError(responseText(r) || "A Gestão Financeira não devolveu os lançamentos.");
+  const ids = await cardIds();
+  const out: FinanceItem[] = [];
+  let last = { env: "production" as GfEnv, at: new Date().toISOString() };
+  for (let i = 0; i < ids.length; i += 500) {
+    const part = await listByOrigin(gfId, ids.slice(i, i + 500));
+    out.push(...part.items);
+    last = part;
+  }
+  return { items: out, env: last.env, at: last.at };
+}
+
 export const GF_ENV_LABEL: Record<GfEnv, string> = { production: "Produção", demo: "Teste (dados de exemplo)" };
 
 /** Texto para o usuário de uma resposta que não é "conectado". */
