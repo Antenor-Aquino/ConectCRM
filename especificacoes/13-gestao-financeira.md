@@ -85,7 +85,13 @@ banco novo e mostram "Os dados foram alterados em outra janela · Atualizar".
   contagem da aba usa a cópia. Ela também servirá aos relatórios da Fase 3.
 - **Ganho com valor**: ao marcar como ganho, com a Gestão Financeira
   conectada, o CRM pergunta "Lançar a receita de R$ X na Gestão
-  Financeira?" e abre a janela da receita.
+  Financeira?" e abre a janela da receita. O lançamento só existe depois
+  de "Salvar Receita" lá; a aba avisa enquanto a janela está aberta
+  ("Mostrar a janela") e, se ela for fechada sem salvar, mostra "fechada
+  sem salvar" com "Abrir de novo" (0.2.62).
+- **Concluído sem receita**: cartão ganho/resolvido/concluído com valor, sem
+  receita nem pedido no pacote, mostra na aba Financeiro o lembrete com
+  "Lançar receita".
 - Contato ganhou **CPF** (opcional, validado, sem repetir).
 - Todos os usuários veem os valores (decisão do usuário).
 

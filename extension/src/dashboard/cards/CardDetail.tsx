@@ -252,7 +252,12 @@ export function CardDetail({
                   // Ganho com valor e Gestão Financeira conectada: oferece lançar a receita.
                   const gf = await loadGfSettings();
                   if (!ok || !card.value_cents || !((gf.gfId && gf.direct) || gf.package)) return;
-                  if (!confirm(`Lançar a receita de ${formatCents(card.value_cents)} na Gestão Financeira?`)) return;
+                  if (
+                    !confirm(
+                      `Lançar a receita de ${formatCents(card.value_cents)} na Gestão Financeira?\n\nVai abrir a janela da Gestão Financeira já preenchida: confira e clique em "Salvar Receita". A receita só é lançada depois de salvar.`,
+                    )
+                  )
+                    return;
                   setLaunchIncome(true);
                   setTab("financeiro");
                 })
@@ -634,6 +639,7 @@ export function CardDetail({
               title={card.title}
               valueCents={card.value_cents}
               cardLabel={text.noun.charAt(0).toUpperCase() + text.noun.slice(1)}
+              concluded={card.status === "won" ? outcome.won : null}
               autoLaunch={launchIncome}
               onAutoLaunchDone={() => setLaunchIncome(false)}
               onSynced={recount}

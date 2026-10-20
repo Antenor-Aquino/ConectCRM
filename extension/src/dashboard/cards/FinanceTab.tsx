@@ -30,6 +30,7 @@ export function FinanceTab({
   autoLaunch,
   onAutoLaunchDone,
   onSynced,
+  concluded,
 }: {
   cardId: string;
   title: string;
@@ -42,6 +43,8 @@ export function FinanceTab({
   onAutoLaunchDone?: () => void;
   /** Cópia local atualizada (a aba mostra a quantidade). */
   onSynced?: () => void;
+  /** Desfecho positivo já dado ("Ganho", "Resolvido"...), para lembrar a receita que falta. */
+  concluded?: string | null;
 }) {
   const [settings, setSettings] = useState<GfSettings | null>(null);
   const [data, setData] = useState<CardFinance | null>(null);
@@ -51,6 +54,8 @@ export function FinanceTab({
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
   const launchWindow = useRef<number | null>(null);
+  // Lançamento novo aberto lá: só existe depois de "Salvar". Fechou sem salvar = avisa aqui.
+  const [pending, setPending] = useState<{ mode: "income" | "expense"; before: number; closed: boolean } | null>(null);
   const [requests, setRequests] = useState<FinanceRequestRow[]>([]);
   const [requestMode, setRequestMode] = useState<"income" | "expense" | null>(null);
 
@@ -90,7 +95,7 @@ export function FinanceTab({
     const onRemoved = (id: number) => {
       if (id !== launchWindow.current) return;
       launchWindow.current = null;
-      void refresh();
+      void refresh().then(() => setPending((p) => p && { ...p, closed: true }));
     };
     const onFocus = () => {
       if (launchWindow.current === null) void refresh();
@@ -137,6 +142,7 @@ export function FinanceTab({
         walletId: "empresa",
         editTxId: edit?.id ?? null,
       });
+      if (!edit) setPending({ mode, before: (data?.entries ?? []).filter((e) => e.type === mode).length, closed: false });
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -175,6 +181,11 @@ export function FinanceTab({
   const s = data?.summary;
   const canLaunch = direct;
   const canAsk = canLaunch || packageMode;
+  const pendingNoun = pending?.mode === "income" ? "receita" : "despesa";
+  const pendingSaved = !!pending && entries.filter((e) => e.type === pending.mode).length > pending.before;
+  // Concluído com valor e sem nenhuma receita (nem pedido no pacote): lembra de lançar.
+  const missingIncome =
+    !!concluded && !!valueCents && canAsk && !!counterparty && !pending && !(s?.incomeCents ?? 0) && !requests.some((r) => r.request.mode === "income");
 
   return (
     <div className="space-y-3" data-finance-tab>
@@ -223,6 +234,44 @@ export function FinanceTab({
         <p className="rounded-lg bg-warning-50 px-3 py-2 text-theme-xs text-warning-800">A Gestão Financeira está no {GF_ENV_LABEL.demo}: estes valores não são os reais.</p>
       )}
       {error && <p className="text-theme-sm text-error-600">{error}</p>}
+      {pending && !pending.closed && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg bg-brand-50 px-3 py-2 text-theme-sm text-brand-800 dark:bg-brand-500/10 dark:text-brand-300" data-finance-window-open>
+          <span className="min-w-0 flex-1">
+            A janela da Gestão Financeira está aberta: confira os dados e clique em <b>Salvar {pending.mode === "income" ? "Receita" : "Despesa"}</b>. A {pendingNoun} só é lançada depois de salvar.
+          </span>
+          <TaButton size="sm" onClick={() => launchWindow.current !== null && void chrome.windows.update(launchWindow.current, { focused: true })}>
+            Mostrar a janela
+          </TaButton>
+        </div>
+      )}
+      {pending?.closed && !pendingSaved && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg bg-warning-50 px-3 py-2 text-theme-sm text-warning-800" data-finance-not-saved>
+          <span className="min-w-0 flex-1">
+            A janela da Gestão Financeira foi fechada <b>sem salvar</b>: a {pendingNoun} não foi lançada.
+          </span>
+          <TaButton size="sm" variant="primary" onClick={() => void launch(pending.mode)}>
+            Abrir de novo
+          </TaButton>
+          <button type="button" className="text-theme-xs text-warning-700 hover:underline" onClick={() => setPending(null)}>
+            Dispensar
+          </button>
+        </div>
+      )}
+      {pending?.closed && pendingSaved && (
+        <p className="rounded-lg bg-success-50 px-3 py-2 text-theme-sm text-success-700" data-finance-saved>
+          {pending.mode === "income" ? "Receita lançada" : "Despesa lançada"} na Gestão Financeira.
+        </p>
+      )}
+      {missingIncome && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg bg-warning-50 px-3 py-2 text-theme-sm text-warning-800" data-finance-missing-income>
+          <span className="min-w-0 flex-1">
+            Este cartão está como <b>{concluded}</b> com valor de <b>{formatCents(valueCents)}</b>, mas ainda não tem receita lançada na Gestão Financeira.
+          </span>
+          <TaButton size="sm" variant="primary" disabled={opening} onClick={() => void launch("income")}>
+            Lançar receita
+          </TaButton>
+        </div>
+      )}
 
       {s && entries.length > 0 && (
         <div className="grid grid-cols-3 gap-2 text-theme-xs" data-finance-summary>
