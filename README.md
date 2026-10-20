@@ -151,6 +151,14 @@ funil/etapa criar. Ao confirmar, cria organização, contato, tags e o cartão,
 guarda o arquivo no GED e registra a origem no histórico (detalhes em
 [`especificacoes/12-copiloto-documento.md`](especificacoes/12-copiloto-documento.md)).
 
+### Gestão Financeira (integração)
+
+Em Configurações → Integrações → Gestão Financeira, o CRM se conecta à
+extensão Gestão Financeira instalada no mesmo Chrome (pareamento permitido
+lá). Próximas etapas: lançar receitas e despesas pelos cartões e ver o
+resultado de cada negócio (plano e fases em
+[`especificacoes/13-gestao-financeira.md`](especificacoes/13-gestao-financeira.md)).
+
 ### Cadastros duplicados
 
 Ao criar contato, organização ou cartão, o CRM procura nomes parecidos (mais
