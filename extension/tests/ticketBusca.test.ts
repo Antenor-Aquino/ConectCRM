@@ -48,7 +48,7 @@ describe("contagens das abas do cartão", () => {
     createActivity(db, ctx, { title: "Futura", dealId: id, dueAt: "2099-01-01T10:00:00.000Z" });
     createActivity(db, ctx, { title: "Feita", dealId: id, dueAt: "2020-01-01T10:00:00.000Z", done: true });
     const c = cardCounts(db, id);
-    expect({ ...c, history: c.history > 0 }).toEqual({ history: true, notes: 1, activities: 3, activitiesOverdue: 1, documents: 0 });
+    expect({ ...c, history: c.history > 0 }).toEqual({ history: true, notes: 1, activities: 3, activitiesOverdue: 1, documents: 0, finance: 0 });
   });
 });
 

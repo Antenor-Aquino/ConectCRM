@@ -1,6 +1,6 @@
 // Contatos (spec 03) e organizações (spec 04), com o vínculo entre eles:
 // um contato pode ter várias organizações e a primeira vira a principal.
-import { normalizeCnpj, normalizeEmail, normalizePhone, optionalText, requireText, ValidationError } from "../lib/validate";
+import { normalizeCnpj, normalizeCpf, normalizeEmail, normalizePhone, optionalText, requireText, ValidationError } from "../lib/validate";
 import { getCustomValues, setCustomValues, type CustomValue } from "./customFields";
 import { getRow, insertRow, softDelete, updateRow, type DbContext } from "./repo";
 import { moveToTrash, type TrashNotice } from "./trash";
@@ -85,6 +85,8 @@ export interface PersonInput {
   email?: string | null;
   phone?: string | null;
   phoneCountry?: string | null;
+  /** CPF (opcional, para lançamentos na Gestão Financeira). */
+  cpf?: string | null;
   notes?: string | null;
   ownerId?: string | null;
   isPrivate?: boolean;
@@ -101,6 +103,7 @@ export interface Person {
   email: string | null;
   phone: string | null;
   phone_country: string | null;
+  cpf: string | null;
   notes: string | null;
   avatar_id: string | null;
   owner_id: string | null;
@@ -129,9 +132,9 @@ export function personVisibility(viewer: Viewer | null | undefined, alias = "p")
   };
 }
 
-const PERSON_COLS = "p.id, p.name, p.email, p.phone, p.phone_country, p.notes, p.avatar_id, p.owner_id, p.is_private, p.created_by, p.version";
+const PERSON_COLS = "p.id, p.name, p.email, p.phone, p.phone_country, p.cpf, p.notes, p.avatar_id, p.owner_id, p.is_private, p.created_by, p.version";
 
-function personData(db: DatabaseSync, input: Partial<PersonInput>, full: boolean): Record<string, SqlValue> {
+function personData(db: DatabaseSync, input: Partial<PersonInput>, full: boolean, exceptId?: string): Record<string, SqlValue> {
   const data: Record<string, SqlValue> = {};
   if (full || input.name !== undefined) data.name = requireText(input.name, "Informe o nome do contato.");
   if (full || input.email !== undefined) data.email = normalizeEmail(input.email);
@@ -139,6 +142,11 @@ function personData(db: DatabaseSync, input: Partial<PersonInput>, full: boolean
     const country = input.phoneCountry ?? "BR";
     data.phone = normalizePhone(input.phone, country);
     data.phone_country = data.phone ? country : null;
+  }
+  if (input.cpf !== undefined) {
+    data.cpf = normalizeCpf(input.cpf);
+    const dup = data.cpf && one<{ name: string }>(db, "SELECT name FROM person WHERE cpf = ? AND deleted_at IS NULL AND id <> ?", data.cpf, exceptId ?? "");
+    if (dup) throw new ValidationError(`CPF já cadastrado em "${dup.name}".`);
   }
   if (full || input.notes !== undefined) data.notes = optionalText(input.notes);
   if (full || input.ownerId !== undefined) data.owner_id = checkOwner(db, input.ownerId);
@@ -161,7 +169,7 @@ export function createPerson(db: DatabaseSync, ctx: DbContext, input: PersonInpu
 export function updatePerson(db: DatabaseSync, ctx: DbContext, id: string, patch: Partial<PersonInput>): void {
   withTransaction(db, () => {
     if (!getRow(db, "person", id)) throw new ValidationError("Contato não encontrado.");
-    updateRow(db, ctx, "person", id, personData(db, patch, false));
+    updateRow(db, ctx, "person", id, personData(db, patch, false, id));
     if (patch.organizationIds) syncLinks(db, ctx, "person", id, patch.organizationIds);
     if (patch.tagIds) setEntityTags(db, ctx, "person", id, patch.tagIds);
     if (patch.customValues) setCustomValues(db, ctx, "person", id, patch.customValues, { checkRequired: true });

@@ -33,6 +33,8 @@ import { hashPin, verifyPin } from "../lib/pin";
 import { ValidationError } from "../lib/validate";
 import * as tags from "../db/tags";
 import * as docCard from "../db/docCard";
+import * as finance from "../db/finance";
+import type { FinanceItem } from "../lib/finance/protocol";
 import * as users from "../db/users";
 
 type Handler = (db: DatabaseSync, ctx: DbContext, params: never) => unknown;
@@ -178,6 +180,20 @@ export const methods = {
   },
   /** Origem de um registro criado por automação (cartão, contato, organização). */
   "origins.of": (db: DatabaseSync, _c: DbContext, p: Id) => docCard.recordOrigin(db, p.id),
+  // Financeiro do cartão (spec 13): quem é o cliente/fornecedor e a cópia dos lançamentos da Gestão Financeira.
+  "finance.cardCounterparty": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    return finance.cardCounterparty(db, p.id);
+  },
+  "finance.card": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    return finance.cardFinance(db, p.id);
+  },
+  "finance.replace": (db: DatabaseSync, ctx: DbContext, p: { dealIds: string[]; items: FinanceItem[]; env: string; at: string }) => {
+    const v = viewer(db, ctx);
+    for (const id of p.dealIds) deals.assertCardAccess(db, v, id);
+    finance.replaceFinance(db, ctx, p.dealIds, p.items, p.env, p.at);
+  },
   "cards.import": (db: DatabaseSync, ctx: DbContext, p: cardImporter.CardImportInput) => {
     const v = viewer(db, ctx);
     return cardImporter.importCards(db, ctx, p, (ownerId) => deals.assertCanAssign(db, v, ownerId));

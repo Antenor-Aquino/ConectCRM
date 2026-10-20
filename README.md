@@ -155,8 +155,13 @@ guarda o arquivo no GED e registra a origem no histórico (detalhes em
 
 Em Configurações → Integrações → Gestão Financeira, o CRM se conecta à
 extensão Gestão Financeira instalada no mesmo Chrome (pareamento permitido
-lá). Próximas etapas: lançar receitas e despesas pelos cartões e ver o
-resultado de cada negócio (plano e fases em
+lá). Na aba **Financeiro** do cartão, **+ Receita / + Despesa** abrem a tela
+de lançamento da Gestão Financeira já preenchida (cliente/fornecedor =
+organização do cartão, senão o contato principal) e a aba mostra os
+lançamentos do cartão e o resultado (receitas − despesas, previsto e
+realizado), com cópia local quando a Gestão Financeira não responde. Ao
+marcar um cartão como ganho, o CRM oferece lançar a receita. O contato tem
+CPF opcional (plano e fases em
 [`especificacoes/13-gestao-financeira.md`](especificacoes/13-gestao-financeira.md)).
 
 ### Cadastros duplicados

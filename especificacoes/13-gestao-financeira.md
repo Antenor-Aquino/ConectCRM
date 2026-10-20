@@ -57,3 +57,47 @@ anota suas escritas e, se outra gravou antes, carrega o banco novo e
 **reaplica as suas por cima** (o conflito raro — ex.: o mesmo nome único nas
 duas — é descartado e avisado). As páginas sem escrita pendente passam a ler o
 banco novo e mostram "Os dados foram alterados em outra janela · Atualizar".
+
+## Fase 2 (CRM 0.2.55 · Gestão Financeira 0.0.5) — lançar pelo cartão
+
+### No CRM: aba **Financeiro** do cartão
+- **+ Receita / + Despesa** abrem, numa janela, a **tela de lançamento da
+  própria Gestão Financeira**, já preenchida: descrição (título do cartão),
+  valor (receita: o que falta lançar do valor do cartão; despesa: vazio),
+  carteira **Empresa** e o **cliente/fornecedor**. Categoria/subcategoria,
+  projeto/subprojeto, conta, vencimento, parcelas e recorrência são
+  escolhidos lá, no momento do lançamento. Lançar é opcional: cartão sem
+  lançamento só mostra "Nenhum lançamento".
+- Cliente/fornecedor = **organização do cartão** (PJ, com CNPJ); sem ela, o
+  **contato principal** (PF, com o CPF novo do contato). Sem nenhum dos dois,
+  os botões avisam: "vincule uma organização ou um contato a este cartão".
+- Na Gestão Financeira, a pessoa é achada pelo vínculo com o CRM, depois
+  pelo CPF/CNPJ, depois pelo nome exato (e o vínculo é gravado); não
+  existindo, é cadastrada em Clientes e fornecedores (a janela avisa).
+- A lista (vencimento, código, categoria, projeto, conta/cartão, situação
+  Em aberto / Atrasado / Recebido / Pago) e o resumo (**Receitas, Despesas,
+  Resultado**, previsto e realizado) vêm da Gestão Financeira; são lidos ao
+  abrir a aba, ao voltar para a janela do CRM e quando a janela de lançamento
+  fecha. Clicar num lançamento abre a edição dele na Gestão Financeira.
+- Cópia local (`finance_entry`/`finance_sync`, fora do change_log): com a
+  Gestão Financeira desativada ou sem resposta, a aba mostra a última cópia
+  ("Mostrando a cópia de dd/mm hh:mm") e os botões ficam desativados. A
+  contagem da aba usa a cópia. Ela também servirá aos relatórios da Fase 3.
+- **Ganho com valor**: ao marcar como ganho, com a Gestão Financeira
+  conectada, o CRM pergunta "Lançar a receita de R$ X na Gestão
+  Financeira?" e abre a janela da receita.
+- Contato ganhou **CPF** (opcional, validado, sem repetir).
+- Todos os usuários veem os valores (decisão do usuário).
+
+### Na Gestão Financeira
+- Protocolo **2**: `openLaunch` (guarda o pedido em `chrome.storage.session`
+  e abre `src/launch/launch.html` numa janela) e `listByOrigin` (o service
+  worker lê uma **cópia só de leitura** do banco — não precisa do painel
+  aberto). Ambos só para o CRM pareado; pedidos malformados são recusados.
+- Lançamento com **origem** (`origin_app`, `origin_ref` = id do cartão,
+  `origin_label`): gravada em lançamento simples, recorrente, parcelado no
+  cartão e no saldo do pagamento parcial; editar não muda a origem.
+- A janela de lançamento respeita a Senha de Acesso, avisa quando está no
+  Ambiente de Teste e grava pelo banco sincronizado (o painel aberto recebe
+  a alteração). Só edita lançamentos daquele cartão.
+- Em Lançamentos, etiqueta **ConectCRM** nos lançamentos vindos do CRM.

@@ -62,8 +62,10 @@ import { EmailLink, PhoneLink } from "../ui/ContactLinks";
 import { errorText } from "../../lib/errors";
 import { RECURRENCE_LABEL, type Recurrence } from "../../db/products";
 import { ExternalOrigin } from "../ui/ExternalOrigin";
+import { FinanceTab } from "./FinanceTab";
+import { loadGfSettings } from "../../lib/finance/gfBridge";
 
-type Tab = "notas" | "tarefas" | "documentos" | "historico";
+type Tab = "notas" | "tarefas" | "documentos" | "historico" | "financeiro";
 
 export type CardDetailMode = "drawer" | "full";
 
@@ -95,6 +97,8 @@ export function CardDetail({
   const [fields, setFields] = useState<CustomField[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("notas");
+  // Ao marcar como ganho: abrir já a receita na Gestão Financeira.
+  const [launchIncome, setLaunchIncome] = useState(false);
   // Origem aberta a partir do histórico.
   const [noteFocus, setNoteFocus] = useState<string | null>(null);
   const [taskOpen, setTaskOpen] = useState<string | null>(null);
@@ -105,7 +109,7 @@ export function CardDetail({
   // Quantidades nas abas (balão verde) e atividades atrasadas (balão vermelho).
   const [counts, setCounts] = useState<CardCounts | null>(null);
   const [countsKey, setCountsKey] = useState(0);
-  const recount = () => setCountsKey((k) => k + 1);
+  const recount = useCallback(() => setCountsKey((k) => k + 1), []);
   // Cadastro aberto a partir do nome do contato, da organização ou do responsável.
   const [editing, setEditing] = useState<{ kind: "person" | "organization" | "user"; id: string } | null>(null);
   const { user: me, users, reloadUsers } = useSession();
@@ -129,14 +133,16 @@ export function CardDetail({
     void call("customFields.list", { entity: text.kind, pipelineId: pipeline.id }).then(setFields);
   }, [load, pipeline.id, text.kind]);
 
-  const run = async (fn: () => Promise<unknown>) => {
+  const run = async (fn: () => Promise<unknown>): Promise<boolean> => {
     setError(null);
     try {
       await fn();
       await load();
       onChanged();
+      return true;
     } catch (e) {
       setError(errorText(e));
+      return false;
     }
   };
   const update = (patch: Record<string, unknown>) => run(() => call("cards.update", { id: cardId, patch }));
@@ -227,7 +233,16 @@ export function CardDetail({
             <TaButton
               className="!bg-success-600 !text-white !ring-0 hover:!bg-success-700"
               startIcon={pipeline.type === "comercial" ? <Trophy size={15} /> : <CheckCircle2 size={15} />}
-              onClick={() => void run(() => call("cards.setStatus", { id: cardId, status: "won" }))}
+              onClick={() =>
+                void run(() => call("cards.setStatus", { id: cardId, status: "won" })).then(async (ok) => {
+                  // Ganho com valor e Gestão Financeira conectada: oferece lançar a receita.
+                  const gf = await loadGfSettings();
+                  if (!ok || !gf.gfId || !gf.direct || !card.value_cents) return;
+                  if (!confirm(`Lançar a receita de ${formatCents(card.value_cents)} na Gestão Financeira?`)) return;
+                  setLaunchIncome(true);
+                  setTab("financeiro");
+                })
+              }
             >
               {outcome.won}
             </TaButton>
@@ -515,9 +530,10 @@ export function CardDetail({
                 ["notas", "Notas"],
                 ["tarefas", "Atividades"],
                 ["documentos", "Documentos"],
+                ["financeiro", "Financeiro"],
               ] as [Tab, string][]
             ).map(([id, label]) => {
-              const count = counts && { historico: counts.history, notas: counts.notes, tarefas: counts.activities, documentos: counts.documents }[id];
+              const count = counts && { historico: counts.history, notas: counts.notes, tarefas: counts.activities, documentos: counts.documents, financeiro: counts.finance || null }[id];
               const overdue = id === "tarefas" ? (counts?.activitiesOverdue ?? 0) : 0;
               return (
                 <button
@@ -577,6 +593,17 @@ export function CardDetail({
             />
           )}
           {tab === "documentos" && <DocumentsPanel type="deal" id={cardId} onChanged={recount} />}
+          {tab === "financeiro" && (
+            <FinanceTab
+              cardId={cardId}
+              title={card.title}
+              valueCents={card.value_cents}
+              cardLabel={text.noun.charAt(0).toUpperCase() + text.noun.slice(1)}
+              autoLaunch={launchIncome}
+              onAutoLaunchDone={() => setLaunchIncome(false)}
+              onSynced={recount}
+            />
+          )}
           {tab === "historico" && (
             <HistoryTab
               cardId={cardId}

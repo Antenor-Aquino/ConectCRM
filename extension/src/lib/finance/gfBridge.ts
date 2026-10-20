@@ -3,7 +3,7 @@
 // neste Chrome (chrome.management) e pede para se conectar; o usuário permite
 // lá. Assim nenhuma das duas troca de ID (os dados de cada uma ficam presos
 // ao ID) e reinstalar de outra pasta só pede um novo pareamento.
-import { PROTOCOL, type IntegrationRequest, type IntegrationResponse, type GfEnv } from "./protocol";
+import { PROTOCOL, type FinanceItem, type IntegrationRequest, type IntegrationResponse, type GfEnv, type LaunchRequest } from "./protocol";
 
 const KEY = "conectcrm-gestao-financeira";
 
@@ -74,6 +74,20 @@ export function hello(gfId: string): Promise<IntegrationResponse> {
 
 export function ping(gfId: string): Promise<IntegrationResponse> {
   return sendToGf(gfId, { type: "ping", protocol: PROTOCOL });
+}
+
+/** Abre a janela de lançamento da Gestão Financeira; devolve o id da janela (para saber quando fechou). */
+export async function openLaunch(gfId: string, launch: LaunchRequest): Promise<number | null> {
+  const r = await sendToGf(gfId, { type: "openLaunch", protocol: PROTOCOL, launch });
+  if (r.ok && r.status === "opened") return r.windowId;
+  throw new GfError(responseText(r) || "A Gestão Financeira não abriu o lançamento.");
+}
+
+/** Lançamentos destes cartões, lidos agora da Gestão Financeira. */
+export async function listByOrigin(gfId: string, refs: string[]): Promise<{ items: FinanceItem[]; env: GfEnv; at: string }> {
+  const r = await sendToGf(gfId, { type: "listByOrigin", protocol: PROTOCOL, refs }, 15000);
+  if (r.ok && r.status === "items") return { items: r.items, env: r.env, at: r.at };
+  throw new GfError(responseText(r) || "A Gestão Financeira não devolveu os lançamentos.");
 }
 
 export const GF_ENV_LABEL: Record<GfEnv, string> = { production: "Produção", demo: "Teste (dados de exemplo)" };

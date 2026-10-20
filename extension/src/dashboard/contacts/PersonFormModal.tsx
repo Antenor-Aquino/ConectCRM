@@ -46,6 +46,7 @@ export function PersonFormModal({
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [country, setCountry] = useState("BR");
+  const [cpf, setCpf] = useState("");
   const [orgs, setOrgs] = useState<OrgLink[]>([]);
   const [orgPicker, setOrgPicker] = useState(false);
   const [notes, setNotes] = useState("");
@@ -70,6 +71,7 @@ export function PersonFormModal({
       setEmail(p.email ?? "");
       setCountry(p.phone_country ?? "BR");
       setPhone(localPart(p.phone, p.phone_country ?? "BR"));
+      setCpf(formatCpf(p.cpf ?? ""));
       // Principal primeiro (é a ordem que define a principal ao salvar).
       setOrgs(p.organizations.map((o) => ({ id: o.id, name: o.name })));
       setNotes(p.notes ?? "");
@@ -95,6 +97,7 @@ export function PersonFormModal({
       email: email || null,
       phone: phone || null,
       phoneCountry: country,
+      cpf: cpf || null,
       notes,
       isPrivate,
       ownerId,
@@ -133,6 +136,10 @@ export function PersonFormModal({
             onOpen={onOpenExisting && ((i) => onOpenExisting(i.id))}
             onContinue={() => void save(true)}
           />
+
+          <Field label="CPF" hint="Opcional. Usado nos lançamentos da Gestão Financeira.">
+            <TaInput value={cpf} placeholder="000.000.000-00" inputMode="numeric" data-person-cpf onChange={(e) => setCpf(formatCpf(e.target.value))} />
+          </Field>
 
           <SectionLabel>Canais</SectionLabel>
           <div className="grid grid-cols-2 gap-3">
@@ -257,4 +264,10 @@ export function PersonFormModal({
       )}
     </TaModal>
   );
+}
+
+/** 000.000.000-00 enquanto digita. */
+function formatCpf(v: string): string {
+  const d = v.replace(/\D/g, "").slice(0, 11);
+  return d.replace(/^(\d{3})(\d)/, "$1.$2").replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3").replace(/\.(\d{3})(\d{1,2})$/, ".$1-$2");
 }

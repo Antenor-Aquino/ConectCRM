@@ -73,6 +73,25 @@ export function normalizeCnpj(value: string | null | undefined): string | null {
   return digits;
 }
 
+/** Dígitos verificadores do CPF. */
+export function isValidCpf(cpf: string): boolean {
+  if (!/^\d{11}$/.test(cpf) || /^(\d)\1{10}$/.test(cpf)) return false;
+  const digit = (base: string) => {
+    const sum = base.split("").reduce((acc, d, i) => acc + Number(d) * (base.length + 1 - i), 0);
+    const rest = (sum * 10) % 11;
+    return String(rest === 10 ? 0 : rest);
+  };
+  const d1 = digit(cpf.slice(0, 9));
+  return cpf.endsWith(d1 + digit(cpf.slice(0, 9) + d1));
+}
+
+export function normalizeCpf(value: string | null | undefined): string | null {
+  const digits = cnpjDigits(value);
+  if (!digits) return null;
+  if (!isValidCpf(digits)) throw new ValidationError("CPF inválido.");
+  return digits;
+}
+
 /** Chave reservada do campo personalizado: "Data de nascimento" → "data_de_nascimento". */
 export function placeholderKeyFromName(name: string): string {
   return name

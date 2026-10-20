@@ -10,6 +10,8 @@ export interface CardCounts {
   activities: number;
   activitiesOverdue: number;
   documents: number;
+  /** Lançamentos da Gestão Financeira (última cópia lida). */
+  finance: number;
 }
 
 export function cardCounts(db: DatabaseSync, cardId: string, now = new Date()): CardCounts {
@@ -24,5 +26,6 @@ export function cardCounts(db: DatabaseSync, cardId: string, now = new Date()): 
        WHERE l.entity_type = 'deal' AND l.entity_id = ? AND l.deleted_at IS NULL AND d.deleted_at IS NULL AND d.purged_at IS NULL`,
       cardId,
     ),
+    finance: n("SELECT COUNT(*) AS n FROM finance_entry WHERE deal_id = ?", cardId),
   };
 }
