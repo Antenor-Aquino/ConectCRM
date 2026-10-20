@@ -14,6 +14,7 @@ import { NotesPanel } from "../ui/NotesPanel";
 import { formatPhone } from "../ui/PhoneInput";
 import { TagChip } from "../ui/TagPicker";
 import { DocumentsPanel } from "../documents/DocumentsPanel";
+import { ClientFinancePanel } from "./ClientFinancePanel";
 import { ChangeLogList, CustomValuesView, DrawerShell, InfoRow, RelatedCards, RelatedTasks, Tabs } from "./detailParts";
 import { MergeModal } from "./MergeModal";
 import { PersonFormModal } from "./PersonFormModal";
@@ -21,7 +22,7 @@ import { errorText } from "../../lib/errors";
 import { EmailLink, PhoneLink } from "../ui/ContactLinks";
 import { openWhatsApp } from "../../lib/contactLinks";
 
-type Tab = "negocios" | "tarefas" | "documentos" | "notas" | "historico";
+type Tab = "negocios" | "tarefas" | "documentos" | "notas" | "historico" | "financeiro";
 
 export function PersonDetail({
   personId,
@@ -155,6 +156,7 @@ export function PersonDetail({
               ["negocios", "Negócios"],
               ["tarefas", "Atividades"],
               ["documentos", "Documentos"],
+              ["financeiro", "Financeiro"],
               ["notas", "Notas"],
               ["historico", "Histórico"],
             ]}
@@ -163,6 +165,7 @@ export function PersonDetail({
           />
           {tab === "negocios" && <RelatedCards filter={{ personId: p.id }} onOpenCard={onOpenCard} />}
           {tab === "tarefas" && <RelatedTasks filter={{ personId: p.id }} />}
+          {tab === "financeiro" && <ClientFinancePanel filter={{ personId: p.id }} onOpenCard={onOpenCard} />}
           {tab === "documentos" && <DocumentsPanel type="person" id={p.id} />}
           {tab === "notas" && <NotesPanel entityType="person" entityId={p.id} />}
           {tab === "historico" && <ChangeLogList table="person" id={p.id} />}

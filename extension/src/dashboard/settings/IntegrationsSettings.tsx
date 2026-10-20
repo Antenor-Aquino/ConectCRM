@@ -1,6 +1,6 @@
 // Configurações → Integrações (spec 09): uma entrada por integração, com os
-// parâmetros de cada uma. Por enquanto o Pipedrive (chave da API e endereço
-// da conta) e o botão para importar. Só administradores.
+// parâmetros de cada uma: Pipedrive (chave da API, endereço da conta e o
+// botão para importar) e Gestão Financeira (spec 13). Só administradores.
 import { useEffect, useState } from "react";
 import { CheckCircle2, Download, Eye, EyeOff, Plug, Unplug } from "lucide-react";
 import { TaBadge, TaButton, TaInput, TaPanel, cn } from "@tailadmin";
@@ -18,15 +18,20 @@ import { formatDateTime } from "../../lib/format";
 import { useSession } from "../session";
 import { Field } from "../ui/form";
 import { PipedriveImportModal } from "./PipedriveImportModal";
+import { GestaoFinanceiraPanel } from "./GestaoFinanceiraPanel";
 
 type Msg = { text: string; kind: "ok" | "err" } | null;
 
-const INTEGRATIONS = [{ id: "pipedrive", name: "Pipedrive", description: "Importar leads, contatos e organizações, com de-para dos campos." }] as const;
+const INTEGRATIONS = [
+  { id: "pipedrive", name: "Pipedrive", description: "Importar leads, contatos e organizações, com de-para dos campos.", logo: "p", bg: "bg-[#1a1a1a]" },
+  { id: "gestao", name: "Gestão Financeira", description: "Receitas e despesas dos cartões na extensão Gestão Financeira deste Chrome.", logo: "$", bg: "bg-success-600" },
+] as const;
+type IntegrationId = (typeof INTEGRATIONS)[number]["id"];
 
 export function IntegrationsSettings() {
   const { user } = useSession();
   const [s, setS] = useState<Settings | null>(null);
-  const [selected, setSelected] = useState<"pipedrive">("pipedrive");
+  const [selected, setSelected] = useState<IntegrationId>("pipedrive");
 
   useEffect(() => {
     void loadIntegrations().then(setS);
@@ -58,11 +63,11 @@ export function IntegrationsSettings() {
                   : "border-gray-200 hover:bg-gray-50 dark:border-gray-700",
               )}
             >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#1a1a1a] text-lg font-bold text-white">p</span>
+              <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-lg font-bold text-white", i.bg)}>{i.logo}</span>
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-2 text-theme-sm font-semibold text-gray-800 dark:text-white/90">
                   {i.name}
-                  <TaBadge color={s.pipedrive.token && s.pipedrive.active ? "green" : "slate"} label={status(s.pipedrive)} />
+                  {i.id === "pipedrive" && <TaBadge color={s.pipedrive.token && s.pipedrive.active ? "green" : "slate"} label={status(s.pipedrive)} />}
                 </span>
                 <span className="mt-0.5 block text-theme-xs text-gray-500">{i.description}</span>
               </span>
@@ -71,6 +76,7 @@ export function IntegrationsSettings() {
         </div>
       </TaPanel>
       {selected === "pipedrive" && <PipedrivePanel settings={s} onChange={setS} />}
+      {selected === "gestao" && <GestaoFinanceiraPanel />}
     </>
   );
 }

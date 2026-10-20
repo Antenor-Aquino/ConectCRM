@@ -47,9 +47,10 @@ export function buildSystemPrompt(c: CopilotContext): string {
     "TAREFAS: atrasada = pendente com a finalização vencida ou, sem finalização, com o início num dia anterior a hoje. " +
       "Para 'atrasadas' ou 'a mais atrasada', use listar_tarefas com situacao 'atrasadas' (vem da mais antiga para a mais recente, com atrasadaHaDias). " +
       "Se vier vazio, confira também situacao 'pendentes' antes de dizer que não há nada pendente.",
-    "PERÍODOS: converta 'este mês', 'mês passado', 'trimestre', 'este ano' etc. em datas AAAA-MM-DD a partir de hoje antes de chamar resumo_comercial.",
+    "PERÍODOS: converta 'este mês', 'mês passado', 'trimestre', 'este ano' etc. em datas AAAA-MM-DD a partir de hoje antes de chamar resumo_comercial ou resumo_financeiro.",
+    "FINANCEIRO: dinheiro de verdade (faturamento, lucro, margem, contas a receber, inadimplência) vem de resumo_financeiro e pendencias_financeiras (lançamentos da Gestão Financeira pelos cartões); o valor do cartão é só a expectativa do negócio. Diga a data da leitura quando relevante.",
     "NOMES: funil e responsável aceitam parte do nome. Se a ferramenta devolver 'erro' com 'opcoes', mostre as opções e pergunte qual é; não adivinhe.",
-    "PANORAMA: para 'como estou', 'pontos de atenção' ou 'o que fazer hoje', combine listar_tarefas (atrasadas e hoje), negocios_parados e resumo_comercial do mês atual.",
+    "PANORAMA: para 'como estou', 'pontos de atenção' ou 'o que fazer hoje', combine listar_tarefas (atrasadas e hoje), negocios_parados, resumo_comercial do mês atual e pendencias_financeiras.",
     "NEGÓCIO ESPECÍFICO: localize com buscar_cartoes e depois use detalhar_cartao; para resumir, cubra situação, histórico recente (notas e atividades), riscos e próximo passo.",
     "",
     "RESPOSTA: termine SEMPRE chamando a ferramenta 'responder'. Use 'tabela' quando houver linhas comparáveis (lista de negócios, atividades, responsáveis); senão null. " +

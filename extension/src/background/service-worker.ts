@@ -1,5 +1,6 @@
 // Service worker: cria o documento offscreen (dono do banco) sob demanda e
 // dispara os lembretes de tarefas (notificação do Chrome, mesmo com o CRM fechado).
+import { listAllFromCrm, loadGfSettings } from "../lib/finance/gfBridge";
 import type { NotifyJob } from "../db/notifications";
 import { sendMail } from "../lib/calendar";
 import { sendCallMeBot } from "../lib/notify/callmebot";
@@ -94,6 +95,23 @@ function chromeNotify(id: string, title: string, message: string, withButtons: b
   });
 }
 
+// Cópia dos lançamentos da Gestão Financeira (spec 13): lida a cada 3 h, para
+// os alertas financeiros do resumo diário. Sem ela por perto, fica a última.
+const FINANCE_SYNC_KEY = "conectcrm-finance-bg-sync";
+async function refreshFinanceCopy(userId: string | null): Promise<void> {
+  try {
+    const last = (await chrome.storage.local.get(FINANCE_SYNC_KEY))[FINANCE_SYNC_KEY] as number | undefined;
+    if (last && Date.now() - last < 3 * 3600_000) return;
+    const gf = await loadGfSettings();
+    if (!gf.gfId || !gf.direct) return;
+    await chrome.storage.local.set({ [FINANCE_SYNC_KEY]: Date.now() });
+    const r = await listAllFromCrm(gf.gfId, () => rpc<string[]>("finance.cardIds", {}, userId));
+    await rpc("finance.replaceAll", { items: r.items, env: r.env, at: r.at }, userId);
+  } catch {
+    // Gestão Financeira fechada/desatualizada: o resumo usa a última cópia.
+  }
+}
+
 async function runNotifications(): Promise<void> {
   if (running) return;
   running = true;
@@ -106,6 +124,7 @@ async function runNotifications(): Promise<void> {
       await chrome.storage.local.set({ [SNOOZE_KEY]: snoozes.filter((x) => !due.includes(x)) });
       for (const x of due) chromeNotify(`task:${x.activityId}`, x.title, x.text, true);
     }
+    await refreshFinanceCopy(userId);
     const settings = Object.fromEntries(Object.entries(await loadAllNotifySettings()).map(([id, x]) => [id, activeSettings(x)]));
     const jobs = await rpc<NotifyJob[]>("notifications.plan", { settings }, userId);
     if (!jobs.length) return;

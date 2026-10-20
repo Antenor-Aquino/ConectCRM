@@ -30,6 +30,7 @@ import type { ActivityListItem } from "../../db/activities";
 import type { CustomField, CustomValue } from "../../db/customFields";
 import type { CardDetail as CardData } from "../../db/deals";
 import type { CardCounts } from "../../db/cardCounts";
+import type { CardFinance } from "../../db/finance";
 import type { HistoryEvent, HistoryRef } from "../../db/cardHistory";
 import type { Pipeline, Stage } from "../../db/pipelines";
 import { CARD_TEXT, OUTCOME_TEXT } from "../../lib/cardTypes";
@@ -62,8 +63,10 @@ import { EmailLink, PhoneLink } from "../ui/ContactLinks";
 import { errorText } from "../../lib/errors";
 import { RECURRENCE_LABEL, type Recurrence } from "../../db/products";
 import { ExternalOrigin } from "../ui/ExternalOrigin";
+import { FinanceTab } from "./FinanceTab";
+import { loadGfSettings } from "../../lib/finance/gfBridge";
 
-type Tab = "notas" | "tarefas" | "documentos" | "historico";
+type Tab = "notas" | "tarefas" | "documentos" | "historico" | "financeiro";
 
 export type CardDetailMode = "drawer" | "full";
 
@@ -95,6 +98,8 @@ export function CardDetail({
   const [fields, setFields] = useState<CustomField[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("notas");
+  // Ao marcar como ganho: abrir já a receita na Gestão Financeira.
+  const [launchIncome, setLaunchIncome] = useState(false);
   // Origem aberta a partir do histórico.
   const [noteFocus, setNoteFocus] = useState<string | null>(null);
   const [taskOpen, setTaskOpen] = useState<string | null>(null);
@@ -104,8 +109,10 @@ export function CardDetail({
   const [pipelineAction, setPipelineAction] = useState<"move" | "clone" | null>(null);
   // Quantidades nas abas (balão verde) e atividades atrasadas (balão vermelho).
   const [counts, setCounts] = useState<CardCounts | null>(null);
+  // Resultado financeiro (cópia dos lançamentos da Gestão Financeira).
+  const [finance, setFinance] = useState<CardFinance | null>(null);
   const [countsKey, setCountsKey] = useState(0);
-  const recount = () => setCountsKey((k) => k + 1);
+  const recount = useCallback(() => setCountsKey((k) => k + 1), []);
   // Cadastro aberto a partir do nome do contato, da organização ou do responsável.
   const [editing, setEditing] = useState<{ kind: "person" | "organization" | "user"; id: string } | null>(null);
   const { user: me, users, reloadUsers } = useSession();
@@ -129,14 +136,16 @@ export function CardDetail({
     void call("customFields.list", { entity: text.kind, pipelineId: pipeline.id }).then(setFields);
   }, [load, pipeline.id, text.kind]);
 
-  const run = async (fn: () => Promise<unknown>) => {
+  const run = async (fn: () => Promise<unknown>): Promise<boolean> => {
     setError(null);
     try {
       await fn();
       await load();
       onChanged();
+      return true;
     } catch (e) {
       setError(errorText(e));
+      return false;
     }
   };
   const update = (patch: Record<string, unknown>) => run(() => call("cards.update", { id: cardId, patch }));
@@ -145,6 +154,9 @@ export function CardDetail({
     void call("cards.counts", { id: cardId })
       .then(setCounts)
       .catch(() => setCounts(null));
+    void call("finance.card", { id: cardId })
+      .then(setFinance)
+      .catch(() => setFinance(null));
   }, [cardId, card?.version, countsKey, tab]);
 
   if (!card) {
@@ -227,7 +239,16 @@ export function CardDetail({
             <TaButton
               className="!bg-success-600 !text-white !ring-0 hover:!bg-success-700"
               startIcon={pipeline.type === "comercial" ? <Trophy size={15} /> : <CheckCircle2 size={15} />}
-              onClick={() => void run(() => call("cards.setStatus", { id: cardId, status: "won" }))}
+              onClick={() =>
+                void run(() => call("cards.setStatus", { id: cardId, status: "won" })).then(async (ok) => {
+                  // Ganho com valor e Gestão Financeira conectada: oferece lançar a receita.
+                  const gf = await loadGfSettings();
+                  if (!ok || !card.value_cents || !((gf.gfId && gf.direct) || gf.package)) return;
+                  if (!confirm(`Lançar a receita de ${formatCents(card.value_cents)} na Gestão Financeira?`)) return;
+                  setLaunchIncome(true);
+                  setTab("financeiro");
+                })
+              }
             >
               {outcome.won}
             </TaButton>
@@ -336,6 +357,24 @@ export function CardDetail({
                 </button>
               </div>
               {card.items.length > 0 && <ItemsSummary items={card.items} onEdit={() => setItemsOpen(true)} />}
+              {finance && finance.entries.length > 0 && (
+                <button
+                  type="button"
+                  data-card-result
+                  onClick={() => setTab("financeiro")}
+                  className="mt-2 flex w-full flex-wrap items-center gap-x-3 gap-y-0.5 rounded-lg bg-gray-50 px-3 py-2 text-left text-theme-xs text-gray-600 hover:bg-gray-100 dark:bg-white/5 dark:text-gray-400"
+                  title="Lançamentos na Gestão Financeira (ver aba Financeiro)"
+                >
+                  <span>Receitas <b className="text-success-600">{formatCents(finance.summary.incomeCents)}</b></span>
+                  <span>Despesas <b className="text-error-600">{formatCents(finance.summary.expenseCents)}</b></span>
+                  <span>
+                    Resultado{" "}
+                    <b className={finance.summary.resultCents >= 0 ? "text-success-600" : "text-error-600"}>{formatCents(finance.summary.resultCents)}</b>
+                    {finance.summary.incomeCents > 0 && ` (${Math.round((finance.summary.resultCents / finance.summary.incomeCents) * 100)}%)`}
+                  </span>
+                  {finance.summary.overdueCount > 0 && <span className="font-medium text-error-600">{finance.summary.overdueCount} atrasado(s)</span>}
+                </button>
+              )}
             </>
           }
           {pipeline.type !== "comercial" && (
@@ -515,9 +554,10 @@ export function CardDetail({
                 ["notas", "Notas"],
                 ["tarefas", "Atividades"],
                 ["documentos", "Documentos"],
+                ["financeiro", "Financeiro"],
               ] as [Tab, string][]
             ).map(([id, label]) => {
-              const count = counts && { historico: counts.history, notas: counts.notes, tarefas: counts.activities, documentos: counts.documents }[id];
+              const count = counts && { historico: counts.history, notas: counts.notes, tarefas: counts.activities, documentos: counts.documents, financeiro: counts.finance || null }[id];
               const overdue = id === "tarefas" ? (counts?.activitiesOverdue ?? 0) : 0;
               return (
                 <button
@@ -577,6 +617,17 @@ export function CardDetail({
             />
           )}
           {tab === "documentos" && <DocumentsPanel type="deal" id={cardId} onChanged={recount} />}
+          {tab === "financeiro" && (
+            <FinanceTab
+              cardId={cardId}
+              title={card.title}
+              valueCents={card.value_cents}
+              cardLabel={text.noun.charAt(0).toUpperCase() + text.noun.slice(1)}
+              autoLaunch={launchIncome}
+              onAutoLaunchDone={() => setLaunchIncome(false)}
+              onSynced={recount}
+            />
+          )}
           {tab === "historico" && (
             <HistoryTab
               cardId={cardId}

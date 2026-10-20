@@ -15,6 +15,7 @@ import { downloadWorkbook } from "../../lib/xlsxExport";
 import { useSession } from "../session";
 import { BarChart, DataTable, ReportCard } from "./charts";
 import { errorText } from "../../lib/errors";
+import { FinanceReports, ReportSwitch, type ReportKind } from "./FinanceReports";
 
 const pct = (v: number | null) => (v == null ? "—" : `${(v * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`);
 const days = (v: number | null) => (v == null ? "—" : `${v.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} d`);
@@ -27,7 +28,14 @@ const int = (v: number) => v.toLocaleString("pt-BR", { maximumFractionDigits: 0 
 
 const pct1 = (v: number | null) => (v == null ? null : Math.round(v * 1000) / 10);
 
+/** Relatórios: Comercial (funis) e Financeiro (lançamentos da Gestão Financeira). */
 export function ReportsView() {
+  const [view, setView] = useState<ReportKind>("comercial");
+  const switcher = <ReportSwitch value={view} onChange={setView} />;
+  return view === "comercial" ? <CommercialReports switcher={switcher} /> : <FinanceReports switcher={switcher} />;
+}
+
+function CommercialReports({ switcher }: { switcher: React.ReactNode }) {
   const { user, users } = useSession();
   const [preset, setPreset] = useState<PeriodPreset>("mes");
   const [period, setPeriod] = useState<Period>(() => presetPeriod("mes"));
@@ -176,7 +184,7 @@ export function ReportsView() {
     <div>
       {/* Filtros: uma linha só, valem para todos os relatórios. */}
       <div className="mb-5 flex flex-wrap items-end gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-theme-xs dark:border-gray-800 dark:bg-white/[0.03]">
-        <h2 className="mr-auto self-center text-lg font-semibold text-gray-800 dark:text-white/90">Relatórios</h2>
+        {switcher}
         <label className="flex flex-col text-theme-xs text-gray-500">
           Período
           <TaSelect
