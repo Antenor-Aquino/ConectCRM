@@ -1,6 +1,6 @@
 // Service worker: cria o documento offscreen (dono do banco) sob demanda e
 // dispara os lembretes de tarefas (notificação do Chrome, mesmo com o CRM fechado).
-import { listAllFromCrm, loadGfSettings } from "../lib/finance/gfBridge";
+import { listAllFromCrm, loadGfSettings, pushPendingContactsVia } from "../lib/finance/gfBridge";
 import type { NotifyJob } from "../db/notifications";
 import { sendMail } from "../lib/calendar";
 import { sendCallMeBot } from "../lib/notify/callmebot";
@@ -99,6 +99,17 @@ function chromeNotify(id: string, title: string, message: string, withButtons: b
 // os alertas financeiros do resumo diário. Sem ela por perto, fica a última.
 const FINANCE_SYNC_KEY = "conectcrm-finance-bg-sync";
 async function refreshFinanceCopy(userId: string | null): Promise<void> {
+  // Paridade de cadastros: contatos/organizações alterados vão a cada passada (modo direto).
+  try {
+    const gf = await loadGfSettings();
+    if (gf.gfId && gf.direct)
+      await pushPendingContactsVia(gf.gfId, {
+        pending: () => rpc("finance.pendingContacts", {}, userId),
+        sent: (crmRefs) => rpc("finance.contactsSent", { crmRefs }, userId),
+      });
+  } catch {
+    // Fica pendente para a próxima.
+  }
   try {
     const last = (await chrome.storage.local.get(FINANCE_SYNC_KEY))[FINANCE_SYNC_KEY] as number | undefined;
     if (last && Date.now() - last < 3 * 3600_000) return;

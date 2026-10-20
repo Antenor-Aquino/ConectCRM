@@ -2,7 +2,8 @@
 // Financeira; aqui fica quem é o cliente/fornecedor do cartão (o que vai no
 // pedido de lançamento) e a cópia local dos lançamentos lidos de lá, para a
 // aba Financeiro funcionar mesmo com a outra extensão fechada.
-import { PACKAGE_FORMAT, type FinanceItem, type LaunchCounterparty, type PackageRequest, type RequestsPackage, type ReturnPackage } from "../lib/finance/protocol";
+import { PACKAGE_FORMAT, type ContactCard, type FinanceItem, type PackageRequest, type RequestsPackage, type ReturnPackage } from "../lib/finance/protocol";
+import { contactCardFor, organizationCard, personCard } from "./contactCard";
 import { ValidationError } from "../lib/validate";
 import { formatCents } from "../lib/format";
 import { cardScope } from "./deals";
@@ -10,31 +11,71 @@ import type { DbContext } from "./repo";
 import { many, one, run, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
 import type { Viewer } from "./users";
 
-/** Cliente/fornecedor padrão do cartão: a organização; sem ela, o contato principal. */
-export function cardCounterparty(db: DatabaseSync, dealId: string): LaunchCounterparty | null {
+/** Cliente/fornecedor padrão do cartão (ficha completa): a organização; sem ela, o contato principal. */
+export function cardCounterparty(db: DatabaseSync, dealId: string): ContactCard | null {
   const d = one<{ person_id: string | null; organization_id: string | null }>(
     db,
     "SELECT person_id, organization_id FROM deal WHERE id = ? AND deleted_at IS NULL",
     dealId,
   );
   if (!d) return null;
-  if (d.organization_id) {
-    const o = one<{ id: string; name: string; cnpj: string | null; email: string | null; phone: string | null }>(
+  return (d.organization_id ? organizationCard(db, d.organization_id) : null) ?? (d.person_id ? personCard(db, d.person_id) : null);
+}
+
+// ---------- Paridade de cadastros: quem está na Gestão Financeira ----------
+
+/** Passa a acompanhar o contato/organização na Gestão Financeira (`sent` = a ficha acabou de ir junto, ex.: no lançamento). */
+export function linkFinanceContact(db: DatabaseSync, ctx: DbContext, crmRef: string, sent = false): void {
+  const now = new Date().toISOString();
+  run(
+    db,
+    `INSERT INTO finance_contact (crm_ref, workspace_id, pending, linked_at, sent_at) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(crm_ref) DO UPDATE SET pending = excluded.pending, sent_at = COALESCE(excluded.sent_at, finance_contact.sent_at)`,
+    crmRef,
+    ctx.workspaceId,
+    sent ? 0 : 1,
+    now,
+    sent ? now : null,
+  );
+}
+
+/**
+ * Cadastro alterado no CRM: se já está na Gestão Financeira, fica pendente de
+ * envio. Organização alterada também atualiza os contatos dela que estão lá
+ * (a ficha deles leva o nome da empresa).
+ */
+export function markContactChanged(db: DatabaseSync, entity: "person" | "organization", id: string): void {
+  run(db, "UPDATE finance_contact SET pending = 1 WHERE crm_ref = ?", `${entity}:${id}`);
+  if (entity === "organization")
+    run(
       db,
-      "SELECT id, name, cnpj, email, phone FROM organization WHERE id = ? AND deleted_at IS NULL",
-      d.organization_id,
+      `UPDATE finance_contact SET pending = 1 WHERE crm_ref IN (
+         SELECT 'person:' || po.person_id FROM person_organization po WHERE po.organization_id = ? AND po.deleted_at IS NULL)`,
+      id,
     );
-    if (o) return { crmRef: `organization:${o.id}`, kind: "PJ", name: o.name, document: o.cnpj, email: o.email, phone: o.phone };
+}
+
+/** Situação na Gestão Financeira (null = ainda não está lá). */
+export function financeContactStatus(db: DatabaseSync, crmRef: string): { pending: boolean; linkedAt: string; sentAt: string | null } | null {
+  const r = one<{ pending: number; linked_at: string; sent_at: string | null }>(db, "SELECT pending, linked_at, sent_at FROM finance_contact WHERE crm_ref = ?", crmRef);
+  return r ? { pending: !!r.pending, linkedAt: r.linked_at, sentAt: r.sent_at } : null;
+}
+
+/** Fichas a enviar (alteradas ou recém-ligadas); as excluídas do CRM saem da fila. */
+export function pendingContactCards(db: DatabaseSync, limit = 500): ContactCard[] {
+  const out: ContactCard[] = [];
+  for (const r of many<{ crm_ref: string }>(db, "SELECT crm_ref FROM finance_contact WHERE pending = 1 ORDER BY linked_at LIMIT ?", limit)) {
+    const card = contactCardFor(db, r.crm_ref);
+    if (card) out.push(card);
+    else run(db, "UPDATE finance_contact SET pending = 0 WHERE crm_ref = ?", r.crm_ref);
   }
-  if (d.person_id) {
-    const p = one<{ id: string; name: string; cpf: string | null; email: string | null; phone: string | null }>(
-      db,
-      "SELECT id, name, cpf, email, phone FROM person WHERE id = ? AND deleted_at IS NULL",
-      d.person_id,
-    );
-    if (p) return { crmRef: `person:${p.id}`, kind: "PF", name: p.name, document: p.cpf, email: p.email, phone: p.phone };
-  }
-  return null;
+  return out;
+}
+
+export function markContactsSent(db: DatabaseSync, crmRefs: string[], at = new Date().toISOString()): void {
+  withTransaction(db, () => {
+    for (const ref of crmRefs) run(db, "UPDATE finance_contact SET pending = 0, sent_at = ? WHERE crm_ref = ?", at, ref);
+  });
 }
 
 export interface FinanceEntry extends FinanceItem {
@@ -477,6 +518,8 @@ export function createFinanceRequest(db: DatabaseSync, ctx: DbContext, dealId: s
   if (!card) throw new ValidationError("Cartão não encontrado.");
   const counterparty = cardCounterparty(db, dealId);
   if (!counterparty) throw new ValidationError("Para lançar no financeiro, vincule uma organização ou um contato a este cartão.");
+  // O cliente/fornecedor passa a ser acompanhado (alterações no CRM vão nos próximos pacotes).
+  linkFinanceContact(db, ctx, counterparty.crmRef);
   if (input.mode !== "income" && input.mode !== "expense") throw new ValidationError("Tipo inválido.");
   const description = input.description.trim();
   if (!description) throw new ValidationError("Informe a descrição.");
@@ -534,13 +577,14 @@ export function listFinanceRequests(db: DatabaseSync, dealId: string): FinanceRe
 }
 
 /** Quantos pedidos aguardam ir (ou voltar) da Gestão Financeira. */
-export function financeRequestCounts(db: DatabaseSync): { pending: number; exported: number } {
+export function financeRequestCounts(db: DatabaseSync): { pending: number; exported: number; contacts: number } {
   const r = one<{ pending: number; exported: number }>(
     db,
     `SELECT SUM(status = 'pending') AS pending, SUM(status = 'exported') AS exported FROM finance_request d
      WHERE deleted_at IS NULL AND EXISTS (SELECT 1 FROM deal WHERE deal.id = d.deal_id AND deal.deleted_at IS NULL)`,
   );
-  return { pending: r?.pending ?? 0, exported: r?.exported ?? 0 };
+  const contacts = one<{ n: number }>(db, "SELECT COUNT(*) AS n FROM finance_contact WHERE pending = 1")?.n ?? 0;
+  return { pending: r?.pending ?? 0, exported: r?.exported ?? 0, contacts };
 }
 
 export function discardFinanceRequest(db: DatabaseSync, id: string): string {
@@ -562,10 +606,13 @@ export function exportFinanceRequests(db: DatabaseSync, version: string, now = n
        AND EXISTS (SELECT 1 FROM deal WHERE deal.id = f.deal_id AND deal.deleted_at IS NULL) ORDER BY created_at`,
   ).map(mapRequest);
   const at = now.toISOString();
+  // Contatos/organizações alterados (ou enviados pelo botão) vão juntos.
+  const contacts = pendingContactCards(db);
   withTransaction(db, () => {
     for (const r of rows) if (r.status === "pending") run(db, "UPDATE finance_request SET status = 'exported', exported_at = ? WHERE id = ?", at, r.id);
+    markContactsSent(db, contacts.map((c) => c.crmRef), at);
   });
-  return { format: PACKAGE_FORMAT, version: 1, kind: "requests", createdAt: at, from: { app: "conectcrm", version }, requests: rows.map((r) => r.request) };
+  return { format: PACKAGE_FORMAT, version: 1, kind: "requests", createdAt: at, from: { app: "conectcrm", version }, requests: rows.map((r) => r.request), contacts };
 }
 
 /** Importa o retorno da Gestão Financeira: substitui a cópia e marca os pedidos que viraram lançamento. */

@@ -34,6 +34,7 @@ import { ValidationError } from "../lib/validate";
 import * as tags from "../db/tags";
 import * as docCard from "../db/docCard";
 import * as finance from "../db/finance";
+import { contactCardFor } from "../db/contactCard";
 import type { FinanceItem, ReturnPackage } from "../lib/finance/protocol";
 import * as users from "../db/users";
 
@@ -226,6 +227,14 @@ export const methods = {
     if (dealId) deals.assertCardAccess(db, viewer(db, ctx), dealId);
     finance.discardFinanceRequest(db, p.id);
   },
+  // Paridade de cadastros (contatos e organizações na Gestão Financeira).
+  "finance.linkContact": (db: DatabaseSync, ctx: DbContext, p: { crmRef: string; sent?: boolean }) => {
+    if (!contactCardFor(db, p.crmRef)) throw new ValidationError("Contato ou organização não encontrado.");
+    finance.linkFinanceContact(db, ctx, p.crmRef, p.sent);
+  },
+  "finance.contactStatus": (db: DatabaseSync, _c: DbContext, p: { crmRef: string }) => finance.financeContactStatus(db, p.crmRef),
+  "finance.pendingContacts": (db: DatabaseSync) => finance.pendingContactCards(db),
+  "finance.contactsSent": (db: DatabaseSync, _c: DbContext, p: { crmRefs: string[] }) => finance.markContactsSent(db, p.crmRefs),
   "finance.requestCounts": (db: DatabaseSync) => finance.financeRequestCounts(db),
   "finance.exportPackage": (db: DatabaseSync, _c: DbContext, p: { version: string }) => finance.exportFinanceRequests(db, p.version),
   "finance.importReturn": (db: DatabaseSync, ctx: DbContext, p: { pkg: ReturnPackage }) => finance.importFinanceReturn(db, ctx, p.pkg),
@@ -325,20 +334,27 @@ export const methods = {
     contacts.listPersons(db, { ...p, viewer: viewer(db, ctx) }),
   "persons.get": (db: DatabaseSync, ctx: DbContext, p: Id) => contacts.getPerson(db, p.id, viewer(db, ctx)),
   "persons.create": (db: DatabaseSync, ctx: DbContext, p: contacts.PersonInput) => contacts.createPerson(db, ctx, p),
-  "persons.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Partial<contacts.PersonInput> }) => contacts.updatePerson(db, ctx, p.id, p.patch),
+  "persons.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Partial<contacts.PersonInput> }) => {
+    contacts.updatePerson(db, ctx, p.id, p.patch);
+    finance.markContactChanged(db, "person", p.id); // paridade com a Gestão Financeira
+  },
   "persons.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => contacts.deletePerson(db, ctx, p.id),
   "persons.findDuplicates": (db: DatabaseSync, _c: DbContext, p: Parameters<typeof contacts.findDuplicatePersons>[1]) =>
     contacts.findDuplicatePersons(db, p),
   "similar.persons": (db: DatabaseSync, ctx: DbContext, p: { name: string; excludeId?: string }) => similar.similarPersons(db, p, viewer(db, ctx)),
   "similar.organizations": (db: DatabaseSync, _c: DbContext, p: { name: string; excludeId?: string }) => similar.similarOrganizations(db, p),
   "similar.cards": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof similar.similarCards>[1]) => similar.similarCards(db, p, viewer(db, ctx)),
-  "persons.setPrimaryOrganization": (db: DatabaseSync, ctx: DbContext, p: { personId: string; organizationId: string }) =>
-    contacts.setPrimaryOrganization(db, ctx, p.personId, p.organizationId),
+  "persons.setPrimaryOrganization": (db: DatabaseSync, ctx: DbContext, p: { personId: string; organizationId: string }) => {
+    contacts.setPrimaryOrganization(db, ctx, p.personId, p.organizationId);
+    finance.markContactChanged(db, "person", p.personId);
+  },
   "organizations.list": (db: DatabaseSync, _c: DbContext, p: Parameters<typeof contacts.listOrganizations>[1] = {}) => contacts.listOrganizations(db, p),
   "organizations.get": (db: DatabaseSync, ctx: DbContext, p: Id) => contacts.getOrganization(db, p.id, viewer(db, ctx)),
   "organizations.create": (db: DatabaseSync, ctx: DbContext, p: contacts.OrganizationInput) => contacts.createOrganization(db, ctx, p),
-  "organizations.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Partial<contacts.OrganizationInput> }) =>
-    contacts.updateOrganization(db, ctx, p.id, p.patch),
+  "organizations.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Partial<contacts.OrganizationInput> }) => {
+    contacts.updateOrganization(db, ctx, p.id, p.patch);
+    finance.markContactChanged(db, "organization", p.id);
+  },
   "organizations.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => contacts.deleteOrganization(db, ctx, p.id),
   "organizations.findByCnpj": (db: DatabaseSync, _c: DbContext, p: { cnpj: string }) => contacts.findOrganizationByCnpj(db, p.cnpj) ?? null,
   "organizations.segments": (db: DatabaseSync) => contacts.listSegments(db),

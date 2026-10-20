@@ -1,6 +1,7 @@
 // "Criar contato" / editar contato (spec 03): foto, nome, canais (e-mail e
 // celular com país), organizações (a primeira vira a principal), notas,
 // contato privado, mais detalhes (responsável, tags) e campos personalizados.
+import { pushPendingContacts } from "../../lib/finance/sync";
 import { useEffect, useState } from "react";
 import { AlertTriangle, PlusCircle, Star, X } from "lucide-react";
 import { TaButton, TaInput, TaModal, TaTextarea } from "@tailadmin";
@@ -111,6 +112,8 @@ export function PersonFormModal({
       if (id) await call("persons.update", { id, patch: input });
       else id = await call("persons.create", input);
       if (orgs[0]) await call("persons.setPrimaryOrganization", { personId: id, organizationId: orgs[0].id });
+      // Paridade com a Gestão Financeira: se o cadastro está lá, a alteração vai junto.
+      void pushPendingContacts();
       onSaved(id);
     } catch (e) {
       setError(errorText(e));

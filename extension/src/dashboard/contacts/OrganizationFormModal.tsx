@@ -1,6 +1,7 @@
 // "Nova organização" / editar (spec 04): logo, nome fantasia, empresa (CNPJ
 // com consulta automática, site, razão social, segmento, responsável),
 // contato, endereço (CEP preenche), descrição, mais detalhes e contatos.
+import { pushPendingContacts } from "../../lib/finance/sync";
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Loader2, Search, Star, X } from "lucide-react";
 import { TaButton, TaInput, TaModal, TaTextarea } from "@tailadmin";
@@ -188,6 +189,8 @@ export function OrganizationFormModal({
       let id = organizationId;
       if (id) await call("organizations.update", { id, patch: input });
       else id = await call("organizations.create", input);
+      // Paridade com a Gestão Financeira: se o cadastro está lá, a alteração vai junto.
+      void pushPendingContacts();
       onSaved(id);
     } catch (e) {
       setError(errorText(e));

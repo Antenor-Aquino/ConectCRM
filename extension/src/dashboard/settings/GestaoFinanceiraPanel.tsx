@@ -197,7 +197,7 @@ export function GestaoFinanceiraPanel() {
 
 /** Modo pacote: exporta os pedidos feitos nos cartões e importa o retorno da Gestão Financeira. */
 function PackageBox() {
-  const [counts, setCounts] = useState<{ pending: number; exported: number } | null>(null);
+  const [counts, setCounts] = useState<{ pending: number; exported: number; contacts: number } | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const file = useRef<HTMLInputElement>(null);
   const reload = () => void call("finance.requestCounts").then(setCounts);
@@ -206,8 +206,9 @@ function PackageBox() {
   async function exportPackage() {
     setMsg(null);
     const pkg = await call("finance.exportPackage", { version: chrome.runtime.getManifest().version });
-    if (!pkg.requests.length) {
-      setMsg({ ok: true, text: "Nenhum pedido aguardando. Faça os pedidos na aba Financeiro dos cartões." });
+    const nContacts = pkg.contacts?.length ?? 0;
+    if (!pkg.requests.length && !nContacts) {
+      setMsg({ ok: true, text: "Nada aguardando: nenhum pedido de lançamento nem cadastro alterado." });
       return;
     }
     const url = URL.createObjectURL(new Blob([JSON.stringify(pkg, null, 1)], { type: "application/json" }));
@@ -216,7 +217,10 @@ function PackageBox() {
     a.download = `conectcrm-pedidos-financeiro-${new Date().toLocaleDateString("sv-SE")}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
-    setMsg({ ok: true, text: `${pkg.requests.length} pedido(s) no pacote. Na Gestão Financeira: Importar → Pacote do ConectCRM.` });
+    setMsg({
+      ok: true,
+      text: `${pkg.requests.length} pedido(s) e ${nContacts} cadastro(s) de contato/organização no pacote. Na Gestão Financeira: Importar → Pacote do ConectCRM.`,
+    });
     reload();
   }
 
@@ -240,11 +244,15 @@ function PackageBox() {
       <p className="mb-1 text-theme-sm font-medium text-gray-800 dark:text-white/90">Pacote de arquivo</p>
       <p className="mb-3 text-theme-xs text-gray-500">
         1. Nos cartões (aba Financeiro), faça os pedidos de receita/despesa. 2. Exporte o pacote e importe na Gestão Financeira (Importar → Pacote do
-        ConectCRM). 3. Lá, exporte o retorno e importe aqui: os cartões passam a mostrar os lançamentos.
+        ConectCRM) — os contatos e organizações alterados vão juntos. 3. Lá, exporte o retorno e importe aqui: os cartões passam a mostrar os
+        lançamentos.
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <TaButton size="sm" startIcon={<FileDown size={14} />} onClick={() => void exportPackage()} data-gf-export>
-          Exportar pacote{counts ? ` (${counts.pending} novo${counts.pending === 1 ? "" : "s"}${counts.exported ? `, ${counts.exported} aguardando retorno` : ""})` : ""}
+          Exportar pacote
+          {counts
+            ? ` (${counts.pending} pedido${counts.pending === 1 ? "" : "s"} novo${counts.pending === 1 ? "" : "s"}${counts.contacts ? `, ${counts.contacts} cadastro${counts.contacts === 1 ? "" : "s"}` : ""}${counts.exported ? `, ${counts.exported} aguardando retorno` : ""})`
+            : ""}
         </TaButton>
         <input ref={file} type="file" accept=".json,application/json" hidden onChange={(e) => e.target.files?.[0] && void importReturn(e.target.files[0])} data-gf-return-file />
         <TaButton size="sm" variant="outline" onClick={() => file.current?.click()}>

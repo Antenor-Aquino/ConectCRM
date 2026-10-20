@@ -3,7 +3,7 @@
 // neste Chrome (chrome.management) e pede para se conectar; o usuário permite
 // lá. Assim nenhuma das duas troca de ID (os dados de cada uma ficam presos
 // ao ID) e reinstalar de outra pasta só pede um novo pareamento.
-import { PROTOCOL, type FinanceItem, type IntegrationRequest, type IntegrationResponse, type GfEnv, type LaunchRequest } from "./protocol";
+import { PROTOCOL, type ContactCard, type FinanceItem, type IntegrationRequest, type IntegrationResponse, type GfEnv, type LaunchRequest } from "./protocol";
 
 const KEY = "conectcrm-gestao-financeira";
 
@@ -74,6 +74,31 @@ export function hello(gfId: string): Promise<IntegrationResponse> {
 
 export function ping(gfId: string): Promise<IntegrationResponse> {
   return sendToGf(gfId, { type: "ping", protocol: PROTOCOL });
+}
+
+/**
+ * Envia fichas de contato/organização (paridade de cadastros). A Gestão
+ * Financeira anterior à 0.0.8 não conhece a mensagem: avisa para atualizar.
+ */
+export async function upsertContacts(gfId: string, contacts: ContactCard[]): Promise<{ created: number; updated: number; failed: { crmRef: string; message: string }[] }> {
+  const r = await sendToGf(gfId, { type: "upsertContacts", protocol: PROTOCOL, contacts }, 20000);
+  if (r.ok && r.status === "contacts") return r;
+  if (!r.ok && r.error === "invalid") throw new GfError("Atualize a Gestão Financeira (0.0.8 ou mais nova) para receber os cadastros completos.");
+  throw new GfError(responseText(r) || "A Gestão Financeira não recebeu os cadastros.");
+}
+
+/** Envia as fichas pendentes (alteradas no CRM); `rpc` = acesso ao banco (tela ou service worker). */
+export async function pushPendingContactsVia(
+  gfId: string,
+  rpc: { pending: () => Promise<ContactCard[]>; sent: (refs: string[]) => Promise<unknown> },
+): Promise<{ sent: number; failed: { crmRef: string; message: string }[] }> {
+  const cards = await rpc.pending();
+  if (!cards.length) return { sent: 0, failed: [] };
+  const r = await upsertContacts(gfId, cards);
+  const failed = new Set(r.failed.map((f) => f.crmRef));
+  const ok = cards.map((c) => c.crmRef).filter((ref) => !failed.has(ref));
+  if (ok.length) await rpc.sent(ok);
+  return { sent: ok.length, failed: r.failed };
 }
 
 /** Abre a janela de lançamento da Gestão Financeira; devolve o id da janela (para saber quando fechou). */

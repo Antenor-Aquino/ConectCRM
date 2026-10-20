@@ -15,6 +15,7 @@ import { formatPhone } from "../ui/PhoneInput";
 import { TagChip } from "../ui/TagPicker";
 import { DocumentsPanel } from "../documents/DocumentsPanel";
 import { ClientFinancePanel } from "./ClientFinancePanel";
+import { GfContactButton } from "./GfContactButton";
 import { ChangeLogList, CustomValuesView, DrawerShell, InfoRow, RelatedCards, RelatedTasks, Tabs } from "./detailParts";
 import { MergeModal } from "./MergeModal";
 import { PersonFormModal } from "./PersonFormModal";
@@ -89,6 +90,7 @@ export function PersonDetail({
             WhatsApp
           </TaButton>
         )}
+        <GfContactButton crmRef={`person:${p.id}`} refreshKey={p.version} />
         <TaButton startIcon={<Merge size={15} />} onClick={() => setMerging(true)}>
           Mesclar duplicado
         </TaButton>

@@ -170,3 +170,33 @@ Formato versionado em `protocol.ts` (`PACKAGE_FORMAT`, `parsePackage`).
   atrasadas — dos cartões do usuário; só quando a integração está em uso.
 - O service worker do CRM lê a Gestão Financeira a cada 3 h (modo direto)
   para os alertas usarem dados recentes.
+
+## Paridade de cadastros (CRM 0.2.59 · Gestão Financeira 0.0.8)
+
+Contatos (PF) e organizações (PJ) do CRM chegam completos em "Clientes e
+fornecedores" da Gestão Financeira e continuam iguais depois.
+
+- **Ficha de contato** (`ContactCard` em `protocol.ts`, igual nos dois
+  repositórios, `CONTACT_CARD_VERSION`): nome, CPF/CNPJ, e-mail, telefone (com
+  país), razão social, site, segmento, endereço completo, empresa do contato,
+  observações/descrição, tags e campos personalizados visíveis (já formatados).
+  Não vão: foto/logo, responsável, dados brutos da Receita, controle interno
+  (decisões registradas em `contactCard.ts`).
+- **Gestão Financeira**: cadastro ampliado (migration 0015) com razão social,
+  site, segmento, endereço, empresa e a seção "Do ConectCRM" (tags, campos e
+  observações de lá, só consulta). O CRM manda nos dados dos registros
+  vinculados (aviso no formulário); as observações daqui nunca são trocadas.
+  CPF/CNPJ ou e-mail recusados (inválidos ou de outro cadastro) ficam de fora sem
+  impedir o resto.
+- **Quem vai**: os contatos/organizações usados em lançamentos (a ficha vai
+  junto) e os enviados pelo botão **Enviar para a Gestão Financeira** na ficha
+  do contato/organização (`finance_contact`, migration 0021).
+- **Atualização**: salvar um contato/organização que está lá deixa a ficha
+  pendente; no modo direto vai na hora (`upsertContacts`) e o service worker
+  reenvia o que ficou pendente; no modo pacote vai no próximo pacote
+  (`contacts`) e a Gestão Financeira aplica ao abrir o arquivo. Alterar a
+  organização reenvia também os contatos dela que estão lá.
+- **Garantia de paridade**: `PERSON_COLUMNS`/`ORGANIZATION_COLUMNS` decidem
+  cada coluna; `CARD_TO_COUNTERPARTY` (Gestão Financeira) dá lugar a cada campo
+  da ficha; testes `paridadeContatos.test.ts` (CRM) e `contact-parity.test.ts`
+  (Gestão Financeira); regra registrada no `CLAUDE.md` dos dois repositórios.

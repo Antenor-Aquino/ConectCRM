@@ -126,6 +126,8 @@ export function FinanceTab({
     const suggested = suggestedFor(mode);
     setOpening(true);
     try {
+      // A ficha completa vai junto no lançamento; dali em diante, as alterações do cadastro também.
+      void call("finance.linkContact", { crmRef: counterparty.crmRef, sent: true });
       launchWindow.current = await openLaunch(settings.gfId, {
         mode,
         description: title,
