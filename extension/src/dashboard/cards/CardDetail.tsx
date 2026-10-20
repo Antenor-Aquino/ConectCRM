@@ -1,6 +1,7 @@
 // Detalhe do cartão (Fase 4): dados editáveis, etapas, desfecho (ganho/perdido,
 // resolvido/não resolvido, concluído/não concluído conforme o tipo),
 // notas, tarefas e histórico de alterações.
+import { useGfActive } from "../useGfActive";
 import { useCallback, useEffect, useState } from "react";
 import {
   Archive,
@@ -100,6 +101,8 @@ export function CardDetail({
   const [tab, setTab] = useState<Tab>("notas");
   // Ao marcar como ganho: abrir já a receita na Gestão Financeira.
   const [launchIncome, setLaunchIncome] = useState(false);
+  // Aba Financeiro e resultado só com a integração com a Gestão Financeira ativada.
+  const gfActive = !!useGfActive();
   // Origem aberta a partir do histórico.
   const [noteFocus, setNoteFocus] = useState<string | null>(null);
   const [taskOpen, setTaskOpen] = useState<string | null>(null);
@@ -362,7 +365,7 @@ export function CardDetail({
                 </button>
               </div>
               {card.items.length > 0 && <ItemsSummary items={card.items} onEdit={() => setItemsOpen(true)} />}
-              {finance && finance.entries.length > 0 && (
+              {gfActive && finance && finance.entries.length > 0 && (
                 <button
                   type="button"
                   data-card-result
@@ -562,7 +565,7 @@ export function CardDetail({
                 ["notas", "Notas"],
                 ["tarefas", "Atividades"],
                 ["documentos", "Documentos"],
-                ["financeiro", "Financeiro"],
+                ...(gfActive ? ([["financeiro", "Financeiro"]] as [Tab, string][]) : []),
               ] as [Tab, string][]
             ).map(([id, label]) => {
               const count = counts && { historico: counts.history, notas: counts.notes, tarefas: counts.activities, documentos: counts.documents, financeiro: counts.finance || null }[id];
@@ -625,7 +628,7 @@ export function CardDetail({
             />
           )}
           {tab === "documentos" && <DocumentsPanel type="deal" id={cardId} onChanged={recount} />}
-          {tab === "financeiro" && (
+          {gfActive && tab === "financeiro" && (
             <FinanceTab
               cardId={cardId}
               title={card.title}

@@ -1,4 +1,5 @@
 // Ficha do contato: dados, organizações, negócios, tarefas, notas e histórico.
+import { useGfActive } from "../useGfActive";
 import { useCallback, useEffect, useState } from "react";
 import { Lock, Merge, MessageCircle, Pencil, Star, Trash2 } from "lucide-react";
 import { TaBadge, TaButton } from "@tailadmin";
@@ -42,6 +43,8 @@ export function PersonDetail({
   const [p, setP] = useState<PersonData | null | undefined>(undefined);
   const [fields, setFields] = useState<CustomField[]>([]);
   const [tab, setTab] = useState<Tab>("negocios");
+  // Aba Financeiro só com a integração com a Gestão Financeira ativada.
+  const gfActive = !!useGfActive();
   const [editing, setEditing] = useState(false);
   const [merging, setMerging] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -159,7 +162,7 @@ export function PersonDetail({
               ["negocios", "Negócios"],
               ["tarefas", "Atividades"],
               ["documentos", "Documentos"],
-              ["financeiro", "Financeiro"],
+              ...(gfActive ? ([["financeiro", "Financeiro"]] as [Tab, string][]) : []),
               ["notas", "Notas"],
               ["historico", "Histórico"],
             ]}
@@ -168,7 +171,7 @@ export function PersonDetail({
           />
           {tab === "negocios" && <RelatedCards filter={{ personId: p.id }} onOpenCard={onOpenCard} />}
           {tab === "tarefas" && <RelatedTasks filter={{ personId: p.id }} />}
-          {tab === "financeiro" && <ClientFinancePanel filter={{ personId: p.id }} onOpenCard={onOpenCard} />}
+          {gfActive && tab === "financeiro" && <ClientFinancePanel filter={{ personId: p.id }} onOpenCard={onOpenCard} />}
           {tab === "documentos" && <DocumentsPanel type="person" id={p.id} />}
           {tab === "notas" && <NotesPanel entityType="person" entityId={p.id} />}
           {tab === "historico" && <ChangeLogList table="person" id={p.id} />}

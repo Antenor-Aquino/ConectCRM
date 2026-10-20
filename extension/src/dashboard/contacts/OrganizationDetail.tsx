@@ -1,4 +1,5 @@
 // Ficha da organização: dados da Receita, contatos, negócios, tarefas, notas e histórico.
+import { useGfActive } from "../useGfActive";
 import { useCallback, useEffect, useState } from "react";
 import { Building2, ExternalLink, Merge, Pencil, Star, Trash2 } from "lucide-react";
 import { TaButton } from "@tailadmin";
@@ -43,6 +44,8 @@ export function OrganizationDetail({
   const [o, setO] = useState<OrgData | null | undefined>(undefined);
   const [fields, setFields] = useState<CustomField[]>([]);
   const [tab, setTab] = useState<Tab>("contatos");
+  // Aba Financeiro só com a integração com a Gestão Financeira ativada.
+  const gfActive = !!useGfActive();
   const [editing, setEditing] = useState(false);
   const [merging, setMerging] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -161,7 +164,7 @@ export function OrganizationDetail({
               ["negocios", "Negócios"],
               ["tarefas", "Atividades"],
               ["documentos", "Documentos"],
-              ["financeiro", "Financeiro"],
+              ...(gfActive ? ([["financeiro", "Financeiro"]] as [Tab, string][]) : []),
               ["notas", "Notas"],
               ["historico", "Histórico"],
             ]}
@@ -186,7 +189,7 @@ export function OrganizationDetail({
             ))}
           {tab === "negocios" && <RelatedCards filter={{ organizationId: o.id }} onOpenCard={onOpenCard} />}
           {tab === "tarefas" && <RelatedTasks filter={{ organizationId: o.id }} />}
-          {tab === "financeiro" && <ClientFinancePanel filter={{ organizationId: o.id }} onOpenCard={onOpenCard} />}
+          {gfActive && tab === "financeiro" && <ClientFinancePanel filter={{ organizationId: o.id }} onOpenCard={onOpenCard} />}
           {tab === "documentos" && <DocumentsPanel type="organization" id={o.id} />}
           {tab === "notas" && <NotesPanel entityType="organization" entityId={o.id} />}
           {tab === "historico" && <ChangeLogList table="organization" id={o.id} />}

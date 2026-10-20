@@ -1,6 +1,7 @@
 // Relatórios (Fase 10): uma linha de filtros (período, funil, responsável) que
 // vale para todos os cartões; indicadores no topo; cada gráfico com a tabela
 // equivalente; exportação de tudo para Excel (uma aba por relatório).
+import { useGfActive } from "../useGfActive";
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Download, XCircle } from "lucide-react";
 import { TaButton, TaInput, TaSelect, cn } from "@tailadmin";
@@ -31,8 +32,10 @@ const pct1 = (v: number | null) => (v == null ? null : Math.round(v * 1000) / 10
 /** Relatórios: Comercial (funis) e Financeiro (lançamentos da Gestão Financeira). */
 export function ReportsView() {
   const [view, setView] = useState<ReportKind>("comercial");
-  const switcher = <ReportSwitch value={view} onChange={setView} />;
-  return view === "comercial" ? <CommercialReports switcher={switcher} /> : <FinanceReports switcher={switcher} />;
+  // Relatório Financeiro só com a integração com a Gestão Financeira ativada.
+  const gfActive = !!useGfActive();
+  const switcher = gfActive ? <ReportSwitch value={view} onChange={setView} /> : <h2 className="mr-auto self-center text-lg font-semibold text-gray-800 dark:text-white/90">Relatórios</h2>;
+  return view === "comercial" || !gfActive ? <CommercialReports switcher={switcher} /> : <FinanceReports switcher={switcher} />;
 }
 
 function CommercialReports({ switcher }: { switcher: React.ReactNode }) {

@@ -1,6 +1,6 @@
 // Service worker: cria o documento offscreen (dono do banco) sob demanda e
 // dispara os lembretes de tarefas (notificação do Chrome, mesmo com o CRM fechado).
-import { listAllFromCrm, loadGfSettings, pushPendingContactsVia } from "../lib/finance/gfBridge";
+import { gfIntegrationActive, listAllFromCrm, loadGfSettings, pushPendingContactsVia } from "../lib/finance/gfBridge";
 import type { NotifyJob } from "../db/notifications";
 import { sendMail } from "../lib/calendar";
 import { sendCallMeBot } from "../lib/notify/callmebot";
@@ -137,7 +137,9 @@ async function runNotifications(): Promise<void> {
     }
     await refreshFinanceCopy(userId);
     const settings = Object.fromEntries(Object.entries(await loadAllNotifySettings()).map(([id, x]) => [id, activeSettings(x)]));
-    const jobs = await rpc<NotifyJob[]>("notifications.plan", { settings }, userId);
+    // Alertas financeiros do resumo diário só com a integração com a Gestão Financeira ativada.
+    const finance = gfIntegrationActive(await loadGfSettings());
+    const jobs = await rpc<NotifyJob[]>("notifications.plan", { settings, finance }, userId);
     if (!jobs.length) return;
     const sender = await loadMailSender();
     const results = [];

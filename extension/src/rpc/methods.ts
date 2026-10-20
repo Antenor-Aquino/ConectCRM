@@ -570,8 +570,8 @@ export const methods = {
   "activities.dueReminders": (db: DatabaseSync, ctx: DbContext) => activities.dueReminders(db, ctx.userId),
   "activities.markReminded": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => activities.markReminded(db, ctx, p.ids),
   // Notificações (spec 10): o service worker pergunta o que avisar e registra o resultado.
-  "notifications.plan": (db: DatabaseSync, ctx: DbContext, p: { settings: Record<string, Partial<NotifySettings>>; now?: string }) =>
-    notify.planNotifications(db, p.now ? new Date(p.now) : new Date(), p.settings, ctx.userId),
+  "notifications.plan": (db: DatabaseSync, ctx: DbContext, p: { settings: Record<string, Partial<NotifySettings>>; now?: string; finance?: boolean }) =>
+    notify.planNotifications(db, p.now ? new Date(p.now) : new Date(), p.settings, ctx.userId, !!p.finance),
   "notifications.record": (db: DatabaseSync, _c: DbContext, p: { results: Parameters<typeof notify.recordDeliveries>[1] }) => notify.recordDeliveries(db, p.results),
   "notifications.forActivity": (db: DatabaseSync, _c: DbContext, p: Id) => notify.activityDeliveries(db, p.id),
   "activities.setExternalEvent": (db: DatabaseSync, ctx: DbContext, p: Id & Parameters<typeof activities.setActivityExternalEvent>[3]) => {

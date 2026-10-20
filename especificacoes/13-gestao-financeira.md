@@ -200,3 +200,23 @@ fornecedores" da Gestão Financeira e continuam iguais depois.
   cada coluna; `CARD_TO_COUNTERPARTY` (Gestão Financeira) dá lugar a cada campo
   da ficha; testes `paridadeContatos.test.ts` (CRM) e `contact-parity.test.ts`
   (Gestão Financeira); regra registrada no `CLAUDE.md` dos dois repositórios.
+
+## Integração ativada (CRM 0.2.60 · Gestão Financeira 0.0.9)
+
+Nada da integração aparece sem ela estar ativada pelo usuário — dados
+antigos (vínculos, cópias, lançamentos com origem) continuam guardados, mas
+sem avisos, abas ou selos.
+
+- **ConectCRM — ativada** = conectada no modo direto (`gfId` + "Direta") ou
+  "Por pacote de arquivo" ligado (`gfIntegrationActive`). Só então aparecem: aba
+  Financeiro do cartão e a faixa de resultado; aba Financeiro de organização e
+  contato; Relatórios → Financeiro; botão "Enviar para a Gestão Financeira";
+  pergunta ao marcar como ganho; bloco Financeiro do resumo diário; ferramentas
+  e orientações financeiras do Copiloto; dica "Usado nos lançamentos da Gestão
+  Financeira" no CPF. As telas se ajustam na hora ao ligar/desligar.
+- **Gestão Financeira — ativada** = pareada com o ConectCRM ou "Receber pacotes
+  de arquivo do ConectCRM" ligado (Configurações → Integrações,
+  `integrationActive`). Só então aparecem: ícone e aviso "Vinculado ao
+  ConectCRM" e a seção "Do ConectCRM" em Clientes e fornecedores; selo
+  ConectCRM em Lançamentos; Importar → Pacote do ConectCRM. O aviso de dados
+  alterados em outra janela deixou de citar o ConectCRM.

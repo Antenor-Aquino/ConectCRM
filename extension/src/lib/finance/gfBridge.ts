@@ -22,6 +22,22 @@ export async function loadGfSettings(): Promise<GfSettings> {
   return { ...DEFAULT_GF_SETTINGS, ...((await chrome.storage.local.get(KEY))[KEY] as Partial<GfSettings> | undefined) };
 }
 
+/**
+ * A integração com a Gestão Financeira está ativada pelo usuário: conectada
+ * (modo direto) ou no modo pacote. Sem isso, nenhuma tela, aviso, alerta do
+ * resumo diário ou ferramenta do Copiloto fala da Gestão Financeira.
+ */
+export const gfIntegrationActive = (s: GfSettings | null | undefined): boolean => !!s && ((!!s.gfId && s.direct) || s.package);
+
+/** Mudanças na configuração (para as telas se ajustarem sozinhas). */
+export function onGfSettingsChange(cb: (s: GfSettings) => void): () => void {
+  const fn = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+    if (area === "local" && changes[KEY]) void loadGfSettings().then(cb);
+  };
+  chrome.storage.onChanged.addListener(fn);
+  return () => chrome.storage.onChanged.removeListener(fn);
+}
+
 export async function saveGfSettings(s: GfSettings): Promise<void> {
   await chrome.storage.local.set({ [KEY]: s });
 }

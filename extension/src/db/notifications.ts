@@ -205,6 +205,8 @@ export function planNotifications(
   now: Date,
   settingsByUser: Record<string, Partial<NotifySettings>>,
   currentUserId: string | null,
+  /** Integração com a Gestão Financeira ativada: só então o resumo diário traz o bloco Financeiro. */
+  finance = false,
 ): NotifyJob[] {
   const jobs: NotifyJob[] = [];
   const settings = (userId: string | null) => withDefaults(userId ? settingsByUser[userId] : undefined);
@@ -317,10 +319,10 @@ export function planNotifications(
           const todayOnly = today.filter((a) => !lateIds.has(a.id));
           const heading = `Sua agenda de hoje: ${todayOnly.length} atividade${todayOnly.length === 1 ? "" : "s"}${late.length ? ` · ${late.length} atrasada${late.length === 1 ? "" : "s"}` : ""}`;
           // Financeiro (spec 13): receitas atrasadas, a vencer e ganhos sem receita lançada, dos cartões do usuário.
-          const fin = financeAlerts(db, null, { ownerIds: [userId], today: dayKey });
+          const fin = finance ? financeAlerts(db, null, { ownerIds: [userId], today: dayKey }) : null;
           for (const c of chans) {
             const job = listJob("digest", key, c, userId, heading, [...late.slice(0, 30), ...todayOnly]);
-            const finLines = financeDigestLines(fin, c === "whatsapp");
+            const finLines = fin ? financeDigestLines(fin, c === "whatsapp") : [];
             jobs.push({
               ...job,
               text: [digestText(todayOnly, late, c === "whatsapp"), ...(finLines.length ? ["", ...finLines] : [])].join("\n"),
