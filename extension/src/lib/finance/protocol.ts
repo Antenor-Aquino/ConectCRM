@@ -97,6 +97,8 @@ export interface LaunchRequest {
   walletId?: string | null;
   /** Abrir um lançamento já feito por este cartão para editar. */
   editTxId?: string | null;
+  /** Observações sugeridas (ex.: produtos e serviços do cartão). */
+  notes?: string | null;
 }
 
 /** Lançamento da Gestão Financeira ligado a um registro do CRM. */
@@ -176,6 +178,7 @@ function isLaunchRequest(v: unknown): v is LaunchRequest {
     (l.mode === "income" || l.mode === "expense") &&
     typeof l.description === "string" &&
     (l.amountCents == null || (typeof l.amountCents === "number" && Number.isFinite(l.amountCents) && l.amountCents >= 0)) &&
+    (l.notes == null || typeof l.notes === "string") &&
     isContactCard(cp) &&
     !!o && o.app === "conectcrm" && typeof o.ref === "string" && o.ref !== "" && typeof o.label === "string"
   );

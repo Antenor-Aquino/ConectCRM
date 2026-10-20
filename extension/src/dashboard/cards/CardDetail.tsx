@@ -640,6 +640,7 @@ export function CardDetail({
               valueCents={card.value_cents}
               cardLabel={text.noun.charAt(0).toUpperCase() + text.noun.slice(1)}
               concluded={card.status === "won" ? outcome.won : null}
+              items={card.items}
               autoLaunch={launchIncome}
               onAutoLaunchDone={() => setLaunchIncome(false)}
               onSynced={recount}

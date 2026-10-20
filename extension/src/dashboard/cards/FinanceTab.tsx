@@ -12,6 +12,8 @@ import { MoneyInput } from "../ui/MoneyInput";
 import { Field } from "../ui/form";
 import { call } from "../../rpc/client";
 import type { CardFinance, FinanceEntry, FinanceRequestRow } from "../../db/finance";
+import type { DealItem } from "../../db/deals";
+import { itemsNotes } from "../../lib/finance/itemsNotes";
 import type { LaunchCounterparty } from "../../lib/finance/protocol";
 import { GF_ENV_LABEL, listByOrigin, loadGfSettings, openLaunch, type GfSettings } from "../../lib/finance/gfBridge";
 import { formatCents, formatDateTime } from "../../lib/format";
@@ -31,6 +33,7 @@ export function FinanceTab({
   onAutoLaunchDone,
   onSynced,
   concluded,
+  items,
 }: {
   cardId: string;
   title: string;
@@ -45,6 +48,8 @@ export function FinanceTab({
   onSynced?: () => void;
   /** Desfecho positivo já dado ("Ganho", "Resolvido"...), para lembrar a receita que falta. */
   concluded?: string | null;
+  /** Produtos e serviços do cartão: vão nas observações da receita. */
+  items?: DealItem[];
 }) {
   const [settings, setSettings] = useState<GfSettings | null>(null);
   const [data, setData] = useState<CardFinance | null>(null);
@@ -141,6 +146,7 @@ export function FinanceTab({
         origin: { app: "conectcrm", ref: cardId, label: `${cardLabel} "${title}" (ConectCRM)` },
         walletId: "empresa",
         editTxId: edit?.id ?? null,
+        notes: mode === "income" && !edit ? itemsNotes(items ?? []) : null,
       });
       if (!edit) setPending({ mode, before: (data?.entries ?? []).filter((e) => e.type === mode).length, closed: false });
     } catch (e) {
@@ -319,6 +325,7 @@ export function FinanceTab({
           mode={requestMode}
           title={title}
           suggestedCents={suggestedFor(requestMode)}
+          initialNotes={requestMode === "income" ? itemsNotes(items ?? []) : null}
           onClose={() => setRequestMode(null)}
           onSave={async (input) => {
             await call("finance.requestCreate", { dealId: cardId, ...input });
@@ -397,12 +404,14 @@ function RequestModal({
   mode,
   title,
   suggestedCents,
+  initialNotes,
   onClose,
   onSave,
 }: {
   mode: "income" | "expense";
   title: string;
   suggestedCents: number | null;
+  initialNotes?: string | null;
   onClose: () => void;
   onSave: (input: { mode: "income" | "expense"; description: string; amountCents: number | null; dueDate: string | null; competenceDate: string | null; notes: string | null }) => Promise<void>;
 }) {
@@ -410,7 +419,7 @@ function RequestModal({
   const [amount, setAmount] = useState(suggestedCents ?? 0);
   const [dueDate, setDueDate] = useState(today());
   const [competenceDate, setCompetenceDate] = useState(today());
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes] = useState(initialNotes ?? "");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const income = mode === "income";

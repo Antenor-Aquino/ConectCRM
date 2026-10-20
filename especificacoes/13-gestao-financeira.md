@@ -89,6 +89,11 @@ banco novo e mostram "Os dados foram alterados em outra janela · Atualizar".
   de "Salvar Receita" lá; a aba avisa enquanto a janela está aberta
   ("Mostrar a janela") e, se ela for fechada sem salvar, mostra "fechada
   sem salvar" com "Abrir de novo" (0.2.62).
+- **Produtos e serviços nas observações** (0.2.63): receita nova lançada pelo
+  cartão (direto ou por pacote) leva nas Observações a lista dos produtos e
+  serviços do cartão — descrição (com a recorrência), qtd, preço unit., desc.,
+  valor e o total. O texto é montado em `lib/finance/itemsNotes.ts` e vai no
+  campo `notes` do `LaunchRequest` (protocolo, nos dois repositórios).
 - **Concluído sem receita**: cartão ganho/resolvido/concluído com valor, sem
   receita nem pedido no pacote, mostra na aba Financeiro o lembrete com
   "Lançar receita".
