@@ -55,6 +55,8 @@ export interface FinanceItem {
   creditCard: string | null;
   installmentNumber: number | null;
   installmentTotal: number | null;
+  /** Pedido do CRM (modo pacote) que gerou o lançamento. */
+  requestId?: string | null;
 }
 
 export type IntegrationRequest =
@@ -99,4 +101,63 @@ function isLaunchRequest(v: unknown): v is LaunchRequest {
     !!cp && typeof cp.crmRef === "string" && (cp.kind === "PF" || cp.kind === "PJ") && typeof cp.name === "string" && cp.name.trim() !== "" &&
     !!o && o.app === "conectcrm" && typeof o.ref === "string" && o.ref !== "" && typeof o.label === "string"
   );
+}
+
+// ---------- Modo pacote (arquivo), para quando as duas extensões não estão no mesmo Chrome ----------
+
+export const PACKAGE_FORMAT = "conectcrm-gestao-financeira";
+
+/** Pedido de lançamento feito no CRM, levado por arquivo. */
+export interface PackageRequest extends LaunchRequest {
+  id: string;
+  dueDate?: string | null;
+  competenceDate?: string | null;
+  notes?: string | null;
+  createdAt: string;
+  createdBy?: string | null;
+}
+
+/** CRM → Gestão Financeira: pedidos de lançamento. */
+export interface RequestsPackage {
+  format: typeof PACKAGE_FORMAT;
+  version: 1;
+  kind: "requests";
+  createdAt: string;
+  from: { app: "conectcrm"; version: string };
+  requests: PackageRequest[];
+}
+
+/** Gestão Financeira → CRM: todos os lançamentos vindos do CRM (o CRM substitui a cópia dele). */
+export interface ReturnPackage {
+  format: typeof PACKAGE_FORMAT;
+  version: 1;
+  kind: "return";
+  createdAt: string;
+  from: { app: "gestao-financeira"; version: string };
+  env: GfEnv;
+  items: FinanceItem[];
+}
+
+/** Lê um pacote (texto do arquivo); lança erro com mensagem para o usuário. */
+export function parsePackage(text: string): RequestsPackage | ReturnPackage {
+  let v: unknown;
+  try {
+    v = JSON.parse(text);
+  } catch {
+    throw new Error("Arquivo inválido: não é um pacote da integração ConectCRM ↔ Gestão Financeira.");
+  }
+  const p = v as { format?: string; version?: number; kind?: string; requests?: unknown[]; items?: Partial<FinanceItem>[] } | null;
+  if (!p || p.format !== PACKAGE_FORMAT) throw new Error("Arquivo inválido: não é um pacote da integração ConectCRM ↔ Gestão Financeira.");
+  if (p.version !== 1) throw new Error("Pacote de uma versão mais nova. Atualize esta extensão.");
+  if (p.kind === "requests") {
+    if (!Array.isArray(p.requests) || !p.requests.every((r) => isLaunchRequest(r) && typeof (r as PackageRequest).id === "string"))
+      throw new Error("Pacote com pedidos inválidos.");
+    return p as unknown as RequestsPackage;
+  }
+  if (p.kind === "return") {
+    if (!Array.isArray(p.items) || !p.items.every((i) => i && typeof i.id === "string" && typeof i.ref === "string" && (i.type === "income" || i.type === "expense") && typeof i.amountCents === "number"))
+      throw new Error("Pacote de retorno inválido.");
+    return p as unknown as ReturnPackage;
+  }
+  throw new Error("Tipo de pacote desconhecido.");
 }

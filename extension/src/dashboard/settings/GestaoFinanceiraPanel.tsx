@@ -17,7 +17,8 @@ import {
   type GfInstall,
   type GfSettings,
 } from "../../lib/finance/gfBridge";
-import type { IntegrationResponse } from "../../lib/finance/protocol";
+import { parsePackage, type IntegrationResponse } from "../../lib/finance/protocol";
+import { call } from "../../rpc/client";
 import { SwitchRow } from "../ui/Switch";
 
 type Paired = Extract<IntegrationResponse, { status: "paired" }>;
@@ -188,10 +189,73 @@ export function GestaoFinanceiraPanel() {
           checked={s.package}
           onChange={(v) => void persist({ ...s, package: v })}
         />
-        <p className="mt-3 text-theme-xs text-gray-500">
-          Os lançamentos pelos cartões (aba Financeiro) chegam na próxima etapa da integração; esta etapa liga e testa a conexão.
-        </p>
+        {s.package && <PackageBox />}
       </div>
     </TaPanel>
+  );
+}
+
+/** Modo pacote: exporta os pedidos feitos nos cartões e importa o retorno da Gestão Financeira. */
+function PackageBox() {
+  const [counts, setCounts] = useState<{ pending: number; exported: number } | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const file = useRef<HTMLInputElement>(null);
+  const reload = () => void call("finance.requestCounts").then(setCounts);
+  useEffect(reload, []);
+
+  async function exportPackage() {
+    setMsg(null);
+    const pkg = await call("finance.exportPackage", { version: chrome.runtime.getManifest().version });
+    if (!pkg.requests.length) {
+      setMsg({ ok: true, text: "Nenhum pedido aguardando. Faça os pedidos na aba Financeiro dos cartões." });
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([JSON.stringify(pkg, null, 1)], { type: "application/json" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `conectcrm-pedidos-financeiro-${new Date().toLocaleDateString("sv-SE")}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    setMsg({ ok: true, text: `${pkg.requests.length} pedido(s) no pacote. Na Gestão Financeira: Importar → Pacote do ConectCRM.` });
+    reload();
+  }
+
+  async function importReturn(f: File) {
+    setMsg(null);
+    try {
+      const pkg = parsePackage(await f.text());
+      if (pkg.kind !== "return") throw new Error("Este é um pacote de pedidos (para importar na Gestão Financeira), não o retorno dela.");
+      const r = await call("finance.importReturn", { pkg });
+      setMsg({ ok: true, text: `Retorno importado: ${r.items} lançamento(s) da Gestão Financeira${r.launched ? `, ${r.launched} pedido(s) confirmados como lançados` : ""}.` });
+      reload();
+    } catch (e) {
+      setMsg({ ok: false, text: errorText(e) });
+    } finally {
+      if (file.current) file.current.value = "";
+    }
+  }
+
+  return (
+    <div className="mt-3 rounded-xl border border-gray-200 p-3 dark:border-gray-800" data-gf-package>
+      <p className="mb-1 text-theme-sm font-medium text-gray-800 dark:text-white/90">Pacote de arquivo</p>
+      <p className="mb-3 text-theme-xs text-gray-500">
+        1. Nos cartões (aba Financeiro), faça os pedidos de receita/despesa. 2. Exporte o pacote e importe na Gestão Financeira (Importar → Pacote do
+        ConectCRM). 3. Lá, exporte o retorno e importe aqui: os cartões passam a mostrar os lançamentos.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <TaButton size="sm" startIcon={<FileDown size={14} />} onClick={() => void exportPackage()} data-gf-export>
+          Exportar pacote{counts ? ` (${counts.pending} novo${counts.pending === 1 ? "" : "s"}${counts.exported ? `, ${counts.exported} aguardando retorno` : ""})` : ""}
+        </TaButton>
+        <input ref={file} type="file" accept=".json,application/json" hidden onChange={(e) => e.target.files?.[0] && void importReturn(e.target.files[0])} data-gf-return-file />
+        <TaButton size="sm" variant="outline" onClick={() => file.current?.click()}>
+          Importar retorno da Gestão Financeira…
+        </TaButton>
+      </div>
+      {msg && (
+        <p className={`mt-2 text-theme-xs ${msg.ok ? "text-success-700" : "text-error-600"}`} data-gf-package-msg>
+          {msg.text}
+        </p>
+      )}
+    </div>
   );
 }

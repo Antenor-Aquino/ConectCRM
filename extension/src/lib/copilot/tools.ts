@@ -41,7 +41,7 @@ export const DATA_TOOLS: ToolDef[] = [
   {
     name: "detalhar_cartao",
     description:
-      "Tudo de um cartão pelo id: dados, contato (telefone/e-mail), itens, atividades pendentes e concluídas, últimas notas, etapas percorridas com dias. " +
+      "Tudo de um cartão pelo id: dados, contato (telefone/e-mail), itens, atividades pendentes e concluídas, últimas notas, etapas percorridas com dias e o financeiro (lançamentos na Gestão Financeira e resultado). " +
       "Use para resumir um negócio, entender o histórico ou sugerir o próximo passo. O id vem de buscar_cartoes ou do contexto.",
     parameters: { type: "object", properties: { id: str("Id do cartão") }, required: ["id"] },
   },
@@ -92,6 +92,31 @@ export const DATA_TOOLS: ToolDef[] = [
     name: "buscar_contatos",
     description: "Contatos (pessoas) e organizações por nome, e-mail ou telefone, com os cartões abertos de cada um.",
     parameters: { type: "object", properties: { texto: str("Nome, e-mail ou telefone") }, required: ["texto"] },
+  },
+  {
+    name: "resumo_financeiro",
+    description:
+      "Financeiro dos cartões (receitas e despesas lançadas na Gestão Financeira, mesmos números de Relatórios → Financeiro): receitas, despesas, resultado e margem, " +
+      "recebido/pago, a receber/a pagar com atrasados, por mês, por cliente, por funil, por categoria, os cartões com melhor e pior resultado e os ganhos com receita a lançar. " +
+      "Use para perguntas de faturamento, lucro, margem, rentabilidade de negócio/projeto/cliente e contas a receber.",
+    parameters: {
+      type: "object",
+      properties: {
+        de: str("Início do período, AAAA-MM-DD"),
+        ate: str("Fim do período (inclusive), AAAA-MM-DD"),
+        base: str("Data usada: competencia (padrão), vencimento ou caixa (só pago/recebido, pela data do pagamento)", { enum: ["competencia", "vencimento", "caixa"] }),
+        funil: str("Nome do funil (opcional)"),
+        responsavel: str("Nome do usuário ou da equipe (opcional)"),
+      },
+      required: ["de", "ate"],
+    },
+  },
+  {
+    name: "pendencias_financeiras",
+    description:
+      "Pontos de atenção financeiros hoje: receitas atrasadas (com dias de atraso, cartão e cliente), receitas vencendo nos próximos 7 dias, despesas atrasadas e " +
+      "cartões ganhos com receita ainda não lançada na Gestão Financeira. Use para cobrança, follow-up financeiro e 'o que preciso faturar'.",
+    parameters: { type: "object", properties: { responsavel: str("Nome do usuário ou da equipe (opcional)") } },
   },
   {
     name: "estrutura_do_crm",

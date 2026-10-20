@@ -243,7 +243,7 @@ export function CardDetail({
                 void run(() => call("cards.setStatus", { id: cardId, status: "won" })).then(async (ok) => {
                   // Ganho com valor e Gestão Financeira conectada: oferece lançar a receita.
                   const gf = await loadGfSettings();
-                  if (!ok || !gf.gfId || !gf.direct || !card.value_cents) return;
+                  if (!ok || !card.value_cents || !((gf.gfId && gf.direct) || gf.package)) return;
                   if (!confirm(`Lançar a receita de ${formatCents(card.value_cents)} na Gestão Financeira?`)) return;
                   setLaunchIncome(true);
                   setTab("financeiro");

@@ -164,7 +164,11 @@ marcar um cartão como ganho, o CRM oferece lançar a receita. O contato tem
 CPF opcional. Em **Relatórios → Financeiro**: receitas, despesas, resultado e
 margem por cartão, cliente, funil, mês e categoria (base competência,
 vencimento ou caixa), a receber/a pagar e os ganhos com receita ainda por
-lançar; organização e contato têm a aba **Financeiro** do cliente (plano e fases em
+lançar; organização e contato têm a aba **Financeiro** do cliente. Com as
+extensões em computadores diferentes, o **modo pacote** troca arquivos (pedidos
+do CRM → Gestão Financeira → retorno). O Copiloto responde sobre faturamento,
+margem e inadimplência, e o resumo diário avisa receitas atrasadas e ganhos com
+receita a lançar (plano e fases em
 [`especificacoes/13-gestao-financeira.md`](especificacoes/13-gestao-financeira.md)).
 
 ### Cadastros duplicados

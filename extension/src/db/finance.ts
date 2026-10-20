@@ -2,7 +2,9 @@
 // Financeira; aqui fica quem é o cliente/fornecedor do cartão (o que vai no
 // pedido de lançamento) e a cópia local dos lançamentos lidos de lá, para a
 // aba Financeiro funcionar mesmo com a outra extensão fechada.
-import type { FinanceItem, LaunchCounterparty } from "../lib/finance/protocol";
+import { PACKAGE_FORMAT, type FinanceItem, type LaunchCounterparty, type PackageRequest, type RequestsPackage, type ReturnPackage } from "../lib/finance/protocol";
+import { ValidationError } from "../lib/validate";
+import { formatCents } from "../lib/format";
 import { cardScope } from "./deals";
 import type { DbContext } from "./repo";
 import { many, one, run, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
@@ -444,4 +446,217 @@ function scopedCardsFor(db: DatabaseSync, extra: string, id: string, viewer?: Vi
     id,
     ...scope.params,
   );
+}
+
+// ---------- Fase 4: modo pacote ----------
+
+export interface FinanceRequestInput {
+  mode: "income" | "expense";
+  description: string;
+  amountCents: number | null;
+  dueDate?: string | null;
+  competenceDate?: string | null;
+  notes?: string | null;
+}
+
+export interface FinanceRequestRow {
+  id: string;
+  dealId: string;
+  status: "pending" | "exported" | "launched";
+  createdAt: string;
+  exportedAt: string | null;
+  launchedAt: string | null;
+  request: PackageRequest;
+}
+
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Pedido de lançamento para ir no pacote (cliente/fornecedor = o do cartão). */
+export function createFinanceRequest(db: DatabaseSync, ctx: DbContext, dealId: string, input: FinanceRequestInput): string {
+  const card = one<{ title: string; kind: string }>(db, "SELECT title, kind FROM deal WHERE id = ? AND deleted_at IS NULL", dealId);
+  if (!card) throw new ValidationError("Cartão não encontrado.");
+  const counterparty = cardCounterparty(db, dealId);
+  if (!counterparty) throw new ValidationError("Para lançar no financeiro, vincule uma organização ou um contato a este cartão.");
+  if (input.mode !== "income" && input.mode !== "expense") throw new ValidationError("Tipo inválido.");
+  const description = input.description.trim();
+  if (!description) throw new ValidationError("Informe a descrição.");
+  if (input.amountCents != null && (!Number.isInteger(input.amountCents) || input.amountCents <= 0)) throw new ValidationError("Valor inválido.");
+  for (const d of [input.dueDate, input.competenceDate]) if (d && !DATE.test(d)) throw new ValidationError("Data inválida.");
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const noun = card.kind === "deal" ? "Negócio" : card.kind === "ticket" ? "Ticket" : "Projeto";
+  const request: PackageRequest = {
+    id,
+    mode: input.mode,
+    description,
+    amountCents: input.amountCents,
+    dueDate: input.dueDate || null,
+    competenceDate: input.competenceDate || null,
+    notes: input.notes?.trim() || null,
+    counterparty,
+    origin: { app: "conectcrm", ref: dealId, label: `${noun} "${card.title}" (ConectCRM)` },
+    walletId: "empresa",
+    createdAt: now,
+    createdBy: ctx.userId,
+  };
+  run(
+    db,
+    "INSERT INTO finance_request (id, workspace_id, deal_id, payload, status, created_at, created_by) VALUES (?, ?, ?, ?, 'pending', ?, ?)",
+    id,
+    ctx.workspaceId,
+    dealId,
+    JSON.stringify(request),
+    now,
+    ctx.userId,
+  );
+  return id;
+}
+
+const mapRequest = (r: { id: string; deal_id: string; status: FinanceRequestRow["status"]; created_at: string; exported_at: string | null; launched_at: string | null; payload: string }): FinanceRequestRow => ({
+  id: r.id,
+  dealId: r.deal_id,
+  status: r.status,
+  createdAt: r.created_at,
+  exportedAt: r.exported_at,
+  launchedAt: r.launched_at,
+  request: JSON.parse(r.payload) as PackageRequest,
+});
+
+const REQ_COLS = "id, deal_id, status, created_at, exported_at, launched_at, payload";
+
+/** Pedidos do cartão ainda não lançados na Gestão Financeira. */
+export function listFinanceRequests(db: DatabaseSync, dealId: string): FinanceRequestRow[] {
+  return many<Parameters<typeof mapRequest>[0]>(
+    db,
+    `SELECT ${REQ_COLS} FROM finance_request WHERE deal_id = ? AND deleted_at IS NULL AND status <> 'launched' ORDER BY created_at`,
+    dealId,
+  ).map(mapRequest);
+}
+
+/** Quantos pedidos aguardam ir (ou voltar) da Gestão Financeira. */
+export function financeRequestCounts(db: DatabaseSync): { pending: number; exported: number } {
+  const r = one<{ pending: number; exported: number }>(
+    db,
+    `SELECT SUM(status = 'pending') AS pending, SUM(status = 'exported') AS exported FROM finance_request d
+     WHERE deleted_at IS NULL AND EXISTS (SELECT 1 FROM deal WHERE deal.id = d.deal_id AND deal.deleted_at IS NULL)`,
+  );
+  return { pending: r?.pending ?? 0, exported: r?.exported ?? 0 };
+}
+
+export function discardFinanceRequest(db: DatabaseSync, id: string): string {
+  const r = one<{ deal_id: string; status: string }>(db, "SELECT deal_id, status FROM finance_request WHERE id = ? AND deleted_at IS NULL", id);
+  if (!r) throw new ValidationError("Pedido não encontrado.");
+  if (r.status === "launched") throw new ValidationError("Este pedido já foi lançado na Gestão Financeira; exclua lá.");
+  run(db, "UPDATE finance_request SET deleted_at = ? WHERE id = ?", new Date().toISOString(), id);
+  return r.deal_id;
+}
+
+/**
+ * Pacote com os pedidos que ainda não voltaram lançados (os já exportados vão
+ * de novo: a Gestão Financeira ignora os repetidos).
+ */
+export function exportFinanceRequests(db: DatabaseSync, version: string, now = new Date()): RequestsPackage {
+  const rows = many<Parameters<typeof mapRequest>[0]>(
+    db,
+    `SELECT ${REQ_COLS} FROM finance_request f WHERE deleted_at IS NULL AND status IN ('pending', 'exported')
+       AND EXISTS (SELECT 1 FROM deal WHERE deal.id = f.deal_id AND deal.deleted_at IS NULL) ORDER BY created_at`,
+  ).map(mapRequest);
+  const at = now.toISOString();
+  withTransaction(db, () => {
+    for (const r of rows) if (r.status === "pending") run(db, "UPDATE finance_request SET status = 'exported', exported_at = ? WHERE id = ?", at, r.id);
+  });
+  return { format: PACKAGE_FORMAT, version: 1, kind: "requests", createdAt: at, from: { app: "conectcrm", version }, requests: rows.map((r) => r.request) };
+}
+
+/** Importa o retorno da Gestão Financeira: substitui a cópia e marca os pedidos que viraram lançamento. */
+export function importFinanceReturn(db: DatabaseSync, ctx: DbContext, pkg: ReturnPackage): { items: number; launched: number } {
+  return withTransaction(db, () => {
+    replaceAllFinance(db, ctx, pkg.items, pkg.env, pkg.createdAt);
+    const ids = [...new Set(pkg.items.map((i) => i.requestId).filter((x): x is string => !!x))];
+    let launched = 0;
+    for (const id of ids) launched += run(db, "UPDATE finance_request SET status = 'launched', launched_at = ? WHERE id = ? AND status <> 'launched'", pkg.createdAt, id);
+    return { items: pkg.items.length, launched };
+  });
+}
+
+// ---------- Fase 4: alertas ----------
+
+export interface FinanceAlerts {
+  /** A integração está em uso (já leu da Gestão Financeira ou fez pedidos). */
+  inUse: boolean;
+  overdueReceivables: { cardId: string; cardTitle: string; client: string | null; description: string; amountCents: number; dueDate: string; daysLate: number }[];
+  dueSoon: { cardId: string; cardTitle: string; client: string | null; description: string; amountCents: number; dueDate: string }[];
+  overduePayables: { count: number; amountCents: number };
+  /** Ganhos há mais de `wonDays` dias com valor ainda não lançado como receita (nem pedido no pacote). */
+  wonWithoutIncome: { cardId: string; cardTitle: string; client: string | null; valueCents: number; missingCents: number; closedAt: string; days: number }[];
+  syncedAt: string | null;
+}
+
+const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b}T12:00:00`) - Date.parse(`${a}T12:00:00`)) / 86_400_000);
+
+/** Pontos de atenção financeiros dos cartões que o usuário vê (ou só os de um responsável). */
+export function financeAlerts(
+  db: DatabaseSync,
+  viewer: Viewer | null,
+  opts: { today?: string; ownerIds?: string[] | null; wonDays?: number; soonDays?: number } = {},
+): FinanceAlerts {
+  const today = opts.today ?? new Date().toLocaleDateString("sv-SE");
+  const inUse = !!one(db, "SELECT 1 FROM finance_sync LIMIT 1") || !!one(db, "SELECT 1 FROM finance_request WHERE deleted_at IS NULL LIMIT 1");
+  const cards = new Map(scopedCards(db, { ownerIds: opts.ownerIds, viewer }).map((c) => [c.id, c]));
+  const entries = many<FinanceItem>(db, `SELECT ${ENTRY_COLS} FROM finance_entry WHERE status = 'pending'`).filter((e) => cards.has(e.ref));
+  const soonLimit = new Date(Date.parse(`${today}T12:00:00`) + (opts.soonDays ?? 7) * 86_400_000).toLocaleDateString("sv-SE");
+  const out: FinanceAlerts = { inUse, overdueReceivables: [], dueSoon: [], overduePayables: { count: 0, amountCents: 0 }, wonWithoutIncome: [], syncedAt: financeSyncedAt(db)?.at ?? null };
+  for (const e of entries) {
+    const c = cards.get(e.ref)!;
+    const due = e.dueDate ?? e.competenceDate;
+    if (e.type === "income") {
+      const base = { cardId: c.id, cardTitle: c.title, client: c.client, description: e.description, amountCents: e.amountCents, dueDate: due };
+      if (due < today) out.overdueReceivables.push({ ...base, daysLate: daysBetween(due, today) });
+      else if (due <= soonLimit) out.dueSoon.push(base);
+    } else if (due < today) {
+      out.overduePayables.count++;
+      out.overduePayables.amountCents += e.amountCents;
+    }
+  }
+  out.overdueReceivables.sort((a, b) => b.daysLate - a.daysLate);
+  out.dueSoon.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  if (inUse) {
+    const launched = new Map(
+      many<{ deal_id: string; total: number }>(db, "SELECT deal_id, SUM(amount_cents) AS total FROM finance_entry WHERE type = 'income' GROUP BY deal_id").map((r) => [r.deal_id, r.total]),
+    );
+    const asked = new Map<string, number>();
+    for (const r of many<{ deal_id: string; payload: string }>(db, "SELECT deal_id, payload FROM finance_request WHERE deleted_at IS NULL AND status <> 'launched'")) {
+      const p = JSON.parse(r.payload) as PackageRequest;
+      if (p.mode === "income") asked.set(r.deal_id, (asked.get(r.deal_id) ?? 0) + (p.amountCents ?? 0));
+    }
+    const wonDays = opts.wonDays ?? 3;
+    for (const c of cards.values()) {
+      if (c.status !== "won" || c.value_cents <= 0 || !c.closed_at) continue;
+      const days = daysBetween(new Date(c.closed_at).toLocaleDateString("sv-SE"), today);
+      const missing = c.value_cents - (launched.get(c.id) ?? 0) - (asked.get(c.id) ?? 0);
+      if (days >= wonDays && missing > 0 && days <= 180)
+        out.wonWithoutIncome.push({ cardId: c.id, cardTitle: c.title, client: c.client, valueCents: c.value_cents, missingCents: missing, closedAt: c.closed_at, days });
+    }
+    out.wonWithoutIncome.sort((a, b) => b.missingCents - a.missingCents);
+  }
+  return out;
+}
+
+/** Linhas do resumo diário (vazio sem nada a avisar). `wa` = negrito do WhatsApp. */
+export function financeDigestLines(a: FinanceAlerts, wa: boolean): string[] {
+  const b = (t: string) => (wa ? `*${t}*` : t);
+  const money = (c: number) => formatCents(c);
+  const lines: string[] = [];
+  const overdue = a.overdueReceivables.reduce((s, x) => s + x.amountCents, 0);
+  if (a.overdueReceivables.length) {
+    lines.push(`💰 ${b(`${a.overdueReceivables.length} receita${a.overdueReceivables.length === 1 ? "" : "s"} atrasada${a.overdueReceivables.length === 1 ? "" : "s"} (${money(overdue)})`)}`);
+    for (const x of a.overdueReceivables.slice(0, 5)) lines.push(`• ${x.cardTitle}${x.client ? ` - ${x.client}` : ""}: ${money(x.amountCents)}, há ${x.daysLate} dia${x.daysLate === 1 ? "" : "s"}`);
+  }
+  if (a.dueSoon.length) lines.push(`📅 ${a.dueSoon.length} receita${a.dueSoon.length === 1 ? "" : "s"} vencendo em 7 dias (${money(a.dueSoon.reduce((s, x) => s + x.amountCents, 0))})`);
+  if (a.wonWithoutIncome.length) {
+    lines.push(`🧾 ${b(`${a.wonWithoutIncome.length} ganho${a.wonWithoutIncome.length === 1 ? "" : "s"} com receita a lançar`)}`);
+    for (const x of a.wonWithoutIncome.slice(0, 5)) lines.push(`• ${x.cardTitle}: falta ${money(x.missingCents)}`);
+  }
+  if (a.overduePayables.count) lines.push(`⚠️ ${a.overduePayables.count} despesa(s) atrasada(s) (${money(a.overduePayables.amountCents)})`);
+  return lines.length ? ["Financeiro:", ...lines] : [];
 }

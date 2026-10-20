@@ -127,3 +127,46 @@ banco novo e mostram "Os dados foram alterados em outra janela · Atualizar".
   despesas, resultado, a receber e atrasado), receitas em aberto por
   vencimento e o resultado de cada cartão (organização: cartões dela;
   contato: cartões em que é o contato principal).
+
+## Fase 4 (CRM 0.2.57 · Gestão Financeira 0.0.7) — pacote, Copiloto e alertas
+
+### Modo pacote de arquivo (quando as extensões não estão no mesmo Chrome)
+Ligado em Configurações → Integrações → Gestão Financeira ("Por pacote de
+arquivo"). Ida e volta:
+1. **CRM, aba Financeiro do cartão**: sem a Gestão Financeira por perto,
+   Receita/Despesa abrem um **pedido** (descrição, valor — a receita sugere o
+   que falta lançar —, vencimento, competência, observação). Os pedidos ficam
+   no cartão ("aguardando exportação" / "exportado · aguardando o retorno") e
+   dá para desistir (`finance_request`, migration 0019).
+2. **CRM, Integrações → Exportar pacote**: arquivo
+   `conectcrm-pedidos-financeiro-AAAA-MM-DD.json` com os pedidos ainda não
+   confirmados (os exportados vão de novo até voltarem: a Gestão Financeira
+   ignora repetidos).
+3. **Gestão Financeira, Importar → Pacote do ConectCRM**: lista os pedidos
+   (novo / lançado); **Revisar e lançar** abre a tela de lançamento preenchida
+   (inclusive datas, observação e carteira Empresa) e **Lançar os novos sem
+   revisar** cria em aberto, sem categoria/conta. Cada lançamento guarda o
+   pedido (`origin_request`, migration 0014): o mesmo pedido nunca entra duas
+   vezes (nem depois de excluído).
+4. **Gestão Financeira → Exportar retorno para o ConectCRM**: todos os
+   lançamentos vindos do CRM; **CRM → Importar retorno** substitui a cópia
+   (cartões, relatórios, cliente) e marca os pedidos como lançados.
+Formato versionado em `protocol.ts` (`PACKAGE_FORMAT`, `parsePackage`).
+
+### Copiloto
+- `resumo_financeiro` (período, base competência/vencimento/caixa, funil,
+  responsável): mesmos números de Relatórios → Financeiro, com melhores e
+  piores cartões, clientes, funis, categorias e ganhos com receita a lançar.
+- `pendencias_financeiras`: receitas atrasadas (dias de atraso), a vencer em
+  7 dias, despesas atrasadas e ganhos com receita a lançar.
+- `detalhar_cartao` traz o financeiro do cartão. As ferramentas leem a
+  Gestão Financeira antes de responder (ou usam a última cópia); o "como
+  estou / pontos de atenção" inclui as pendências financeiras.
+
+### Alertas
+- **Resumo diário** (Notificações): bloco "Financeiro" com receitas
+  atrasadas (cartão, cliente, valor, dias), a vencer em 7 dias, ganhos há 3+
+  dias com receita a lançar (descontando pedidos no pacote) e despesas
+  atrasadas — dos cartões do usuário; só quando a integração está em uso.
+- O service worker do CRM lê a Gestão Financeira a cada 3 h (modo direto)
+  para os alertas usarem dados recentes.

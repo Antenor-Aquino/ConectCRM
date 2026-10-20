@@ -34,7 +34,7 @@ import { ValidationError } from "../lib/validate";
 import * as tags from "../db/tags";
 import * as docCard from "../db/docCard";
 import * as finance from "../db/finance";
-import type { FinanceItem } from "../lib/finance/protocol";
+import type { FinanceItem, ReturnPackage } from "../lib/finance/protocol";
 import * as users from "../db/users";
 
 type Handler = (db: DatabaseSync, ctx: DbContext, params: never) => unknown;
@@ -212,6 +212,23 @@ export const methods = {
     }
     return finance.financeReport(db, { ...p, ownerIds, viewer: viewer(db, ctx) });
   },
+  // Modo pacote (spec 13, Fase 4).
+  "finance.requestCreate": (db: DatabaseSync, ctx: DbContext, p: { dealId: string } & finance.FinanceRequestInput) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.dealId);
+    return finance.createFinanceRequest(db, ctx, p.dealId, p);
+  },
+  "finance.requests": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    return finance.listFinanceRequests(db, p.id);
+  },
+  "finance.requestDiscard": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    const dealId = one<{ deal_id: string }>(db, "SELECT deal_id FROM finance_request WHERE id = ?", p.id)?.deal_id;
+    if (dealId) deals.assertCardAccess(db, viewer(db, ctx), dealId);
+    finance.discardFinanceRequest(db, p.id);
+  },
+  "finance.requestCounts": (db: DatabaseSync) => finance.financeRequestCounts(db),
+  "finance.exportPackage": (db: DatabaseSync, _c: DbContext, p: { version: string }) => finance.exportFinanceRequests(db, p.version),
+  "finance.importReturn": (db: DatabaseSync, ctx: DbContext, p: { pkg: ReturnPackage }) => finance.importFinanceReturn(db, ctx, p.pkg),
   "finance.client": (db: DatabaseSync, ctx: DbContext, p: { organizationId?: string; personId?: string }) => finance.clientFinance(db, p, viewer(db, ctx)),
   "cards.import": (db: DatabaseSync, ctx: DbContext, p: cardImporter.CardImportInput) => {
     const v = viewer(db, ctx);
@@ -574,7 +591,12 @@ export const methods = {
 
   // Copiloto de IA: consultas prontas, sempre com a permissão do usuário
   "copilot.searchCards": (db: DatabaseSync, ctx: DbContext, p: copilot.CardSearch) => copilot.searchCardsForCopilot(db, viewer(db, ctx), p),
-  "copilot.card": (db: DatabaseSync, ctx: DbContext, p: Id) => copilot.cardDigest(db, viewer(db, ctx), p.id),
+  "copilot.card": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    const d = copilot.cardDigest(db, viewer(db, ctx), p.id);
+    return "erro" in d ? d : { ...d, financeiro: copilot.cardFinanceForCopilot(db, p.id) };
+  },
+  "copilot.finance": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof copilot.financeSummaryForCopilot>[2]) => copilot.financeSummaryForCopilot(db, viewer(db, ctx), p),
+  "copilot.financeAlerts": (db: DatabaseSync, ctx: DbContext, p: { responsavel?: string }) => copilot.financeAlertsForCopilot(db, viewer(db, ctx), p),
   "copilot.stale": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof copilot.staleDeals>[2]) => copilot.staleDeals(db, viewer(db, ctx), p),
   "copilot.tasks": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof copilot.tasksForCopilot>[2]) => copilot.tasksForCopilot(db, viewer(db, ctx), p),
   "copilot.contacts": (db: DatabaseSync, ctx: DbContext, p: { texto: string }) => copilot.contactsForCopilot(db, viewer(db, ctx), p.texto),

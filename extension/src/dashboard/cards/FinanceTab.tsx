@@ -3,11 +3,15 @@
 // tela de lançamento de lá, já preenchida (cliente/fornecedor = organização
 // do cartão; sem ela, o contato principal). Ao fechar aquela janela, a lista
 // é lida de novo. Sem a Gestão Financeira por perto, mostra a última cópia.
+// Modo pacote (Fase 4): sem a Gestão Financeira neste Chrome, os botões fazem
+// um pedido que vai num arquivo (Configurações → Integrações → Exportar pacote).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
-import { TaButton, cn } from "@tailadmin";
+import { TaButton, TaInput, TaModal, TaTextarea, cn } from "@tailadmin";
+import { MoneyInput } from "../ui/MoneyInput";
+import { Field } from "../ui/form";
 import { call } from "../../rpc/client";
-import type { CardFinance, FinanceEntry } from "../../db/finance";
+import type { CardFinance, FinanceEntry, FinanceRequestRow } from "../../db/finance";
 import type { LaunchCounterparty } from "../../lib/finance/protocol";
 import { GF_ENV_LABEL, listByOrigin, loadGfSettings, openLaunch, type GfSettings } from "../../lib/finance/gfBridge";
 import { formatCents, formatDateTime } from "../../lib/format";
@@ -47,9 +51,12 @@ export function FinanceTab({
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
   const launchWindow = useRef<number | null>(null);
+  const [requests, setRequests] = useState<FinanceRequestRow[]>([]);
+  const [requestMode, setRequestMode] = useState<"income" | "expense" | null>(null);
 
   const loadLocal = useCallback(async () => {
     setData(await call("finance.card", { id: cardId }));
+    setRequests(await call("finance.requests", { id: cardId }));
   }, [cardId]);
 
   const refresh = useCallback(async () => {
@@ -96,16 +103,27 @@ export function FinanceTab({
     };
   }, [refresh]);
 
+  // Receita: sugere o que falta lançar do valor do cartão (contando os pedidos ainda no pacote).
+  const suggestedFor = (mode: "income" | "expense") => {
+    if (mode !== "income" || !valueCents) return null;
+    const asked = requests.filter((r) => r.request.mode === "income").reduce((a, r) => a + (r.request.amountCents ?? 0), 0);
+    return Math.max(0, valueCents - (data?.summary.incomeCents ?? 0) - asked) || null;
+  };
+  const direct = !!settings?.gfId && settings.direct && live === "ok";
+  const packageMode = !!settings?.package && !direct;
+
   async function launch(mode: "income" | "expense", edit?: FinanceEntry) {
     setError(null);
-    if (!settings?.gfId) return;
     if (!counterparty) {
       setError("Para lançar no financeiro, vincule uma organização ou um contato a este cartão.");
       return;
     }
-    const launched = data?.summary.incomeCents ?? 0;
-    // Receita: sugere o que falta lançar do valor do cartão.
-    const suggested = mode === "income" && valueCents ? Math.max(0, valueCents - launched) : null;
+    if (!direct) {
+      if (packageMode && !edit) setRequestMode(mode);
+      return;
+    }
+    if (!settings?.gfId) return;
+    const suggested = suggestedFor(mode);
     setOpening(true);
     try {
       launchWindow.current = await openLaunch(settings.gfId, {
@@ -130,12 +148,12 @@ export function FinanceTab({
     if (!autoLaunch || autoDone.current || live === "loading" || counterparty === undefined) return;
     autoDone.current = true;
     onAutoLaunchDone?.();
-    if (settings?.gfId && settings.direct) void launch("income");
+    if ((settings?.gfId && settings.direct) || settings?.package) void launch("income");
   });
 
   if (!settings || live === "loading" || counterparty === undefined) return <p className="text-theme-sm text-gray-500">Carregando…</p>;
 
-  if (!settings.gfId) {
+  if (!settings.gfId && !settings.package) {
     return (
       <div className="rounded-xl border border-dashed border-gray-300 p-4 text-theme-sm text-gray-600 dark:border-gray-700 dark:text-gray-400" data-finance-setup>
         <p className="mb-2">
@@ -153,15 +171,16 @@ export function FinanceTab({
 
   const entries = data?.entries ?? [];
   const s = data?.summary;
-  const canLaunch = settings.direct && live === "ok";
+  const canLaunch = direct;
+  const canAsk = canLaunch || packageMode;
 
   return (
     <div className="space-y-3" data-finance-tab>
       <div className="flex flex-wrap items-center gap-2">
-        <TaButton size="sm" variant="primary" disabled={!canLaunch || opening} onClick={() => void launch("income")} data-launch="income">
+        <TaButton size="sm" variant="primary" disabled={!canAsk || opening} onClick={() => void launch("income")} data-launch="income">
           <TrendingUp size={14} /> Receita
         </TaButton>
-        <TaButton size="sm" disabled={!canLaunch || opening} onClick={() => void launch("expense")} data-launch="expense">
+        <TaButton size="sm" disabled={!canAsk || opening} onClick={() => void launch("expense")} data-launch="expense">
           <TrendingDown size={14} /> Despesa
         </TaButton>
         <button
@@ -179,7 +198,7 @@ export function FinanceTab({
           Para lançar no financeiro, vincule uma <b>organização</b> ou um <b>contato</b> a este cartão — ele será o cliente/fornecedor do lançamento.
         </p>
       )}
-      {counterparty && canLaunch && (
+      {counterparty && canAsk && (
         <p className="text-theme-xs text-gray-500">
           Cliente/fornecedor: <b>{counterparty.name}</b> ({counterparty.kind === "PJ" ? "organização do cartão" : "contato principal"})
         </p>
@@ -190,7 +209,14 @@ export function FinanceTab({
           {data?.syncedAt ? `Mostrando a cópia de ${formatDateTime(data.syncedAt)}.` : "Ainda não há cópia dos lançamentos deste cartão."}
         </p>
       )}
-      {live === "off" && <p className="text-theme-xs text-gray-500">Integração direta desligada (Configurações → Integrações). Mostrando a última cópia.</p>}
+      {packageMode ? (
+        <p className="text-theme-xs text-gray-500" data-finance-package-mode>
+          Modo pacote: Receita/Despesa fazem um pedido que vai por arquivo (Configurações → Integrações → Gestão Financeira → Exportar pacote).
+          {data?.syncedAt && ` Lançamentos conforme o último retorno, de ${formatDateTime(data.syncedAt)}.`}
+        </p>
+      ) : (
+        live === "off" && <p className="text-theme-xs text-gray-500">Integração direta desligada (Configurações → Integrações). Mostrando a última cópia.</p>
+      )}
       {data?.env === "demo" && (
         <p className="rounded-lg bg-warning-50 px-3 py-2 text-theme-xs text-warning-800">A Gestão Financeira está no {GF_ENV_LABEL.demo}: estes valores não são os reais.</p>
       )}
@@ -202,6 +228,53 @@ export function FinanceTab({
           <Stat label="Despesas" value={s.expenseCents} sub={`pago ${formatCents(s.expensePaidCents)}`} tone="error" />
           <Stat label="Resultado" value={s.resultCents} sub={`realizado ${formatCents(s.resultPaidCents)}`} tone={s.resultCents >= 0 ? "success" : "error"} />
         </div>
+      )}
+
+      {requests.length > 0 && (
+        <div data-finance-requests>
+          <p className="mb-1 text-theme-xs font-semibold uppercase tracking-wide text-gray-400">Pedidos no pacote (ainda não lançados)</p>
+          <ul className="divide-y divide-gray-100 rounded-lg border border-dashed border-gray-300 dark:divide-gray-800 dark:border-gray-700">
+            {requests.map((r) => (
+              <li key={r.id} className="flex items-center gap-3 px-3 py-2 text-theme-sm" data-finance-request={r.status}>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-gray-800 dark:text-white/90">{r.request.description}</span>
+                  <span className="block text-theme-xs text-gray-500">
+                    {r.request.dueDate ? `venc. ${day(r.request.dueDate)} · ` : ""}
+                    {r.status === "pending" ? "aguardando exportação" : `exportado em ${formatDateTime(r.exportedAt)} · aguardando o retorno`}
+                  </span>
+                </span>
+                <span className={cn("whitespace-nowrap text-theme-sm font-semibold", r.request.mode === "income" ? "text-success-600" : "text-error-600")}>
+                  {r.request.mode === "income" ? "+" : "−"} {r.request.amountCents ? formatCents(r.request.amountCents) : "valor a definir"}
+                </span>
+                <button
+                  type="button"
+                  className="text-theme-xs text-gray-400 hover:text-error-600"
+                  title="Desistir do pedido"
+                  onClick={() => {
+                    if (r.status === "exported" && !confirm("Este pedido já foi exportado. Se já foi lançado na Gestão Financeira, exclua lá também. Desistir dele aqui?")) return;
+                    void call("finance.requestDiscard", { id: r.id }).then(loadLocal);
+                  }}
+                >
+                  Desistir
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {requestMode && (
+        <RequestModal
+          mode={requestMode}
+          title={title}
+          suggestedCents={suggestedFor(requestMode)}
+          onClose={() => setRequestMode(null)}
+          onSave={async (input) => {
+            await call("finance.requestCreate", { dealId: cardId, ...input });
+            setRequestMode(null);
+            await loadLocal();
+          }}
+        />
       )}
 
       {entries.length === 0 ? (
@@ -265,5 +338,72 @@ function StatusChip({ entry }: { entry: FinanceEntry }) {
     >
       {label}
     </span>
+  );
+}
+
+/** Pedido de lançamento para o pacote (a Gestão Financeira completa categoria, conta etc. ao importar). */
+function RequestModal({
+  mode,
+  title,
+  suggestedCents,
+  onClose,
+  onSave,
+}: {
+  mode: "income" | "expense";
+  title: string;
+  suggestedCents: number | null;
+  onClose: () => void;
+  onSave: (input: { mode: "income" | "expense"; description: string; amountCents: number | null; dueDate: string | null; competenceDate: string | null; notes: string | null }) => Promise<void>;
+}) {
+  const [description, setDescription] = useState(title);
+  const [amount, setAmount] = useState(suggestedCents ?? 0);
+  const [dueDate, setDueDate] = useState(today());
+  const [competenceDate, setCompetenceDate] = useState(today());
+  const [notes, setNotes] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const income = mode === "income";
+  return (
+    <TaModal isOpen onClose={onClose} title={income ? "Pedido de receita" : "Pedido de despesa"} accent={income ? "var(--color-success-500)" : "var(--color-error-500)"}>
+      <div data-finance-request-modal>
+        <p className="mb-3 text-theme-xs text-gray-500">
+          Vai no próximo pacote para a Gestão Financeira. Lá você confere e completa categoria, projeto e conta ao importar.
+        </p>
+        <Field label="Descrição" required>
+          <TaInput value={description} onChange={(e) => setDescription(e.target.value)} aria-label="Descrição do pedido" />
+        </Field>
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Valor">
+            <MoneyInput value={amount} onChange={setAmount} />
+          </Field>
+          <Field label="Vencimento">
+            <TaInput type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+          </Field>
+          <Field label="Competência">
+            <TaInput type="date" value={competenceDate} onChange={(e) => setCompetenceDate(e.target.value)} />
+          </Field>
+        </div>
+        <Field label="Observação">
+          <TaTextarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </Field>
+        {error && <p className="mb-2 text-theme-sm text-error-600">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <TaButton onClick={onClose}>Cancelar</TaButton>
+          <TaButton
+            variant="primary"
+            disabled={saving}
+            onClick={() => {
+              setSaving(true);
+              setError(null);
+              onSave({ mode, description, amountCents: amount > 0 ? amount : null, dueDate: dueDate || null, competenceDate: competenceDate || null, notes: notes.trim() || null })
+                .catch((e: unknown) => setError(errorText(e)))
+                .finally(() => setSaving(false));
+            }}
+          >
+            Guardar pedido
+          </TaButton>
+        </div>
+      </div>
+    </TaModal>
   );
 }

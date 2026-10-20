@@ -2,6 +2,7 @@
 // escolhidos, aviso único do que se perdeu com o Chrome fechado, resumo
 // diário e aviso de atrasadas. Aqui se decide O QUE avisar (uma vez por aviso
 // e canal, com novas tentativas em caso de falha); o envio é do service worker.
+import { financeAlerts, financeDigestLines } from "./finance";
 import { formatDate } from "../lib/format";
 import { channelReady, inQuietHours, leadLabel, withDefaults, type Channel, type NotifySettings, type ReminderRule } from "../lib/notify/settings";
 import { startOfDay } from "../lib/taskTiming";
@@ -184,6 +185,11 @@ export function digestText(today: ActRow[], late: ActRow[], wa: boolean): string
   return lines.join("\n");
 }
 
+function financeHtml(lines: string[]): string {
+  const [head, ...rest] = lines;
+  return `<div style="margin:0 0 14px;padding:12px 14px;border:1px solid #fde68a;background:#fffbeb;border-radius:10px"><b>${esc(head ?? "")}</b>${rest.map((l) => `<div style="color:#475467;font-size:13px">${esc(l)}</div>`).join("")}</div>`;
+}
+
 const MAX_ATTEMPTS = 3;
 const RETRY_MIN = [5, 15, 60];
 /** Lembrete com atraso maior que isso, de atividade já começada, vira o aviso único. */
@@ -310,11 +316,17 @@ export function planNotifications(
           const lateIds = new Set(late.map((a) => a.id));
           const todayOnly = today.filter((a) => !lateIds.has(a.id));
           const heading = `Sua agenda de hoje: ${todayOnly.length} atividade${todayOnly.length === 1 ? "" : "s"}${late.length ? ` · ${late.length} atrasada${late.length === 1 ? "" : "s"}` : ""}`;
-          for (const c of chans)
+          // Financeiro (spec 13): receitas atrasadas, a vencer e ganhos sem receita lançada, dos cartões do usuário.
+          const fin = financeAlerts(db, null, { ownerIds: [userId], today: dayKey });
+          for (const c of chans) {
+            const job = listJob("digest", key, c, userId, heading, [...late.slice(0, 30), ...todayOnly]);
+            const finLines = financeDigestLines(fin, c === "whatsapp");
             jobs.push({
-              ...listJob("digest", key, c, userId, heading, [...late.slice(0, 30), ...todayOnly]),
-              text: digestText(todayOnly, late, c === "whatsapp"),
+              ...job,
+              text: [digestText(todayOnly, late, c === "whatsapp"), ...(finLines.length ? ["", ...finLines] : [])].join("\n"),
+              html: finLines.length ? job.html.replace("<p style=\"color:#98a2b3", `${financeHtml(finLines)}<p style="color:#98a2b3`) : job.html,
             });
+          }
         }
       }
     }

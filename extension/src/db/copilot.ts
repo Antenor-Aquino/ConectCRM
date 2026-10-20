@@ -4,6 +4,7 @@
 // usuário (mesmas regras do quadro e das tarefas). Nomes de funil e de
 // responsável são resolvidos aqui; sem correspondência, a resposta traz as
 // opções existentes em vez de adivinhar.
+import { cardFinance, financeAlerts, financeReport, type FinanceBasis, type FinanceTotals } from "./finance";
 import { noteText } from "./notes";
 import { OUTCOME_TEXT, PIPELINE_TYPE_BY_KIND } from "../lib/cardTypes";
 import type { DealStatus } from "./deals";
@@ -442,5 +443,82 @@ export function salesSummary(db: DatabaseSync, viewer: Viewer | null, f: { de: s
     motivosDePerda: r.lossReasons.map((x) => ({ motivo: x.reason, quantidade: x.count, valor: formatCents(x.valueCents) })),
     porResponsavel: r.owners.map((o) => ({ nome: o.name, ganhos: o.won, valorGanho: formatCents(o.wonValueCents), perdidos: o.lost, conversao: pctx(o.winRate), abertos: o.open, ponderado: formatCents(o.weightedCents) })),
     produtosVendidos: r.products.slice(0, 10).map((p) => ({ nome: p.name, quantidade: p.quantity, total: formatCents(p.totalCents) })),
+  };
+}
+
+// ---------- Financeiro (spec 13, Fase 4) ----------
+
+const brl = (c: number) => formatCents(c);
+const pctOf = (v: number | null) => (v == null ? null : `${Math.round(v * 1000) / 10}%`);
+const totalsOut = (t: FinanceTotals) => ({
+  receitas: brl(t.incomeCents),
+  despesas: brl(t.expenseCents),
+  resultado: brl(t.resultCents),
+  margem: pctOf(t.margin),
+  recebido: brl(t.incomePaidCents),
+  pago: brl(t.expensePaidCents),
+  aReceber: brl(t.receivableCents),
+  aReceberAtrasado: brl(t.overdueReceivableCents),
+  aPagar: brl(t.payableCents),
+  aPagarAtrasado: brl(t.overduePayableCents),
+});
+
+/** Resumo financeiro dos cartões (mesmos números de Relatórios → Financeiro). */
+export function financeSummaryForCopilot(db: DatabaseSync, viewer: Viewer | null, f: { de: string; ate: string; base?: FinanceBasis; funil?: string; responsavel?: string }) {
+  const ok = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s ?? "");
+  if (!ok(f.de) || !ok(f.ate) || f.de > f.ate) return { erro: "Período inválido: use de/ate no formato AAAA-MM-DD, com de ≤ ate." };
+  const pipe = resolvePipeline(db, f.funil);
+  if (isErr(pipe)) return pipe;
+  const owner = resolveOwner(db, f.responsavel);
+  if (isErr(owner)) return owner;
+  const r = financeReport(db, { start: f.de, end: f.ate, basis: f.base ?? "competencia", pipelineId: pipe?.ids[0] ?? null, ownerIds: owner?.ids ?? null, viewer });
+  return {
+    periodo: `${f.de} a ${f.ate}`,
+    base: f.base ?? "competencia",
+    dadosDaGestaoFinanceiraDe: r.syncedAt,
+    ambienteDeTeste: r.env === "demo" ? true : undefined,
+    totais: totalsOut(r.totals),
+    porMes: r.months.filter((m) => m.incomeCents || m.expenseCents).map((m) => ({ mes: m.month, receitas: brl(m.incomeCents), despesas: brl(m.expenseCents), resultado: brl(m.resultCents) })),
+    melhoresCartoes: r.cards.slice(0, 8).map((c) => ({ id: c.id, cartao: c.title, cliente: c.client, funil: c.pipelineName, valorDoCartao: brl(c.valueCents), ...totalsOut(c) })),
+    pioresCartoes: r.cards.length > 8 ? r.cards.slice(-5).reverse().map((c) => ({ id: c.id, cartao: c.title, cliente: c.client, resultado: brl(c.resultCents), margem: pctOf(c.margin) })) : [],
+    porCliente: r.clients.slice(0, 10).map((c) => ({ cliente: c.name, cartoes: c.cards, receitas: brl(c.incomeCents), despesas: brl(c.expenseCents), resultado: brl(c.resultCents), aReceber: brl(c.receivableCents) })),
+    porFunil: r.pipelines.map((p) => ({ funil: p.name, cartoes: p.cards, receitas: brl(p.incomeCents), despesas: brl(p.expenseCents), resultado: brl(p.resultCents), margem: pctOf(p.margin) })),
+    porCategoria: r.categories.slice(0, 15).map((c) => ({ tipo: c.type === "income" ? "receita" : "despesa", categoria: c.name, valor: brl(c.amountCents) })),
+    ganhosComReceitaALancar: r.toBill.slice(0, 10).map((b) => ({ id: b.id, cartao: b.title, cliente: b.client, valor: brl(b.valueCents), lancado: brl(b.launchedCents), faltaLancar: brl(b.missingCents) })),
+    observacao: r.cards.length ? undefined : "Nenhum lançamento na Gestão Financeira pelos cartões neste período (a integração pode não estar em uso).",
+  };
+}
+
+/** Pendências financeiras de hoje. */
+export function financeAlertsForCopilot(db: DatabaseSync, viewer: Viewer | null, f: { responsavel?: string }) {
+  const owner = resolveOwner(db, f.responsavel);
+  if (isErr(owner)) return owner;
+  const a = financeAlerts(db, viewer, { ownerIds: owner?.ids ?? null });
+  if (!a.inUse) return { observacao: "A integração com a Gestão Financeira ainda não foi usada: não há lançamentos dos cartões." };
+  return {
+    dadosDaGestaoFinanceiraDe: a.syncedAt,
+    receitasAtrasadas: a.overdueReceivables.slice(0, 20).map((x) => ({ cartaoId: x.cardId, cartao: x.cardTitle, cliente: x.client, descricao: x.description, valor: brl(x.amountCents), vencimento: x.dueDate, diasDeAtraso: x.daysLate })),
+    totalAtrasado: brl(a.overdueReceivables.reduce((s, x) => s + x.amountCents, 0)),
+    vencendoEm7Dias: a.dueSoon.slice(0, 20).map((x) => ({ cartaoId: x.cardId, cartao: x.cardTitle, cliente: x.client, valor: brl(x.amountCents), vencimento: x.dueDate })),
+    despesasAtrasadas: { quantidade: a.overduePayables.count, valor: brl(a.overduePayables.amountCents) },
+    ganhosComReceitaALancar: a.wonWithoutIncome.slice(0, 20).map((x) => ({ cartaoId: x.cardId, cartao: x.cardTitle, cliente: x.client, valor: brl(x.valueCents), faltaLancar: brl(x.missingCents), diasDesdeOGanho: x.days })),
+  };
+}
+
+/** Financeiro de um cartão para o detalhar_cartao. */
+export function cardFinanceForCopilot(db: DatabaseSync, id: string) {
+  const f = cardFinance(db, id);
+  if (!f.entries.length) return null;
+  return {
+    resumo: { receitas: brl(f.summary.incomeCents), despesas: brl(f.summary.expenseCents), resultado: brl(f.summary.resultCents), recebido: brl(f.summary.incomePaidCents), atrasados: f.summary.overdueCount },
+    lancamentos: f.entries.slice(0, 20).map((e) => ({
+      tipo: e.type === "income" ? "receita" : "despesa",
+      descricao: e.description,
+      valor: brl(e.amountCents),
+      vencimento: e.dueDate ?? e.competenceDate,
+      situacao: e.status === "paid" ? (e.type === "income" ? "recebido" : "pago") : "em aberto",
+      categoria: e.category,
+    })),
+    lidoEm: f.syncedAt,
   };
 }

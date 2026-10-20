@@ -162,3 +162,85 @@ describe("Fase 3: relatório financeiro e financeiro do cliente", async () => {
     expect(p.receivables.map((r) => r.id)).toEqual(["1", "4"]);
   });
 });
+
+describe("Fase 4: pacote, alertas e Copiloto", async () => {
+  const { setCardStatus } = await import("../src/db/deals");
+  const f = await import("../src/db/finance");
+  const cop = await import("../src/db/copilot");
+  const { PACKAGE_FORMAT } = await import("../src/lib/finance/protocol");
+
+  it("pedidos no pacote: valida, exporta (de novo até voltar), importa o retorno e marca lançados", async () => {
+    const { db, actx, card } = await setup();
+    const org = createOrganization(db, actx, { name: "Escola A", cnpj: "19489640000135" });
+    const a = card("Projeto A", { organizationId: org, valueCents: 100000 });
+    const sem = card("Sem cliente");
+    expect(() => f.createFinanceRequest(db, actx, sem, { mode: "income", description: "x", amountCents: 1 })).toThrow(/vincule uma organização ou um contato/);
+    expect(() => f.createFinanceRequest(db, actx, a, { mode: "income", description: " ", amountCents: 1 })).toThrow(/descrição/);
+    expect(() => f.createFinanceRequest(db, actx, a, { mode: "income", description: "x", amountCents: -5 })).toThrow(/Valor inválido/);
+    const r1 = f.createFinanceRequest(db, actx, a, { mode: "income", description: "Entrada", amountCents: 50000, dueDate: "2026-11-10" });
+    const r2 = f.createFinanceRequest(db, actx, a, { mode: "expense", description: "Viagem", amountCents: null });
+    const list = f.listFinanceRequests(db, a);
+    expect(list.map((r) => [r.status, r.request.counterparty.name, r.request.origin.label])).toEqual([
+      ["pending", "Escola A", 'Negócio "Projeto A" (ConectCRM)'],
+      ["pending", "Escola A", 'Negócio "Projeto A" (ConectCRM)'],
+    ]);
+    expect(f.financeRequestCounts(db)).toEqual({ pending: 2, exported: 0 });
+
+    const pkg = f.exportFinanceRequests(db, "0.2.57");
+    expect(pkg).toMatchObject({ format: PACKAGE_FORMAT, kind: "requests", from: { app: "conectcrm" } });
+    expect(pkg.requests.map((r) => r.id)).toEqual([r1, r2]);
+    expect(f.financeRequestCounts(db)).toEqual({ pending: 0, exported: 2 });
+    expect(f.exportFinanceRequests(db, "0.2.57").requests).toHaveLength(2); // até o retorno, vão de novo
+
+    const res = f.importFinanceReturn(db, actx, {
+      format: PACKAGE_FORMAT, version: 1, kind: "return", createdAt: "2026-10-21T10:00:00.000Z", from: { app: "gestao-financeira", version: "0.0.7" }, env: "production",
+      items: [item({ id: "t1", ref: a, type: "income", amountCents: 50000, requestId: r1 })],
+    });
+    expect(res).toEqual({ items: 1, launched: 1 });
+    expect(f.listFinanceRequests(db, a).map((r) => r.id)).toEqual([r2]);
+    expect(f.cardFinance(db, a).entries.map((e) => e.id)).toEqual(["t1"]);
+    expect(() => f.discardFinanceRequest(db, r1)).toThrow(/já foi lançado/);
+    f.discardFinanceRequest(db, r2);
+    expect(f.listFinanceRequests(db, a)).toEqual([]);
+  });
+
+  it("alertas: receitas atrasadas e a vencer, despesas atrasadas, ganhos com receita a lançar (descontando pedidos); linhas do resumo diário", async () => {
+    const { db, actx, card } = await setup();
+    const org = createOrganization(db, actx, { name: "Escola A" });
+    const a = card("Projeto A", { organizationId: org, valueCents: 100000 });
+    const b = card("Projeto B", { organizationId: org, valueCents: 80000 });
+    const c = card("Projeto C", { organizationId: org, valueCents: 30000 });
+    for (const id of [a, b, c]) setCardStatus(db, actx, id, { status: "won" });
+    db.exec(`UPDATE deal SET closed_at = '2026-10-01T12:00:00.000Z'`);
+    expect(f.financeAlerts(db, null, { today: "2026-10-20" })).toMatchObject({ inUse: false, wonWithoutIncome: [] });
+
+    f.replaceAllFinance(db, actx, [
+      item({ id: "1", ref: a, type: "income", amountCents: 40000, dueDate: "2026-10-05" }),
+      item({ id: "2", ref: a, type: "income", amountCents: 60000, dueDate: "2026-10-25" }),
+      item({ id: "3", ref: b, type: "expense", amountCents: 1000, dueDate: "2026-10-01" }),
+    ], "production", "2026-10-20T08:00:00.000Z");
+    f.createFinanceRequest(db, actx, c, { mode: "income", description: "C", amountCents: 30000 });
+    const al = f.financeAlerts(db, null, { today: "2026-10-20" });
+    expect(al.overdueReceivables.map((x) => [x.cardTitle, x.amountCents, x.daysLate])).toEqual([["Projeto A", 40000, 15]]);
+    expect(al.dueSoon.map((x) => x.amountCents)).toEqual([60000]);
+    expect(al.overduePayables).toEqual({ count: 1, amountCents: 1000 });
+    // A: tudo lançado; B: nada lançado; C: pedido no pacote cobre o valor.
+    expect(al.wonWithoutIncome.map((x) => [x.cardTitle, x.missingCents, x.days])).toEqual([["Projeto B", 80000, 19]]);
+
+    const lines = f.financeDigestLines(al, true);
+    expect(lines[0]).toBe("Financeiro:");
+    expect(lines.join("\n")).toMatch(/\*1 receita atrasada \(R\$\s400,00\)\*/);
+    expect(lines.join("\n")).toMatch(/Projeto B: falta R\$\s800,00/);
+    expect(f.financeDigestLines({ ...al, overdueReceivables: [], dueSoon: [], wonWithoutIncome: [], overduePayables: { count: 0, amountCents: 0 } }, false)).toEqual([]);
+
+    // Copiloto
+    const s = cop.financeSummaryForCopilot(db, null, { de: "2026-10-01", ate: "2026-10-31" }) as { totais: { receitas: string; resultado: string } };
+    expect(s.totais.receitas).toMatch(/1\.000,00/);
+    expect(cop.financeSummaryForCopilot(db, null, { de: "x", ate: "y" })).toHaveProperty("erro");
+    const p = cop.financeAlertsForCopilot(db, null, {}) as { receitasAtrasadas: { diasDeAtraso: number }[]; ganhosComReceitaALancar: { cartao: string }[] };
+    expect(p.receitasAtrasadas).toHaveLength(1);
+    expect(p.ganhosComReceitaALancar.map((x) => x.cartao)).toEqual(["Projeto B"]);
+    expect(cop.cardFinanceForCopilot(db, a)?.lancamentos).toHaveLength(2);
+    expect(cop.cardFinanceForCopilot(db, c)).toBeNull();
+  });
+});
