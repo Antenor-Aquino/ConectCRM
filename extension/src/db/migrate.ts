@@ -19,6 +19,7 @@ import migration0016 from "./migrations/0016_envio_whatsapp.sql?raw";
 import migration0017 from "./migrations/0017_origem_registro.sql?raw";
 import migration0018 from "./migrations/0018_financeiro.sql?raw";
 import migration0019 from "./migrations/0019_financeiro_pacote.sql?raw";
+import migration0020 from "./migrations/0020_campo_junto_ao_nome.sql?raw";
 
 export const MIGRATIONS: { name: string; sql: string }[] = [
   { name: "0000_init.sql", sql: migration0000 },
@@ -41,6 +42,7 @@ export const MIGRATIONS: { name: string; sql: string }[] = [
   { name: "0017_origem_registro.sql", sql: migration0017 },
   { name: "0018_financeiro.sql", sql: migration0018 },
   { name: "0019_financeiro_pacote.sql", sql: migration0019 },
+  { name: "0020_campo_junto_ao_nome.sql", sql: migration0020 },
 ];
 
 /** Aplica as migrations pendentes; devolve quantas rodaram. */

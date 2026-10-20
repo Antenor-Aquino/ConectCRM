@@ -1,8 +1,10 @@
 // Produtos e serviços (catálogo usado nos itens do negócio).
+import { attachExtras } from "./nameExtras";
 import { normalizeCents, optionalText, requireText, ValidationError } from "../lib/validate";
 import { insertRow, softDelete, updateRow, type DbContext } from "./repo";
 import { moveToTrash, type TrashNotice } from "./trash";
-import { many, one, type DatabaseSync, type SqlValue } from "./sql";
+import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
+import { getCustomValues, setCustomValues, type CustomValue } from "./customFields";
 
 export type ProductKind = "produto" | "servico";
 export type Recurrence = "avulso" | "mensal" | "trimestral" | "semestral" | "anual";
@@ -21,6 +23,8 @@ export interface Product {
   category_id: string | null;
   description: string | null;
   active: number;
+  /** Campos marcados para aparecer junto com o nome (máx. 2). */
+  name_ext?: string | null;
 }
 
 export interface ProductInput {
@@ -34,6 +38,8 @@ export interface ProductInput {
   categoryId?: string | null;
   description?: string | null;
   active?: boolean;
+  /** Campos personalizados do produto. */
+  customValues?: Record<string, CustomValue>;
 }
 
 function productData(db: DatabaseSync, input: Partial<ProductInput>, full: boolean, exceptId = ""): Record<string, SqlValue> {
@@ -69,11 +75,23 @@ function productData(db: DatabaseSync, input: Partial<ProductInput>, full: boole
 }
 
 export function createProduct(db: DatabaseSync, ctx: DbContext, input: ProductInput): string {
-  return insertRow(db, ctx, "product", productData(db, input, true));
+  return withTransaction(db, () => {
+    const id = insertRow(db, ctx, "product", productData(db, input, true));
+    setCustomValues(db, ctx, "product", id, input.customValues ?? {}, { checkRequired: true });
+    return id;
+  });
 }
 
 export function updateProduct(db: DatabaseSync, ctx: DbContext, id: string, patch: Partial<ProductInput>): void {
-  updateRow(db, ctx, "product", id, productData(db, patch, false, id));
+  withTransaction(db, () => {
+    updateRow(db, ctx, "product", id, productData(db, patch, false, id));
+    if (patch.customValues) setCustomValues(db, ctx, "product", id, patch.customValues, { checkRequired: true });
+  });
+}
+
+/** Valores dos campos personalizados do produto (para o formulário). */
+export function productCustomValues(db: DatabaseSync, id: string): Record<string, CustomValue> {
+  return getCustomValues(db, id);
 }
 
 export function deleteProduct(db: DatabaseSync, ctx: DbContext, id: string): TrashNotice {
@@ -96,12 +114,13 @@ export function listProducts(db: DatabaseSync, opts: { search?: string; includeI
     where.push("category_id = ?");
     params.push(opts.categoryId);
   }
-  return many<Product>(
+  const rows = many<Product>(
     db,
     `SELECT id, code, name, kind, unit, price_cents, cost_cents, recurrence, category_id, description, active FROM product
      WHERE ${where.join(" AND ")} ORDER BY name COLLATE NOCASE`,
     ...params,
   );
+  return attachExtras(db, "product", rows, "id", "name_ext");
 }
 
 export function listProductCategories(db: DatabaseSync): { id: string; name: string }[] {

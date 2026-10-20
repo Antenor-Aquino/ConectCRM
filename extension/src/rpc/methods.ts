@@ -664,6 +664,7 @@ export const methods = {
   "products.usage": (db: DatabaseSync) => products.productUsage(db),
 
   // Produtos e serviços
+  "products.customValues": (db: DatabaseSync, _c: DbContext, p: Id) => products.productCustomValues(db, p.id),
   "products.list": (db: DatabaseSync, _c: DbContext, p: Parameters<typeof products.listProducts>[1] = {}) => products.listProducts(db, p),
   "products.create": (db: DatabaseSync, ctx: DbContext, p: products.ProductInput) => {
     assertRole(db, ctx, MANAGERS, "produtos");

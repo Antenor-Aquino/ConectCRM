@@ -11,6 +11,8 @@ export interface CardContact {
   phone: string | null;
   organization_name: string | null;
   is_primary: number;
+  /** Campos marcados para aparecer junto com o nome. */
+  name_ext?: string | null;
 }
 
 /** Principal primeiro, depois os demais na ordem em que foram vinculados. */

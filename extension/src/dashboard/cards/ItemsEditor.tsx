@@ -79,6 +79,7 @@ export function ItemsEditor({
                 {products.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
+                    {p.name_ext && <span className="font-normal text-gray-500" data-name-ext> - {p.name_ext}</span>}
                   </option>
                 ))}
               </TaSelect>

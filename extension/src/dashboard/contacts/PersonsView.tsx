@@ -63,7 +63,10 @@ export function PersonsView({ refreshKey, onOpen, onNew }: { refreshKey: number;
       render: (r) => (
         <span className="flex items-center gap-2 font-medium text-gray-800 dark:text-white/90">
           {r.avatar_id && avatars[r.avatar_id] ? <img src={avatars[r.avatar_id]} alt="" className="h-7 w-7 rounded-full object-cover" /> : <Avatar name={r.name} size={28} />}
-          {r.name}
+          <span>
+            {r.name}
+            {r.name_ext && <span className="font-normal text-gray-500" data-name-ext> - {r.name_ext}</span>}
+          </span>
           {!!r.is_private && <Lock size={12} className="text-gray-400" />}
         </span>
       ),

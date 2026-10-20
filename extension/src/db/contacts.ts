@@ -6,6 +6,7 @@ import { getRow, insertRow, softDelete, updateRow, type DbContext } from "./repo
 import { moveToTrash, type TrashNotice } from "./trash";
 import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
 import { getEntityTags, setEntityTags, type Tag } from "./tags";
+import { attachExtras, nameExtras } from "./nameExtras";
 import { getUser, type Viewer } from "./users";
 
 // ---------- Vínculo contato ↔ organização ----------
@@ -113,12 +114,15 @@ export interface Person {
 }
 
 export interface PersonDetail extends Person {
+  /** Campos marcados para aparecer junto com o nome ("Diretora"). */
+  name_ext: string | null;
   organizations: { id: string; name: string; is_primary: number }[];
   tags: Tag[];
   customValues: Record<string, CustomValue>;
 }
 
 export interface PersonListItem extends Person {
+  name_ext: string | null;
   primary_organization_name: string | null;
   owner_name: string | null;
 }
@@ -196,6 +200,7 @@ export function getPerson(db: DatabaseSync, id: string, viewer?: Viewer | null):
   if (!person) return undefined;
   return {
     ...person,
+    name_ext: nameExtras(db, "person", [id]).get(id) ?? null,
     organizations: many(
       db,
       `SELECT o.id, o.name, po.is_primary FROM person_organization po
@@ -265,7 +270,7 @@ export function findPersonsByPhone(db: DatabaseSync, phone: string, viewer?: Vie
 /** Busca por nome, e-mail ou telefone (mesma busca do campo "Contato" dos formulários). */
 export function listPersons(db: DatabaseSync, opts: PersonFilter & { limit?: number; offset?: number } = {}): PersonListItem[] {
   const w = personWhere(opts);
-  return many<PersonListItem>(
+  const rows = many<Omit<PersonListItem, "name_ext">>(
     db,
     `SELECT ${PERSON_COLS},
        (SELECT o.name FROM person_organization po JOIN organization o ON o.id = po.organization_id AND o.deleted_at IS NULL
@@ -277,6 +282,7 @@ export function listPersons(db: DatabaseSync, opts: PersonFilter & { limit?: num
     opts.limit ?? 50,
     opts.offset ?? 0,
   );
+  return attachExtras(db, "person", rows, "id", "name_ext");
 }
 
 export function countPersons(db: DatabaseSync, f: PersonFilter = {}): number {
@@ -380,7 +386,8 @@ export interface Organization {
 }
 
 export interface OrganizationDetail extends Organization {
-  persons: { id: string; name: string; is_primary: number }[];
+  name_ext: string | null;
+  persons: { id: string; name: string; is_primary: number; name_ext: string | null }[];
   tags: Tag[];
   customValues: Record<string, CustomValue>;
 }
@@ -471,13 +478,20 @@ export function getOrganization(db: DatabaseSync, id: string, viewer?: Viewer | 
   const vis = personVisibility(viewer);
   return {
     ...org,
-    persons: many(
+    name_ext: nameExtras(db, "organization", [id]).get(id) ?? null,
+    persons: attachExtras(
       db,
-      `SELECT p.id, p.name, po.is_primary FROM person_organization po
-       JOIN person p ON p.id = po.person_id AND p.deleted_at IS NULL
-       WHERE po.organization_id = ? AND po.deleted_at IS NULL${vis.sql} ORDER BY p.name COLLATE NOCASE`,
-      id,
-      ...vis.params,
+      "person",
+      many<{ id: string; name: string; is_primary: number }>(
+        db,
+        `SELECT p.id, p.name, po.is_primary FROM person_organization po
+         JOIN person p ON p.id = po.person_id AND p.deleted_at IS NULL
+         WHERE po.organization_id = ? AND po.deleted_at IS NULL${vis.sql} ORDER BY p.name COLLATE NOCASE`,
+        id,
+        ...vis.params,
+      ),
+      "id",
+      "name_ext",
     ),
     tags: getEntityTags(db, id),
     customValues: getCustomValues(db, id),
@@ -494,6 +508,7 @@ export interface OrganizationFilter {
 }
 
 export interface OrganizationListItem extends Organization {
+  name_ext: string | null;
   persons_count: number;
   owner_name: string | null;
 }
@@ -526,7 +541,7 @@ function organizationWhere(f: OrganizationFilter): { sql: string; params: SqlVal
 
 export function listOrganizations(db: DatabaseSync, opts: OrganizationFilter & { limit?: number; offset?: number } = {}): OrganizationListItem[] {
   const w = organizationWhere(opts);
-  return many<OrganizationListItem>(
+  const rows = many<Omit<OrganizationListItem, "name_ext">>(
     db,
     `SELECT ${ORG_COLS.split(", ").map((c) => `o.${c}`).join(", ")},
        (SELECT COUNT(*) FROM person_organization po JOIN person p ON p.id = po.person_id AND p.deleted_at IS NULL
@@ -537,6 +552,7 @@ export function listOrganizations(db: DatabaseSync, opts: OrganizationFilter & {
     opts.limit ?? 50,
     opts.offset ?? 0,
   );
+  return attachExtras(db, "organization", rows, "id", "name_ext");
 }
 
 export function countOrganizations(db: DatabaseSync, f: OrganizationFilter = {}): number {

@@ -147,7 +147,10 @@ export function RelatedTasks({ filter }: { filter: { personId?: string; organiza
               {t.done ? <CheckCircle2 size={18} /> : <Circle size={18} />}
             </button>
             <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setModal({ id: t.id })}>
-              <p className={cn("truncate text-theme-sm", t.done ? "text-gray-400 line-through" : "text-gray-800 dark:text-white/90")}>{t.title}</p>
+              <p className={cn("truncate text-theme-sm", t.done ? "text-gray-400 line-through" : "text-gray-800 dark:text-white/90")}>
+                {t.title}
+                {t.title_ext && <span className="font-normal text-gray-500" data-name-ext> - {t.title_ext}</span>}
+              </p>
               <p className={cn("text-theme-xs", taskTiming(t).tone === "danger" ? "text-error-600" : "text-gray-400")}>
                 {t.type_name} · {formatDateTime(t.due_at)} · {taskTiming(t).label}
                 {t.deal_title && ` · ${t.deal_title}`}

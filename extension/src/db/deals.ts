@@ -16,6 +16,8 @@ import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./
 import { createTag, getEntityTags, setEntityTags, type Tag } from "./tags";
 import { getUser, teammateIds, type Viewer } from "./users";
 import { copyCardContacts, listCardContacts, type CardContact } from "./cardContacts";
+import { attachExtras, nameExtras, withExtra } from "./nameExtras";
+import type { CustomFieldEntity } from "./customFields";
 
 export type DealStatus = "open" | "won" | "lost";
 
@@ -104,6 +106,8 @@ export interface CardDetail extends Card {
   contacts: CardContact[];
   person_name: string | null;
   organization_name: string | null;
+  /** Campos marcados para aparecer junto com o título. */
+  title_ext: string | null;
   loss_reason_name: string | null;
   items: DealItem[];
   tags: Tag[];
@@ -555,10 +559,15 @@ export function getCard(db: DatabaseSync, id: string, viewer?: Viewer | null): C
     card.organization_id,
     card.loss_reason_id,
   )!;
+  const kindOf = card.kind as CustomFieldEntity;
   return {
     ...card,
     ...names,
-    contacts: listCardContacts(db, id),
+    // Nomes com os campos marcados ("Maria José - Diretora").
+    person_name: names.person_name && withExtra(names.person_name, nameExtras(db, "person", [card.person_id]).get(card.person_id ?? "")),
+    organization_name: names.organization_name && withExtra(names.organization_name, nameExtras(db, "organization", [card.organization_id]).get(card.organization_id ?? "")),
+    title_ext: nameExtras(db, kindOf, [id]).get(id) ?? null,
+    contacts: attachExtras(db, "person", listCardContacts(db, id), "id", "name_ext"),
     items: listDealItems(db, id),
     tags: getEntityTags(db, id),
     customValues: getCustomValues(db, id),
@@ -577,9 +586,12 @@ export type BoardSort = "recent" | "manual" | "value" | "title" | "updated";
 export interface BoardCard {
   id: string;
   title: string;
+  /** Campos marcados para aparecer junto com o título (máx. 2). */
+  title_ext: string | null;
   value_cents: number;
   status: DealStatus;
   person_id: string | null;
+  organization_id: string | null;
   person_name: string | null;
   organization_name: string | null;
   owner_id: string | null;
@@ -716,7 +728,7 @@ export function getBoard(
   const today1 = new Date(startOfDay(now).getTime() + 86_400_000).toISOString();
   const cards = many<BoardCard & { stage_id: string }>(
     db,
-    `SELECT d.id, d.stage_id, d.title, d.value_cents, d.status, d.person_id, p.name AS person_name, o.name AS organization_name,
+    `SELECT d.id, d.stage_id, d.title, d.value_cents, d.status, d.person_id, d.organization_id, p.name AS person_name, o.name AS organization_name,
        d.owner_id, u.name AS owner_name, d.sla_at, d.due_at, d.position, d.stage_entered_at, d.created_at, d.updated_at, d.closed_at,
        (SELECT COUNT(*) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL) AS tasks_total,
        (SELECT COUNT(*) FROM activity a WHERE a.deal_id = d.id AND a.deleted_at IS NULL AND a.done = 1) AS tasks_done,
@@ -752,6 +764,16 @@ export function getBoard(
   const keys = opts.fieldKeys ? [...new Set(opts.fieldKeys.filter(isCardFieldKey))].slice(0, 40) : undefined;
   const { values } = cardFieldValues(db, pipelineId, cards.map((c) => c.id), { keys });
   for (const c of cards) c.fields = values.get(c.id) ?? {};
+  // Campos marcados para aparecer junto com o nome (título do cartão, contato, organização).
+  const kind = one<{ type: PipelineType }>(db, "SELECT type FROM pipeline WHERE id = ?", pipelineId)?.type;
+  const titleEx = kind ? nameExtras(db, KIND_BY_PIPELINE_TYPE[kind] as CustomFieldEntity, cards.map((c) => c.id)) : new Map<string, string>();
+  const personEx = nameExtras(db, "person", cards.map((c) => c.person_id));
+  const orgEx = nameExtras(db, "organization", cards.map((c) => c.organization_id));
+  for (const c of cards) {
+    c.title_ext = titleEx.get(c.id) ?? null;
+    if (c.person_name) c.person_name = withExtra(c.person_name, personEx.get(c.person_id ?? ""));
+    if (c.organization_name) c.organization_name = withExtra(c.organization_name, orgEx.get(c.organization_id ?? ""));
+  }
   return stages.map((s) => {
     const inStage = cards.filter((c) => c.stage_id === s.id).map(({ stage_id: _s, ...c }) => c);
     return {

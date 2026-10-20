@@ -86,7 +86,9 @@ export function OrganizationDetail({
           </span>
         )}
         <div className="min-w-0 flex-1">
-          <h1 className="text-theme-xl font-semibold text-gray-800 dark:text-white/90">{o.name}</h1>
+          <h1 className="text-theme-xl font-semibold text-gray-800 dark:text-white/90">{o.name}
+            {o.name_ext && <span className="font-normal text-gray-500" data-name-ext> - {o.name_ext}</span>}
+          </h1>
           {o.legal_name && <p className="text-theme-sm text-gray-500">{o.legal_name}</p>}
         </div>
       </div>
@@ -173,6 +175,7 @@ export function OrganizationDetail({
                   <li key={p.id}>
                     <button type="button" className="flex w-full items-center gap-2 py-2.5 text-left text-theme-sm text-brand-600 hover:underline" onClick={() => onOpenPerson(p.id)}>
                       {p.name}
+                      {p.name_ext && <span className="text-gray-500"> - {p.name_ext}</span>}
                       {!!p.is_primary && <Star size={11} fill="currentColor" className="text-warning-500" />}
                     </button>
                   </li>

@@ -293,6 +293,7 @@ Novo cadastro em **Configurações → Campos personalizados** (lista + modal
 | Sempre mostrar | O campo aparece fora do "Mais detalhes" e fica visível no detalhe mesmo vazio |
 | Esconder | Não aparece nas telas; continua em relatórios, importação/exportação e na chave do chat |
 | Obrigatório | Impede salvar sem preencher |
+| Exibir junto com o nome | (0.2.58) O valor aparece ao lado do nome do registro: "Maria José - Diretora", "AEB Sistemas - Saúde"; no título do cartão (quadro, lista e detalhe), na atividade e no produto. **No máximo 2 por cadastro** (o terceiro é recusado com aviso). Sim/Não marcado mostra o nome do campo ("Decisor"). Aparece nas listas de contatos/organizações/produtos/atividades, nas fichas, nos campos Contato/Organização do cartão e na busca desses campos; o nome em si não muda (edição e mensagens usam só o nome) |
 
 Proposta adicional: restringir o campo a **funis específicos** (ex.: campo
 "Curso" só no funil Matrículas 2024).

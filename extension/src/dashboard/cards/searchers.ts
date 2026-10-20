@@ -1,10 +1,11 @@
 // Buscas usadas nos campos Contato / Organização dos formulários.
 import { call } from "../../rpc/client";
 import type { ComboItem } from "../ui/Combobox";
+import { withExtra } from "../../lib/nameExtra";
 
 export async function searchPersons(text: string): Promise<ComboItem[]> {
   const list = await call("persons.list", { search: text, limit: 10 });
-  return list.map((p) => ({ id: p.id, label: p.name, sublabel: p.phone ?? p.email ?? p.primary_organization_name }));
+  return list.map((p) => ({ id: p.id, label: withExtra(p.name, p.name_ext), sublabel: p.phone ?? p.email ?? p.primary_organization_name }));
 }
 
 /**
@@ -29,7 +30,7 @@ export async function createPersonQuick(name: string): Promise<ComboItem> {
 
 export async function searchOrganizations(text: string): Promise<ComboItem[]> {
   const list = await call("organizations.list", { search: text, limit: 10 });
-  return list.map((o) => ({ id: o.id, label: o.name, sublabel: o.city }));
+  return list.map((o) => ({ id: o.id, label: withExtra(o.name, o.name_ext), sublabel: o.city }));
 }
 
 export async function createOrganizationQuick(name: string): Promise<ComboItem> {

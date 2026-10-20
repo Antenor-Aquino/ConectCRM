@@ -289,6 +289,7 @@ export function CustomFieldsSettings() {
         <td className="py-2.5 pr-3">
           <span className="flex flex-wrap gap-1">
             {!!f.always_show && <TaBadge color="blue" label="Sempre mostrar" />}
+            {!!f.show_with_name && <TaBadge color="green" label="Junto com o nome" />}
             {!!f.hidden && <TaBadge color="slate" label="Escondido" />}
             {!!f.required && <TaBadge color="red" label="Obrigatório" />}
             {!f.active && <TaBadge color="amber" label="Inativo" />}

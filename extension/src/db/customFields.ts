@@ -72,6 +72,8 @@ export interface CustomField {
   always_show: number;
   hidden: number;
   required: number;
+  /** Exibido junto com o nome do registro (no máximo 2 por entidade). */
+  show_with_name: number;
   position: number;
   active: number;
   options: CustomFieldOption[];
@@ -92,6 +94,8 @@ export interface CustomFieldInput {
   alwaysShow?: boolean;
   hidden?: boolean;
   required?: boolean;
+  /** Mostrar junto com o nome ("Maria José - Diretora"). */
+  showWithName?: boolean;
   options?: { id?: string; label: string; color?: string | null }[];
   /** Só para negócio/ticket/projeto; vazio = todos os funis do tipo. */
   pipelineIds?: string[];
@@ -104,11 +108,34 @@ const BASE_COLS = "id, entity, name, description, field_type, placeholder_key, a
 const GROUP_COLS =
   ", group_id, (SELECT g.name FROM custom_field_group g WHERE g.id = custom_field.group_id AND g.deleted_at IS NULL) AS group_name" +
   ", (SELECT g.position FROM custom_field_group g WHERE g.id = custom_field.group_id AND g.deleted_at IS NULL) AS group_position";
-/** Bancos de antes das categorias (migration 0012) só aparecem no meio de uma migração. */
-const hasGroups = new WeakMap<DatabaseSync, boolean>();
+/** Bancos de antes das categorias (migration 0012) ou do "junto com o nome" (0020) só aparecem no meio de uma migração. */
+const tableCols = new WeakMap<DatabaseSync, Set<string>>();
 function fieldCols(db: DatabaseSync): string {
-  if (!hasGroups.has(db)) hasGroups.set(db, many<{ name: string }>(db, "PRAGMA table_info(custom_field)").some((c) => c.name === "group_id"));
-  return hasGroups.get(db) ? BASE_COLS + GROUP_COLS : `${BASE_COLS}, NULL AS group_id, NULL AS group_name, NULL AS group_position`;
+  let cols = tableCols.get(db);
+  if (!cols?.has("show_with_name")) {
+    cols = new Set(many<{ name: string }>(db, "PRAGMA table_info(custom_field)").map((c) => c.name));
+    tableCols.set(db, cols);
+  }
+  return (
+    (cols.has("group_id") ? BASE_COLS + GROUP_COLS : `${BASE_COLS}, NULL AS group_id, NULL AS group_name, NULL AS group_position`) +
+    (cols.has("show_with_name") ? ", show_with_name" : ", 0 AS show_with_name")
+  );
+}
+
+/** Quantos campos aparecem junto com o nome, por entidade. */
+export const MAX_NAME_FIELDS = 2;
+
+function checkShowWithName(db: DatabaseSync, entity: CustomFieldEntity, exceptId?: string): void {
+  const others = many<{ name: string }>(
+    db,
+    "SELECT name FROM custom_field WHERE entity = ? AND show_with_name = 1 AND deleted_at IS NULL AND id <> ? ORDER BY position",
+    entity,
+    exceptId ?? "",
+  );
+  if (others.length >= MAX_NAME_FIELDS)
+    throw new ValidationError(
+      `No máximo ${MAX_NAME_FIELDS} campos aparecem junto com o nome (já marcados: ${others.map((o) => o.name).join(" e ")}). Desmarque um deles antes.`,
+    );
 }
 
 function withDetails(db: DatabaseSync, rows: FieldRow[]): CustomField[] {
@@ -216,6 +243,7 @@ export function createCustomField(db: DatabaseSync, ctx: DbContext, input: Custo
   if (isList(input.fieldType) && options.length === 0) throw new ValidationError("Cadastre ao menos uma opção para a lista.");
   const pipelineIds = input.pipelineIds ?? [];
   checkPipelines(db, input.entity, pipelineIds);
+  if (input.showWithName) checkShowWithName(db, input.entity);
   return withTransaction(db, () => {
     const last = one<{ p: number | null }>(db, "SELECT MAX(position) AS p FROM custom_field WHERE entity = ? AND deleted_at IS NULL", input.entity);
     const id = insertRow(db, ctx, "custom_field", {
@@ -227,6 +255,7 @@ export function createCustomField(db: DatabaseSync, ctx: DbContext, input: Custo
       always_show: input.alwaysShow ? 1 : 0,
       hidden: input.hidden ? 1 : 0,
       required: input.required ? 1 : 0,
+      ...(input.showWithName ? { show_with_name: 1 } : {}),
       position: (last?.p ?? -1) + 1,
       ...(input.groupId ? { group_id: checkGroup(db, input.entity, input.groupId) } : {}),
     });
@@ -255,6 +284,10 @@ export function updateCustomField(
     if (patch.alwaysShow !== undefined) data.always_show = patch.alwaysShow ? 1 : 0;
     if (patch.hidden !== undefined) data.hidden = patch.hidden ? 1 : 0;
     if (patch.required !== undefined) data.required = patch.required ? 1 : 0;
+    if (patch.showWithName !== undefined) {
+      if (patch.showWithName && !field.show_with_name) checkShowWithName(db, field.entity, id);
+      data.show_with_name = patch.showWithName ? 1 : 0;
+    }
     if (patch.active !== undefined) data.active = patch.active ? 1 : 0;
     if (patch.position !== undefined) data.position = patch.position;
     if (patch.groupId !== undefined) data.group_id = checkGroup(db, field.entity, patch.groupId);

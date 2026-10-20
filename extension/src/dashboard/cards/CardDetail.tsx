@@ -193,6 +193,11 @@ export function CardDetail({
           onChange={(e) => setTitle(e.target.value)}
           onBlur={() => title !== card.title && void update({ title })}
         />
+        {card.title_ext && (
+          <span className="mt-2 max-w-[40%] shrink-0 truncate text-theme-sm text-gray-500" title="Campos exibidos junto com o nome" data-title-ext>
+            {card.title_ext}
+          </span>
+        )}
         {status && <TaBadge color={status.color} label={status.label} />}
       </div>
       <p className="mb-4 flex flex-wrap items-center gap-1 px-1 text-theme-xs text-gray-500">
@@ -444,7 +449,10 @@ export function CardDetail({
                   onClick={() => setEditing({ kind: "person", id: c.id })}
                   className="min-w-0 flex-1 text-left"
                 >
-                  <span className="block truncate text-theme-sm font-medium text-brand-600 hover:underline">{c.name}</span>
+                  <span className="block truncate text-theme-sm font-medium text-brand-600 hover:underline">
+                    {c.name}
+                    {c.name_ext && <span className="font-normal text-gray-500"> - {c.name_ext}</span>}
+                  </span>
                   {(c.organization_name || c.phone || c.email) && (
                     <span className="block truncate text-theme-xs text-gray-500">{[c.organization_name, formatPhone(c.phone), c.email].filter(Boolean).join(" · ")}</span>
                   )}
@@ -889,7 +897,10 @@ function TasksTab({ cardId, onChanged }: { cardId: string; onChanged: () => void
                 <ActivityIcon name={t.type_icon} />
               </span>
               <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setModal({ id: t.id })}>
-                <p className={cn("truncate text-theme-sm", t.done ? "text-gray-400 line-through" : "text-gray-800 dark:text-white/90")}>{t.title}</p>
+                <p className={cn("truncate text-theme-sm", t.done ? "text-gray-400 line-through" : "text-gray-800 dark:text-white/90")}>
+                  {t.title}
+                  {t.title_ext && <span className="font-normal text-gray-500" data-name-ext> - {t.title_ext}</span>}
+                </p>
                 <p className={cn("text-theme-xs", overdue ? "text-error-600" : "text-gray-400")}>
                   {t.type_name} · {formatDateTime(t.due_at)} · {timing.label}
                   {t.owner_name && ` · ${t.owner_name}`}

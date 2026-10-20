@@ -74,7 +74,8 @@ export function PersonDetail({
         )}
         <div className="min-w-0 flex-1">
           <h1 className="flex items-center gap-2 text-theme-xl font-semibold text-gray-800 dark:text-white/90">
-            {p.name} {!!p.is_private && <Lock size={15} className="text-gray-400" aria-label="Contato privado" />}
+            {p.name}
+            {p.name_ext && <span className="font-normal text-gray-500" data-name-ext> - {p.name_ext}</span>} {!!p.is_private && <Lock size={15} className="text-gray-400" aria-label="Contato privado" />}
           </h1>
           {p.organizations[0] && <p className="text-theme-sm text-gray-500">{p.organizations[0].name}</p>}
         </div>

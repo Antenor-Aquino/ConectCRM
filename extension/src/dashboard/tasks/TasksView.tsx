@@ -199,6 +199,7 @@ export function TasksView({
           <div className="flex flex-wrap items-center gap-1.5">
             <button type="button" className={cn("truncate text-left text-theme-sm font-medium hover:underline", a.done ? "text-gray-400 line-through" : "text-gray-800 dark:text-white/90")} onClick={() => setModal({ id: a.id })}>
               {a.title}
+              {a.title_ext && <span className="font-normal text-gray-500" data-name-ext> - {a.title_ext}</span>}
             </button>
             {a.tags.map((t) => {
               const c = badgePalette[t.color as BadgeColor] ?? badgePalette.slate;
@@ -444,7 +445,7 @@ export function TasksView({
                         )}
                       >
                         <ActivityIcon name={a.type_icon} size={11} />
-                        {pad(new Date(a.due_at).getHours())}:{pad(new Date(a.due_at).getMinutes())} {a.title}
+                        {pad(new Date(a.due_at).getHours())}:{pad(new Date(a.due_at).getMinutes())} {a.title}{a.title_ext && <span className="font-normal text-gray-500" data-name-ext> - {a.title_ext}</span>}
                       </button>
                     ))}
                     {items.length > 3 && <span className="px-1 text-[11px] text-gray-500">+{items.length - 3} mais</span>}
