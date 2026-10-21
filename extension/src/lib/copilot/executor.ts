@@ -30,6 +30,8 @@ export const rpcExecutor: ToolExecutor = async (name, a) => {
       return call("copilot.stale", { dias: num(a.dias), funil: str(a.funil), responsavel: str(a.responsavel) });
     case "buscar_contatos":
       return call("copilot.contacts", { texto: String(a.texto ?? "") });
+    case "buscar_documentos":
+      return call("copilot.documents", { texto: str(a.texto), pasta: str(a.pasta) });
     case "resumo_financeiro":
       await syncAllFinance();
       return call("copilot.finance", {

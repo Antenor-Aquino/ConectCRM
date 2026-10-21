@@ -259,3 +259,36 @@ Configurações → WhatsApp → **Ao enviar documento**:
   não foi enviado nunca é registrado como enviado.
 - Se a prévia não abrir (o WhatsApp Web mudou), aparece o erro com **Enviar
   direto (N s para cancelar)**.
+
+## Pastas (0.2.65)
+
+Organização opcional, como no computador. A classificação, os vínculos e as
+palavras-chave continuam valendo; a pasta é mais um jeito de achar.
+
+- **Uma pasta por documento** (`document.folder_id`; vazio = "Sem pasta").
+  Pastas e subpastas até **5 níveis**; o nome não se repete dentro da mesma
+  pasta e não pode ter `/` nem `\`. A pasta é só organização na tela: o arquivo
+  continua guardado onde estava (navegador ou pasta do computador), e mover não
+  copia nada.
+- **Tela**: árvore "Pastas" no topo da coluna da esquerda (Todos os documentos,
+  Sem pasta e as pastas, com a contagem incluindo subpastas), caminho acima da
+  lista (GED › Comercial › Propostas, clicável) e as subpastas como blocos antes
+  dos arquivos (lista e grade). Na árvore: Nova pasta, Nova subpasta, Renomear
+  e Excluir; sem pastas, o botão "Criar pastas sugeridas" (Comercial,
+  Contratos, Modelos, Marketing, Administrativo).
+- **Organizar**: arrastar documentos (um ou os selecionados) ou uma pasta para
+  outra pasta da árvore; "Mover para pasta…" nas ações em lote; campo Pasta na
+  janela Novo documento (já vem a pasta aberta) e no documento aberto.
+- **Busca**: sem pasta aberta, procura no GED todo e mostra o caminho de cada
+  documento. Com uma pasta aberta, procura nela e nas subpastas ("buscar em todo
+  o GED" tira a pasta). O nome da pasta também entra na busca.
+- **Excluir pasta** (administrador ou quem criou): vai para a lixeira; os
+  documentos e as subpastas dela sobem para a pasta de cima (nunca são apagados
+  junto). Restaurar devolve tudo para onde estava. Se uma subpasta tiver o mesmo
+  nome de outra na pasta de cima, pede para renomear antes.
+- **Histórico** do documento: "Moveu de “Contratos” para “Comercial”" (ou Sem
+  pasta). **Copiloto**: ferramenta `buscar_documentos` (texto e/ou pasta, por
+  nome ou caminho; sem nada, lista as pastas). O backup leva as pastas (estão no
+  banco).
+- Depois: permissão por pasta e a seção automática "Por organização / Por
+  funil" montada a partir dos vínculos.

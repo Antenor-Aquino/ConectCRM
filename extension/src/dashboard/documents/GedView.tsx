@@ -11,6 +11,8 @@ import {
   Download,
   FileQuestion,
   Files,
+  Folder,
+  FolderInput,
   KeyRound,
   LayoutGrid,
   List,
@@ -36,6 +38,7 @@ import { TagPicker } from "../ui/TagPicker";
 import { DocumentViewer } from "./DocumentViewer";
 import { FileTypeIcon, LINK_TYPE_LABEL, LinkChip, LinkIcon, RestrictedBadge, TypeBadge, ValidityBadge } from "./docUi";
 import { UploadModal } from "./UploadModal";
+import { childrenOf, DRAG_DOCS, flatTree, FolderBreadcrumb, FolderPanel, useFolderTree } from "./Folders";
 import { errorText } from "../../lib/errors";
 
 const PAGE = 25;
@@ -182,6 +185,7 @@ export function GedView() {
   const [folderPrompt, setFolderPrompt] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ text: string; kind: "ok" | "err" } | null>(null);
+  const [tree, reloadTree] = useFolderTree();
 
   // Busca enquanto digita (com pausa).
   useEffect(() => {
@@ -191,9 +195,16 @@ export function GedView() {
 
   const load = useCallback(async () => {
     const { linkLabel: _l, ...f } = filter;
-    const [list, st] = await Promise.all([call("documents.list", { ...f, limit: PAGE, offset: page * PAGE }), call("documents.stats")]);
+    // Pesquisando dentro de uma pasta: entram as subpastas também.
+    const folderDeep = !!f.search?.trim() && !!f.folderId && f.folderId !== "none";
+    const [list, st] = await Promise.all([
+      call("documents.list", { ...f, folderDeep, limit: PAGE, offset: page * PAGE }),
+      call("documents.stats"),
+      reloadTree(),
+    ]);
     setData(list);
     setStats(st);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter, page]);
 
   useEffect(() => {
@@ -225,7 +236,7 @@ export function GedView() {
   }, [filter]);
   const activeCount = Object.entries(filter).filter(
     ([k, v]) =>
-      k !== "search" && k !== "sort" && k !== "dir" && k !== "linkLabel" && v !== undefined && v !== "" && v !== false && !(Array.isArray(v) && !v.length),
+      k !== "search" && k !== "sort" && k !== "dir" && k !== "linkLabel" && k !== "folderId" && v !== undefined && v !== "" && v !== false && !(Array.isArray(v) && !v.length),
   ).length;
 
   const run = async (fn: () => Promise<string | void>) => {
@@ -251,6 +262,23 @@ export function GedView() {
       return n;
     });
   const pages = Math.max(1, Math.ceil(data.total / PAGE));
+  const openFolder = (folderId: string | "none" | undefined) => {
+    setMsg(null);
+    set({ folderId, trash: undefined });
+  };
+  // Subpastas como blocos antes dos arquivos (navegando, sem busca nem filtros).
+  const subfolders =
+    !filter.search?.trim() && !filter.trash && !activeCount && page === 0 && filter.folderId !== "none" ? childrenOf(tree, filter.folderId ?? null) : [];
+  const dragDocs = (e: React.DragEvent, id: string) => {
+    e.dataTransfer.setData(DRAG_DOCS, JSON.stringify(selected.has(id) ? [...selected] : [id]));
+    e.dataTransfer.effectAllowed = "move";
+  };
+  const folderChip = (d: DocumentListItem) =>
+    d.folder_path.length > 0 && d.folder_id !== filter.folderId ? (
+      <span className="mt-0.5 flex items-center gap-1 text-theme-xs text-amber-600" data-doc-folder>
+        <Folder size={11} /> {d.folder_path.join(" › ")}
+      </span>
+    ) : null;
 
   const statCards: { label: string; value: string; icon: React.ReactNode; active: boolean; onClick: () => void; tone: string }[] = stats
     ? [
@@ -354,13 +382,20 @@ export function GedView() {
 
       <div className="flex gap-5">
         <aside className="w-64 shrink-0 space-y-3 self-start rounded-2xl border border-gray-200 bg-white p-4 shadow-theme-xs dark:border-gray-800 dark:bg-gray-900">
-          <div className="flex items-center justify-between">
+          <FolderPanel
+            tree={tree}
+            current={filter.trash ? "__trash" : filter.folderId}
+            onOpen={openFolder}
+            onChanged={() => void load()}
+            onMessage={(text, kind) => setMsg({ text, kind })}
+          />
+          <div className="flex items-center justify-between border-t border-gray-100 pt-3 dark:border-gray-800">
             <h2 className="text-base font-semibold text-gray-800 dark:text-white/90">Filtros</h2>
             {activeCount > 0 && (
               <button
                 type="button"
                 className="text-theme-xs text-brand-600 hover:underline"
-                onClick={() => setFilter({ search: filter.search, sort: filter.sort, dir: filter.dir })}
+                onClick={() => setFilter({ search: filter.search, sort: filter.sort, dir: filter.dir, folderId: filter.folderId })}
               >
                 Limpar ({activeCount})
               </button>
@@ -582,6 +617,28 @@ export function GedView() {
                         </option>
                       ))}
                   </TaSelect>
+                  <TaSelect
+                    aria-label="Mover para pasta"
+                    className="h-9 w-48 text-theme-xs"
+                    value=""
+                    disabled={busy}
+                    data-ged-bulk-move
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (!v) return;
+                      const folderId = v === "__none" ? null : v;
+                      const name = folderId ? tree?.folders.find((f) => f.id === folderId)?.name : "Sem pasta";
+                      void run(async () => `${await call("documents.moveToFolder", { ids: [...selected], folderId })} documento(s) movido(s) para ${name}.`);
+                    }}
+                  >
+                    <option value="">Mover para pasta…</option>
+                    <option value="__none">Sem pasta</option>
+                    {flatTree(tree).map(({ folder, level }) => (
+                      <option key={folder.id} value={folder.id}>
+                        {`${"\u00a0\u00a0\u00a0".repeat(level)}${level ? "└ " : ""}${folder.name}`}
+                      </option>
+                    ))}
+                  </TaSelect>
                   <div className="relative">
                     <TaButton size="sm" startIcon={<Tags size={14} />} disabled={busy} onClick={() => setBulkLink((b) => !b)}>
                       Vincular a…
@@ -654,8 +711,18 @@ export function GedView() {
           )}
           {filter.trash && <p className="mt-3 text-theme-xs text-gray-500">Documentos excluídos ficam aqui e na Lixeira do CRM até o prazo da lixeira; depois são apagados.</p>}
 
+          {!filter.trash && <FolderBreadcrumb tree={tree} folderId={filter.folderId} onOpen={openFolder} />}
           <p className="mt-3 text-theme-xs text-gray-500">
+            {subfolders.length > 0 && `${subfolders.length} pasta(s) · `}
             {data.total} documento(s){filter.search ? ` para "${filter.search}"` : ""}
+            {filter.search?.trim() && filter.folderId && filter.folderId !== "none" && (
+              <>
+                {" "}nesta pasta e nas subpastas ·{" "}
+                <button type="button" className="text-brand-600 hover:underline" onClick={() => openFolder(undefined)}>
+                  buscar em todo o GED
+                </button>
+              </>
+            )}
           </p>
 
           {view === "list" ? (
@@ -679,8 +746,31 @@ export function GedView() {
                   </tr>
                 </thead>
                 <tbody>
+                  {subfolders.map((f) => (
+                    <tr
+                      key={f.id}
+                      data-subfolder={f.name}
+                      className="cursor-pointer border-b border-gray-100 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-white/5"
+                      onClick={() => openFolder(f.id)}
+                    >
+                      <td className="py-2.5" />
+                      <td className="py-2.5 pr-3" colSpan={5}>
+                        <span className="flex items-center gap-2.5 font-medium text-gray-800 dark:text-white/90">
+                          <Folder size={18} className="text-amber-500" /> {f.name}
+                          <span className="text-theme-xs font-normal text-gray-400">{f.total} documento(s)</span>
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
                   {data.items.map((d) => (
-                    <tr key={d.id} data-doc-id={d.id} className="border-b border-gray-100 align-top dark:border-gray-800">
+                    <tr
+                      key={d.id}
+                      data-doc-id={d.id}
+                      draggable={!filter.trash}
+                      onDragStart={(e) => dragDocs(e, d.id)}
+                      title={filter.trash ? undefined : "Arraste para uma pasta"}
+                      className="border-b border-gray-100 align-top dark:border-gray-800"
+                    >
                       <td className="py-2.5">
                         <input type="checkbox" aria-label={`Selecionar ${d.name}`} checked={selected.has(d.id)} onChange={() => toggle(d.id)} />
                       </td>
@@ -701,6 +791,7 @@ export function GedView() {
                               {d.filename} · {formatBytes(d.size_bytes)}
                               {d.versions > 1 && ` · v${d.version_number}`}
                             </span>
+                            {folderChip(d)}
                             {(d.tags.length > 0 || d.restricted > 0) && (
                               <span className="mt-1 flex flex-wrap gap-1">
                                 {!!d.restricted && <RestrictedBadge />}
@@ -747,10 +838,25 @@ export function GedView() {
             </div>
           ) : (
             <div className="mt-2 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+              {subfolders.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  data-subfolder={f.name}
+                  onClick={() => openFolder(f.id)}
+                  className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-amber-50/40 p-4 text-center hover:border-amber-300 dark:border-gray-800 dark:bg-white/5"
+                >
+                  <Folder size={44} className="text-amber-500" fill="currentColor" fillOpacity={0.15} />
+                  <span className="block max-w-full truncate text-theme-sm font-medium text-gray-800 dark:text-white/90">{f.name}</span>
+                  <span className="text-theme-xs text-gray-400">{f.total} documento(s)</span>
+                </button>
+              ))}
               {data.items.map((d) => (
                 <div
                   key={d.id}
                   data-doc-id={d.id}
+                  draggable={!filter.trash}
+                  onDragStart={(e) => dragDocs(e, d.id)}
                   className={cn(
                     "relative rounded-xl border bg-white dark:bg-gray-900",
                     selected.has(d.id) ? "border-brand-500 ring-1 ring-brand-500" : "border-gray-200 dark:border-gray-800",
@@ -777,9 +883,11 @@ export function GedView() {
               ))}
             </div>
           )}
-          {data.items.length === 0 && (
+          {data.items.length === 0 && !subfolders.length && (
             <p className="py-10 text-center text-theme-sm text-gray-400">
-              {filter.search || activeCount
+              {filter.folderId && filter.folderId !== "none" && !filter.search && !activeCount
+                ? "Pasta vazia. Envie documentos com ela aberta ou arraste documentos para a pasta na coluna da esquerda."
+                : filter.search || activeCount
                 ? "Nenhum documento encontrado com esses critérios."
                 : "Nenhum documento ainda. Envie por aqui ou anexe num cartão, atividade, contato ou organização."}
             </p>
@@ -804,6 +912,7 @@ export function GedView() {
       {upload && (
         <UploadModal
           files={upload}
+          folderId={filter.folderId && filter.folderId !== "none" ? filter.folderId : null}
           onClose={() => setUpload(null)}
           onSaved={(ids) => {
             setUpload(null);

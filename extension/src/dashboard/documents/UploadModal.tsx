@@ -1,6 +1,7 @@
 // Janela "Novo documento" (spec 08): cada arquivo recebe nome e
 // classificação; data, validade, restrito, palavras-chave e vínculos valem
 // para todos. Os vínculos da tela de origem já vêm marcados.
+import { FolderSelect, useFolderTree } from "./Folders";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Info, Loader2, Lock, Paperclip, Sparkles, X } from "lucide-react";
 import { cn, TaButton, TaInput, TaModal, TaTextarea } from "@tailadmin";
@@ -56,10 +57,13 @@ const todayStr = () => {
 export function UploadModal({
   files,
   context,
+  folderId: initialFolder = null,
   onClose,
   onSaved,
 }: {
   files: File[];
+  /** Pasta do GED onde entram (a aberta no GED). */
+  folderId?: string | null;
   /** Tela de origem: define os vínculos automáticos. */
   context?: { type: DocLinkType; id: string } | null;
   onClose: () => void;
@@ -73,6 +77,8 @@ export function UploadModal({
   const [restricted, setRestricted] = useState(false);
   const [tagIds, setTagIds] = useState<string[]>([]);
   const [description, setDescription] = useState("");
+  const [folderId, setFolderId] = useState<string | null>(initialFolder);
+  const [tree] = useFolderTree();
   const [links, setLinks] = useState<DocLink[]>([]);
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -192,6 +198,7 @@ export function UploadModal({
             tagIds,
             description: description || null,
             links: refs,
+            folderId,
             file,
           }),
         );
@@ -331,6 +338,9 @@ export function UploadModal({
               </Field>
               <Field label="Palavras-chave">
                 <TagPicker entity="document" value={tagIds} onChange={setTagIds} />
+              </Field>
+              <Field label="Pasta">
+                <FolderSelect tree={tree} value={folderId} onChange={setFolderId} aria-label="Pasta" />
               </Field>
               <Field label="Acesso">
                 <label className="flex h-10 items-center gap-2 text-theme-sm text-gray-700 dark:text-gray-300">

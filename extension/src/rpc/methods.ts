@@ -19,6 +19,7 @@ import * as copilot from "../db/copilot";
 import * as cf from "../db/customFields";
 import * as deals from "../db/deals";
 import * as docs from "../db/documents";
+import * as folders from "../db/documentFolders";
 import * as notes from "../db/notes";
 import * as pipelines from "../db/pipelines";
 import * as products from "../db/products";
@@ -31,6 +32,7 @@ import { rowHistory, type DataTable, type DbContext } from "../db/repo";
 import { many, one, type DatabaseSync } from "../db/sql";
 import { hashPin, verifyPin } from "../lib/pin";
 import { ValidationError } from "../lib/validate";
+import { normalizeText } from "../lib/search";
 import * as tags from "../db/tags";
 import * as docCard from "../db/docCard";
 import * as finance from "../db/finance";
@@ -405,6 +407,23 @@ export const methods = {
     if (p.patch.restricted !== undefined) docs.assertDocumentOwner(db, viewer(db, ctx), p.id);
     docs.updateDocument(db, ctx, p.id, p.patch);
   },
+  /** Pastas do GED: árvore com contagens (do que quem vê pode ver). */
+  "documents.folders": (db: DatabaseSync, ctx: DbContext) => docs.folderTree(db, viewer(db, ctx)),
+  "documents.folderCreate": (db: DatabaseSync, ctx: DbContext, p: { name: string; parentId?: string | null }) => folders.createFolder(db, ctx, p),
+  "documents.folderRename": (db: DatabaseSync, ctx: DbContext, p: Id & { name: string }) => folders.renameFolder(db, ctx, p.id, p.name),
+  "documents.folderMove": (db: DatabaseSync, ctx: DbContext, p: Id & { parentId: string | null }) => folders.moveFolder(db, ctx, p.id, p.parentId),
+  /** Excluir pasta: administrador ou quem criou; o conteúdo sobe para a pasta de cima. */
+  "documents.folderDelete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    const v = viewer(db, ctx);
+    const owner = one<{ created_by: string | null }>(db, "SELECT created_by FROM document_folder WHERE id = ?", p.id)?.created_by;
+    if (v && v.role !== "admin" && owner !== v.id) throw new ValidationError("Só o administrador ou quem criou a pasta pode excluí-la.");
+    return folders.deleteFolder(db, ctx, p.id);
+  },
+  /** Mover documentos para uma pasta (null = Sem pasta). */
+  "documents.moveToFolder": (db: DatabaseSync, ctx: DbContext, p: { ids: string[]; folderId: string | null }) => {
+    for (const id of p.ids) docView(db, ctx, id);
+    return folders.moveDocumentsToFolder(db, ctx, p.ids, p.folderId);
+  },
   /** Ações em lote: reclassificar. */
   "documents.reclassify": (db: DatabaseSync, ctx: DbContext, p: { ids: string[]; typeId: string }) => {
     for (const id of p.ids) docView(db, ctx, id);
@@ -616,6 +635,33 @@ export const methods = {
   "copilot.stale": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof copilot.staleDeals>[2]) => copilot.staleDeals(db, viewer(db, ctx), p),
   "copilot.tasks": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof copilot.tasksForCopilot>[2]) => copilot.tasksForCopilot(db, viewer(db, ctx), p),
   "copilot.contacts": (db: DatabaseSync, ctx: DbContext, p: { texto: string }) => copilot.contactsForCopilot(db, viewer(db, ctx), p.texto),
+  /** GED para o Copiloto: busca por texto e/ou pasta (com subpastas); sem nada, as pastas. */
+  "copilot.documents": (db: DatabaseSync, ctx: DbContext, p: { texto?: string; pasta?: string }) => {
+    const tree = docs.folderTree(db, viewer(db, ctx));
+    const pastas = tree.folders.map((f) => ({ pasta: f.path.join(" › "), documentos: f.total }));
+    let folderId: string | undefined;
+    if (p.pasta?.trim()) {
+      const want = normalizeText(p.pasta).split(/\s*[/›>]\s*/).filter(Boolean).join("/");
+      const match = (f: docs.FolderNode) => normalizeText(f.path.join("/")) === want || normalizeText(f.name) === want.split("/").at(-1);
+      const found = tree.folders.filter(match).sort((a, b) => a.path.length - b.path.length)[0];
+      if (!found) return { erro: `Pasta não encontrada: ${p.pasta}`, pastas };
+      folderId = found.id;
+    }
+    if (!folderId && !p.texto?.trim()) return { pastas, sem_pasta: tree.none };
+    const r = docs.listDocuments(db, { search: p.texto, folderId, folderDeep: true, viewer: viewer(db, ctx), limit: 30 });
+    return {
+      total: r.total,
+      documentos: r.items.map((d) => ({
+        nome: d.name,
+        classificacao: d.type_name ?? "Não classificado",
+        pasta: d.folder_path.join(" › ") || "Sem pasta",
+        vinculos: d.links.map((l) => l.label),
+        validade: d.valid_until,
+        enviado_em: d.created_at.slice(0, 10),
+        enviado_por: d.created_by_name,
+      })),
+    };
+  },
   "copilot.structure": (db: DatabaseSync) => copilot.crmStructure(db),
   "copilot.summary": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof copilot.salesSummary>[2]) => copilot.salesSummary(db, viewer(db, ctx), p),
 

@@ -94,6 +94,19 @@ export const DATA_TOOLS: ToolDef[] = [
     parameters: { type: "object", properties: { texto: str("Nome, e-mail ou telefone") }, required: ["texto"] },
   },
   {
+    name: "buscar_documentos",
+    description:
+      "Documentos do GED: por texto (nome, classificação, vínculos, texto do PDF) e/ou por pasta (inclui as subpastas). Devolve nome, classificação, pasta, vínculos e validade. " +
+      "Sem texto nem pasta, lista as pastas existentes com quantos documentos cada uma tem.",
+    parameters: {
+      type: "object",
+      properties: {
+        texto: str("O que procurar (opcional)"),
+        pasta: str("Nome da pasta ou caminho, ex.: Contratos ou Comercial/Propostas (opcional)"),
+      },
+    },
+  },
+  {
     name: "resumo_financeiro",
     description:
       "Financeiro dos cartões (receitas e despesas lançadas na Gestão Financeira, mesmos números de Relatórios → Financeiro): receitas, despesas, resultado e margem, " +

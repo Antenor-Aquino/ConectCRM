@@ -47,6 +47,7 @@ export const DATA_TABLES = [
   "custom_field_value",
   "saved_filter",
   "document_type",
+  "document_folder",
   "file_blob",
   "document",
   "document_version",
