@@ -28,6 +28,7 @@ import { errorText } from "../../lib/errors";
 import { useSession } from "../session";
 import { Field } from "../ui/form";
 import { RemindersEditor } from "../ui/RemindersEditor";
+import { SoundSettingsPanel } from "./SoundSettings";
 
 const MAIL_LABEL: Record<CalendarProvider, string> = { google: "Gmail", microsoft: "Outlook" };
 
@@ -494,6 +495,8 @@ export function NotificationsSettings() {
           </div>
         </div>
       </TaPanel>
+
+      <SoundSettingsPanel />
 
       <div className="sticky bottom-0 flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-theme-xs dark:border-gray-800 dark:bg-gray-900">
         <TaButton variant="primary" disabled={busy === "save" || !dirty} onClick={() => void save()}>

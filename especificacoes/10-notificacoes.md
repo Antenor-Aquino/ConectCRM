@@ -162,3 +162,21 @@ usuários deste computador configuraram cada canal.
   (Zenvia, Comtele, Mobizon). Uso sugerido: reserva quando o WhatsApp falhar.
 - **Telegram:** canal gratuito e oficial, sugerido como alternativa.
 - **WhatsApp oficial (API da Meta):** para empresas que queiram envio oficial.
+
+## Som (0.2.66)
+
+O Chrome não deixa a extensão escolher o som da notificação. Por isso o aviso
+sai sem o som do sistema (`silent`) e o service worker pede ao documento
+offscreen (o mesmo do banco) para tocar o som escolhido, sintetizado com Web
+Audio (`lib/notify/sounds.ts`; sem arquivos).
+
+- Configurações → Notificações → **Som** (deste computador, salvo na hora):
+  7 sons (Sino, Ding duplo, Marimba, Campainha, Alerta suave, Digital, Pop) e
+  "Sem som"; volume de 0 a 100% com Testar; som por tipo de aviso (lembrete,
+  atrasada, resumo do dia/alertas financeiros; "Igual ao geral" por padrão).
+- **Repetir**: toca de novo a cada 1 minuto, até 3 vezes, enquanto o aviso
+  estiver na tela (`chrome.storage.session`, conferido no alarme de 1 min).
+- **Sem som das X às Y**: o aviso aparece, sem tocar (diferente do "Horário de
+  silêncio", que segura o aviso).
+- Padrão: Sino a 70%, sem repetir. Último som tocado fica em
+  `chrome.storage.session` (`conectcrm-sound-last`), para diagnóstico.

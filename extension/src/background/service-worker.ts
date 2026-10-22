@@ -8,6 +8,7 @@ import { sendViaWhatsAppWeb } from "../lib/notify/waweb";
 import { loadSenders, zapiSendText } from "../lib/whatsappSenders";
 import { CHANNEL_LABEL, activeSettings, loadAllNotifySettings, loadMailSender, withDefaults, type Channel } from "../lib/notify/settings";
 import { addNotification } from "../lib/notifications";
+import { loadSoundSettings, soundFor, type PlaySoundMessage, type SoundCategory } from "../lib/notify/sounds";
 import { runClip, type ClipStartMessage } from "./clip";
 import { OFFSCREEN_PATH, type EnsureOffscreenMessage, type RpcRequest, type RpcResponse } from "../rpc/protocol";
 
@@ -83,7 +84,7 @@ let running = false;
 const SNOOZE_KEY = "conectcrm-snoozes";
 type Snooze = { activityId: string; at: string; title: string; text: string };
 
-function chromeNotify(id: string, title: string, message: string, withButtons: boolean): void {
+function chromeNotify(id: string, title: string, message: string, withButtons: boolean, category: SoundCategory = "reminder"): void {
   chrome.notifications.create(id, {
     type: "basic",
     iconUrl: chrome.runtime.getURL("icons/icon128.png"),
@@ -91,8 +92,54 @@ function chromeNotify(id: string, title: string, message: string, withButtons: b
     message,
     priority: 2,
     requireInteraction: true,
+    // O som é o escolhido em Configurações → Notificações → Som (tocado abaixo), não o do sistema.
+    silent: true,
     ...(withButtons ? { buttons: [{ title: "Concluir" }, { title: "Adiar 10 min" }] } : {}),
   });
+  void notifySound(id, category).catch((e) => console.warn("Som da notificação:", e));
+}
+
+// ---------- Som ----------
+
+const REPEAT_KEY = "conectcrm-sound-repeat";
+type Repeat = { id: string; category: SoundCategory; left: number };
+
+async function playCategory(category: SoundCategory): Promise<boolean> {
+  const s = await loadSoundSettings();
+  const sound = soundFor(s, category);
+  if (!sound) return false;
+  await ensureOffscreen();
+  const r = (await chrome.runtime.sendMessage({ target: "offscreen", kind: "play-sound", sound, volume: s.volume } satisfies PlaySoundMessage)) as
+    | { ok: boolean; error?: string }
+    | undefined;
+  // Último som tocado (diagnóstico).
+  await chrome.storage.session.set({ "conectcrm-sound-last": { at: new Date().toISOString(), sound, ok: !!r?.ok, error: r?.error ?? null } });
+  return s.repeat;
+}
+
+async function notifySound(id: string, category: SoundCategory): Promise<void> {
+  const repeat = await playCategory(category);
+  if (!repeat) return;
+  const list = ((await chrome.storage.session.get(REPEAT_KEY))[REPEAT_KEY] as Repeat[] | undefined) ?? [];
+  await chrome.storage.session.set({ [REPEAT_KEY]: [...list.filter((r) => r.id !== id), { id, category, left: 3 }] });
+}
+
+/** A cada minuto: toca de novo os avisos ainda na tela (até 3 vezes). */
+async function repeatSounds(): Promise<void> {
+  const list = ((await chrome.storage.session.get(REPEAT_KEY))[REPEAT_KEY] as Repeat[] | undefined) ?? [];
+  if (!list.length) return;
+  const open = await new Promise<Record<string, boolean>>((resolve) => chrome.notifications.getAll((n) => resolve(n as Record<string, boolean>)));
+  const next: Repeat[] = [];
+  let played = false;
+  for (const r of list) {
+    if (!open[r.id] || r.left <= 0) continue;
+    if (!played) {
+      await playCategory(r.category);
+      played = true;
+    }
+    if (r.left > 1) next.push({ ...r, left: r.left - 1 });
+  }
+  await chrome.storage.session.set({ [REPEAT_KEY]: next });
 }
 
 // Cópia dos lançamentos da Gestão Financeira (spec 13): lida a cada 3 h, para
@@ -154,6 +201,7 @@ async function runNotifications(): Promise<void> {
             job.title,
             rest.join("\n") || title || "",
             job.kind === "reminder",
+            job.kind === "overdue" ? "overdue" : job.kind === "digest" ? "digest" : "reminder",
           );
           await addNotification({ kind: job.kind === "overdue" ? "error" : "info", title: job.title, message: rest.join(" · ") });
         } else if (job.channel === "email") {
@@ -181,7 +229,10 @@ async function runNotifications(): Promise<void> {
 }
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === ALARM) void runNotifications().catch((e) => console.warn("Notificações:", e));
+  if (alarm.name === ALARM) {
+    void runNotifications().catch((e) => console.warn("Notificações:", e));
+    void repeatSounds().catch((e) => console.warn("Som da notificação:", e));
+  }
 });
 
 // Botões da notificação do lembrete: Concluir / Adiar 10 min.
