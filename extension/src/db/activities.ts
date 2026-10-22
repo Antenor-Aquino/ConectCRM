@@ -90,6 +90,8 @@ export interface ActivityInput {
   organizationId?: string | null;
   customValues?: Record<string, CustomValue>;
   tagIds?: string[];
+  /** Link da videochamada (Meet, Teams, Zoom…): vai no lembrete para o contato. */
+  meetingUrl?: string | null;
 }
 
 export interface Activity {
@@ -153,6 +155,15 @@ function minutes(value: number | null | undefined, label: string, allowNull: boo
   return value;
 }
 
+/** Link da reunião: http(s); sem protocolo, entra com https://. */
+function checkUrl(v: string | null | undefined): string | null {
+  const t = v?.trim();
+  if (!t) return null;
+  const url = /^https?:\/\//i.test(t) ? t : `https://${t}`;
+  if (!/^https?:\/\/[^\s.]+\.[^\s]+$/i.test(url)) throw new ValidationError("Link da reunião inválido.");
+  return url.slice(0, 500);
+}
+
 function checkType(db: DatabaseSync, typeId: string): string {
   if (!one(db, "SELECT 1 FROM activity_type WHERE id = ? AND deleted_at IS NULL", typeId)) throw new ValidationError("Tipo de atividade não encontrado.");
   return typeId;
@@ -201,6 +212,7 @@ export function createActivity(db: DatabaseSync, ctx: DbContext, input: Activity
       deal_id: null,
       person_id: null,
       organization_id: null,
+      meeting_url: checkUrl(input.meetingUrl),
       ...links(db, { dealId: input.dealId ?? null, personId: input.personId, organizationId: input.organizationId }),
     });
     setCustomValues(db, ctx, "activity", id, input.customValues ?? {}, { checkRequired: true });
@@ -235,6 +247,7 @@ export function updateActivity(db: DatabaseSync, ctx: DbContext, id: string, pat
     if (patch.typeId !== undefined) data.type_id = checkType(db, patch.typeId);
     if (patch.title !== undefined) data.title = requireText(patch.title, "Informe o nome da atividade.");
     if (patch.description !== undefined) data.description = optionalText(patch.description);
+    if (patch.meetingUrl !== undefined) data.meeting_url = checkUrl(patch.meetingUrl);
     if (patch.dueAt !== undefined) data.due_at = normalizeIsoDate(patch.dueAt, "Início") ?? current.due_at;
     if (patch.endAt !== undefined) data.end_at = normalizeIsoDate(patch.endAt, "Finalização");
     if (patch.dueAt !== undefined || patch.endAt !== undefined) {

@@ -2,6 +2,7 @@
 // dispara os lembretes de tarefas (notificação do Chrome, mesmo com o CRM fechado).
 import { gfIntegrationActive, listAllFromCrm, loadGfSettings, pushPendingContactsVia } from "../lib/finance/gfBridge";
 import type { NotifyJob } from "../db/notifications";
+import type { ContactSendJob } from "../db/contactMessages";
 import { sendMail } from "../lib/calendar";
 import { sendCallMeBot } from "../lib/notify/callmebot";
 import { sendViaWhatsAppWeb } from "../lib/notify/waweb";
@@ -223,6 +224,42 @@ async function refreshFinanceCopy(userId: string | null): Promise<void> {
   }
 }
 
+// Lembrete para o contato por WhatsApp (0.2.69): Z-API ou WhatsApp Web, com o
+// Chrome aberto (mesmo com o CRM fechado). Falha ou hora perdida: avisa o usuário.
+let sendingContacts = false;
+async function runContactMessages(userId: string | null): Promise<void> {
+  if (sendingContacts) return;
+  sendingContacts = true;
+  try {
+    const { jobs, missed } = await rpc<{ jobs: ContactSendJob[]; missed: { title: string; personName: string }[] }>("contactMessages.due", {}, userId);
+    for (const m of missed) {
+      chromeNotify(`notify:contato-${Date.now()}-${Math.random()}`, "Lembrete para o contato não enviado", `${m.personName} — ${m.title}: o Chrome estava fechado na hora do envio.`, false, "overdue");
+      await addNotification({ kind: "error", title: "Lembrete para o contato não enviado", message: `${m.personName} — ${m.title}` });
+    }
+    for (const job of jobs) {
+      let error: string | undefined;
+      try {
+        const sender = (await loadSenders(job.userId ?? "")).senders.find((x) => x.id === job.senderId);
+        if (!sender) throw new Error("O número de origem do lembrete não existe mais em Configurações → WhatsApp.");
+        if (sender.via === "zapi") {
+          if (!sender.zapi) throw new Error("A Z-API do número de origem não está configurada.");
+          await zapiSendText(sender.zapi, job.phone, job.text);
+        } else if (sender.via === "web") await sendViaWhatsAppWeb(job.phone, job.text, 30_000, sender.phone);
+        else throw new Error("O número de origem é manual; escolha um com Z-API ou WhatsApp Web.");
+      } catch (e) {
+        error = e instanceof Error ? e.message : String(e);
+      }
+      await rpc("contactMessages.record", { id: job.id, ok: !error, text: job.text, error }, userId);
+      if (error) {
+        chromeNotify(`notify:contato-${job.id}`, `Lembrete para ${job.personName} não foi enviado`, `${job.title}: ${error}`, false, "overdue");
+        await addNotification({ kind: "error", title: `Lembrete para ${job.personName} não foi enviado`, message: `${job.title}: ${error}` });
+      } else await addNotification({ kind: "info", title: `Lembrete enviado para ${job.personName}`, message: job.title });
+    }
+  } finally {
+    sendingContacts = false;
+  }
+}
+
 async function runNotifications(): Promise<void> {
   if (running) return;
   running = true;
@@ -235,6 +272,7 @@ async function runNotifications(): Promise<void> {
       await chrome.storage.local.set({ [SNOOZE_KEY]: snoozes.filter((x) => !due.includes(x)) });
       for (const x of due) chromeNotify(`task:${x.activityId}`, x.title, x.text, true);
     }
+    await runContactMessages(userId).catch((e) => console.warn("Lembrete do contato:", e));
     await refreshFinanceCopy(userId);
     const settings = Object.fromEntries(Object.entries(await loadAllNotifySettings()).map(([id, x]) => [id, activeSettings(x)]));
     // Alertas financeiros do resumo diário só com a integração com a Gestão Financeira ativada.

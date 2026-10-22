@@ -34,6 +34,7 @@ export const DATA_TABLES = [
   "activity_series",
   "activity",
   "activity_reminder",
+  "activity_contact_message",
   "note",
   "attachment",
   "whatsapp_capture",

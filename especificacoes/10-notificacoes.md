@@ -193,3 +193,31 @@ empilham na mesma janela, que fecha quando o último é resolvido. Fechar a
 janela no X dá todos como vistos (o som para de repetir). Ligada por padrão em
 Configurações → Notificações → Som e janela de aviso, com o botão **Testar
 aviso** e a orientação para ativar as notificações do Chrome no Windows/Mac.
+
+## Lembrete para o contato por WhatsApp (0.2.69)
+
+No formulário da atividade, em Lembretes: **Lembrar o contato pelo WhatsApp**.
+Ligado, abre ao lado o cartão **Mensagem para o contato**: Para (contato da
+atividade ou do cartão; só os que têm celular), Quando (15 min, 30 min, 1 h,
+2 h ou 1 dia antes), Link da reunião (fica na atividade; o Meet/Teams criado
+pelo CRM também preenche), Enviar pelo número (Z-API ou WhatsApp Web de
+Configurações → WhatsApp), a hora do envio, o modelo editável com as
+variáveis e a prévia como no WhatsApp.
+
+- **Variáveis**: {nome}, {nome_completo}, {quando} (hoje/amanhã/na terça,
+  28/10), {hora}, {data}, {link}, {atividade}, {meu_nome} (responsável),
+  {minha_empresa} (empresa do funil do cartão: Editar funil → Empresa). Sem
+  link, some a linha do link; sem funil ou sem empresa, some a empresa com o
+  que a liga ao nome (" · ", " da ").
+- **Modelo padrão** e antecedência/número padrão em Configurações →
+  Notificações → Lembrete para o contato (por usuário).
+- **Envio** pelo service worker, com o Chrome aberto (mesmo com o CRM
+  fechado). Chrome fechado na hora: sai quando ele abrir, se a atividade ainda
+  não começou; senão fica "não enviada" e o usuário é avisado (balão, janela de
+  aviso e sino). Falha da Z-API/WhatsApp Web: "não enviada" + aviso; salvar de
+  novo reagenda.
+- **Editável até o envio** (mudar o início muda a hora do envio); enviado, fica
+  só para leitura. Atividade concluída antes: cancela. O envio vira nota na
+  atividade e no contato. Recorrentes: cada ocorrência leva o seu.
+- Tabela `activity_contact_message`; `pipeline.company_name`.
+- Futuro: agendamento na nuvem (envio com o computador desligado).

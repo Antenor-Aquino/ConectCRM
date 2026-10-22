@@ -7,6 +7,7 @@
 import { nextAfterDone, occurrences, validateRule, type RecurrenceRule } from "../lib/recurrence";
 import { ValidationError } from "../lib/validate";
 import { createActivity, deleteActivity, getActivity, updateActivity, type ActivityInput } from "./activities";
+import { setContactMessage, type ContactMessageInput } from "./contactMessages";
 import { insertRow, softDelete, updateRow, type DbContext } from "./repo";
 import { moveToTrash, type TrashNotice } from "./trash";
 import { many, one, withTransaction, type DatabaseSync } from "./sql";
@@ -17,6 +18,8 @@ export const SERIES_HORIZON_DAYS = 60;
 export type SeriesTemplate = Omit<ActivityInput, "dueAt" | "endAt" | "done" | "reminderMin"> & {
   /** Finalização = início + estes minutos (null = sem finalização). */
   endOffsetMin?: number | null;
+  /** Lembrete para o contato por WhatsApp em cada ocorrência. */
+  contactMessage?: ContactMessageInput | null;
 };
 
 interface SeriesRow {
@@ -84,7 +87,12 @@ function startOfToday(now: Date): Date {
 }
 
 /** Cria a série e as primeiras ocorrências; devolve a 1ª ocorrência criada (ou null). */
-export function createSeries(db: DatabaseSync, ctx: DbContext, input: ActivityInput & { recurrence: RecurrenceRule }, now = new Date()): { seriesId: string; firstId: string | null } {
+export function createSeries(
+  db: DatabaseSync,
+  ctx: DbContext,
+  input: ActivityInput & { recurrence: RecurrenceRule; contactMessage?: ContactMessageInput | null },
+  now = new Date(),
+): { seriesId: string; firstId: string | null } {
   return withTransaction(db, () => {
     const rule = checkRule(input.recurrence);
     const { recurrence: _r, ...activity } = input;
@@ -112,13 +120,20 @@ export function createSeries(db: DatabaseSync, ctx: DbContext, input: ActivityIn
 const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 function createOccurrence(db: DatabaseSync, ctx: DbContext, s: Series, index: number, at: Date): string {
-  const { endOffsetMin, ...t } = s.template;
+  const { endOffsetMin, contactMessage, ...t } = s.template;
   const id = createActivity(db, ctx, {
     ...t,
     dueAt: at.toISOString(),
     endAt: endOffsetMin != null ? new Date(at.getTime() + endOffsetMin * 60_000).toISOString() : null,
   });
   updateRow(db, ctx, "activity", id, { series_id: s.id, series_index: index });
+  if (contactMessage) {
+    try {
+      setContactMessage(db, ctx, id, contactMessage);
+    } catch {
+      // Contato sem celular agora: a ocorrência sai sem o lembrete do contato.
+    }
+  }
   return id;
 }
 
@@ -305,6 +320,21 @@ export function updateSeries(
         skipped: ruleChanged || shift !== 0 ? "[]" : JSON.stringify(series.skipped),
       });
       topUpSeries(db, ctx, series.id, now);
+    }
+  });
+}
+
+/** Lembrete do contato para "esta e as próximas" ou "todas": no modelo e nas pendentes. */
+export function setSeriesContactMessage(db: DatabaseSync, ctx: DbContext, activityId: string, scope: Exclude<SeriesScope, "this">, input: ContactMessageInput | null): void {
+  withTransaction(db, () => {
+    const { occ, series } = occurrenceOf(db, activityId);
+    updateRow(db, ctx, "activity_series", series.id, { template: JSON.stringify({ ...series.template, contactMessage: input }) });
+    for (const p of pendingFrom(db, series.id, scope === "all" ? 1 : occ.series_index)) {
+      try {
+        setContactMessage(db, ctx, p.id, input);
+      } catch {
+        // já enviado ou contato sem celular: essa ocorrência fica como está
+      }
     }
   });
 }

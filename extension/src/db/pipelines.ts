@@ -24,6 +24,8 @@ export interface Pipeline {
   archived_at: string | null;
   /** JSON com os campos do cartão (lib/cardFields.ts); null = padrão. */
   card_fields: string | null;
+  /** Empresa que assina as mensagens dos cartões deste funil (lembrete por WhatsApp). */
+  company_name: string | null;
   version: number;
 }
 
@@ -50,7 +52,7 @@ export interface NewPipeline {
 export function listPipelines(db: DatabaseSync, opts: { includeArchived?: boolean } = {}): Pipeline[] {
   const rows = many<Pipeline>(
     db,
-    `SELECT id, name, type, icon, color, position, archived_at, card_fields, version FROM pipeline
+    `SELECT id, name, type, icon, color, position, archived_at, card_fields, company_name, version FROM pipeline
      WHERE deleted_at IS NULL ${opts.includeArchived ? "" : "AND archived_at IS NULL"}`,
   );
   return rows.sort((a, b) => PIPELINE_TYPE_ORDER.indexOf(a.type) - PIPELINE_TYPE_ORDER.indexOf(b.type) || a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" }));
@@ -107,7 +109,7 @@ export function updatePipeline(
   db: DatabaseSync,
   ctx: DbContext,
   id: string,
-  patch: { name?: string; icon?: string | null; color?: string | null; archived?: boolean; cardFields?: string[] | null },
+  patch: { name?: string; icon?: string | null; color?: string | null; archived?: boolean; cardFields?: string[] | null; companyName?: string | null },
 ): void {
   const data: Record<string, string | null> = {};
   if (patch.name !== undefined) {
@@ -116,6 +118,7 @@ export function updatePipeline(
     data.name = name;
   }
   if (patch.icon !== undefined) data.icon = patch.icon;
+  if (patch.companyName !== undefined) data.company_name = patch.companyName?.trim() || null;
   if (patch.color !== undefined) data.color = patch.color;
   if (patch.archived !== undefined) data.archived_at = patch.archived ? new Date().toISOString() : null;
   if (patch.cardFields !== undefined) {

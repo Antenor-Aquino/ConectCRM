@@ -3,6 +3,8 @@
 // para o backup. Cada usuário tem as suas; quem envia os e-mails é a conta
 // Google/Microsoft conectada neste computador.
 
+import { CONTACT_MINUTES_DEFAULT, CONTACT_TEMPLATE_DEFAULT } from "./contactMessage";
+
 export type Channel = "chrome" | "email" | "whatsapp";
 export const CHANNELS: Channel[] = ["chrome", "email", "whatsapp"];
 /** E-mail suspenso por enquanto (decisão de 19/10/2026): o código fica, a tela e o envio não usam. */
@@ -34,6 +36,8 @@ export interface NotifySettings {
   quiet: { enabled: boolean; from: string; to: string };
   /** Eventos do Google Agenda criados pelo CRM levam o lembrete por e-mail do próprio Google. */
   calendarEmailBackup: boolean;
+  /** Lembrete para o contato por WhatsApp: modelo, antecedência e número de origem padrão. */
+  contact: { template: string; minutes: number; senderId: string | null };
 }
 
 export const DEFAULT_NOTIFY: NotifySettings = {
@@ -45,6 +49,7 @@ export const DEFAULT_NOTIFY: NotifySettings = {
   overdue: { enabled: false, channels: ["chrome"] },
   quiet: { enabled: false, from: "20:00", to: "07:00" },
   calendarEmailBackup: true,
+  contact: { template: CONTACT_TEMPLATE_DEFAULT, minutes: CONTACT_MINUTES_DEFAULT, senderId: null },
 };
 
 /** Completa preferências salvas por versões anteriores. */
@@ -58,6 +63,7 @@ export function withDefaults(s: Partial<NotifySettings> | undefined): NotifySett
     digest: { ...DEFAULT_NOTIFY.digest, ...s?.digest },
     overdue: { ...DEFAULT_NOTIFY.overdue, ...s?.overdue },
     quiet: { ...DEFAULT_NOTIFY.quiet, ...s?.quiet },
+    contact: { ...DEFAULT_NOTIFY.contact, ...s?.contact },
     defaults: s?.defaults ?? DEFAULT_NOTIFY.defaults,
   };
 }

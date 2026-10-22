@@ -21,6 +21,7 @@ import * as deals from "../db/deals";
 import * as docs from "../db/documents";
 import * as folders from "../db/documentFolders";
 import * as series from "../db/activitySeries";
+import * as contactMsg from "../db/contactMessages";
 import type { RecurrenceRule } from "../lib/recurrence";
 import * as notes from "../db/notes";
 import * as pipelines from "../db/pipelines";
@@ -31,7 +32,7 @@ import * as stages from "../db/stages";
 import * as trash from "../db/trash";
 import * as waLog from "../db/whatsappLog";
 import { rowHistory, type DataTable, type DbContext } from "../db/repo";
-import { many, one, type DatabaseSync } from "../db/sql";
+import { many, one, withTransaction, type DatabaseSync } from "../db/sql";
 import { hashPin, verifyPin } from "../lib/pin";
 import { ValidationError } from "../lib/validate";
 import { normalizeText } from "../lib/search";
@@ -612,18 +613,36 @@ export const methods = {
   "cards.search": (db: DatabaseSync, ctx: DbContext, p: { search: string }) => deals.searchCards(db, p.search, viewer(db, ctx)),
   "activities.get": (db: DatabaseSync, _c: DbContext, p: Id) => activities.getActivity(db, p.id),
   /** Com `recurrence`: cria a série e devolve a 1ª ocorrência (spec 02, recorrentes). */
-  "activities.create": (db: DatabaseSync, ctx: DbContext, p: activities.ActivityInput & { recurrence?: RecurrenceRule | null }) => {
-    const { recurrence, ...input } = p;
-    if (recurrence) return series.createSeries(db, ctx, { ...input, recurrence }).firstId ?? "";
-    return activities.createActivity(db, ctx, input);
+  "activities.create": (
+    db: DatabaseSync,
+    ctx: DbContext,
+    p: activities.ActivityInput & { recurrence?: RecurrenceRule | null; contactMessage?: contactMsg.ContactMessageInput | null },
+  ) => {
+    const { recurrence, contactMessage, ...input } = p;
+    if (recurrence) return series.createSeries(db, ctx, { ...input, recurrence, ...(contactMessage ? { contactMessage } : {}) }).firstId ?? "";
+    return withTransaction(db, () => {
+      const id = activities.createActivity(db, ctx, input);
+      if (contactMessage) contactMsg.setContactMessage(db, ctx, id, contactMessage);
+      return id;
+    });
   },
   /** `scope` (ocorrência de série): "this" (padrão), "following" ou "all"; `recurrence` muda a regra. */
   "activities.update": (
     db: DatabaseSync,
     ctx: DbContext,
-    p: Id & { patch: Partial<activities.ActivityInput>; scope?: series.SeriesScope; recurrence?: RecurrenceRule | null },
+    p: Id & {
+      patch: Partial<activities.ActivityInput>;
+      scope?: series.SeriesScope;
+      recurrence?: RecurrenceRule | null;
+      /** Lembrete para o contato: objeto liga/altera, null desliga, ausente não mexe. */
+      contactMessage?: contactMsg.ContactMessageInput | null;
+    },
   ) => {
     assertActivityAccess(db, ctx, p.id);
+    if (p.contactMessage !== undefined) {
+      if (p.scope && p.scope !== "this") series.setSeriesContactMessage(db, ctx, p.id, p.scope, p.contactMessage);
+      else contactMsg.setContactMessage(db, ctx, p.id, p.contactMessage);
+    }
     if (p.scope && p.scope !== "this") {
       const { done, ...rest } = p.patch;
       series.updateSeries(db, ctx, p.id, p.scope, rest, p.recurrence ?? undefined);
@@ -645,6 +664,19 @@ export const methods = {
     assertActivityAccess(db, ctx, p.id);
     return p.scope ? series.deleteFromSeries(db, ctx, p.id, p.scope) : series.deleteActivityOrOccurrence(db, ctx, p.id);
   },
+  /** Lembrete para o contato: quem pode receber, empresa do funil e o lembrete atual (com a prévia). */
+  "contactMessages.context": (db: DatabaseSync, ctx: DbContext, p: { activityId?: string | null; personId?: string | null; dealId?: string | null }) => {
+    if (p.activityId) assertActivityAccess(db, ctx, p.activityId);
+    return {
+      recipients: contactMsg.contactRecipients(db, p),
+      company: contactMsg.companyForDeal(db, p.dealId),
+      current: p.activityId ? contactMsg.contactMessagePreview(db, p.activityId) : null,
+    };
+  },
+  /** Service worker: o que enviar agora (e o que passou da hora). */
+  "contactMessages.due": (db: DatabaseSync, ctx: DbContext, p: { now?: string }) => contactMsg.dueContactMessages(db, ctx, p.now ? new Date(p.now) : new Date()),
+  "contactMessages.record": (db: DatabaseSync, ctx: DbContext, p: { id: string; ok: boolean; text?: string; error?: string }) =>
+    contactMsg.recordContactMessage(db, ctx, p.id, p),
   /** Regra da recorrência de uma atividade (null = não repete). */
   "activities.series": (db: DatabaseSync, ctx: DbContext, p: Id) => {
     assertActivityAccess(db, ctx, p.id);
