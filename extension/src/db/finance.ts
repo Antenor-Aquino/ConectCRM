@@ -7,7 +7,7 @@ import { contactCardFor, organizationCard, personCard } from "./contactCard";
 import { ValidationError } from "../lib/validate";
 import { formatCents } from "../lib/format";
 import { cardScope } from "./deals";
-import type { DbContext } from "./repo";
+import { updateRow, type DbContext } from "./repo";
 import { many, one, run, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
 import type { Viewer } from "./users";
 
@@ -304,6 +304,8 @@ interface ScopedCard {
   status: "open" | "won" | "lost";
   value_cents: number;
   closed_at: string | null;
+  /** "Não registrar no financeiro". */
+  finance_skip: number;
   client: string | null;
 }
 
@@ -325,7 +327,7 @@ function scopedCards(db: DatabaseSync, f: { pipelineId?: string | null; ownerIds
   const scope = cardScope(db, f.viewer);
   return many<ScopedCard>(
     db,
-    `SELECT d.id, d.title, d.pipeline_id, p.name AS pipeline_name, d.status, d.value_cents, d.closed_at,
+    `SELECT d.id, d.title, d.pipeline_id, p.name AS pipeline_name, d.status, d.value_cents, d.closed_at, d.finance_skip,
             COALESCE(o.name, pe.name) AS client
      FROM deal d JOIN pipeline p ON p.id = d.pipeline_id
      LEFT JOIN organization o ON o.id = d.organization_id AND o.deleted_at IS NULL
@@ -400,7 +402,7 @@ export function financeReport(db: DatabaseSync, f: FinanceReportFilter): Finance
     many<{ deal_id: string; total: number }>(db, "SELECT deal_id, SUM(amount_cents) AS total FROM finance_entry WHERE type = 'income' GROUP BY deal_id").map((r) => [r.deal_id, r.total]),
   );
   const toBill = [...cards.values()]
-    .filter((c) => c.status === "won" && c.value_cents > 0 && !!c.closed_at && toLocalDate(c.closed_at) >= f.start && toLocalDate(c.closed_at) <= f.end)
+    .filter((c) => c.status === "won" && !c.finance_skip && c.value_cents > 0 && !!c.closed_at && toLocalDate(c.closed_at) >= f.start && toLocalDate(c.closed_at) <= f.end)
     .map((c) => {
       const l = launched.get(c.id) ?? 0;
       return { id: c.id, title: c.title, pipelineId: c.pipeline_id, client: c.client, closedAt: c.closed_at, valueCents: c.value_cents, launchedCents: l, missingCents: c.value_cents - l };
@@ -481,7 +483,7 @@ function scopedCardsFor(db: DatabaseSync, extra: string, id: string, viewer?: Vi
   const scope = cardScope(db, viewer);
   return many<ScopedCard>(
     db,
-    `SELECT d.id, d.title, d.pipeline_id, p.name AS pipeline_name, d.status, d.value_cents, d.closed_at, NULL AS client
+    `SELECT d.id, d.title, d.pipeline_id, p.name AS pipeline_name, d.status, d.value_cents, d.closed_at, d.finance_skip, NULL AS client
      FROM deal d JOIN pipeline p ON p.id = d.pipeline_id
      WHERE d.deleted_at IS NULL${extra}${scope.sql}`,
     id,
@@ -641,6 +643,12 @@ export interface FinanceAlerts {
 
 const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b}T12:00:00`) - Date.parse(`${a}T12:00:00`)) / 86_400_000);
 
+/** "Não registrar no financeiro" (ao ganhar/concluir): o cartão sai dos avisos de receita a lançar. */
+export function setFinanceSkip(db: DatabaseSync, ctx: DbContext, dealId: string, skip: boolean): void {
+  if (!one(db, "SELECT 1 FROM deal WHERE id = ? AND deleted_at IS NULL", dealId)) throw new ValidationError("Cartão não encontrado.");
+  updateRow(db, ctx, "deal", dealId, { finance_skip: skip ? 1 : 0 });
+}
+
 /** Pontos de atenção financeiros dos cartões que o usuário vê (ou só os de um responsável). */
 export function financeAlerts(
   db: DatabaseSync,
@@ -678,7 +686,7 @@ export function financeAlerts(
     }
     const wonDays = opts.wonDays ?? 3;
     for (const c of cards.values()) {
-      if (c.status !== "won" || c.value_cents <= 0 || !c.closed_at) continue;
+      if (c.status !== "won" || c.finance_skip || c.value_cents <= 0 || !c.closed_at) continue;
       const days = daysBetween(new Date(c.closed_at).toLocaleDateString("sv-SE"), today);
       const missing = c.value_cents - (launched.get(c.id) ?? 0) - (asked.get(c.id) ?? 0);
       if (days >= wonDays && missing > 0 && days <= 180)

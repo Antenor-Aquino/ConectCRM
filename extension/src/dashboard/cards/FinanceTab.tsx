@@ -34,6 +34,8 @@ export function FinanceTab({
   onSynced,
   concluded,
   items,
+  financeSkip,
+  onFinanceSkip,
 }: {
   cardId: string;
   title: string;
@@ -41,8 +43,8 @@ export function FinanceTab({
   /** "Negócio", "Projeto"... (vai no rótulo da origem lá). */
   cardLabel: string;
   onOpenSettings?: () => void;
-  /** Abrir já a receita (ex.: ao marcar como ganho). */
-  autoLaunch?: boolean;
+  /** Abrir já a receita (ex.: ao marcar como ganho): com o valor do cartão ou para informar outro valor. */
+  autoLaunch?: false | "card" | "custom";
   onAutoLaunchDone?: () => void;
   /** Cópia local atualizada (a aba mostra a quantidade). */
   onSynced?: () => void;
@@ -50,6 +52,9 @@ export function FinanceTab({
   concluded?: string | null;
   /** Produtos e serviços do cartão: vão nas observações da receita. */
   items?: DealItem[];
+  /** "Não registrar no financeiro" escolhido ao ganhar/concluir. */
+  financeSkip?: boolean;
+  onFinanceSkip?: (skip: boolean) => void;
 }) {
   const [settings, setSettings] = useState<GfSettings | null>(null);
   const [data, setData] = useState<CardFinance | null>(null);
@@ -63,6 +68,7 @@ export function FinanceTab({
   const [pending, setPending] = useState<{ mode: "income" | "expense"; before: number; closed: boolean } | null>(null);
   const [requests, setRequests] = useState<FinanceRequestRow[]>([]);
   const [requestMode, setRequestMode] = useState<"income" | "expense" | null>(null);
+  const [requestCustom, setRequestCustom] = useState(false);
 
   const loadLocal = useCallback(async () => {
     setData(await call("finance.card", { id: cardId }));
@@ -122,18 +128,21 @@ export function FinanceTab({
   const direct = !!settings?.gfId && settings.direct && live === "ok";
   const packageMode = !!settings?.package && !direct;
 
-  async function launch(mode: "income" | "expense", edit?: FinanceEntry) {
+  async function launch(mode: "income" | "expense", edit?: FinanceEntry, opts: { customAmount?: boolean } = {}) {
     setError(null);
     if (!counterparty) {
       setError("Para lançar no financeiro, vincule uma organização ou um contato a este cartão.");
       return;
     }
     if (!direct) {
-      if (packageMode && !edit) setRequestMode(mode);
+      if (packageMode && !edit) {
+        setRequestCustom(!!opts.customAmount);
+        setRequestMode(mode);
+      }
       return;
     }
     if (!settings?.gfId) return;
-    const suggested = suggestedFor(mode);
+    const suggested = opts.customAmount ? null : suggestedFor(mode);
     setOpening(true);
     try {
       // A ficha completa vai junto no lançamento; dali em diante, as alterações do cadastro também.
@@ -162,7 +171,7 @@ export function FinanceTab({
     if (!autoLaunch || autoDone.current || live === "loading" || counterparty === undefined) return;
     autoDone.current = true;
     onAutoLaunchDone?.();
-    if ((settings?.gfId && settings.direct) || settings?.package) void launch("income");
+    if ((settings?.gfId && settings.direct) || settings?.package) void launch("income", undefined, { customAmount: autoLaunch === "custom" });
   });
 
   if (!settings || live === "loading" || counterparty === undefined) return <p className="text-theme-sm text-gray-500">Carregando…</p>;
@@ -191,7 +200,7 @@ export function FinanceTab({
   const pendingSaved = !!pending && entries.filter((e) => e.type === pending.mode).length > pending.before;
   // Concluído com valor e sem nenhuma receita (nem pedido no pacote): lembra de lançar.
   const missingIncome =
-    !!concluded && !!valueCents && canAsk && !!counterparty && !pending && !(s?.incomeCents ?? 0) && !requests.some((r) => r.request.mode === "income");
+    !!concluded && !financeSkip && !!valueCents && canAsk && !!counterparty && !pending && !(s?.incomeCents ?? 0) && !requests.some((r) => r.request.mode === "income");
 
   return (
     <div className="space-y-3" data-finance-tab>
@@ -268,6 +277,18 @@ export function FinanceTab({
           {pending.mode === "income" ? "Receita lançada" : "Despesa lançada"} na Gestão Financeira.
         </p>
       )}
+      {financeSkip && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg bg-gray-100 px-3 py-2 text-theme-sm text-gray-700 dark:bg-white/5 dark:text-gray-300" data-finance-skip>
+          <span className="min-w-0 flex-1">
+            Marcado para <b>não registrar o valor do cartão</b> no financeiro. Lançamentos avulsos (Receita/Despesa) continuam possíveis.
+          </span>
+          {onFinanceSkip && (
+            <button type="button" className="text-theme-xs text-brand-600 hover:underline" onClick={() => onFinanceSkip(false)}>
+              Voltar a registrar
+            </button>
+          )}
+        </div>
+      )}
       {missingIncome && (
         <div className="flex flex-wrap items-center gap-2 rounded-lg bg-warning-50 px-3 py-2 text-theme-sm text-warning-800" data-finance-missing-income>
           <span className="min-w-0 flex-1">
@@ -324,7 +345,7 @@ export function FinanceTab({
         <RequestModal
           mode={requestMode}
           title={title}
-          suggestedCents={suggestedFor(requestMode)}
+          suggestedCents={requestCustom ? null : suggestedFor(requestMode)}
           initialNotes={requestMode === "income" ? itemsNotes(items ?? []) : null}
           onClose={() => setRequestMode(null)}
           onSave={async (input) => {

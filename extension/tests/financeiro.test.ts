@@ -232,6 +232,11 @@ describe("Fase 4: pacote, alertas e Copiloto", async () => {
     expect(lines.join("\n")).toMatch(/\*1 receita atrasada \(R\$\s400,00\)\*/);
     expect(lines.join("\n")).toMatch(/Projeto B: falta R\$\s800,00/);
     expect(f.financeDigestLines({ ...al, overdueReceivables: [], dueSoon: [], wonWithoutIncome: [], overduePayables: { count: 0, amountCents: 0 } }, false)).toEqual([]);
+    // "Não registrar no financeiro": B sai dos avisos (e volta se desfizer).
+    f.setFinanceSkip(db, actx, b, true);
+    expect(f.financeAlerts(db, null, { today: "2026-10-20" }).wonWithoutIncome).toEqual([]);
+    f.setFinanceSkip(db, actx, b, false);
+    expect(f.financeAlerts(db, null, { today: "2026-10-20" }).wonWithoutIncome).toHaveLength(1);
 
     // Copiloto
     const s = cop.financeSummaryForCopilot(db, null, { de: "2026-10-01", ate: "2026-10-31" }) as { totais: { receitas: string; resultado: string } };

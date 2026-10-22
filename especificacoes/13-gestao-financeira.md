@@ -231,3 +231,11 @@ sem avisos, abas ou selos.
   ConectCRM" e a seção "Do ConectCRM" em Clientes e fornecedores; selo
   ConectCRM em Lançamentos; Importar → Pacote do ConectCRM. O aviso de dados
   alterados em outra janela deixou de citar o ConectCRM.
+- **Registrar no financeiro?** (0.2.70): ao dar o cartão como ganho,
+  resolvido ou concluído com valor (ou produtos/serviços), o CRM pergunta:
+  **Sim, lançar R$ X** (receita preenchida, produtos nas observações),
+  **Lançar outro valor** (receita aberta sem valor, para quando vai receber só
+  uma parte), **Não registrar no financeiro** (`deal.finance_skip`: o cartão
+  sai dos avisos e relatórios de "ganhos com receita a lançar"; a aba
+  Financeiro mostra a marca com "Voltar a registrar") ou **Decidir depois**.
+  Lançamentos avulsos continuam possíveis em qualquer caso.

@@ -24,7 +24,7 @@ import {
   Trophy,
   X,
   XCircle, Repeat } from "lucide-react";
-import { TaBadge, TaButton, TaInput, TaTextarea, cn } from "@tailadmin";
+import { TaBadge, TaButton, TaInput, TaModal, TaTextarea, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { ActivityListItem } from "../../db/activities";
 import type { CustomField, CustomValue } from "../../db/customFields";
@@ -99,7 +99,9 @@ export function CardDetail({
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("notas");
   // Ao marcar como ganho: abrir já a receita na Gestão Financeira.
-  const [launchIncome, setLaunchIncome] = useState(false);
+  const [launchIncome, setLaunchIncome] = useState<false | "card" | "custom">(false);
+  // Ganhou/concluiu com valor: pergunta se registra no financeiro (pode não receber o valor todo).
+  const [askFinance, setAskFinance] = useState(false);
   // Aba Financeiro e resultado só com a integração com a Gestão Financeira ativada.
   const gfActive = !!useGfActive();
   // Origem aberta a partir do histórico.
@@ -251,14 +253,7 @@ export function CardDetail({
                   // Ganho com valor e Gestão Financeira conectada: oferece lançar a receita.
                   const gf = await loadGfSettings();
                   if (!ok || !card.value_cents || !((gf.gfId && gf.direct) || gf.package)) return;
-                  if (
-                    !confirm(
-                      `Lançar a receita de ${formatCents(card.value_cents)} na Gestão Financeira?\n\nVai abrir a janela da Gestão Financeira já preenchida: confira e clique em "Salvar Receita". A receita só é lançada depois de salvar.`,
-                    )
-                  )
-                    return;
-                  setLaunchIncome(true);
-                  setTab("financeiro");
+                  setAskFinance(true);
                 })
               }
             >
@@ -641,6 +636,8 @@ export function CardDetail({
               concluded={card.status === "won" ? outcome.won : null}
               items={card.items}
               autoLaunch={launchIncome}
+              financeSkip={!!card.finance_skip}
+              onFinanceSkip={(skip) => void run(() => call("finance.setSkip", { dealId: cardId, skip }))}
               onAutoLaunchDone={() => setLaunchIncome(false)}
               onSynced={recount}
             />
@@ -733,6 +730,21 @@ export function CardDetail({
             setPipelineAction(null);
             onChanged();
             onGoToCard(pipelineId, id);
+          }}
+        />
+      )}
+      {askFinance && (
+        <WinFinanceDialog
+          outcome={outcome.won}
+          valueCents={card.value_cents}
+          hasItems={card.items.length > 0}
+          onClose={() => setAskFinance(false)}
+          onChoose={(choice) => {
+            setAskFinance(false);
+            if (choice === "skip") return void run(() => call("finance.setSkip", { dealId: cardId, skip: true }));
+            if (card.finance_skip) void run(() => call("finance.setSkip", { dealId: cardId, skip: false }));
+            setLaunchIncome(choice);
+            setTab("financeiro");
           }}
         />
       )}
@@ -1000,5 +1012,52 @@ function HistoryTab({
         {events.length === 0 && <li className="text-theme-sm text-gray-400">Nenhuma alteração registrada.</li>}
       </ol>
     </div>
+  );
+}
+
+/** Ao ganhar/concluir um cartão com valor: registrar no financeiro? (spec 13) */
+function WinFinanceDialog({
+  outcome,
+  valueCents,
+  hasItems,
+  onChoose,
+  onClose,
+}: {
+  outcome: string;
+  valueCents: number;
+  hasItems: boolean;
+  onChoose: (c: "card" | "custom" | "skip") => void;
+  onClose: () => void;
+}) {
+  const opt = (c: "card" | "custom" | "skip", label: string, hint: string, primary = false) => (
+    <button
+      type="button"
+      onClick={() => onChoose(c)}
+      data-win-finance={c}
+      className={cn(
+        "block w-full rounded-xl border px-4 py-3 text-left",
+        primary ? "border-success-300 bg-success-25 hover:bg-success-50 dark:bg-success-500/10" : "border-gray-200 hover:border-brand-300 hover:bg-brand-25 dark:border-gray-800 dark:hover:bg-white/5",
+      )}
+    >
+      <span className="block text-theme-sm font-medium text-gray-800 dark:text-white/90">{label}</span>
+      <span className="block text-theme-xs text-gray-500">{hint}</span>
+    </button>
+  );
+  return (
+    <TaModal isOpen onClose={onClose} title={`${outcome}! Registrar no financeiro?`} width="max-w-md">
+      <p className="mb-3 text-theme-sm text-gray-600 dark:text-gray-400">
+        Este cartão tem {hasItems ? "produtos/serviços somando" : "valor de"} <b>{formatCents(valueCents)}</b>. Quer lançar a receita na Gestão Financeira?
+      </p>
+      <div className="space-y-2" data-win-finance-dialog>
+        {opt("card", `Sim, lançar ${formatCents(valueCents)}`, "Abre a receita já preenchida (com os produtos nas observações). Confira e salve.", true)}
+        {opt("custom", "Lançar outro valor", "Quando vai receber só uma parte: abre a receita para você informar o valor.")}
+        {opt("skip", "Não registrar no financeiro", "O valor do cartão não vai para a Gestão Financeira e o cartão sai dos avisos de receita a lançar. Dá para lançar avulso depois.")}
+      </div>
+      <div className="mt-3 text-right">
+        <TaButton size="sm" variant="ghost" onClick={onClose}>
+          Decidir depois
+        </TaButton>
+      </div>
+    </TaModal>
   );
 }

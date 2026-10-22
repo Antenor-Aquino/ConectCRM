@@ -194,6 +194,11 @@ export const methods = {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);
     return finance.cardCounterparty(db, p.id);
   },
+  /** Cartão ganho/concluído: não registrar (ou voltar a registrar) o valor no financeiro. */
+  "finance.setSkip": (db: DatabaseSync, ctx: DbContext, p: { dealId: string; skip: boolean }) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.dealId);
+    finance.setFinanceSkip(db, ctx, p.dealId, p.skip);
+  },
   "finance.card": (db: DatabaseSync, ctx: DbContext, p: Id) => {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);
     return finance.cardFinance(db, p.id);

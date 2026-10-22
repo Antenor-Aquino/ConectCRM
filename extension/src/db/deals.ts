@@ -85,6 +85,8 @@ export interface Card {
   origin: string | null;
   /** Só nos tickets (funil Operacional): número sequencial. */
   ticket_number: number | null;
+  /** "Não registrar no financeiro" (escolhido ao ganhar/concluir). */
+  finance_skip: number;
   created_at: string;
   updated_at: string;
   version: number;
