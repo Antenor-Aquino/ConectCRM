@@ -23,8 +23,7 @@ import {
   Trash2,
   Trophy,
   X,
-  XCircle,
-} from "lucide-react";
+  XCircle, Repeat } from "lucide-react";
 import { TaBadge, TaButton, TaInput, TaTextarea, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { ActivityListItem } from "../../db/activities";
@@ -910,6 +909,7 @@ function TasksTab({ cardId, onChanged }: { cardId: string; onChanged: () => void
                 <p className={cn("truncate text-theme-sm", t.done ? "text-gray-400 line-through" : "text-gray-800 dark:text-white/90")}>
                   {t.title}
                   {t.title_ext && <span className="font-normal text-gray-500" data-name-ext> - {t.title_ext}</span>}
+{t.series_id && <Repeat size={12} className="ml-1 inline align-[-1px] text-brand-500" aria-label="Recorrente" data-recurring />}
                 </p>
                 <p className={cn("text-theme-xs", overdue ? "text-error-600" : "text-gray-400")}>
                   {t.type_name} · {formatDateTime(t.due_at)} · {timing.label}

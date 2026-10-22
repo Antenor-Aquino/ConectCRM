@@ -20,6 +20,8 @@ import * as cf from "../db/customFields";
 import * as deals from "../db/deals";
 import * as docs from "../db/documents";
 import * as folders from "../db/documentFolders";
+import * as series from "../db/activitySeries";
+import type { RecurrenceRule } from "../lib/recurrence";
 import * as notes from "../db/notes";
 import * as pipelines from "../db/pipelines";
 import * as products from "../db/products";
@@ -62,6 +64,9 @@ function assertIntegrations(db: DatabaseSync, ctx: DbContext): void {
 const MANAGERS: users.Role[] = ["admin", "gestor"];
 
 /** Tarefa fora do escopo do usuário (vendedor: só as suas; gestor: equipe). */
+/** Última vez que as séries recorrentes foram completadas (nesta sessão do banco). */
+let lastSeriesTopUp = 0;
+
 function assertActivityAccess(db: DatabaseSync, ctx: DbContext, id: string): void {
   const scope = activities.activityScope(db, viewer(db, ctx));
   const ok = one(db, `SELECT 1 FROM activity a WHERE a.id = ? AND a.deleted_at IS NULL${scope.sql ? ` AND ${scope.sql}` : ""}`, id, ...scope.params);
@@ -589,8 +594,15 @@ export const methods = {
   "activities.dueReminders": (db: DatabaseSync, ctx: DbContext) => activities.dueReminders(db, ctx.userId),
   "activities.markReminded": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => activities.markReminded(db, ctx, p.ids),
   // Notificações (spec 10): o service worker pergunta o que avisar e registra o resultado.
-  "notifications.plan": (db: DatabaseSync, ctx: DbContext, p: { settings: Record<string, Partial<NotifySettings>>; now?: string; finance?: boolean }) =>
-    notify.planNotifications(db, p.now ? new Date(p.now) : new Date(), p.settings, ctx.userId, !!p.finance),
+  "notifications.plan": (db: DatabaseSync, ctx: DbContext, p: { settings: Record<string, Partial<NotifySettings>>; now?: string; finance?: boolean }) => {
+    const now = p.now ? new Date(p.now) : new Date();
+    // Atividades recorrentes: completa a janela de dias à frente (no máximo a cada 3 h).
+    if (now.getTime() - lastSeriesTopUp > 3 * 3600_000) {
+      lastSeriesTopUp = now.getTime();
+      series.topUpAllSeries(db, ctx, now);
+    }
+    return notify.planNotifications(db, now, p.settings, ctx.userId, !!p.finance);
+  },
   "notifications.record": (db: DatabaseSync, _c: DbContext, p: { results: Parameters<typeof notify.recordDeliveries>[1] }) => notify.recordDeliveries(db, p.results),
   "notifications.forActivity": (db: DatabaseSync, _c: DbContext, p: Id) => notify.activityDeliveries(db, p.id),
   "activities.setExternalEvent": (db: DatabaseSync, ctx: DbContext, p: Id & Parameters<typeof activities.setActivityExternalEvent>[3]) => {
@@ -599,18 +611,50 @@ export const methods = {
   },
   "cards.search": (db: DatabaseSync, ctx: DbContext, p: { search: string }) => deals.searchCards(db, p.search, viewer(db, ctx)),
   "activities.get": (db: DatabaseSync, _c: DbContext, p: Id) => activities.getActivity(db, p.id),
-  "activities.create": (db: DatabaseSync, ctx: DbContext, p: activities.ActivityInput) => activities.createActivity(db, ctx, p),
-  "activities.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Partial<activities.ActivityInput> }) => {
+  /** Com `recurrence`: cria a série e devolve a 1ª ocorrência (spec 02, recorrentes). */
+  "activities.create": (db: DatabaseSync, ctx: DbContext, p: activities.ActivityInput & { recurrence?: RecurrenceRule | null }) => {
+    const { recurrence, ...input } = p;
+    if (recurrence) return series.createSeries(db, ctx, { ...input, recurrence }).firstId ?? "";
+    return activities.createActivity(db, ctx, input);
+  },
+  /** `scope` (ocorrência de série): "this" (padrão), "following" ou "all"; `recurrence` muda a regra. */
+  "activities.update": (
+    db: DatabaseSync,
+    ctx: DbContext,
+    p: Id & { patch: Partial<activities.ActivityInput>; scope?: series.SeriesScope; recurrence?: RecurrenceRule | null },
+  ) => {
     assertActivityAccess(db, ctx, p.id);
-    activities.updateActivity(db, ctx, p.id, p.patch);
+    if (p.scope && p.scope !== "this") {
+      const { done, ...rest } = p.patch;
+      series.updateSeries(db, ctx, p.id, p.scope, rest, p.recurrence ?? undefined);
+      if (done !== undefined && one(db, "SELECT 1 FROM activity WHERE id = ? AND deleted_at IS NULL", p.id)) activities.setActivityDone(db, ctx, p.id, done);
+    } else if (p.recurrence && !one<{ s: string | null }>(db, "SELECT series_id AS s FROM activity WHERE id = ?", p.id)?.s) {
+      // Atividade comum que passou a repetir: vira a 1ª da série.
+      activities.updateActivity(db, ctx, p.id, p.patch);
+      series.makeRecurring(db, ctx, p.id, p.recurrence);
+    } else activities.updateActivity(db, ctx, p.id, p.patch);
+    if (p.patch.done) series.afterOccurrenceDone(db, ctx, p.id);
   },
   "activities.setDone": (db: DatabaseSync, ctx: DbContext, p: Id & { done: boolean }) => {
     assertActivityAccess(db, ctx, p.id);
     activities.setActivityDone(db, ctx, p.id, p.done);
+    if (p.done) series.afterOccurrenceDone(db, ctx, p.id);
   },
-  "activities.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+  /** Ocorrência de série: `scope` "this" (padrão), "following" ou "all". */
+  "activities.delete": (db: DatabaseSync, ctx: DbContext, p: Id & { scope?: series.SeriesScope }) => {
     assertActivityAccess(db, ctx, p.id);
-    return activities.deleteActivity(db, ctx, p.id);
+    return p.scope ? series.deleteFromSeries(db, ctx, p.id, p.scope) : series.deleteActivityOrOccurrence(db, ctx, p.id);
+  },
+  /** Regra da recorrência de uma atividade (null = não repete). */
+  "activities.series": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    assertActivityAccess(db, ctx, p.id);
+    return series.seriesOfActivity(db, p.id);
+  },
+  "activities.endSeries": (db: DatabaseSync, ctx: DbContext, p: Id & { date: string }) => {
+    assertActivityAccess(db, ctx, p.id);
+    const s = series.seriesOfActivity(db, p.id);
+    if (!s) throw new ValidationError("Esta atividade não faz parte de uma recorrência.");
+    return series.endSeries(db, ctx, s.id, p.date);
   },
 
   // Relatórios (respeitam a permissão do usuário)

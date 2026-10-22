@@ -115,6 +115,9 @@ export interface Activity {
   /** JSON com os e-mails convidados. */
   guests: string | null;
   reminder_sent_at: string | null;
+  /** Atividade recorrente: série e número da ocorrência. */
+  series_id: string | null;
+  series_index: number | null;
   version: number;
 }
 

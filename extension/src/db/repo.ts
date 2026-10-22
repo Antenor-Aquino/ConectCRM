@@ -31,6 +31,7 @@ export const DATA_TABLES = [
   "product",
   "deal_item",
   "activity_type",
+  "activity_series",
   "activity",
   "activity_reminder",
   "note",

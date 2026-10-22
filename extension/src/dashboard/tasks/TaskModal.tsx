@@ -27,6 +27,9 @@ import { ACTIVE_CHANNELS, CHANNEL_LABEL, activeSettings, channelReady, loadNotif
 import { formatDateTime } from "../../lib/format";
 import { RemindersEditor } from "../ui/RemindersEditor";
 import { LinkedTextarea } from "../ui/LinkedTextarea";
+import { RecurrenceEditor, ScopeDialog, type Scope } from "./RecurrenceEditor";
+import { describeRule, type RecurrenceRule } from "../../lib/recurrence";
+import { Repeat } from "lucide-react";
 
 const KIND_LABEL = { deal: "Negócio", ticket: "Ticket", project: "Projeto" } as const;
 
@@ -164,6 +167,10 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
   const [calMsg, setCalMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Recorrência: a regra (null = não repete), a série da atividade aberta e a pergunta "só esta / próximas / todas".
+  const [recurrence, setRecurrence] = useState<RecurrenceRule | null>(null);
+  const [series, setSeries] = useState<{ id: string; rule: RecurrenceRule; startAt: string; index: number } | null>(null);
+  const [askScope, setAskScope] = useState<"save" | "delete" | null>(null);
 
   useEffect(() => {
     void call("activityTypes.list", {}).then((list) => {
@@ -202,6 +209,13 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
       setDuration(a.duration_min);
       setReminders(a.reminders);
       void call("notifications.forActivity", { id: a.id }).then(setDeliveries);
+      if (a.series_id) {
+        const s = await call("activities.series", { id: a.id });
+        if (s) {
+          setSeries({ id: s.id, rule: s.rule, startAt: s.startAt, index: s.index });
+          setRecurrence(s.rule);
+        }
+      }
       setValues(a.customValues);
       setGuests(a.guests ? (JSON.parse(a.guests) as string[]) : []);
       if (a.deal_id) {
@@ -260,7 +274,20 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
     }
   }
 
-  async function save() {
+  const ruleChanged = !!series && JSON.stringify(recurrence) !== JSON.stringify(series.rule);
+  const dateChanged = !!existing && new Date(existing.due_at).getTime() !== when.getTime();
+
+  async function save(scope?: Scope) {
+    // Ocorrência de série: pergunta antes se vale para esta, as próximas ou todas.
+    if (series && !scope) {
+      if (!recurrence) {
+        setError("Para parar de repetir, use “Encerrar série” (abaixo do campo Repetir).");
+        return;
+      }
+      setAskScope("save");
+      return;
+    }
+    setAskScope(null);
     setSaving(true);
     setError(null);
     const input = {
@@ -286,14 +313,19 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
     }
     let id = request.id;
     try {
-      if (id) await call("activities.update", { id, patch: input });
-      else id = await call("activities.create", input);
+      if (id) {
+        await call("activities.update", {
+          id,
+          patch: input,
+          ...(series ? { scope: scope ?? "this", ...(ruleChanged ? { recurrence } : {}) } : recurrence ? { recurrence } : {}),
+        });
+      } else id = await call("activities.create", { ...input, recurrence });
     } catch (e) {
       setError(errorText(e));
       setSaving(false);
       return;
     }
-    if (isMeeting && makeEvent) {
+    if (isMeeting && makeEvent && !recurrence) {
       try {
         const ev = await createCalendarEvent(provider, {
           title,
@@ -324,7 +356,25 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
   }
 
   return (
-    <TaModal isOpen onClose={onClose} title={request.id ? "Editar atividade" : "Nova atividade"} width="max-w-3xl">
+    <TaModal isOpen onClose={onClose} title={request.id ? (series ? "Editar atividade recorrente" : "Editar atividade") : "Nova atividade"} width="max-w-3xl">
+      {askScope && (
+        <ScopeDialog
+          action={askScope}
+          ruleChanged={askScope === "save" && ruleChanged}
+          onClose={() => setAskScope(null)}
+          onChoose={async (scope) => {
+            if (askScope === "save") return void save(scope);
+            setAskScope(null);
+            await call("activities.delete", { id: request.id!, scope });
+            onSaved();
+          }}
+        />
+      )}
+      {series && (
+        <p className="-mt-2 mb-3 flex items-center gap-1.5 text-theme-xs text-brand-700 dark:text-brand-300" data-series-banner>
+          <Repeat size={13} /> {describeRule(series.rule, new Date(series.startAt))}
+        </p>
+      )}
       {!loaded ? (
         <p className="text-theme-sm text-gray-500">Carregando…</p>
       ) : (
@@ -410,6 +460,36 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
                     setSlots(null);
                   }}
                 />
+              </Field>
+              <Field label="Repetir" hint={series ? `Ocorrência ${series.index > 0 ? `nº ${series.index}` : "avulsa"} de uma série.` : "Opcional: diária, dias úteis, semanal, mensal, anual ou a cada X dias."}>
+                <RecurrenceEditor value={recurrence} start={series && !dateChanged ? new Date(series.startAt) : when} onChange={setRecurrence} />
+                {series && (
+                  <button
+                    type="button"
+                    className="mt-1.5 text-theme-xs text-brand-600 hover:underline"
+                    data-end-series
+                    onClick={async () => {
+                      const today = new Date();
+                      const def = `${String(today.getDate()).padStart(2, "0")}/${String(today.getMonth() + 1).padStart(2, "0")}/${today.getFullYear()}`;
+                      const v = prompt("Encerrar a série em (dd/mm/aaaa): as ocorrências pendentes depois dessa data saem; as concluídas ficam.", def);
+                      const m = v?.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+                      if (!m) return;
+                      const date = `${m[3]}-${m[2]!.padStart(2, "0")}-${m[1]!.padStart(2, "0")}`;
+                      try {
+                        const n = await call("activities.endSeries", { id: request.id!, date });
+                        alert(`Série encerrada em ${v}. ${n} ocorrência(s) pendente(s) depois dessa data saíram.`);
+                        onSaved();
+                      } catch (e) {
+                        setError(errorText(e));
+                      }
+                    }}
+                  >
+                    Encerrar série…
+                  </button>
+                )}
+                {recurrence && isMeeting && (
+                  <p className="mt-1 text-theme-xs text-gray-500">Em reuniões recorrentes o evento não é criado no Google Agenda/Outlook.</p>
+                )}
               </Field>
               <Field label="Lembretes" hint="Quanto tempo antes do início e por onde avisar.">
                 <RemindersEditor
@@ -527,6 +607,7 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
                 className="ml-auto"
                 startIcon={<Trash2 size={15} />}
                 onClick={async () => {
+                  if (series) return setAskScope("delete");
                   if (!confirm("Excluir esta atividade? Vai para a lixeira, de onde pode ser restaurado.")) return;
                   await call("activities.delete", { id: request.id! });
                   onSaved();

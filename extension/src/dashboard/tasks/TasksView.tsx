@@ -4,7 +4,7 @@
 // Cada linha mostra tags, início/finalização com os dias que faltam, anexos
 // para baixar e atalhos clicáveis para o cartão, o contato e a organização.
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Building2, CalendarClock, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Circle, Download, Filter, List, Paperclip, Plus, Search, Sun, User, Video } from "lucide-react";
+import { AlertTriangle, Building2, CalendarClock, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Circle, Download, Filter, List, Paperclip, Plus, Search, Sun, User, Video, Repeat } from "lucide-react";
 import { TaButton, TaSelect, badgePalette, cn, type BadgeColor } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { ActivityListItem, ActivityType } from "../../db/activities";
@@ -200,6 +200,7 @@ export function TasksView({
             <button type="button" className={cn("truncate text-left text-theme-sm font-medium hover:underline", a.done ? "text-gray-400 line-through" : "text-gray-800 dark:text-white/90")} onClick={() => setModal({ id: a.id })}>
               {a.title}
               {a.title_ext && <span className="font-normal text-gray-500" data-name-ext> - {a.title_ext}</span>}
+{a.series_id && <Repeat size={12} className="ml-1 inline align-[-1px] text-brand-500" aria-label="Recorrente" data-recurring />}
             </button>
             {a.tags.map((t) => {
               const c = badgePalette[t.color as BadgeColor] ?? badgePalette.slate;
@@ -446,6 +447,7 @@ export function TasksView({
                       >
                         <ActivityIcon name={a.type_icon} size={11} />
                         {pad(new Date(a.due_at).getHours())}:{pad(new Date(a.due_at).getMinutes())} {a.title}{a.title_ext && <span className="font-normal text-gray-500" data-name-ext> - {a.title_ext}</span>}
+{a.series_id && <Repeat size={12} className="ml-1 inline align-[-1px] text-brand-500" aria-label="Recorrente" data-recurring />}
                       </button>
                     ))}
                     {items.length > 3 && <span className="px-1 text-[11px] text-gray-500">+{items.length - 3} mais</span>}
