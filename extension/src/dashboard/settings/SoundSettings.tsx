@@ -2,7 +2,7 @@
 // volume, som por tipo de aviso, repetição e horário sem som. É deste
 // computador (não do usuário) e salva na hora.
 import { useEffect, useRef, useState } from "react";
-import { Play, Volume1, Volume2, VolumeX } from "lucide-react";
+import { BellRing, Play, Volume1, Volume2, VolumeX } from "lucide-react";
 import { TaButton, TaInput, TaPanel, TaSelect } from "@tailadmin";
 import {
   DEFAULT_SOUND,
@@ -21,9 +21,11 @@ export function SoundSettingsPanel() {
   const [s, setS] = useState<SoundSettings>(DEFAULT_SOUND);
   const [saved, setSaved] = useState(false);
   const audio = useRef<AudioContext | null>(null);
+  const [permission, setPermission] = useState<string | null>(null);
 
   useEffect(() => {
     void loadSoundSettings().then(setS);
+    chrome.notifications?.getPermissionLevel?.((level) => setPermission(level));
   }, []);
 
   const update = (patch: Partial<SoundSettings>) => {
@@ -42,11 +44,33 @@ export function SoundSettingsPanel() {
 
   return (
     <TaPanel
-      title="Som"
-      subtitle="Som dos avisos do Chrome. Vale para este computador e é salvo na hora."
+      title="Som e janela de aviso"
+      subtitle="Como os avisos aparecem e tocam neste computador. É salvo na hora."
       action={saved ? <span className="text-theme-xs text-success-600">Salvo</span> : undefined}
     >
       <div className="space-y-4" data-sound-settings>
+        <div className="rounded-xl border border-brand-200 bg-brand-25 p-3 dark:border-brand-500/30 dark:bg-brand-500/10">
+          <label className="flex items-start gap-3 text-theme-sm text-gray-700 dark:text-gray-300">
+            <Switch checked={s.window} onChange={(window) => update({ window })} />
+            <span>
+              Mostrar os avisos numa janela do CRM <span className="text-theme-xs text-brand-600">(recomendado)</span>
+              <span className="block text-theme-xs text-gray-500">
+                A janelinha aparece no canto da tela com Concluir, Adiar, Abrir e OK — mesmo quando o Windows esconde as notificações do Chrome (notificações
+                desligadas ou &quot;Não perturbe&quot;/Assistente de foco).
+              </span>
+            </span>
+          </label>
+          <div className="mt-2 flex flex-wrap items-center gap-2 pl-12">
+            <TaButton size="sm" startIcon={<BellRing size={14} />} onClick={() => void chrome.runtime.sendMessage({ target: "background", kind: "alert-action", id: "", action: "test" })} data-alert-test>
+              Testar aviso
+            </TaButton>
+            {permission === "denied" && <span className="text-theme-xs text-error-600">As notificações do Chrome estão bloqueadas para o CRM.</span>}
+          </div>
+          <p className="mt-2 pl-12 text-theme-xs text-gray-500">
+            Não vê o balão do Chrome? No Windows: Configurações → Sistema → Notificações → ative <b>Google Chrome</b> e desligue o <b>Não perturbe</b>. No Mac: Ajustes do
+            Sistema → Notificações → Google Chrome.
+          </p>
+        </div>
         <div className="flex flex-wrap items-end gap-3">
           <label className="block text-theme-sm text-gray-700 dark:text-gray-300">
             <span className="block">Som</span>

@@ -180,3 +180,16 @@ Audio (`lib/notify/sounds.ts`; sem arquivos).
   silêncio", que segura o aviso).
 - Padrão: Sino a 70%, sem repetir. Último som tocado fica em
   `chrome.storage.session` (`conectcrm-sound-last`), para diagnóstico.
+
+## Janela de aviso (0.2.68)
+
+O balão do Chrome depende do sistema: com as notificações do Chrome
+desligadas no Windows/macOS ou com "Não perturbe"/Assistente de foco, ele não
+aparece — e o som (tocado pela extensão) toca do mesmo jeito. Por isso, todo
+aviso do Chrome também entra numa **janela do CRM** (`src/alert`), aberta no
+canto da janela do Chrome (ou onde o Chrome escolher, se recusar a posição),
+com **Concluir**, **Adiar 10 min**, **Abrir** e **OK**; vários avisos
+empilham na mesma janela, que fecha quando o último é resolvido. Fechar a
+janela no X dá todos como vistos (o som para de repetir). Ligada por padrão em
+Configurações → Notificações → Som e janela de aviso, com o botão **Testar
+aviso** e a orientação para ativar as notificações do Chrome no Windows/Mac.

@@ -9,6 +9,7 @@ import { loadSenders, zapiSendText } from "../lib/whatsappSenders";
 import { CHANNEL_LABEL, activeSettings, loadAllNotifySettings, loadMailSender, withDefaults, type Channel } from "../lib/notify/settings";
 import { addNotification } from "../lib/notifications";
 import { loadSoundSettings, soundFor, type PlaySoundMessage, type SoundCategory } from "../lib/notify/sounds";
+import { ALERTS_KEY, ALERT_PAGE, ALERT_WINDOW_KEY, type AlertActionMessage, type AlertItem } from "../lib/notify/alerts";
 import { runClip, type ClipStartMessage } from "./clip";
 import { OFFSCREEN_PATH, type EnsureOffscreenMessage, type RpcRequest, type RpcResponse } from "../rpc/protocol";
 
@@ -97,7 +98,59 @@ function chromeNotify(id: string, title: string, message: string, withButtons: b
     ...(withButtons ? { buttons: [{ title: "Concluir" }, { title: "Adiar 10 min" }] } : {}),
   });
   void notifySound(id, category).catch((e) => console.warn("Som da notificação:", e));
+  void showAlert({ id, title, message, task: withButtons, at: new Date().toISOString() }).catch((e) => console.warn("Janela de aviso:", e));
 }
+
+// ---------- Janela de aviso ----------
+// O balão do Chrome depende do sistema: com as notificações do Chrome desligadas
+// no Windows/macOS ou com "Não perturbe", ele não aparece (e o som toca do mesmo
+// jeito). Por isso o aviso também abre numa janelinha do CRM, que fica até a
+// pessoa agir (Concluir, Adiar, Abrir ou OK).
+
+async function showAlert(alert: AlertItem): Promise<void> {
+  if (!(await loadSoundSettings()).window) return;
+  const list = ((await chrome.storage.session.get(ALERTS_KEY))[ALERTS_KEY] as AlertItem[] | undefined) ?? [];
+  await chrome.storage.session.set({ [ALERTS_KEY]: [...list.filter((a) => a.id !== alert.id), alert] });
+  const winId = (await chrome.storage.session.get(ALERT_WINDOW_KEY))[ALERT_WINDOW_KEY] as number | undefined;
+  if (winId != null) {
+    const ok = await chrome.windows.update(winId, { focused: true, drawAttention: true }).then(
+      () => true,
+      () => false,
+    );
+    if (ok) return;
+  }
+  const width = 400;
+  const height = 460;
+  const base = await chrome.windows.getLastFocused().catch(() => null);
+  const left = base?.left != null && base.width ? Math.max(0, base.left + base.width - width - 24) : undefined;
+  const top = base?.top != null && base.height ? Math.max(0, base.top + base.height - height - 24) : undefined;
+  const url = chrome.runtime.getURL(ALERT_PAGE);
+  // No canto da janela do Chrome; se o Chrome recusar a posição (outro monitor, tela pequena), deixa ele escolher.
+  const win = await chrome.windows
+    .create({ url, type: "popup", width, height, left, top, focused: true })
+    .catch(() => chrome.windows.create({ url, type: "popup", width, height, focused: true }));
+  if (win?.id != null) await chrome.storage.session.set({ [ALERT_WINDOW_KEY]: win.id });
+}
+
+async function dropAlert(id: string): Promise<void> {
+  const list = ((await chrome.storage.session.get(ALERTS_KEY))[ALERTS_KEY] as AlertItem[] | undefined) ?? [];
+  const next = list.filter((a) => a.id !== id);
+  await chrome.storage.session.set({ [ALERTS_KEY]: next });
+  if (!next.length) {
+    const winId = (await chrome.storage.session.get(ALERT_WINDOW_KEY))[ALERT_WINDOW_KEY] as number | undefined;
+    if (winId != null) await chrome.windows.remove(winId).catch(() => {});
+  }
+}
+
+chrome.windows.onRemoved.addListener((winId) => {
+  void chrome.storage.session.get(ALERT_WINDOW_KEY).then(async (r) => {
+    if (r[ALERT_WINDOW_KEY] !== winId) return;
+    // Fechou a janela no X: os avisos dela ficam vistos (o som para de repetir).
+    const list = ((await chrome.storage.session.get(ALERTS_KEY))[ALERTS_KEY] as AlertItem[] | undefined) ?? [];
+    for (const a of list) chrome.notifications.clear(a.id);
+    await chrome.storage.session.set({ [ALERTS_KEY]: [], [ALERT_WINDOW_KEY]: null });
+  });
+});
 
 // ---------- Som ----------
 
@@ -235,14 +288,14 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
-// Botões da notificação do lembrete: Concluir / Adiar 10 min.
-chrome.notifications.onButtonClicked.addListener((notificationId, button) => {
-  if (!notificationId.startsWith("task:")) return;
+/** Concluir / Adiar 10 min (botões do balão e da janela de aviso). */
+async function taskAction(notificationId: string, action: "done" | "snooze"): Promise<void> {
   const activityId = notificationId.slice(5);
   chrome.notifications.clear(notificationId);
-  void (async () => {
+  await dropAlert(notificationId);
+  {
     const userId = ((await chrome.storage.local.get("conectcrm-current-user"))["conectcrm-current-user"] as string | undefined) ?? null;
-    if (button === 0) {
+    if (action === "done") {
       await rpc("activities.setDone", { id: activityId, done: true }, userId);
       return;
     }
@@ -252,22 +305,53 @@ chrome.notifications.onButtonClicked.addListener((notificationId, button) => {
     const when = new Date(a.due_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
     snoozes.push({ activityId, at: new Date(Date.now() + 10 * 60_000).toISOString(), title: `Lembrete: ${a.title}`, text: `Atividade às ${when} (adiado)` });
     await chrome.storage.local.set({ [SNOOZE_KEY]: snoozes });
-  })().catch((e) => console.warn("Notificação:", e));
+  }
+}
+
+chrome.notifications.onButtonClicked.addListener((notificationId, button) => {
+  if (!notificationId.startsWith("task:")) return;
+  void taskAction(notificationId, button === 0 ? "done" : "snooze").catch((e) => console.warn("Notificação:", e));
+});
+
+/** Abre (ou foca) o CRM; na tarefa, quando o aviso é de uma. */
+async function openFromAlert(notificationId: string): Promise<void> {
+  const query = notificationId.startsWith("task:") ? `?tarefa=${notificationId.slice(5)}` : "";
+  const url = chrome.runtime.getURL(`${DASHBOARD}${query}`);
+  const tabs = await chrome.tabs.query({ url: chrome.runtime.getURL(`${DASHBOARD}*`) });
+  const tab = tabs[0];
+  if (tab?.id) {
+    await chrome.tabs.update(tab.id, { url, active: true });
+    if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true });
+  } else await chrome.tabs.create({ url });
+  chrome.notifications.clear(notificationId);
+  await dropAlert(notificationId);
+}
+
+// Ações da janela de aviso (src/alert).
+chrome.runtime.onMessage.addListener((msg: AlertActionMessage, _sender, sendResponse) => {
+  if (msg?.target !== "background" || msg.kind !== "alert-action") return false;
+  const run =
+    msg.action === "open"
+      ? openFromAlert(msg.id)
+      : msg.action === "ok"
+        ? (chrome.notifications.clear(msg.id), dropAlert(msg.id))
+        : msg.action === "test"
+          ? Promise.resolve(chromeNotify(`notify:teste-${Date.now()}`, "Teste de aviso do ConectCRM", "Se você está vendo isto, os avisos estão funcionando.", false))
+          : taskAction(msg.id, msg.action);
+  void Promise.resolve(run)
+    .then(() => sendResponse({ ok: true }))
+    .catch((e: unknown) => sendResponse({ ok: false, error: String(e) }));
+  return true;
 });
 
 // Clique na notificação: abre (ou foca) o CRM já na tarefa.
 chrome.notifications.onClicked.addListener((notificationId) => {
   if (!notificationId.startsWith("task:") && !notificationId.startsWith("notify:")) return;
-  const query = notificationId.startsWith("task:") ? `?tarefa=${notificationId.slice(5)}` : "";
-  const url = chrome.runtime.getURL(`${DASHBOARD}${query}`);
-  void chrome.tabs.query({ url: chrome.runtime.getURL(`${DASHBOARD}*`) }).then(async (tabs) => {
-    const tab = tabs[0];
-    if (tab?.id) {
-      await chrome.tabs.update(tab.id, { url, active: true });
-      if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true });
-    } else await chrome.tabs.create({ url });
-    chrome.notifications.clear(notificationId);
-  });
+  void openFromAlert(notificationId);
+});
+// Fechou o balão: sai da janela de aviso também.
+chrome.notifications.onClosed.addListener((notificationId, byUser) => {
+  if (byUser) void dropAlert(notificationId);
 });
 
 chrome.runtime.onInstalled.addListener(() => {

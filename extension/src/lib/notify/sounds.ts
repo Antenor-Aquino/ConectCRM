@@ -34,6 +34,8 @@ export interface SoundSettings {
   repeat: boolean;
   /** Sem som neste horário (o aviso aparece normalmente). */
   quiet: { enabled: boolean; from: string; to: string };
+  /** Também mostrar o aviso numa janela do CRM (não depende das notificações do sistema). */
+  window: boolean;
 }
 
 export const DEFAULT_SOUND: SoundSettings = {
@@ -42,6 +44,7 @@ export const DEFAULT_SOUND: SoundSettings = {
   perCategory: {},
   repeat: false,
   quiet: { enabled: false, from: "20:00", to: "07:00" },
+  window: true,
 };
 
 export const SOUND_KEY = "conectcrm-sound";
