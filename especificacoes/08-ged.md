@@ -292,3 +292,28 @@ palavras-chave continuam valendo; a pasta é mais um jeito de achar.
   banco).
 - Depois: permissão por pasta e a seção automática "Por organização / Por
   funil" montada a partir dos vínculos.
+
+## Localizar documentos (0.2.72)
+
+O banco guarda o caminho do arquivo **relativo à pasta de documentos**
+(`2026-10/Nome (fe2d460b).pdf`). Se a pasta muda de lugar, é reorganizada, o
+computador muda ou a extensão é reinstalada, os links quebram. Para isso:
+
+- **Configurações → Documentos → Conferir e localizar documentos**: confere se
+  cada arquivo está onde o banco diz (existência e tamanho; no navegador, se
+  está no armário do ambiente) e lista os que faltam.
+- **Localizar documentos…**: escolhe-se a pasta onde os arquivos estão agora
+  (subpastas incluídas, até 8 níveis). Cada arquivo que falta é procurado pelo
+  código no nome `(fe2d460b)`, pelo nome dos backups antigos (SHA-256 inteiro)
+  ou, se foi renomeado, pelo tamanho — e só é aceito se o **conteúdo** for o
+  mesmo (SHA-256). Achou na própria pasta de documentos: só o caminho muda.
+  Achou em outra pasta (backup, pendrive): o arquivo é copiado para o lugar
+  dos documentos (pasta com acesso ou navegador).
+- **Buscar no backup**: o mesmo, usando a pasta do backup automático.
+- **Trocar a pasta de documentos** já procura na pasta nova os arquivos que
+  faltam. Escolher uma pasta com nome de mês (`2026-10`) avisa que o certo é a
+  pasta acima dela.
+- Ao abrir o GED, se algum arquivo falta, aparece o aviso "N documentos sem o
+  arquivo no lugar indicado" com o botão **Localizar documentos**.
+- Cada documento relocalizado ganha na auditoria "Arquivo localizado em …".
+  Só administradores relocalizam.

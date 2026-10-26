@@ -13,6 +13,7 @@ import {
   Files,
   Folder,
   FolderInput,
+  FileSearch,
   KeyRound,
   LayoutGrid,
   List,
@@ -30,6 +31,7 @@ import type { Pipeline } from "../../db/pipelines";
 import { PIPELINE_TYPE_LABEL, PIPELINE_TYPE_ORDER } from "../../lib/cardTypes";
 import { deleteOrphans, downloadZip, fetchVersion, isImage, isPdf, runDocumentMaintenance } from "../../lib/documentFiles";
 import { documentsFolderStatus, requestDocumentsFolderAccess } from "../../lib/fileStore";
+import { checkDocuments } from "../../lib/locateDocuments";
 import { formatBytes } from "../../lib/files";
 import { formatDateTime } from "../../lib/format";
 import { pdfThumbnail } from "../../lib/pdf";
@@ -162,7 +164,7 @@ function LinkFilter({
   );
 }
 
-export function GedView() {
+export function GedView({ onLocate }: { onLocate?: () => void } = {}) {
   const { user, users } = useSession();
   const [filter, setFilter] = useState<Filter>(readUrlFilter);
   const [search, setSearch] = useState(filter.search ?? "");
@@ -183,6 +185,7 @@ export function GedView() {
   const [upload, setUpload] = useState<File[] | null>(null);
   const [bulkLink, setBulkLink] = useState(false);
   const [folderPrompt, setFolderPrompt] = useState(false);
+  const [missingFiles, setMissingFiles] = useState(0);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ text: string; kind: "ok" | "err" } | null>(null);
   const [tree, reloadTree] = useFolderTree();
@@ -219,6 +222,10 @@ export function GedView() {
     // Rotina: lixeira vencida, texto de PDFs antigos, mudança para a pasta.
     void runDocumentMaintenance()
       .then(() => load())
+      .catch(() => {})
+      // Depois da rotina: algum arquivo fora do lugar (pasta mudou, extensão reinstalada)?
+      .then(() => checkDocuments())
+      .then((c) => setMissingFiles(c.missing.length))
       .catch(() => {});
     void documentsFolderStatus().then((s) => setFolderPrompt(s.configured && s.permission !== "granted"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -377,6 +384,21 @@ export function GedView() {
           >
             Conceder acesso
           </TaButton>
+        </div>
+      )}
+
+      {missingFiles > 0 && !folderPrompt && (
+        <div data-ged-missing className="flex flex-wrap items-center gap-3 rounded-xl border border-warning-200 bg-warning-50 px-4 py-2.5 text-theme-sm text-warning-800">
+          <FileSearch size={16} />
+          <span className="flex-1">
+            {missingFiles === 1 ? "1 documento está" : `${missingFiles} documentos estão`} sem o arquivo no lugar indicado. Se a pasta de documentos mudou de lugar
+            (ou a extensão foi reinstalada), localize os arquivos para atualizar os links.
+          </span>
+          {onLocate && (
+            <TaButton size="sm" variant="primary" onClick={onLocate}>
+              Localizar documentos
+            </TaButton>
+          )}
         </div>
       )}
 

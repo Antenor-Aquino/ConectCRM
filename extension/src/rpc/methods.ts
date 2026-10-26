@@ -577,6 +577,11 @@ export const methods = {
   "files.setLocation": (db: DatabaseSync, ctx: DbContext, p: { blobId: string; location: "browser" | "folder"; path: string | null }) =>
     docs.setBlobLocation(db, ctx, p.blobId, p.location, p.path),
   "files.all": (db: DatabaseSync) => docs.allBlobs(db),
+  "files.locateList": (db: DatabaseSync) => docs.locateBlobs(db),
+  "files.relocate": (db: DatabaseSync, ctx: DbContext, p: { items: { blobId: string; location: "browser" | "folder"; path: string | null }[] }) => {
+    assertRole(db, ctx, ["admin"], "a localização dos documentos");
+    return docs.relocateBlobs(db, ctx, p.items);
+  },
   "files.markInBrowser": (db: DatabaseSync, ctx: DbContext, p: { sha256s: string[] }) => docs.markInBrowser(db, ctx, p.sha256s),
   "files.pendingText": (db: DatabaseSync) => docs.pendingTextVersions(db),
   "files.setText": (db: DatabaseSync, ctx: DbContext, p: { versionId: string; text: string | null }) => docs.setVersionText(db, ctx, p.versionId, p.text),

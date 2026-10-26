@@ -469,7 +469,7 @@ export function assertDocumentOwner(db: DatabaseSync, viewer: Viewer | null | un
 
 // ---------- Auditoria (acessos sem alteração) ----------
 
-export type DocumentAction = "view" | "download" | "whatsapp";
+export type DocumentAction = "view" | "download" | "whatsapp" | "relocate";
 
 export function logDocumentEvent(db: DatabaseSync, ctx: DbContext, documentId: string, action: DocumentAction, detail?: string | null): void {
   run(
@@ -951,7 +951,7 @@ export interface AuditEntry {
   text: string;
 }
 
-const ACTION_TEXT: Record<string, string> = { view: "Visualizou", download: "Baixou", whatsapp: "Enviou pelo WhatsApp" };
+const ACTION_TEXT: Record<string, string> = { view: "Visualizou", download: "Baixou", whatsapp: "Enviou pelo WhatsApp", relocate: "Arquivo localizado em" };
 /** "ao cartão" / "do cartão", "à tarefa" / "da tarefa"... */
 const LINK_LABEL: Record<DocLinkType, { to: string; from: string }> = {
   deal: { to: "ao cartão", from: "do cartão" },
@@ -1096,6 +1096,50 @@ export function markInBrowser(db: DatabaseSync, ctx: DbContext, sha256s: string[
 /** Todos os arquivos em uso (backup). */
 export function allBlobs(db: DatabaseSync): { sha256: string; location: BlobLocation; path: string | null; mime: string }[] {
   return many(db, "SELECT sha256, location, path, mime FROM file_blob WHERE deleted_at IS NULL AND location <> 'legacy'");
+}
+
+/** Um arquivo do GED com o que ajuda a reencontrá-lo (Localizar documentos). */
+export interface LocateBlob {
+  id: string;
+  sha256: string;
+  location: "browser" | "folder";
+  path: string | null;
+  mime: string;
+  size_bytes: number;
+  created_at: string;
+  /** Nome do documento e do arquivo da primeira versão que usa o arquivo. */
+  name: string | null;
+  filename: string | null;
+}
+
+export function locateBlobs(db: DatabaseSync): LocateBlob[] {
+  return many(
+    db,
+    `SELECT b.id, b.sha256, b.location, b.path, b.mime, b.size_bytes, b.created_at,
+       (SELECT d.name FROM document_version v JOIN document d ON d.id = v.document_id WHERE v.blob_id = b.id ORDER BY v.created_at LIMIT 1) AS name,
+       (SELECT v.filename FROM document_version v WHERE v.blob_id = b.id ORDER BY v.created_at LIMIT 1) AS filename
+     FROM file_blob b WHERE b.deleted_at IS NULL AND b.location <> 'legacy'`,
+  );
+}
+
+/**
+ * Grava onde os arquivos foram reencontrados (mudança de pasta, de computador
+ * ou de instalação). Cada documento afetado ganha um registro na auditoria.
+ */
+export function relocateBlobs(db: DatabaseSync, ctx: DbContext, items: { blobId: string; location: "browser" | "folder"; path: string | null }[]): number {
+  return withTransaction(db, () => {
+    let n = 0;
+    for (const it of items) {
+      if (it.location === "folder" && !it.path) throw new ValidationError("Caminho do arquivo ausente.");
+      if (!updateRow(db, ctx, "file_blob", it.blobId, { location: it.location, path: it.location === "folder" ? it.path : null })) continue;
+      n++;
+      const detail = it.location === "folder" ? `"${it.path}"` : "neste navegador";
+      for (const d of many<{ id: string }>(db, "SELECT DISTINCT document_id AS id FROM document_version WHERE blob_id = ?", it.blobId)) {
+        logDocumentEvent(db, ctx, d.id, "relocate", detail);
+      }
+    }
+    return n;
+  });
 }
 
 /** PDFs cujo texto ainda não foi lido (anexos antigos). */

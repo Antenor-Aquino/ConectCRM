@@ -367,7 +367,12 @@ function Main() {
         ) : tab === "organizacoes" ? (
           <OrganizationsView refreshKey={contactsKey} onOpen={setOrgOpen} onNew={() => setNewOrg(true)} />
         ) : tab === "ged" ? (
-          <GedView />
+          <GedView
+            onLocate={() => {
+              setSettingsSection("documentos");
+              setTab("configuracoes");
+            }}
+          />
         ) : tab === "funis" ? (
           <FunnelsView
             pipelines={pipelines}
