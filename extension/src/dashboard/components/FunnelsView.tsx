@@ -1,7 +1,7 @@
 // Tela de Funis (tela inicial do mockup): lista de funis à esquerda e o
 // quadro Kanban do funil selecionado.
 import { useState } from "react";
-import { CircleDollarSign, FolderKanban, LifeBuoy, Plus } from "lucide-react";
+import { ChevronsLeft, ChevronsRight, CircleDollarSign, FolderKanban, LifeBuoy, Plus } from "lucide-react";
 import { TaButton, cn } from "@tailadmin";
 import type { Pipeline, PipelineType } from "../../db/pipelines";
 import { PIPELINE_TYPE_LABEL, PIPELINE_TYPE_ORDER } from "../../lib/cardTypes";
@@ -16,6 +16,16 @@ const TYPE_ICON: Record<PipelineType, React.ReactNode> = {
   operacional: <LifeBuoy size={18} />,
   projeto: <FolderKanban size={18} />,
 };
+
+const SIDEBAR_KEY = "conectcrm-funnels-panel";
+
+/** Sigla do funil na faixa recolhida: "Vendas AEB" → "VA"; "Suporte" → "SU". */
+function initials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "?";
+  if (words.length === 1) return words[0]!.slice(0, 2);
+  return words[0]![0]! + words[1]![0]!;
+}
 
 export function FunnelsView({
   pipelines,
@@ -40,7 +50,23 @@ export function FunnelsView({
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState(false);
   const [stats, setStats] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Painel de funis retrátil: aberto ou recolhido numa faixa estreita (só as siglas); lembra a escolha.
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    try {
+      return localStorage.getItem(SIDEBAR_KEY) !== "collapsed";
+    } catch {
+      return true;
+    }
+  });
+  const toggleSidebar = () => {
+    const next = !sidebarOpen;
+    setSidebarOpen(next);
+    try {
+      localStorage.setItem(SIDEBAR_KEY, next ? "open" : "collapsed");
+    } catch {
+      /* preferência só desta tela */
+    }
+  };
   // Detalhe do cartão: painel lateral ou tela cheia (no lugar do quadro); lembra a escolha.
   const [cardMode, setCardMode] = useState<CardDetailMode>(() => {
     try {
@@ -62,13 +88,18 @@ export function FunnelsView({
 
   return (
     <div className="flex gap-5">
-      {sidebarOpen && (
-        <aside className="w-60 shrink-0 self-start rounded-2xl border border-gray-200 bg-white p-4 shadow-theme-xs dark:border-gray-800 dark:bg-gray-900">
+      {sidebarOpen ? (
+        <aside data-funnels-panel="open" className="w-60 shrink-0 self-start rounded-2xl border border-gray-200 bg-white p-4 shadow-theme-xs dark:border-gray-800 dark:bg-gray-900">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-base font-semibold text-gray-800 dark:text-white/90">Funis</h2>
-            <button type="button" title="Novo funil" onClick={() => setCreating(true)} className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5">
-              <Plus size={16} />
-            </button>
+            <div className="flex items-center gap-0.5">
+              <button type="button" title="Novo funil" onClick={() => setCreating(true)} className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5">
+                <Plus size={16} />
+              </button>
+              <button type="button" title="Recolher funis" aria-label="Recolher funis" data-funnels-toggle onClick={toggleSidebar} className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5">
+                <ChevronsLeft size={16} />
+              </button>
+            </div>
           </div>
           {pipelines.length === 0 ? (
             <p className="text-theme-xs text-gray-500">Nenhum funil ainda.</p>
@@ -101,6 +132,36 @@ export function FunnelsView({
             </div>
           )}
         </aside>
+      ) : (
+        <aside data-funnels-panel="collapsed" className="flex w-14 shrink-0 flex-col items-center self-start rounded-2xl border border-gray-200 bg-white py-3 shadow-theme-xs dark:border-gray-800 dark:bg-gray-900">
+          <button type="button" title="Mostrar funis" aria-label="Mostrar funis" data-funnels-toggle onClick={toggleSidebar} className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5">
+            <ChevronsRight size={16} />
+          </button>
+          <button type="button" title="Novo funil" onClick={() => setCreating(true)} className="mb-1 flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5">
+            <Plus size={16} />
+          </button>
+          {PIPELINE_TYPE_ORDER.filter((t) => pipelines.some((p) => p.type === t)).map((t) => (
+            <section key={t} className="flex w-full flex-col items-center gap-1 border-t border-gray-200 pt-2 mt-1 dark:border-gray-700" title={PIPELINE_TYPE_LABEL[t]}>
+              {pipelines
+                .filter((p) => p.type === t)
+                .map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    title={`${p.name} · ${PIPELINE_TYPE_LABEL[t]}`}
+                    aria-label={p.name}
+                    onClick={() => onSelect(p.id)}
+                    className={cn(
+                      "flex h-9 w-9 items-center justify-center rounded-lg text-[11px] font-semibold uppercase transition-colors",
+                      p.id === selected?.id ? "bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-400" : "text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/5",
+                    )}
+                  >
+                    {initials(p.name)}
+                  </button>
+                ))}
+            </section>
+          ))}
+        </aside>
       )}
 
       {!selected ? (
@@ -132,7 +193,7 @@ export function FunnelsView({
           pipeline={selected}
           refreshKey={refreshKey}
           sidebarOpen={sidebarOpen}
-          onToggleSidebar={() => setSidebarOpen((o) => !o)}
+          onToggleSidebar={toggleSidebar}
           onCreateCard={(stageId) => onCreateCard(selected, stageId)}
           onOpenCard={onOpenCard}
           onEditPipeline={() => setEditing(true)}

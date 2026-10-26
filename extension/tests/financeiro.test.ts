@@ -1,6 +1,6 @@
 // Integração com a Gestão Financeira, Fase 2 (spec 13): cliente/fornecedor do
 // cartão, CPF do contato e a cópia local dos lançamentos.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { cardCounts } from "../src/db/cardCounts";
 import { createOrganization, createPerson, getPerson, updatePerson } from "../src/db/contacts";
 import { createCard, updateCard } from "../src/db/deals";
@@ -242,7 +242,11 @@ describe("Fase 4: pacote, alertas e Copiloto", async () => {
     const s = cop.financeSummaryForCopilot(db, null, { de: "2026-10-01", ate: "2026-10-31" }) as { totais: { receitas: string; resultado: string } };
     expect(s.totais.receitas).toMatch(/1\.000,00/);
     expect(cop.financeSummaryForCopilot(db, null, { de: "x", ate: "y" })).toHaveProperty("erro");
+    // O Copiloto usa a data de hoje: fixa no dia do cenário.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-20T12:00:00"));
     const p = cop.financeAlertsForCopilot(db, null, {}) as { receitasAtrasadas: { diasDeAtraso: number }[]; ganhosComReceitaALancar: { cartao: string }[] };
+    vi.useRealTimers();
     expect(p.receitasAtrasadas).toHaveLength(1);
     expect(p.ganhosComReceitaALancar.map((x) => x.cartao)).toEqual(["Projeto B"]);
     expect(cop.cardFinanceForCopilot(db, a)?.lancamentos).toHaveLength(2);
