@@ -38,6 +38,7 @@ import { TasksView } from "./tasks/TasksView";
 import { SessionProvider, useSession } from "./session";
 import { errorText } from "../lib/errors";
 import { GlobalSearch } from "./components/GlobalSearch";
+import { MOVE_ASSISTANT_EVENT, MoveAssistant } from "./components/MoveAssistant";
 import { DocumentViewer } from "./documents/DocumentViewer";
 
 // Menu principal (spec 01, seção 1).
@@ -159,9 +160,21 @@ function Main() {
     void checkDocBackup()
       .then((r) => r.status === "needs-permission" && setDocBackupPending(r))
       .catch(() => {});
+  // Assistente de mudança: banco vindo de outra instalação (ou aberto em Configurações → Backup).
+  const [move, setMove] = useState<{ previousId: string | null; open: boolean } | null>(null);
+  useEffect(() => {
+    const open = () => setMove((m) => ({ previousId: m?.previousId ?? null, open: true }));
+    window.addEventListener(MOVE_ASSISTANT_EVENT, open);
+    return () => window.removeEventListener(MOVE_ASSISTANT_EVENT, open);
+  }, []);
   useEffect(() => {
     void systemCall<DbEnv>("system.env").then((e) => {
       setEnv(e);
+      if (e === "production" && user.role === "admin") {
+        void call("installation.check", { extensionId: chrome.runtime.id })
+          .then((r) => r.moved && setMove({ previousId: r.previousId, open: true }))
+          .catch(() => {});
+      }
       void checkDocumentExpiry().catch(() => {});
       // Lixeira: o que passou do prazo é excluído definitivamente.
       void call("trash.purgeExpired")
@@ -343,6 +356,14 @@ function Main() {
           />
         }
       >
+        {move && !move.open && move.previousId && (
+          <div data-move-banner className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-warning-200 bg-warning-50 px-4 py-2.5 text-theme-sm text-warning-800">
+            <span className="flex-1">Este banco veio de outra instalação do ConectCRM. Termine o assistente de mudança para refazer pastas, configurações e integrações.</span>
+            <button type="button" className="font-medium underline" onClick={() => setMove({ ...move, open: true })}>
+              Continuar o assistente
+            </button>
+          </div>
+        )}
         {error && (
           <div className="mb-4 rounded-xl border border-error-200 bg-error-50 px-4 py-3 text-theme-sm text-error-700">Não foi possível abrir o banco local: {error}</div>
         )}
@@ -437,7 +458,19 @@ function Main() {
             }}
           />
         )}
-        {docBackupPending && !backupPending && (
+        {move?.open && (
+          <MoveAssistant
+            previousId={move.previousId}
+            onClose={() => setMove({ ...move, open: false })}
+            onDone={() => setMove(null)}
+            onGo={(section) => {
+              setMove({ ...move, open: false });
+              setSettingsSection(section);
+              setTab("configuracoes");
+            }}
+          />
+        )}
+        {docBackupPending && !backupPending && !move?.open && (
           <DocBackupPermissionModal handle={docBackupPending.handle} settings={docBackupPending.settings} onClose={() => setDocBackupPending(null)} />
         )}
         {docOpen && <DocumentViewer documentId={docOpen} onClose={() => setDocOpen(null)} />}

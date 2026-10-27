@@ -39,6 +39,11 @@ inacessíveis; a Chrome Web Store também dá outro ID. Então:
 4. Reinstalou de outra pasta (ID novo): pareia de novo (a Gestão Financeira
    avisa que substitui a conexão anterior).
 
+**Atualização (CRM 0.2.74 · GF 0.0.15):** as duas passaram a ter ID fixo
+(`key` no manifest), com migração única por backup/restauração e o assistente
+de mudança — ver especificação 14. O pareamento continua igual; com o ID fixo
+ele não se perde mais ao mudar de pasta.
+
 Protocolo versionado (`src/lib/finance/protocol.ts`, mesmo arquivo nos dois
 repositórios): `hello` e `ping`; respostas `paired` (com versão e ambiente
 Produção/Teste), `pending`, `refused`, `not-paired`, `protocol`, `invalid`.

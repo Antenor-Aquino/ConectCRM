@@ -9,8 +9,8 @@
 import type { LocateBlob } from "../db/documents";
 import { call } from "../rpc/client";
 import type { DbEnv } from "./environment";
-import { dirFor, folderPath, grantedFolder, hasInBrowser, loadDocumentsFolder, putInBrowser, sha256Hex, writeToFolder } from "./fileStore";
-import { currentEnv } from "./documentFiles";
+import { dirFor, folderPath, grantedFolder, hasInBrowser, loadDocumentsFolder, pickDocumentsFolder, putInBrowser, sha256Hex, writeToFolder } from "./fileStore";
+import { currentEnv, moveBrowserFilesToFolder } from "./documentFiles";
 import { loadBackupFolderHandle, type PermissionedDirectoryHandle } from "./backupFolder";
 
 export interface DocumentsCheck {
@@ -235,4 +235,20 @@ export async function recoverFromBackups(onProgress?: (p: LocateProgress) => voi
     if (!r.stillMissing.length) break;
   }
   return n;
+}
+
+/** Aviso ao escolher a pasta de um mês ("2026-10") no lugar da pasta de documentos. */
+export const confirmMonthFolder = (h: PermissionedDirectoryHandle) =>
+  !looksLikeMonthFolder(h.name) ||
+  confirm(
+    `"${h.name}" parece ser a pasta de um mês, criada pelo CRM dentro da pasta de documentos. O certo é escolher a pasta ACIMA dela (a que contém as pastas dos meses).\n\nUsar "${h.name}" mesmo assim?`,
+  );
+
+/** Escolhe (ou troca) a pasta de documentos: muda para lá o que está no navegador e reencontra nela os arquivos que faltam. */
+export async function chooseDocumentsFolder(): Promise<string | null> {
+  const h = await pickDocumentsFolder(confirmMonthFolder);
+  if (!h) return null;
+  const moved = await moveBrowserFilesToFolder();
+  const found = (await checkDocuments()).missing.length ? await locateDocuments(h) : null;
+  return `Pasta "${h.name}" escolhida.${moved ? ` ${moved} arquivo(s) movido(s) para ela.` : ""}${found ? ` ${locateSummary(found)}` : ""}`;
 }

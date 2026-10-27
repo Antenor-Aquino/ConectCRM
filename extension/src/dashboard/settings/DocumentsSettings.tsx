@@ -7,10 +7,10 @@ import { call } from "../../rpc/client";
 import type { DocumentType } from "../../db/documents";
 import type { DbEnv } from "../../lib/environment";
 import { moveBrowserFilesToFolder, moveFolderFilesToBrowser } from "../../lib/documentFiles";
-import { documentsFolderStatus, forgetDocumentsFolder, pickDocumentsFolder, requestDocumentsFolderAccess, type FolderStatus } from "../../lib/fileStore";
+import { documentsFolderStatus, forgetDocumentsFolder, requestDocumentsFolderAccess, type FolderStatus } from "../../lib/fileStore";
 import { formatBytes } from "../../lib/files";
 import { loadBackupFolderHandle, type DirectoryPickerWindow, type PermissionedDirectoryHandle } from "../../lib/backupFolder";
-import { checkDocuments, locateDocuments, locateSummary, looksLikeMonthFolder, type DocumentsCheck, type LocateProgress } from "../../lib/locateDocuments";
+import { checkDocuments, chooseDocumentsFolder, locateDocuments, locateSummary, type DocumentsCheck, type LocateProgress } from "../../lib/locateDocuments";
 import { useSession } from "../session";
 import { Switch } from "../ui/Switch";
 import { ColorPicker } from "./TagsSettings";
@@ -97,14 +97,8 @@ function StoragePanel({ env, onChanged }: { env: DbEnv; onChanged: () => void })
           type="button"
           disabled={!isAdmin || busy}
           onClick={() =>
-            void run(async () => {
-              const h = await pickDocumentsFolder(confirmMonthFolder);
-              if (!h) return;
-              const moved = await moveBrowserFilesToFolder();
-              // Trocou de pasta com arquivos já guardados: procura cada um na pasta nova.
-              const found = (await checkDocuments()).missing.length ? await locateDocuments(h) : null;
-              return `Pasta "${h.name}" escolhida.${moved ? ` ${moved} arquivo(s) movido(s) para ela.` : ""}${found ? ` ${locateSummary(found)}` : ""}`;
-            })
+            // Trocou de pasta com arquivos já guardados: procura cada um na pasta nova.
+            void run(async () => (await chooseDocumentsFolder()) ?? undefined)
           }
           className={cn(
             "rounded-xl border p-4 text-left",
@@ -172,13 +166,6 @@ function StoragePanel({ env, onChanged }: { env: DbEnv; onChanged: () => void })
     </TaPanel>
   );
 }
-
-/** Aviso ao escolher a pasta de um mês ("2026-10") no lugar da pasta de documentos. */
-const confirmMonthFolder = (h: PermissionedDirectoryHandle) =>
-  !looksLikeMonthFolder(h.name) ||
-  confirm(
-    `"${h.name}" parece ser a pasta de um mês, criada pelo CRM dentro da pasta de documentos. O certo é escolher a pasta ACIMA dela (a que contém as pastas dos meses).\n\nUsar "${h.name}" mesmo assim?`,
-  );
 
 const PHASE_TEXT: Record<LocateProgress["phase"], string> = { scan: "Lendo a pasta", match: "Conferindo o conteúdo", save: "Atualizando" };
 

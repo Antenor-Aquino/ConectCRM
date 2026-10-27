@@ -5,6 +5,7 @@
 import { addNotification } from "./notifications";
 import { loadBackupFolderHandle, type PermissionedDirectoryHandle } from "./backupFolder";
 import { errorText } from "./errors";
+import { exportSettings, SETTINGS_BACKUP_FILE, settingsJson } from "./settingsTransfer";
 
 export type BackupFrequency = "daily" | "weekly";
 
@@ -83,6 +84,12 @@ export async function pruneBackups(handle: FileSystemDirectoryHandle, settings: 
   return drop.length;
 }
 
+async function writeSettingsCopy(handle: FileSystemDirectoryHandle): Promise<void> {
+  const w = await (await handle.getFileHandle(SETTINGS_BACKUP_FILE, { create: true })).createWritable();
+  await w.write(new Blob([settingsJson(await exportSettings(false))], { type: "application/json" }));
+  await w.close();
+}
+
 /** Grava o arquivo na pasta e registra a data (backup automático ou "Fazer backup agora").
  * Os documentos do GED têm backup próprio (lib/docBackup). */
 export async function writeBackup(
@@ -96,6 +103,8 @@ export async function writeBackup(
   const writable = await file.createWritable();
   await writable.write(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "application/x-sqlite3" }));
   await writable.close();
+  // Configurações fora do banco (sem senhas e chaves), sempre a mais recente.
+  await writeSettingsCopy(handle).catch(() => {});
   const pruned = await pruneBackups(handle, settings).catch(() => 0);
   await saveAutoBackupSettings({ ...settings, lastRunAt: new Date().toISOString(), folderName: handle.name });
   await addNotification({

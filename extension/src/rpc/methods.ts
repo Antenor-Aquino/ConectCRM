@@ -20,6 +20,7 @@ import * as cf from "../db/customFields";
 import * as deals from "../db/deals";
 import * as docs from "../db/documents";
 import * as docBackup from "../db/documentBackup";
+import * as installation from "../db/installation";
 import * as folders from "../db/documentFolders";
 import * as series from "../db/activitySeries";
 import * as contactMsg from "../db/contactMessages";
@@ -579,6 +580,12 @@ export const methods = {
     docs.setBlobLocation(db, ctx, p.blobId, p.location, p.path),
   "files.all": (db: DatabaseSync) => docs.allBlobs(db),
   "files.locateList": (db: DatabaseSync) => docs.locateBlobs(db),
+  // Mudança de instalação (outra pasta, outro computador): assistente.
+  "installation.check": (db: DatabaseSync, ctx: DbContext, p: { extensionId: string }) => installation.checkInstallation(db, ctx, p.extensionId),
+  "installation.mark": (db: DatabaseSync, ctx: DbContext, p: { extensionId: string }) => {
+    assertRole(db, ctx, ["admin"], "a instalação");
+    installation.markInstallation(db, ctx, p.extensionId);
+  },
   "files.backupList": (db: DatabaseSync, ctx: DbContext, p: { includeOldVersions?: boolean }) => {
     assertRole(db, ctx, ["admin"], "o backup dos documentos");
     return docBackup.documentBackupList(db, p);

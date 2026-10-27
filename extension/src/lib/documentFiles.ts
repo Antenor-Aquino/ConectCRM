@@ -7,6 +7,7 @@ import { call, systemCall } from "../rpc/client";
 import type { DbEnv } from "./environment";
 import { deleteContent, documentsFolderStatus, moveToFolder, putInBrowser, readContent, sha256Hex, storeContent, type ContentRef } from "./fileStore";
 import { MAX_UPLOAD_BYTES } from "./files";
+import { SETTINGS_FILE } from "./settingsTransfer";
 import { addNotification } from "./notifications";
 import { extractPdfText } from "./pdf";
 
@@ -145,10 +146,11 @@ export async function moveFolderFilesToBrowser(): Promise<number> {
 
 const DOCS_DIR = "documentos";
 
-/** Cópia manual: .zip com o banco e os documentos. */
-export async function buildBackupZip(dbBytes: Uint8Array): Promise<Uint8Array> {
+/** Cópia manual: .zip com o banco, os documentos e (opcional) as configurações. */
+export async function buildBackupZip(dbBytes: Uint8Array, settings?: string): Promise<Uint8Array> {
   const env = await currentEnv();
   const files: Record<string, Uint8Array | [Uint8Array, { level: 0 }]> = { "conectcrm.sqlite": dbBytes };
+  if (settings) files[SETTINGS_FILE] = new TextEncoder().encode(settings);
   for (const b of await call("files.all")) {
     try {
       files[`${DOCS_DIR}/${b.sha256}`] = [new Uint8Array(await (await readContent(env, b)).arrayBuffer()), { level: 0 }];
@@ -159,8 +161,8 @@ export async function buildBackupZip(dbBytes: Uint8Array): Promise<Uint8Array> {
   return new Promise((resolve, reject) => zip(files, (err, out) => (err ? reject(err) : resolve(out))));
 }
 
-/** Lê um backup .zip: o banco e os documentos. */
-export async function readBackupZip(bytes: Uint8Array): Promise<{ db: Uint8Array; files: Map<string, Uint8Array> }> {
+/** Lê um backup .zip: o banco, os documentos e as configurações (se vieram). */
+export async function readBackupZip(bytes: Uint8Array): Promise<{ db: Uint8Array; files: Map<string, Uint8Array>; settings: string | null }> {
   const out = await new Promise<Unzipped>((resolve, reject) => unzip(bytes, (err, r) => (err ? reject(err) : resolve(r))));
   const db = out["conectcrm.sqlite"];
   if (!db) throw new Error("Este .zip não é um backup do ConectCRM (falta conectcrm.sqlite).");
@@ -169,7 +171,8 @@ export async function readBackupZip(bytes: Uint8Array): Promise<{ db: Uint8Array
     const m = name.match(new RegExp(`^${DOCS_DIR}/([0-9a-f]{64})$`));
     if (m) files.set(m[1]!, data);
   }
-  return { db, files };
+  const settings = out[SETTINGS_FILE] ? new TextDecoder().decode(out[SETTINGS_FILE]) : null;
+  return { db, files, settings };
 }
 
 /** Depois de restaurar o banco: devolve os documentos ao navegador. */

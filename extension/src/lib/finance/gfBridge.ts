@@ -1,8 +1,8 @@
 // Ponte com a extensão Gestão Financeira (spec 13): encontrar, parear e
-// conversar. Sem ID fixo: o ConectCRM acha a Gestão Financeira instalada
-// neste Chrome (chrome.management) e pede para se conectar; o usuário permite
-// lá. Assim nenhuma das duas troca de ID (os dados de cada uma ficam presos
-// ao ID) e reinstalar de outra pasta só pede um novo pareamento.
+// conversar. O ConectCRM acha a Gestão Financeira instalada neste Chrome
+// (chrome.management) e pede para se conectar; o usuário permite lá. Desde a
+// 0.2.74 (GF 0.0.15) as duas têm ID fixo (chave no manifest), então mudar de
+// pasta não muda o ID; quem vem de uma versão anterior pareia de novo uma vez.
 import { PROTOCOL, type ContactCard, type FinanceItem, type IntegrationRequest, type IntegrationResponse, type GfEnv, type LaunchRequest } from "./protocol";
 
 const KEY = "conectcrm-gestao-financeira";
