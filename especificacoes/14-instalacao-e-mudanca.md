@@ -13,7 +13,7 @@ antiga apaga os dados dela.
 
 ## ID fixo
 
-Desde o ConectCRM 0.2.74 e a Gestão Financeira 0.0.15 o manifest tem `key`:
+Desde o ConectCRM 0.2.74 e a Gestão Financeira 0.0.15 (instalador atual: 0.0.25) o manifest tem `key`:
 
 | Extensão | ID fixo |
 |---|---|
@@ -66,7 +66,7 @@ Cada passo mostra a situação real. "Continuar depois" deixa um aviso no topo;
    Na Gestão Financeira, fazer o backup dela.
 3. **Desativar** (não remover) as instalações antigas — evita lembretes e
    mensagens em dobro.
-4. Extrair `ConectCRM-0.2.74.zip` e `GestaoFinanceira-0.0.15.zip` numa pasta
+4. Extrair `ConectCRM-0.2.74.zip` e `GestaoFinanceira-0.0.25.zip` numa pasta
    definitiva (fora de Downloads e das pastas de documentos/backup) e carregar.
 5. Restaurar a cópia; o assistente abre e guia o resto. Restaurar a Gestão
    Financeira e conectar as duas.
