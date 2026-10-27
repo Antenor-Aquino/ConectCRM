@@ -1,11 +1,16 @@
 {
   "manifest_version": 3,
   "name": "ConectCRM",
-  "version": "0.2.57",
+  "version": "0.2.74",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzOU0+UcPYkOwL/Q87zO9Df8ABXzJw0i+W0HnfTVeaaP2fQG/yRVrZZNOl3jHUE4DT3tEcc3Cd6Wujhlv/D9DBBbBPruNdFqVJ6XU4w2C2qyKqog7vLRaz2YcXAM/ll7NIv9QCtMAvTNwzUao3rTJjjM0YLg97dXyZ+OixQ9FZ6jnAOvDq9mtT8oH5NOoU8ArTD3YXKMyNEdRzr5SL67EcRBZdC0lPRpIddtmqX9DOdEncb+IPb55xKqHzr4Kby7RWUriAbWatf9UIZbkKF6NpAwDoBMmnwqxrwIpk5Vlr7sjmXNyFfDJBXrKd5F4kNKvwRg0p4FG9hd9n+8jRSLAjwIDAQAB",
   "description": "CRM local com funis, Kanban, atividades, contatos e organizações - dados no seu computador. Integra com o WhatsApp Web.",
   "action": {
     "default_popup": "src/popup/popup.html",
-    "default_title": "ConectCRM"
+    "default_title": "ConectCRM",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png"
+    }
   },
   "background": {
     "service_worker": "background.js",
@@ -24,6 +29,7 @@
   ],
   "icons": {
     "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },

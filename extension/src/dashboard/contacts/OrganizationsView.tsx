@@ -83,7 +83,10 @@ export function OrganizationsView({ refreshKey, onOpen, onNew }: { refreshKey: n
               <Building2 size={14} />
             </span>
           )}
-          {r.name}
+          <span>
+            {r.name}
+            {r.name_ext && <span className="font-normal text-gray-500" data-name-ext> - {r.name_ext}</span>}
+          </span>
         </span>
       ),
     },

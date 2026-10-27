@@ -28,6 +28,9 @@ import { errorText } from "../../lib/errors";
 import { useSession } from "../session";
 import { Field } from "../ui/form";
 import { RemindersEditor } from "../ui/RemindersEditor";
+import { SoundSettingsPanel } from "./SoundSettings";
+import { ContactTemplateEditor } from "../ui/ContactTemplateEditor";
+import { CONTACT_MINUTES_OPTIONS, leadText } from "../../lib/notify/contactMessage";
 
 const MAIL_LABEL: Record<CalendarProvider, string> = { google: "Gmail", microsoft: "Outlook" };
 
@@ -92,13 +95,18 @@ export function NotificationsSettings() {
   const [provider, setProvider] = useState<CalendarProvider>("google");
   const [waTab, setWaTab] = useState<boolean | null>(null);
   const [zapiSenders, setZapiSenders] = useState<WhatsAppSender[]>([]);
+  /** Números que enviam sozinhos (Z-API ou WhatsApp Web): servem ao lembrete do contato. */
+  const [autoSenders, setAutoSenders] = useState<WhatsAppSender[]>([]);
 
   useEffect(() => {
     void loadNotifySettings(user.id).then((x) => setS({ ...x, email: { ...x.email, to: x.email.to || user.email || "" } }));
     void loadMailSender().then(setSender);
     void loadAllNotifySettings().then(setAll);
     void chrome.tabs.query({ url: "https://web.whatsapp.com/*" }).then((t) => setWaTab(t.length > 0));
-    void loadSenders(user.id).then((r) => setZapiSenders(r.senders.filter((x) => x.via === "zapi")));
+    void loadSenders(user.id).then((r) => {
+      setZapiSenders(r.senders.filter((x) => x.via === "zapi"));
+      setAutoSenders(r.senders.filter((x) => x.via === "zapi" || x.via === "web"));
+    });
   }, [user.id, user.email]);
   if (!s) return null;
 
@@ -494,6 +502,61 @@ export function NotificationsSettings() {
           </div>
         </div>
       </TaPanel>
+
+      <TaPanel
+        title="Lembrete para o contato (WhatsApp)"
+        subtitle="Modelo da mensagem que vai para o contato antes da reunião, quando o lembrete do contato é ligado na atividade. Em cada atividade dá para ajustar só aquela mensagem."
+      >
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]" data-contact-settings>
+          <ContactTemplateEditor
+            value={s.contact.template}
+            onChange={(template) => patch({ contact: { ...s.contact, template } })}
+            vars={{
+              personName: "Maria José",
+              start: (() => {
+                const d = new Date();
+                d.setHours(d.getHours() + 2, 0, 0, 0);
+                return d;
+              })(),
+              link: "https://meet.google.com/abc-defg-hij",
+              activityTitle: "Apresentação da proposta",
+              myName: user.name,
+              company: "Empresa do funil",
+            }}
+          />
+          <div className="space-y-3">
+            <Field label="Enviar, por padrão">
+              <TaSelect value={s.contact.minutes} onChange={(e) => patch({ contact: { ...s.contact, minutes: Number(e.target.value) } })} aria-label="Antecedência padrão">
+                {CONTACT_MINUTES_OPTIONS.map((m) => (
+                  <option key={m} value={m}>
+                    {leadText(m)}
+                  </option>
+                ))}
+              </TaSelect>
+            </Field>
+            <Field label="Enviar pelo número" hint={autoSenders.length ? undefined : "Cadastre um número com Z-API ou WhatsApp Web em Configurações → WhatsApp."}>
+              <TaSelect value={s.contact.senderId ?? ""} onChange={(e) => patch({ contact: { ...s.contact, senderId: e.target.value || null } })} aria-label="Número de origem">
+                <option value="">{autoSenders.length ? "Escolher…" : "Nenhum número disponível"}</option>
+                {autoSenders.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.name} ({x.via === "zapi" ? "Z-API" : "WhatsApp Web"})
+                  </option>
+                ))}
+              </TaSelect>
+            </Field>
+            <p className="text-theme-xs text-gray-500">
+              {"{minha_empresa}"} é a empresa do funil do cartão vinculado (Editar funil → Empresa). Sem funil ou sem empresa, ela some e fica só o seu nome. Sem link
+              da reunião, a linha do link some.
+            </p>
+            <p className="text-theme-xs text-gray-500">
+              O envio é automático com o Chrome aberto (mesmo com o CRM fechado). Pela Z-API, não precisa de nenhuma aba aberta; pelo WhatsApp Web, a aba precisa estar
+              aberta e conectada.
+            </p>
+          </div>
+        </div>
+      </TaPanel>
+
+      <SoundSettingsPanel />
 
       <div className="sticky bottom-0 flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-theme-xs dark:border-gray-800 dark:bg-gray-900">
         <TaButton variant="primary" disabled={busy === "save" || !dirty} onClick={() => void save()}>

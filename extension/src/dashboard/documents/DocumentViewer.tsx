@@ -1,5 +1,6 @@
 // Documento aberto (GED): prévia à esquerda; à direita informações
 // editáveis, vínculos, versões e trilha de auditoria.
+import { FolderSelect, useFolderTree } from "./Folders";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArchiveRestore, Download, History, Lock, RotateCcw, Trash2, Upload } from "lucide-react";
 import { TaButton, TaInput, TaModal, TaTextarea, cn } from "@tailadmin";
@@ -35,9 +36,10 @@ export function DocumentViewer({ documentId, onClose, onChanged }: { documentId:
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // Edição das informações
-  const [form, setForm] = useState({ name: "", typeId: "", docDate: "", validUntil: "", restricted: false, description: "", tagIds: [] as string[] });
+  const [form, setForm] = useState({ name: "", typeId: "", docDate: "", validUntil: "", restricted: false, description: "", tagIds: [] as string[], folderId: null as string | null });
   const [links, setLinks] = useState<DocLink[]>([]);
   const versionInput = useRef<HTMLInputElement>(null);
+  const [tree] = useFolderTree();
 
   const load = useCallback(async () => {
     const d = await call("documents.get", { id: documentId });
@@ -51,6 +53,7 @@ export function DocumentViewer({ documentId, onClose, onChanged }: { documentId:
         restricted: !!d.restricted,
         description: d.description ?? "",
         tagIds: d.tagIds,
+        folderId: d.folder_id,
       });
       setLinks(d.links);
     }
@@ -98,7 +101,8 @@ export function DocumentViewer({ documentId, onClose, onChanged }: { documentId:
     form.validUntil !== (doc.valid_until ?? "") ||
     form.restricted !== !!doc.restricted ||
     form.description !== (doc.description ?? "") ||
-    form.tagIds.join() !== doc.tagIds.join();
+    form.tagIds.join() !== doc.tagIds.join() ||
+    form.folderId !== doc.folder_id;
   const key = (l: { type: string; id: string }) => `${l.type}:${l.id}`;
   const added = links.filter((l) => !doc.links.some((x) => key(x) === key(l)));
   const removed = doc.links.filter((l) => !links.some((x) => key(x) === key(l)));
@@ -208,6 +212,9 @@ export function DocumentViewer({ documentId, onClose, onChanged }: { documentId:
                 <Field label="Palavras-chave">
                   <TagPicker entity="document" value={form.tagIds} onChange={(tagIds) => setForm({ ...form, tagIds })} />
                 </Field>
+                <Field label="Pasta">
+                  <FolderSelect tree={tree} value={form.folderId} disabled={trashed} onChange={(folderId) => setForm({ ...form, folderId })} aria-label="Pasta" />
+                </Field>
                 <Field label="Descrição">
                   <TaTextarea rows={3} value={form.description} disabled={trashed} onChange={(e) => setForm({ ...form, description: e.target.value })} />
                 </Field>
@@ -230,6 +237,7 @@ export function DocumentViewer({ documentId, onClose, onChanged }: { documentId:
                             validUntil: form.validUntil || null,
                             description: form.description || null,
                             tagIds: form.tagIds,
+                            ...(form.folderId !== doc.folder_id ? { folderId: form.folderId } : {}),
                             ...(form.restricted !== !!doc.restricted ? { restricted: form.restricted } : {}),
                           },
                         }),

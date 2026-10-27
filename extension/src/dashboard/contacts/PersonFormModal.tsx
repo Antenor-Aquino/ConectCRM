@@ -1,6 +1,8 @@
 // "Criar contato" / editar contato (spec 03): foto, nome, canais (e-mail e
 // celular com país), organizações (a primeira vira a principal), notas,
 // contato privado, mais detalhes (responsável, tags) e campos personalizados.
+import { useGfActive } from "../useGfActive";
+import { pushPendingContacts } from "../../lib/finance/sync";
 import { useEffect, useState } from "react";
 import { AlertTriangle, PlusCircle, Star, X } from "lucide-react";
 import { TaButton, TaInput, TaModal, TaTextarea } from "@tailadmin";
@@ -47,6 +49,7 @@ export function PersonFormModal({
   const [phone, setPhone] = useState("");
   const [country, setCountry] = useState("BR");
   const [cpf, setCpf] = useState("");
+  const gfActive = !!useGfActive();
   const [orgs, setOrgs] = useState<OrgLink[]>([]);
   const [orgPicker, setOrgPicker] = useState(false);
   const [notes, setNotes] = useState("");
@@ -111,6 +114,8 @@ export function PersonFormModal({
       if (id) await call("persons.update", { id, patch: input });
       else id = await call("persons.create", input);
       if (orgs[0]) await call("persons.setPrimaryOrganization", { personId: id, organizationId: orgs[0].id });
+      // Paridade com a Gestão Financeira: se o cadastro está lá, a alteração vai junto.
+      void pushPendingContacts();
       onSaved(id);
     } catch (e) {
       setError(errorText(e));
@@ -137,7 +142,7 @@ export function PersonFormModal({
             onContinue={() => void save(true)}
           />
 
-          <Field label="CPF" hint="Opcional. Usado nos lançamentos da Gestão Financeira.">
+          <Field label="CPF" hint={gfActive ? "Opcional. Usado nos lançamentos da Gestão Financeira." : "Opcional."}>
             <TaInput value={cpf} placeholder="000.000.000-00" inputMode="numeric" data-person-cpf onChange={(e) => setCpf(formatCpf(e.target.value))} />
           </Field>
 

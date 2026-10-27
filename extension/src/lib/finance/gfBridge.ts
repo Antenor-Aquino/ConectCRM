@@ -1,9 +1,9 @@
 // Ponte com a extensão Gestão Financeira (spec 13): encontrar, parear e
-// conversar. Sem ID fixo: o ConectCRM acha a Gestão Financeira instalada
-// neste Chrome (chrome.management) e pede para se conectar; o usuário permite
-// lá. Assim nenhuma das duas troca de ID (os dados de cada uma ficam presos
-// ao ID) e reinstalar de outra pasta só pede um novo pareamento.
-import { PROTOCOL, type FinanceItem, type IntegrationRequest, type IntegrationResponse, type GfEnv, type LaunchRequest } from "./protocol";
+// conversar. O ConectCRM acha a Gestão Financeira instalada neste Chrome
+// (chrome.management) e pede para se conectar; o usuário permite lá. Desde a
+// 0.2.74 (GF 0.0.15) as duas têm ID fixo (chave no manifest), então mudar de
+// pasta não muda o ID; quem vem de uma versão anterior pareia de novo uma vez.
+import { PROTOCOL, type ContactCard, type FinanceItem, type IntegrationRequest, type IntegrationResponse, type GfEnv, type LaunchRequest } from "./protocol";
 
 const KEY = "conectcrm-gestao-financeira";
 
@@ -20,6 +20,22 @@ export const DEFAULT_GF_SETTINGS: GfSettings = { gfId: null, pairedAt: null, dir
 
 export async function loadGfSettings(): Promise<GfSettings> {
   return { ...DEFAULT_GF_SETTINGS, ...((await chrome.storage.local.get(KEY))[KEY] as Partial<GfSettings> | undefined) };
+}
+
+/**
+ * A integração com a Gestão Financeira está ativada pelo usuário: conectada
+ * (modo direto) ou no modo pacote. Sem isso, nenhuma tela, aviso, alerta do
+ * resumo diário ou ferramenta do Copiloto fala da Gestão Financeira.
+ */
+export const gfIntegrationActive = (s: GfSettings | null | undefined): boolean => !!s && ((!!s.gfId && s.direct) || s.package);
+
+/** Mudanças na configuração (para as telas se ajustarem sozinhas). */
+export function onGfSettingsChange(cb: (s: GfSettings) => void): () => void {
+  const fn = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+    if (area === "local" && changes[KEY]) void loadGfSettings().then(cb);
+  };
+  chrome.storage.onChanged.addListener(fn);
+  return () => chrome.storage.onChanged.removeListener(fn);
 }
 
 export async function saveGfSettings(s: GfSettings): Promise<void> {
@@ -74,6 +90,31 @@ export function hello(gfId: string): Promise<IntegrationResponse> {
 
 export function ping(gfId: string): Promise<IntegrationResponse> {
   return sendToGf(gfId, { type: "ping", protocol: PROTOCOL });
+}
+
+/**
+ * Envia fichas de contato/organização (paridade de cadastros). A Gestão
+ * Financeira anterior à 0.0.8 não conhece a mensagem: avisa para atualizar.
+ */
+export async function upsertContacts(gfId: string, contacts: ContactCard[]): Promise<{ created: number; updated: number; failed: { crmRef: string; message: string }[] }> {
+  const r = await sendToGf(gfId, { type: "upsertContacts", protocol: PROTOCOL, contacts }, 20000);
+  if (r.ok && r.status === "contacts") return r;
+  if (!r.ok && r.error === "invalid") throw new GfError("Atualize a Gestão Financeira (0.0.8 ou mais nova) para receber os cadastros completos.");
+  throw new GfError(responseText(r) || "A Gestão Financeira não recebeu os cadastros.");
+}
+
+/** Envia as fichas pendentes (alteradas no CRM); `rpc` = acesso ao banco (tela ou service worker). */
+export async function pushPendingContactsVia(
+  gfId: string,
+  rpc: { pending: () => Promise<ContactCard[]>; sent: (refs: string[]) => Promise<unknown> },
+): Promise<{ sent: number; failed: { crmRef: string; message: string }[] }> {
+  const cards = await rpc.pending();
+  if (!cards.length) return { sent: 0, failed: [] };
+  const r = await upsertContacts(gfId, cards);
+  const failed = new Set(r.failed.map((f) => f.crmRef));
+  const ok = cards.map((c) => c.crmRef).filter((ref) => !failed.has(ref));
+  if (ok.length) await rpc.sent(ok);
+  return { sent: ok.length, failed: r.failed };
 }
 
 /** Abre a janela de lançamento da Gestão Financeira; devolve o id da janela (para saber quando fechou). */

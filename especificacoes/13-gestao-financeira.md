@@ -39,6 +39,11 @@ inacessíveis; a Chrome Web Store também dá outro ID. Então:
 4. Reinstalou de outra pasta (ID novo): pareia de novo (a Gestão Financeira
    avisa que substitui a conexão anterior).
 
+**Atualização (CRM 0.2.74 · GF 0.0.15):** as duas passaram a ter ID fixo
+(`key` no manifest), com migração única por backup/restauração e o assistente
+de mudança — ver especificação 14. O pareamento continua igual; com o ID fixo
+ele não se perde mais ao mudar de pasta.
+
 Protocolo versionado (`src/lib/finance/protocol.ts`, mesmo arquivo nos dois
 repositórios): `hello` e `ping`; respostas `paired` (com versão e ambiente
 Produção/Teste), `pending`, `refused`, `not-paired`, `protocol`, `invalid`.
@@ -85,7 +90,18 @@ banco novo e mostram "Os dados foram alterados em outra janela · Atualizar".
   contagem da aba usa a cópia. Ela também servirá aos relatórios da Fase 3.
 - **Ganho com valor**: ao marcar como ganho, com a Gestão Financeira
   conectada, o CRM pergunta "Lançar a receita de R$ X na Gestão
-  Financeira?" e abre a janela da receita.
+  Financeira?" e abre a janela da receita. O lançamento só existe depois
+  de "Salvar Receita" lá; a aba avisa enquanto a janela está aberta
+  ("Mostrar a janela") e, se ela for fechada sem salvar, mostra "fechada
+  sem salvar" com "Abrir de novo" (0.2.62).
+- **Produtos e serviços nas observações** (0.2.63): receita nova lançada pelo
+  cartão (direto ou por pacote) leva nas Observações a lista dos produtos e
+  serviços do cartão — descrição (com a recorrência), qtd, preço unit., desc.,
+  valor e o total. O texto é montado em `lib/finance/itemsNotes.ts` e vai no
+  campo `notes` do `LaunchRequest` (protocolo, nos dois repositórios).
+- **Concluído sem receita**: cartão ganho/resolvido/concluído com valor, sem
+  receita nem pedido no pacote, mostra na aba Financeiro o lembrete com
+  "Lançar receita".
 - Contato ganhou **CPF** (opcional, validado, sem repetir).
 - Todos os usuários veem os valores (decisão do usuário).
 
@@ -170,3 +186,61 @@ Formato versionado em `protocol.ts` (`PACKAGE_FORMAT`, `parsePackage`).
   atrasadas — dos cartões do usuário; só quando a integração está em uso.
 - O service worker do CRM lê a Gestão Financeira a cada 3 h (modo direto)
   para os alertas usarem dados recentes.
+
+## Paridade de cadastros (CRM 0.2.59 · Gestão Financeira 0.0.8)
+
+Contatos (PF) e organizações (PJ) do CRM chegam completos em "Clientes e
+fornecedores" da Gestão Financeira e continuam iguais depois.
+
+- **Ficha de contato** (`ContactCard` em `protocol.ts`, igual nos dois
+  repositórios, `CONTACT_CARD_VERSION`): nome, CPF/CNPJ, e-mail, telefone (com
+  país), razão social, site, segmento, endereço completo, empresa do contato,
+  observações/descrição, tags e campos personalizados visíveis (já formatados).
+  Não vão: foto/logo, responsável, dados brutos da Receita, controle interno
+  (decisões registradas em `contactCard.ts`).
+- **Gestão Financeira**: cadastro ampliado (migration 0015) com razão social,
+  site, segmento, endereço, empresa e a seção "Do ConectCRM" (tags, campos e
+  observações de lá, só consulta). O CRM manda nos dados dos registros
+  vinculados (aviso no formulário); as observações daqui nunca são trocadas.
+  CPF/CNPJ ou e-mail recusados (inválidos ou de outro cadastro) ficam de fora sem
+  impedir o resto.
+- **Quem vai**: os contatos/organizações usados em lançamentos (a ficha vai
+  junto) e os enviados pelo botão **Enviar para a Gestão Financeira** na ficha
+  do contato/organização (`finance_contact`, migration 0021).
+- **Atualização**: salvar um contato/organização que está lá deixa a ficha
+  pendente; no modo direto vai na hora (`upsertContacts`) e o service worker
+  reenvia o que ficou pendente; no modo pacote vai no próximo pacote
+  (`contacts`) e a Gestão Financeira aplica ao abrir o arquivo. Alterar a
+  organização reenvia também os contatos dela que estão lá.
+- **Garantia de paridade**: `PERSON_COLUMNS`/`ORGANIZATION_COLUMNS` decidem
+  cada coluna; `CARD_TO_COUNTERPARTY` (Gestão Financeira) dá lugar a cada campo
+  da ficha; testes `paridadeContatos.test.ts` (CRM) e `contact-parity.test.ts`
+  (Gestão Financeira); regra registrada no `CLAUDE.md` dos dois repositórios.
+
+## Integração ativada (CRM 0.2.60 · Gestão Financeira 0.0.9)
+
+Nada da integração aparece sem ela estar ativada pelo usuário — dados
+antigos (vínculos, cópias, lançamentos com origem) continuam guardados, mas
+sem avisos, abas ou selos.
+
+- **ConectCRM — ativada** = conectada no modo direto (`gfId` + "Direta") ou
+  "Por pacote de arquivo" ligado (`gfIntegrationActive`). Só então aparecem: aba
+  Financeiro do cartão e a faixa de resultado; aba Financeiro de organização e
+  contato; Relatórios → Financeiro; botão "Enviar para a Gestão Financeira";
+  pergunta ao marcar como ganho; bloco Financeiro do resumo diário; ferramentas
+  e orientações financeiras do Copiloto; dica "Usado nos lançamentos da Gestão
+  Financeira" no CPF. As telas se ajustam na hora ao ligar/desligar.
+- **Gestão Financeira — ativada** = pareada com o ConectCRM ou "Receber pacotes
+  de arquivo do ConectCRM" ligado (Configurações → Integrações,
+  `integrationActive`). Só então aparecem: ícone e aviso "Vinculado ao
+  ConectCRM" e a seção "Do ConectCRM" em Clientes e fornecedores; selo
+  ConectCRM em Lançamentos; Importar → Pacote do ConectCRM. O aviso de dados
+  alterados em outra janela deixou de citar o ConectCRM.
+- **Registrar no financeiro?** (0.2.70): ao dar o cartão como ganho,
+  resolvido ou concluído com valor (ou produtos/serviços), o CRM pergunta:
+  **Sim, lançar R$ X** (receita preenchida, produtos nas observações),
+  **Lançar outro valor** (receita aberta sem valor, para quando vai receber só
+  uma parte), **Não registrar no financeiro** (`deal.finance_skip`: o cartão
+  sai dos avisos e relatórios de "ganhos com receita a lançar"; a aba
+  Financeiro mostra a marca com "Voltar a registrar") ou **Decidir depois**.
+  Lançamentos avulsos continuam possíveis em qualquer caso.

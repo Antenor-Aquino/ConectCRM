@@ -1,5 +1,6 @@
 // Tarefas (spec 02) e tipos de tarefa. O vínculo com negócio/ticket/projeto
 // ("Vinculado a") é opcional.
+import { nameExtras, withExtra } from "./nameExtras";
 import { nowIso } from "../lib/ids";
 import { OVERDUE_COND, overdueParams, startOfDay } from "../lib/taskTiming";
 import { normalizeIsoDate, optionalText, requireText, ValidationError } from "../lib/validate";
@@ -89,6 +90,8 @@ export interface ActivityInput {
   organizationId?: string | null;
   customValues?: Record<string, CustomValue>;
   tagIds?: string[];
+  /** Link da videochamada (Meet, Teams, Zoom…): vai no lembrete para o contato. */
+  meetingUrl?: string | null;
 }
 
 export interface Activity {
@@ -114,10 +117,15 @@ export interface Activity {
   /** JSON com os e-mails convidados. */
   guests: string | null;
   reminder_sent_at: string | null;
+  /** Atividade recorrente: série e número da ocorrência. */
+  series_id: string | null;
+  series_index: number | null;
   version: number;
 }
 
 export interface ActivityListItem extends Activity {
+  /** Campos marcados para aparecer junto com o título (máx. 2). */
+  title_ext: string | null;
   type_name: string;
   type_icon: string;
   deal_title: string | null;
@@ -145,6 +153,15 @@ function minutes(value: number | null | undefined, label: string, allowNull: boo
   }
   if (!Number.isInteger(value) || value < 0 || value > 60 * 24 * 30) throw new ValidationError(`${label}: valor inválido.`);
   return value;
+}
+
+/** Link da reunião: http(s); sem protocolo, entra com https://. */
+function checkUrl(v: string | null | undefined): string | null {
+  const t = v?.trim();
+  if (!t) return null;
+  const url = /^https?:\/\//i.test(t) ? t : `https://${t}`;
+  if (!/^https?:\/\/[^\s.]+\.[^\s]+$/i.test(url)) throw new ValidationError("Link da reunião inválido.");
+  return url.slice(0, 500);
 }
 
 function checkType(db: DatabaseSync, typeId: string): string {
@@ -195,6 +212,7 @@ export function createActivity(db: DatabaseSync, ctx: DbContext, input: Activity
       deal_id: null,
       person_id: null,
       organization_id: null,
+      meeting_url: checkUrl(input.meetingUrl),
       ...links(db, { dealId: input.dealId ?? null, personId: input.personId, organizationId: input.organizationId }),
     });
     setCustomValues(db, ctx, "activity", id, input.customValues ?? {}, { checkRequired: true });
@@ -229,6 +247,7 @@ export function updateActivity(db: DatabaseSync, ctx: DbContext, id: string, pat
     if (patch.typeId !== undefined) data.type_id = checkType(db, patch.typeId);
     if (patch.title !== undefined) data.title = requireText(patch.title, "Informe o nome da atividade.");
     if (patch.description !== undefined) data.description = optionalText(patch.description);
+    if (patch.meetingUrl !== undefined) data.meeting_url = checkUrl(patch.meetingUrl);
     if (patch.dueAt !== undefined) data.due_at = normalizeIsoDate(patch.dueAt, "Início") ?? current.due_at;
     if (patch.endAt !== undefined) data.end_at = normalizeIsoDate(patch.endAt, "Finalização");
     if (patch.dueAt !== undefined || patch.endAt !== undefined) {
@@ -331,7 +350,7 @@ function activityWhere(db: DatabaseSync, f: ActivityFilter): { sql: string; para
 
 export function listActivities(db: DatabaseSync, f: ActivityFilter = {}): ActivityListItem[] {
   const { sql, params } = activityWhere(db, f);
-  const rows = many<Omit<ActivityListItem, "tags" | "documents">>(
+  const rows = many<Omit<ActivityListItem, "tags" | "documents" | "title_ext">>(
     db,
     `SELECT a.*, t.name AS type_name, t.icon AS type_icon, d.title AS deal_title, d.kind AS deal_kind,
        d.pipeline_id AS pipeline_id, pl.name AS pipeline_name,
@@ -369,8 +388,12 @@ export function listActivities(db: DatabaseSync, f: ActivityFilter = {}): Activi
     ...ids,
     ...scope.params,
   );
+  const titleEx = nameExtras(db, "activity", ids);
+  const personEx = nameExtras(db, "person", rows.map((r) => r.person_id));
   return rows.map((r) => ({
     ...r,
+    title_ext: titleEx.get(r.id) ?? null,
+    person_name: r.person_name && withExtra(r.person_name, personEx.get(r.person_id ?? "")),
     tags: tags.filter((t) => t.entity_id === r.id).map(({ entity_id: _e, ...t }) => t),
     documents: files.filter((a) => a.entity_id === r.id).map(({ entity_id: _e, ...a }) => a),
   }));

@@ -4,6 +4,7 @@
 // quando o usuário clica. Com um documento anexado (clipe, arrastar ou
 // colar), o Copiloto lê o arquivo e prepara um cartão para o usuário conferir
 // e confirmar (DocCardProposal.tsx).
+import { gfIntegrationActive, loadGfSettings } from "../../lib/finance/gfBridge";
 import { useEffect, useRef, useState } from "react";
 import { Check, Download, ExternalLink, Mic, NotebookPen, Paperclip, Send, Sparkles, Square, SquarePen, X, ListPlus, SquarePlus } from "lucide-react";
 import { TaButton, cn } from "@tailadmin";
@@ -158,7 +159,8 @@ export function CopilotPanel({
     const history = toHistory(next);
     try {
       const title = focusCard ? ((await call("cards.get", { id: focusCard }).catch(() => null))?.title ?? null) : null;
-      const card = await askCopilot(settings, history, { userName: user.name, userRole: ROLE_LABEL[user.role], cardId: focusCard, cardTitle: title }, rpcExecutor);
+      const finance = gfIntegrationActive(await loadGfSettings());
+      const card = await askCopilot(settings, history, { userName: user.name, userRole: ROLE_LABEL[user.role], cardId: focusCard, cardTitle: title, finance }, rpcExecutor);
       setEntries((cur) => [...cur, { id: crypto.randomUUID(), role: "assistant", card }]);
     } catch (e) {
       setError(errorText(e));

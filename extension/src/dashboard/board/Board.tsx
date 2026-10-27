@@ -13,7 +13,8 @@ import {
   List,
   MoreHorizontal,
   MoreVertical,
-  PanelLeft,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   Search,
   UnfoldHorizontal,
@@ -396,8 +397,8 @@ export function Board({
     <section className="flex min-w-0 flex-1 flex-col rounded-2xl border border-gray-200 bg-white p-5 shadow-theme-xs dark:border-gray-800 dark:bg-gray-900">
       {/* Cabeçalho */}
       <div className="mb-4 flex items-center gap-3">
-        <button type="button" title={sidebarOpen ? "Esconder funis" : "Mostrar funis"} onClick={onToggleSidebar} className="text-gray-500 hover:text-gray-700">
-          <PanelLeft size={20} />
+        <button type="button" title={sidebarOpen ? "Recolher funis" : "Mostrar funis"} onClick={onToggleSidebar} className="text-gray-500 hover:text-gray-700">
+          {sidebarOpen ? <PanelLeftClose size={20} /> : <PanelLeftOpen size={20} />}
         </button>
         <div className="flex rounded-lg border border-gray-200 p-0.5 dark:border-gray-700" role="group" aria-label="Visualização">
           {(

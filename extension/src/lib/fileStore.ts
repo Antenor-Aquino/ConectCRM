@@ -50,6 +50,11 @@ export function getFromBrowser(env: DbEnv, sha256: string): Promise<Blob | undef
   return idbRequest<Blob | undefined>(env, "readonly", (s) => s.get(sha256));
 }
 
+/** O arquivo está no navegador? (sem ler o conteúdo) */
+export async function hasInBrowser(env: DbEnv, sha256: string): Promise<boolean> {
+  return (await idbRequest<IDBValidKey | undefined>(env, "readonly", (s) => s.getKey(sha256))) !== undefined;
+}
+
 export function deleteFromBrowser(env: DbEnv, sha256: string): Promise<void> {
   return idbRequest(env, "readwrite", (s) => s.delete(sha256));
 }
@@ -79,7 +84,7 @@ export async function loadDocumentsFolder(): Promise<PermissionedDirectoryHandle
   });
 }
 
-async function saveDocumentsFolder(handle: PermissionedDirectoryHandle | null): Promise<void> {
+export async function saveDocumentsFolder(handle: PermissionedDirectoryHandle | null): Promise<void> {
   const db = await openFolderDb();
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction("handle", "readwrite");
@@ -90,11 +95,12 @@ async function saveDocumentsFolder(handle: PermissionedDirectoryHandle | null): 
   });
 }
 
-/** Escolher a pasta (precisa de clique do usuário). */
-export async function pickDocumentsFolder(): Promise<PermissionedDirectoryHandle> {
+/** Escolher a pasta (precisa de clique do usuário). `confirmPick` pode recusar a escolha antes de gravar. */
+export async function pickDocumentsFolder(confirmPick?: (h: PermissionedDirectoryHandle) => boolean): Promise<PermissionedDirectoryHandle | null> {
   const picker = (window as DirectoryPickerWindow).showDirectoryPicker;
   if (!picker) throw new Error("Este navegador não permite escolher pasta. Use o Chrome atualizado.");
   const handle = await picker({ mode: "readwrite", id: "conectcrm-documentos" });
+  if (confirmPick && !confirmPick(handle)) return null;
   await saveDocumentsFolder(handle);
   return handle;
 }
@@ -130,7 +136,7 @@ export class FolderAccessError extends Error {
   }
 }
 
-async function grantedFolder(): Promise<PermissionedDirectoryHandle | null> {
+export async function grantedFolder(): Promise<PermissionedDirectoryHandle | null> {
   const h = await loadDocumentsFolder().catch(() => null);
   if (!h) return null;
   return (await h.queryPermission({ mode: "readwrite" }).catch(() => "denied")) === "granted" ? h : null;
@@ -157,7 +163,7 @@ export function folderPath(name: string, filename: string, sha256: string, date 
   return `${month}/${safeName(name)} (${sha256.slice(0, 8)})${extensionOf(filename)}`;
 }
 
-async function dirFor(root: FileSystemDirectoryHandle, path: string, create: boolean): Promise<{ dir: FileSystemDirectoryHandle; file: string }> {
+export async function dirFor(root: FileSystemDirectoryHandle, path: string, create: boolean): Promise<{ dir: FileSystemDirectoryHandle; file: string }> {
   const parts = path.split("/");
   const file = parts.pop()!;
   let dir = root;
@@ -165,7 +171,7 @@ async function dirFor(root: FileSystemDirectoryHandle, path: string, create: boo
   return { dir, file };
 }
 
-async function writeToFolder(root: FileSystemDirectoryHandle, path: string, blob: Blob): Promise<void> {
+export async function writeToFolder(root: FileSystemDirectoryHandle, path: string, blob: Blob): Promise<void> {
   const { dir, file } = await dirFor(root, path, true);
   const handle = await dir.getFileHandle(file, { create: true });
   const w = await handle.createWritable();
@@ -212,7 +218,9 @@ export async function readContent(env: DbEnv, ref: ContentRef): Promise<Blob> {
       const f = await (await dir.getFileHandle(file)).getFile();
       return new Blob([f], { type: ref.mime });
     } catch {
-      throw new MissingFileError(`Arquivo não encontrado na pasta "${h.name}" (${ref.path}).`);
+      throw new MissingFileError(
+        `Arquivo não encontrado na pasta "${h.name}" (${ref.path}). Se a pasta mudou de lugar, use Configurações → Documentos → Localizar documentos.`,
+      );
     }
   }
   const blob = await getFromBrowser(env, ref.sha256);

@@ -1,13 +1,16 @@
 // Service worker: cria o documento offscreen (dono do banco) sob demanda e
 // dispara os lembretes de tarefas (notificação do Chrome, mesmo com o CRM fechado).
-import { listAllFromCrm, loadGfSettings } from "../lib/finance/gfBridge";
+import { gfIntegrationActive, listAllFromCrm, loadGfSettings, pushPendingContactsVia } from "../lib/finance/gfBridge";
 import type { NotifyJob } from "../db/notifications";
+import type { ContactSendJob } from "../db/contactMessages";
 import { sendMail } from "../lib/calendar";
 import { sendCallMeBot } from "../lib/notify/callmebot";
 import { sendViaWhatsAppWeb } from "../lib/notify/waweb";
 import { loadSenders, zapiSendText } from "../lib/whatsappSenders";
 import { CHANNEL_LABEL, activeSettings, loadAllNotifySettings, loadMailSender, withDefaults, type Channel } from "../lib/notify/settings";
 import { addNotification } from "../lib/notifications";
+import { loadSoundSettings, soundFor, type PlaySoundMessage, type SoundCategory } from "../lib/notify/sounds";
+import { ALERTS_KEY, ALERT_PAGE, ALERT_WINDOW_KEY, type AlertActionMessage, type AlertItem } from "../lib/notify/alerts";
 import { runClip, type ClipStartMessage } from "./clip";
 import { OFFSCREEN_PATH, type EnsureOffscreenMessage, type RpcRequest, type RpcResponse } from "../rpc/protocol";
 
@@ -83,7 +86,7 @@ let running = false;
 const SNOOZE_KEY = "conectcrm-snoozes";
 type Snooze = { activityId: string; at: string; title: string; text: string };
 
-function chromeNotify(id: string, title: string, message: string, withButtons: boolean): void {
+function chromeNotify(id: string, title: string, message: string, withButtons: boolean, category: SoundCategory = "reminder"): void {
   chrome.notifications.create(id, {
     type: "basic",
     iconUrl: chrome.runtime.getURL("icons/icon128.png"),
@@ -91,14 +94,123 @@ function chromeNotify(id: string, title: string, message: string, withButtons: b
     message,
     priority: 2,
     requireInteraction: true,
+    // O som é o escolhido em Configurações → Notificações → Som (tocado abaixo), não o do sistema.
+    silent: true,
     ...(withButtons ? { buttons: [{ title: "Concluir" }, { title: "Adiar 10 min" }] } : {}),
   });
+  void notifySound(id, category).catch((e) => console.warn("Som da notificação:", e));
+  void showAlert({ id, title, message, task: withButtons, at: new Date().toISOString() }).catch((e) => console.warn("Janela de aviso:", e));
+}
+
+// ---------- Janela de aviso ----------
+// O balão do Chrome depende do sistema: com as notificações do Chrome desligadas
+// no Windows/macOS ou com "Não perturbe", ele não aparece (e o som toca do mesmo
+// jeito). Por isso o aviso também abre numa janelinha do CRM, que fica até a
+// pessoa agir (Concluir, Adiar, Abrir ou OK).
+
+async function showAlert(alert: AlertItem): Promise<void> {
+  if (!(await loadSoundSettings()).window) return;
+  const list = ((await chrome.storage.session.get(ALERTS_KEY))[ALERTS_KEY] as AlertItem[] | undefined) ?? [];
+  await chrome.storage.session.set({ [ALERTS_KEY]: [...list.filter((a) => a.id !== alert.id), alert] });
+  const winId = (await chrome.storage.session.get(ALERT_WINDOW_KEY))[ALERT_WINDOW_KEY] as number | undefined;
+  if (winId != null) {
+    const ok = await chrome.windows.update(winId, { focused: true, drawAttention: true }).then(
+      () => true,
+      () => false,
+    );
+    if (ok) return;
+  }
+  const width = 400;
+  const height = 460;
+  const base = await chrome.windows.getLastFocused().catch(() => null);
+  const left = base?.left != null && base.width ? Math.max(0, base.left + base.width - width - 24) : undefined;
+  const top = base?.top != null && base.height ? Math.max(0, base.top + base.height - height - 24) : undefined;
+  const url = chrome.runtime.getURL(ALERT_PAGE);
+  // No canto da janela do Chrome; se o Chrome recusar a posição (outro monitor, tela pequena), deixa ele escolher.
+  const win = await chrome.windows
+    .create({ url, type: "popup", width, height, left, top, focused: true })
+    .catch(() => chrome.windows.create({ url, type: "popup", width, height, focused: true }));
+  if (win?.id != null) await chrome.storage.session.set({ [ALERT_WINDOW_KEY]: win.id });
+}
+
+async function dropAlert(id: string): Promise<void> {
+  const list = ((await chrome.storage.session.get(ALERTS_KEY))[ALERTS_KEY] as AlertItem[] | undefined) ?? [];
+  const next = list.filter((a) => a.id !== id);
+  await chrome.storage.session.set({ [ALERTS_KEY]: next });
+  if (!next.length) {
+    const winId = (await chrome.storage.session.get(ALERT_WINDOW_KEY))[ALERT_WINDOW_KEY] as number | undefined;
+    if (winId != null) await chrome.windows.remove(winId).catch(() => {});
+  }
+}
+
+chrome.windows.onRemoved.addListener((winId) => {
+  void chrome.storage.session.get(ALERT_WINDOW_KEY).then(async (r) => {
+    if (r[ALERT_WINDOW_KEY] !== winId) return;
+    // Fechou a janela no X: os avisos dela ficam vistos (o som para de repetir).
+    const list = ((await chrome.storage.session.get(ALERTS_KEY))[ALERTS_KEY] as AlertItem[] | undefined) ?? [];
+    for (const a of list) chrome.notifications.clear(a.id);
+    await chrome.storage.session.set({ [ALERTS_KEY]: [], [ALERT_WINDOW_KEY]: null });
+  });
+});
+
+// ---------- Som ----------
+
+const REPEAT_KEY = "conectcrm-sound-repeat";
+type Repeat = { id: string; category: SoundCategory; left: number };
+
+async function playCategory(category: SoundCategory): Promise<boolean> {
+  const s = await loadSoundSettings();
+  const sound = soundFor(s, category);
+  if (!sound) return false;
+  await ensureOffscreen();
+  const r = (await chrome.runtime.sendMessage({ target: "offscreen", kind: "play-sound", sound, volume: s.volume } satisfies PlaySoundMessage)) as
+    | { ok: boolean; error?: string }
+    | undefined;
+  // Último som tocado (diagnóstico).
+  await chrome.storage.session.set({ "conectcrm-sound-last": { at: new Date().toISOString(), sound, ok: !!r?.ok, error: r?.error ?? null } });
+  return s.repeat;
+}
+
+async function notifySound(id: string, category: SoundCategory): Promise<void> {
+  const repeat = await playCategory(category);
+  if (!repeat) return;
+  const list = ((await chrome.storage.session.get(REPEAT_KEY))[REPEAT_KEY] as Repeat[] | undefined) ?? [];
+  await chrome.storage.session.set({ [REPEAT_KEY]: [...list.filter((r) => r.id !== id), { id, category, left: 3 }] });
+}
+
+/** A cada minuto: toca de novo os avisos ainda na tela (até 3 vezes). */
+async function repeatSounds(): Promise<void> {
+  const list = ((await chrome.storage.session.get(REPEAT_KEY))[REPEAT_KEY] as Repeat[] | undefined) ?? [];
+  if (!list.length) return;
+  const open = await new Promise<Record<string, boolean>>((resolve) => chrome.notifications.getAll((n) => resolve(n as Record<string, boolean>)));
+  const next: Repeat[] = [];
+  let played = false;
+  for (const r of list) {
+    if (!open[r.id] || r.left <= 0) continue;
+    if (!played) {
+      await playCategory(r.category);
+      played = true;
+    }
+    if (r.left > 1) next.push({ ...r, left: r.left - 1 });
+  }
+  await chrome.storage.session.set({ [REPEAT_KEY]: next });
 }
 
 // Cópia dos lançamentos da Gestão Financeira (spec 13): lida a cada 3 h, para
 // os alertas financeiros do resumo diário. Sem ela por perto, fica a última.
 const FINANCE_SYNC_KEY = "conectcrm-finance-bg-sync";
 async function refreshFinanceCopy(userId: string | null): Promise<void> {
+  // Paridade de cadastros: contatos/organizações alterados vão a cada passada (modo direto).
+  try {
+    const gf = await loadGfSettings();
+    if (gf.gfId && gf.direct)
+      await pushPendingContactsVia(gf.gfId, {
+        pending: () => rpc("finance.pendingContacts", {}, userId),
+        sent: (crmRefs) => rpc("finance.contactsSent", { crmRefs }, userId),
+      });
+  } catch {
+    // Fica pendente para a próxima.
+  }
   try {
     const last = (await chrome.storage.local.get(FINANCE_SYNC_KEY))[FINANCE_SYNC_KEY] as number | undefined;
     if (last && Date.now() - last < 3 * 3600_000) return;
@@ -109,6 +221,42 @@ async function refreshFinanceCopy(userId: string | null): Promise<void> {
     await rpc("finance.replaceAll", { items: r.items, env: r.env, at: r.at }, userId);
   } catch {
     // Gestão Financeira fechada/desatualizada: o resumo usa a última cópia.
+  }
+}
+
+// Lembrete para o contato por WhatsApp (0.2.69): Z-API ou WhatsApp Web, com o
+// Chrome aberto (mesmo com o CRM fechado). Falha ou hora perdida: avisa o usuário.
+let sendingContacts = false;
+async function runContactMessages(userId: string | null): Promise<void> {
+  if (sendingContacts) return;
+  sendingContacts = true;
+  try {
+    const { jobs, missed } = await rpc<{ jobs: ContactSendJob[]; missed: { title: string; personName: string }[] }>("contactMessages.due", {}, userId);
+    for (const m of missed) {
+      chromeNotify(`notify:contato-${Date.now()}-${Math.random()}`, "Lembrete para o contato não enviado", `${m.personName} — ${m.title}: o Chrome estava fechado na hora do envio.`, false, "overdue");
+      await addNotification({ kind: "error", title: "Lembrete para o contato não enviado", message: `${m.personName} — ${m.title}` });
+    }
+    for (const job of jobs) {
+      let error: string | undefined;
+      try {
+        const sender = (await loadSenders(job.userId ?? "")).senders.find((x) => x.id === job.senderId);
+        if (!sender) throw new Error("O número de origem do lembrete não existe mais em Configurações → WhatsApp.");
+        if (sender.via === "zapi") {
+          if (!sender.zapi) throw new Error("A Z-API do número de origem não está configurada.");
+          await zapiSendText(sender.zapi, job.phone, job.text);
+        } else if (sender.via === "web") await sendViaWhatsAppWeb(job.phone, job.text, 30_000, sender.phone);
+        else throw new Error("O número de origem é manual; escolha um com Z-API ou WhatsApp Web.");
+      } catch (e) {
+        error = e instanceof Error ? e.message : String(e);
+      }
+      await rpc("contactMessages.record", { id: job.id, ok: !error, text: job.text, error }, userId);
+      if (error) {
+        chromeNotify(`notify:contato-${job.id}`, `Lembrete para ${job.personName} não foi enviado`, `${job.title}: ${error}`, false, "overdue");
+        await addNotification({ kind: "error", title: `Lembrete para ${job.personName} não foi enviado`, message: `${job.title}: ${error}` });
+      } else await addNotification({ kind: "info", title: `Lembrete enviado para ${job.personName}`, message: job.title });
+    }
+  } finally {
+    sendingContacts = false;
   }
 }
 
@@ -124,9 +272,12 @@ async function runNotifications(): Promise<void> {
       await chrome.storage.local.set({ [SNOOZE_KEY]: snoozes.filter((x) => !due.includes(x)) });
       for (const x of due) chromeNotify(`task:${x.activityId}`, x.title, x.text, true);
     }
+    await runContactMessages(userId).catch((e) => console.warn("Lembrete do contato:", e));
     await refreshFinanceCopy(userId);
     const settings = Object.fromEntries(Object.entries(await loadAllNotifySettings()).map(([id, x]) => [id, activeSettings(x)]));
-    const jobs = await rpc<NotifyJob[]>("notifications.plan", { settings }, userId);
+    // Alertas financeiros do resumo diário só com a integração com a Gestão Financeira ativada.
+    const finance = gfIntegrationActive(await loadGfSettings());
+    const jobs = await rpc<NotifyJob[]>("notifications.plan", { settings, finance }, userId);
     if (!jobs.length) return;
     const sender = await loadMailSender();
     const results = [];
@@ -141,6 +292,7 @@ async function runNotifications(): Promise<void> {
             job.title,
             rest.join("\n") || title || "",
             job.kind === "reminder",
+            job.kind === "overdue" ? "overdue" : job.kind === "digest" ? "digest" : "reminder",
           );
           await addNotification({ kind: job.kind === "overdue" ? "error" : "info", title: job.title, message: rest.join(" · ") });
         } else if (job.channel === "email") {
@@ -168,17 +320,20 @@ async function runNotifications(): Promise<void> {
 }
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === ALARM) void runNotifications().catch((e) => console.warn("Notificações:", e));
+  if (alarm.name === ALARM) {
+    void runNotifications().catch((e) => console.warn("Notificações:", e));
+    void repeatSounds().catch((e) => console.warn("Som da notificação:", e));
+  }
 });
 
-// Botões da notificação do lembrete: Concluir / Adiar 10 min.
-chrome.notifications.onButtonClicked.addListener((notificationId, button) => {
-  if (!notificationId.startsWith("task:")) return;
+/** Concluir / Adiar 10 min (botões do balão e da janela de aviso). */
+async function taskAction(notificationId: string, action: "done" | "snooze"): Promise<void> {
   const activityId = notificationId.slice(5);
   chrome.notifications.clear(notificationId);
-  void (async () => {
+  await dropAlert(notificationId);
+  {
     const userId = ((await chrome.storage.local.get("conectcrm-current-user"))["conectcrm-current-user"] as string | undefined) ?? null;
-    if (button === 0) {
+    if (action === "done") {
       await rpc("activities.setDone", { id: activityId, done: true }, userId);
       return;
     }
@@ -188,22 +343,53 @@ chrome.notifications.onButtonClicked.addListener((notificationId, button) => {
     const when = new Date(a.due_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
     snoozes.push({ activityId, at: new Date(Date.now() + 10 * 60_000).toISOString(), title: `Lembrete: ${a.title}`, text: `Atividade às ${when} (adiado)` });
     await chrome.storage.local.set({ [SNOOZE_KEY]: snoozes });
-  })().catch((e) => console.warn("Notificação:", e));
+  }
+}
+
+chrome.notifications.onButtonClicked.addListener((notificationId, button) => {
+  if (!notificationId.startsWith("task:")) return;
+  void taskAction(notificationId, button === 0 ? "done" : "snooze").catch((e) => console.warn("Notificação:", e));
+});
+
+/** Abre (ou foca) o CRM; na tarefa, quando o aviso é de uma. */
+async function openFromAlert(notificationId: string): Promise<void> {
+  const query = notificationId.startsWith("task:") ? `?tarefa=${notificationId.slice(5)}` : "";
+  const url = chrome.runtime.getURL(`${DASHBOARD}${query}`);
+  const tabs = await chrome.tabs.query({ url: chrome.runtime.getURL(`${DASHBOARD}*`) });
+  const tab = tabs[0];
+  if (tab?.id) {
+    await chrome.tabs.update(tab.id, { url, active: true });
+    if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true });
+  } else await chrome.tabs.create({ url });
+  chrome.notifications.clear(notificationId);
+  await dropAlert(notificationId);
+}
+
+// Ações da janela de aviso (src/alert).
+chrome.runtime.onMessage.addListener((msg: AlertActionMessage, _sender, sendResponse) => {
+  if (msg?.target !== "background" || msg.kind !== "alert-action") return false;
+  const run =
+    msg.action === "open"
+      ? openFromAlert(msg.id)
+      : msg.action === "ok"
+        ? (chrome.notifications.clear(msg.id), dropAlert(msg.id))
+        : msg.action === "test"
+          ? Promise.resolve(chromeNotify(`notify:teste-${Date.now()}`, "Teste de aviso do ConectCRM", "Se você está vendo isto, os avisos estão funcionando.", false))
+          : taskAction(msg.id, msg.action);
+  void Promise.resolve(run)
+    .then(() => sendResponse({ ok: true }))
+    .catch((e: unknown) => sendResponse({ ok: false, error: String(e) }));
+  return true;
 });
 
 // Clique na notificação: abre (ou foca) o CRM já na tarefa.
 chrome.notifications.onClicked.addListener((notificationId) => {
   if (!notificationId.startsWith("task:") && !notificationId.startsWith("notify:")) return;
-  const query = notificationId.startsWith("task:") ? `?tarefa=${notificationId.slice(5)}` : "";
-  const url = chrome.runtime.getURL(`${DASHBOARD}${query}`);
-  void chrome.tabs.query({ url: chrome.runtime.getURL(`${DASHBOARD}*`) }).then(async (tabs) => {
-    const tab = tabs[0];
-    if (tab?.id) {
-      await chrome.tabs.update(tab.id, { url, active: true });
-      if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true });
-    } else await chrome.tabs.create({ url });
-    chrome.notifications.clear(notificationId);
-  });
+  void openFromAlert(notificationId);
+});
+// Fechou o balão: sai da janela de aviso também.
+chrome.notifications.onClosed.addListener((notificationId, byUser) => {
+  if (byUser) void dropAlert(notificationId);
 });
 
 chrome.runtime.onInstalled.addListener(() => {

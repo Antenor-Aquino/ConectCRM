@@ -11,6 +11,8 @@ import { ErrorText, Field } from "../ui/form";
 import { MoneyInput } from "../ui/MoneyInput";
 import { Switch } from "../ui/Switch";
 import { errorText } from "../../lib/errors";
+import { CustomFieldsForm } from "../ui/CustomFieldsForm";
+import type { CustomField, CustomValue } from "../../db/customFields";
 
 
 export function ProductsSettings() {
@@ -74,7 +76,8 @@ export function ProductsSettings() {
               <tr key={p.id} className={cn("border-b border-gray-100 dark:border-gray-800", !p.active && "opacity-50")}>
                 <td className="py-2.5 pr-3 font-mono text-theme-xs text-gray-500">{p.code ?? "—"}</td>
                 <td className="py-2.5 pr-3 font-medium text-gray-800 dark:text-white/90">
-                  {p.name} {!p.active && <TaBadge color="amber" label="Inativo" />}
+                  {p.name}
+                  {p.name_ext && <span className="font-normal text-gray-500" data-name-ext> - {p.name_ext}</span>} {!p.active && <TaBadge color="amber" label="Inativo" />}
                 </td>
                 <td className="py-2.5 pr-3">
                   <TaBadge color={p.kind === "produto" ? "blue" : "purple"} label={p.kind === "produto" ? "Produto" : "Serviço"} />
@@ -155,9 +158,15 @@ function ProductModal({
   const [description, setDescription] = useState(product?.description ?? "");
   const [active, setActive] = useState(product ? !!product.active : true);
   const [error, setError] = useState<string | null>(null);
+  const [fields, setFields] = useState<CustomField[]>([]);
+  const [values, setValues] = useState<Record<string, CustomValue>>({});
+  useEffect(() => {
+    void call("customFields.list", { entity: "product" }).then(setFields);
+    if (product) void call("products.customValues", { id: product.id }).then(setValues);
+  }, [product]);
 
   async function save() {
-    const input = { code, name, kind, unit, priceCents: price, costCents: cost || null, recurrence, categoryId: categoryId || null, description, active };
+    const input = { code, name, kind, unit, priceCents: price, costCents: cost || null, recurrence, categoryId: categoryId || null, description, active, customValues: values };
     try {
       if (product) await call("products.update", { id: product.id, patch: input });
       else await call("products.create", input);
@@ -216,6 +225,7 @@ function ProductModal({
       <Field label="Descrição">
         <TaTextarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
       </Field>
+      <CustomFieldsForm fields={fields} values={values} onChange={setValues} columns={2} />
       <div className="flex items-center justify-between rounded-xl border border-gray-200 px-4 py-3 text-theme-sm font-medium dark:border-gray-800">
         Ativo (aparece em “Adicionar” nos cartões)
         <Switch checked={active} onChange={setActive} />

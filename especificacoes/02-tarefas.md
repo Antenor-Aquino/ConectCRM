@@ -112,3 +112,35 @@ E-mail**.
 - Lembretes: ver [`10-notificacoes.md`](10-notificacoes.md).
 - Agenda: tipos marcados como "Reunião" podem criar o evento no Google Agenda
   ou Outlook, com convidados, link do Meet/Teams e horários livres do dia.
+
+## Atividades recorrentes (0.2.67)
+
+Campo **Repetir** no formulário: Não repete, Diária, Dias úteis (segunda a
+sexta), Semanal (a cada N semanas, nos dias marcados), Mensal (no mesmo dia —
+dia 31 cai no último dia dos meses menores — ou "na 2ª terça"/"na última
+sexta"), Anual (29/02 cai em 28/02 nos anos comuns) e A cada X dias (com "só
+dias úteis"). **Termina**: Nunca, Em uma data ou Após N vezes. Opção
+**Repetir só depois de concluir a atual**: a próxima é criada ao concluir,
+contando da conclusão, na hora do início. A frase da regra aparece embaixo
+("Toda semana: segunda e quarta às 09:00, sem data final").
+
+- **Modelo**: a série (`activity_series`) guarda a regra (`lib/recurrence.ts`)
+  e o modelo da atividade (tipo, título, descrição, duração, finalização
+  relativa, lembretes, responsável, vínculos, campos e tags). As ocorrências
+  são atividades normais (`series_id`, `series_index`), criadas para os
+  próximos **60 dias**; a rotina das notificações completa a janela (no
+  máximo a cada 3 h). Sem data final a série segue indefinidamente sem encher o
+  banco. Início no passado: as ocorrências começam hoje.
+- **Alterar** uma ocorrência: pergunta **Só esta**, **Esta e as próximas** ou
+  **Todas** (mudando a regra, só as duas últimas). Só campos: as pendentes
+  mudam no lugar (notas e documentos ficam); mudando data/hora ou regra, as
+  pendentes são refeitas. "Esta e as próximas" no meio divide a série. As
+  concluídas ficam como histórico.
+- **Excluir**: Só esta (não volta mais), Esta e as próximas (a série acaba
+  antes desta) ou Todas (pendentes e a série). Tudo pela lixeira; restaurar
+  devolve.
+- **Encerrar série…**: dá data final a uma série; as pendentes depois dela
+  saem.
+- Atividade comum que passa a repetir vira a 1ª ocorrência da série.
+- Ícone ↻ nas listas (atividades, cartão, contato/organização). Em reuniões
+  recorrentes o evento não é criado no Google Agenda/Outlook.

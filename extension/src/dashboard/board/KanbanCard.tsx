@@ -62,6 +62,7 @@ export interface CardOutcome {
 /** Corpo do cartão a partir dos campos; usado no quadro e na prévia da configuração. */
 export function CardFields({
   title,
+  titleExt,
   keys,
   fields,
   outcome,
@@ -69,6 +70,8 @@ export function CardFields({
   indicator,
 }: {
   title: string;
+  /** Campos marcados para aparecer junto com o título. */
+  titleExt?: string | null;
   keys: string[];
   fields: Record<string, CardFieldValue>;
   outcome?: CardOutcome | null;
@@ -96,6 +99,7 @@ export function CardFields({
           )}
         >
           {title}
+          {titleExt && <span className="font-normal text-gray-500 dark:text-gray-400" data-title-ext> - {titleExt}</span>}
         </span>
         {value && <span className="shrink-0 text-theme-sm font-semibold text-gray-800 dark:text-white/90">{value.text}</span>}
       </div>
@@ -256,6 +260,7 @@ export function KanbanCard({
       )}
       <CardFields
         title={card.title}
+        titleExt={card.title_ext}
         keys={parseCardFields(pipeline.card_fields, pipeline.type)}
         fields={card.fields}
         outcome={outcome}

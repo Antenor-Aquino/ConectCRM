@@ -3,13 +3,14 @@ import { Building2, Sparkles, CalendarDays, Trash2, CircleCheck, Filter, FolderA
 import { AppLayout, TopNavBar, cn, type TopNavItem } from "@tailadmin";
 import { call, DATA_CHANGED_EVENT, exportDatabase, systemCall, TRASH_EVENT } from "../rpc/client";
 import { checkAutoBackup, type AutoBackupCheck } from "../lib/autoBackup";
-import { backupDocuments, checkDocumentExpiry, deleteOrphans } from "../lib/documentFiles";
+import { checkDocumentExpiry, deleteOrphans } from "../lib/documentFiles";
+import { checkDocBackup, type DocBackupCheck } from "../lib/docBackup";
 import type { OpenCardMessage } from "../rpc/protocol";
 import type { DbEnv } from "../lib/environment";
 import type { Pipeline, PipelineType } from "../db/pipelines";
 import type { QuickCreateOption } from "../lib/quickCreate";
 import { CardFormModal, type CardFormRequest } from "./cards/CardFormModal";
-import { AutoBackupPermissionModal } from "./components/AutoBackupPermissionModal";
+import { AutoBackupPermissionModal, DocBackupPermissionModal } from "./components/AutoBackupPermissionModal";
 import { ComingSoonModal } from "./components/ComingSoonModal";
 import { COPILOT_EVENT, CopilotPanel, type CopilotRequest } from "./copilot/CopilotPanel";
 import { EnvironmentSwitch } from "./components/EnvironmentSwitch";
@@ -37,6 +38,7 @@ import { TasksView } from "./tasks/TasksView";
 import { SessionProvider, useSession } from "./session";
 import { errorText } from "../lib/errors";
 import { GlobalSearch } from "./components/GlobalSearch";
+import { MOVE_ASSISTANT_EVENT, MoveAssistant } from "./components/MoveAssistant";
 import { DocumentViewer } from "./documents/DocumentViewer";
 
 // Menu principal (spec 01, seção 1).
@@ -152,9 +154,27 @@ function Main() {
     void call("trash.count").then(setTrashCount).catch(() => {});
   }, []);
   const [backupPending, setBackupPending] = useState<Extract<AutoBackupCheck, { status: "needs-permission" }> | null>(null);
+  const [docBackupPending, setDocBackupPending] = useState<Extract<DocBackupCheck, { status: "needs-permission" }> | null>(null);
+  // Backup dos documentos: depois do backup do banco (que pode ter acabado de receber a autorização da mesma pasta).
+  const runDocBackupCheck = () =>
+    void checkDocBackup()
+      .then((r) => r.status === "needs-permission" && setDocBackupPending(r))
+      .catch(() => {});
+  // Assistente de mudança: banco vindo de outra instalação (ou aberto em Configurações → Backup).
+  const [move, setMove] = useState<{ previousId: string | null; open: boolean } | null>(null);
+  useEffect(() => {
+    const open = () => setMove((m) => ({ previousId: m?.previousId ?? null, open: true }));
+    window.addEventListener(MOVE_ASSISTANT_EVENT, open);
+    return () => window.removeEventListener(MOVE_ASSISTANT_EVENT, open);
+  }, []);
   useEffect(() => {
     void systemCall<DbEnv>("system.env").then((e) => {
       setEnv(e);
+      if (e === "production" && user.role === "admin") {
+        void call("installation.check", { extensionId: chrome.runtime.id })
+          .then((r) => r.moved && setMove({ previousId: r.previousId, open: true }))
+          .catch(() => {});
+      }
       void checkDocumentExpiry().catch(() => {});
       // Lixeira: o que passou do prazo é excluído definitivamente.
       void call("trash.purgeExpired")
@@ -162,8 +182,9 @@ function Main() {
         .then(refreshTrashCount)
         .catch(() => {});
       if (e !== "production") return;
-      void checkAutoBackup(exportDatabase, backupDocuments).then((r) => {
+      void checkAutoBackup(exportDatabase).then((r) => {
         if (r.status === "needs-permission") setBackupPending(r);
+        else runDocBackupCheck();
       });
     });
   }, []);
@@ -335,6 +356,14 @@ function Main() {
           />
         }
       >
+        {move && !move.open && move.previousId && (
+          <div data-move-banner className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-warning-200 bg-warning-50 px-4 py-2.5 text-theme-sm text-warning-800">
+            <span className="flex-1">Este banco veio de outra instalação do ConectCRM. Termine o assistente de mudança para refazer pastas, configurações e integrações.</span>
+            <button type="button" className="font-medium underline" onClick={() => setMove({ ...move, open: true })}>
+              Continuar o assistente
+            </button>
+          </div>
+        )}
         {error && (
           <div className="mb-4 rounded-xl border border-error-200 bg-error-50 px-4 py-3 text-theme-sm text-error-700">Não foi possível abrir o banco local: {error}</div>
         )}
@@ -367,7 +396,12 @@ function Main() {
         ) : tab === "organizacoes" ? (
           <OrganizationsView refreshKey={contactsKey} onOpen={setOrgOpen} onNew={() => setNewOrg(true)} />
         ) : tab === "ged" ? (
-          <GedView />
+          <GedView
+            onLocate={() => {
+              setSettingsSection("documentos");
+              setTab("configuracoes");
+            }}
+          />
         ) : tab === "funis" ? (
           <FunnelsView
             pipelines={pipelines}
@@ -414,7 +448,31 @@ function Main() {
             });
           }}
         />
-        {backupPending && <AutoBackupPermissionModal handle={backupPending.handle} settings={backupPending.settings} onClose={() => setBackupPending(null)} />}
+        {backupPending && (
+          <AutoBackupPermissionModal
+            handle={backupPending.handle}
+            settings={backupPending.settings}
+            onClose={() => {
+              setBackupPending(null);
+              runDocBackupCheck();
+            }}
+          />
+        )}
+        {move?.open && (
+          <MoveAssistant
+            previousId={move.previousId}
+            onClose={() => setMove({ ...move, open: false })}
+            onDone={() => setMove(null)}
+            onGo={(section) => {
+              setMove({ ...move, open: false });
+              setSettingsSection(section);
+              setTab("configuracoes");
+            }}
+          />
+        )}
+        {docBackupPending && !backupPending && !move?.open && (
+          <DocBackupPermissionModal handle={docBackupPending.handle} settings={docBackupPending.settings} onClose={() => setDocBackupPending(null)} />
+        )}
         {docOpen && <DocumentViewer documentId={docOpen} onClose={() => setDocOpen(null)} />}
         {taskOpen && (
           <TaskModal

@@ -132,9 +132,12 @@ salvo assim mesmo e a janela lista o motivo antes de fechar.
 - Arquivos iguais são guardados uma vez só.
 - Lixeira: 30 dias; depois (ou na exclusão definitiva) o arquivo é apagado se
   nenhum outro documento o usa.
-- Backup automático: além do `.sqlite`, copia para `documentos/` só os
-  arquivos novos. Cópia manual: `.zip` (banco + documentos). Restaurar aceita
-  `.zip` ou `.sqlite` (neste caso busca os documentos na pasta de backup).
+- Backup dos documentos: rotina própria desde a 0.2.73 (seção "Backup dos
+  documentos" abaixo). Até a 0.2.72 o backup do banco copiava os arquivos para
+  `documentos/<sha256>`; essas cópias continuam sendo lidas na recuperação.
+  Cópia manual: `.zip` (banco + documentos; avisa acima de 1 GB). Restaurar
+  aceita `.zip` ou `.sqlite` (neste caso busca os documentos que faltam nas
+  pastas de backup, pelo Localizar documentos).
 - Atualização da 0.1.x: anexos de cartão e atividade viram documentos "não
   classificados" com os vínculos da regra acima; o conteúdo sai do banco na
   primeira abertura e o texto dos PDFs é lido ao abrir o GED.
@@ -259,3 +262,94 @@ Configurações → WhatsApp → **Ao enviar documento**:
   não foi enviado nunca é registrado como enviado.
 - Se a prévia não abrir (o WhatsApp Web mudou), aparece o erro com **Enviar
   direto (N s para cancelar)**.
+
+## Pastas (0.2.65)
+
+Organização opcional, como no computador. A classificação, os vínculos e as
+palavras-chave continuam valendo; a pasta é mais um jeito de achar.
+
+- **Uma pasta por documento** (`document.folder_id`; vazio = "Sem pasta").
+  Pastas e subpastas até **5 níveis**; o nome não se repete dentro da mesma
+  pasta e não pode ter `/` nem `\`. A pasta é só organização na tela: o arquivo
+  continua guardado onde estava (navegador ou pasta do computador), e mover não
+  copia nada.
+- **Tela**: árvore "Pastas" no topo da coluna da esquerda (Todos os documentos,
+  Sem pasta e as pastas, com a contagem incluindo subpastas), caminho acima da
+  lista (GED › Comercial › Propostas, clicável) e as subpastas como blocos antes
+  dos arquivos (lista e grade). Na árvore: Nova pasta, Nova subpasta, Renomear
+  e Excluir; sem pastas, o botão "Criar pastas sugeridas" (Comercial,
+  Contratos, Modelos, Marketing, Administrativo).
+- **Organizar**: arrastar documentos (um ou os selecionados) ou uma pasta para
+  outra pasta da árvore; "Mover para pasta…" nas ações em lote; campo Pasta na
+  janela Novo documento (já vem a pasta aberta) e no documento aberto.
+- **Busca**: sem pasta aberta, procura no GED todo e mostra o caminho de cada
+  documento. Com uma pasta aberta, procura nela e nas subpastas ("buscar em todo
+  o GED" tira a pasta). O nome da pasta também entra na busca.
+- **Excluir pasta** (administrador ou quem criou): vai para a lixeira; os
+  documentos e as subpastas dela sobem para a pasta de cima (nunca são apagados
+  junto). Restaurar devolve tudo para onde estava. Se uma subpasta tiver o mesmo
+  nome de outra na pasta de cima, pede para renomear antes.
+- **Histórico** do documento: "Moveu de “Contratos” para “Comercial”" (ou Sem
+  pasta). **Copiloto**: ferramenta `buscar_documentos` (texto e/ou pasta, por
+  nome ou caminho; sem nada, lista as pastas). O backup leva as pastas (estão no
+  banco).
+- Depois: permissão por pasta e a seção automática "Por organização / Por
+  funil" montada a partir dos vínculos.
+
+## Localizar documentos (0.2.72)
+
+O banco guarda o caminho do arquivo **relativo à pasta de documentos**
+(`2026-10/Nome (fe2d460b).pdf`). Se a pasta muda de lugar, é reorganizada, o
+computador muda ou a extensão é reinstalada, os links quebram. Para isso:
+
+- **Configurações → Documentos → Conferir e localizar documentos**: confere se
+  cada arquivo está onde o banco diz (existência e tamanho; no navegador, se
+  está no armário do ambiente) e lista os que faltam.
+- **Localizar documentos…**: escolhe-se a pasta onde os arquivos estão agora
+  (subpastas incluídas, até 8 níveis). Cada arquivo que falta é procurado pelo
+  código no nome `(fe2d460b)`, pelo nome dos backups antigos (SHA-256 inteiro)
+  ou, se foi renomeado, pelo tamanho — e só é aceito se o **conteúdo** for o
+  mesmo (SHA-256). Achou na própria pasta de documentos: só o caminho muda.
+  Achou em outra pasta (backup, pendrive): o arquivo é copiado para o lugar
+  dos documentos (pasta com acesso ou navegador).
+- **Buscar no backup**: o mesmo, usando a pasta do backup automático.
+- **Trocar a pasta de documentos** já procura na pasta nova os arquivos que
+  faltam. Escolher uma pasta com nome de mês (`2026-10`) avisa que o certo é a
+  pasta acima dela.
+- Ao abrir o GED, se algum arquivo falta, aparece o aviso "N documentos sem o
+  arquivo no lugar indicado" com o botão **Localizar documentos**.
+- Cada documento relocalizado ganha na auditoria "Arquivo localizado em …".
+  Só administradores relocalizam.
+
+## Backup dos documentos (0.2.73)
+
+Rotina separada do backup do banco, em Configurações → Backup e ambiente →
+**Backup dos documentos (GED)**:
+
+- **Pasta**: a mesma do backup do banco ou outra (HD externo, OneDrive…).
+  Grava em `<pasta>/ConectCRM - Documentos/`.
+- **Espelho legível**: as mesmas pastas do GED e o nome do documento com o
+  código do conteúdo: `Comercial/Contratos/Contrato Perseus (fe2d460b).pdf`.
+  Versões anteriores (opcional) em `_versões anteriores/…/Nome v1 (…).pdf`.
+  `indice.csv` (abre no Excel: classificação, pasta, versão, vínculos,
+  validade, quem enviou, SHA-256) e `LEIA-ME.txt`.
+- **Incremental**: o controle fica em `.conectcrm-espelho.json`; só copia o
+  que é novo. Documento renomeado ou movido no GED é movido no espelho (sem
+  reler o arquivo). O que sai do GED (lixeira, exclusão) vai para
+  `_removidos/AAAA-MM-DD/` e é apagado depois de 7/30/90/365 dias.
+- **Frequência**: a cada abertura do CRM (no máximo 1 vez por hora), diário,
+  semanal ou só manual. Roda ao abrir o CRM (só Produção); sem autorização da
+  pasta (Chrome reiniciado), abre a janela "Backup dos documentos pendente"
+  — autorizar já faz o backup; fechar não interrompe.
+- **Conferência**: normal confere tamanho e o registro; a completa (botão ou
+  semanal, opcional) lê cada arquivo e compara o conteúdo, regravando o que
+  estiver diferente.
+- **Situação**: último backup, quantidade, tamanho, contagens e erros; aviso
+  no sino em erro e se ficar 3/7/15/30 dias sem backup.
+- Primeira vez: herda "ativado" e a frequência do backup do banco.
+- Para recuperar: Configurações → Documentos → Localizar documentos (ou
+  Buscar no backup) reconhece os arquivos do espelho pelo código no nome.
+
+Backup do banco ganhou **retenção**: manter os N diários / N semanais
+automáticos mais recentes (padrão: todos). Os de "Fazer backup agora" nunca
+são apagados.

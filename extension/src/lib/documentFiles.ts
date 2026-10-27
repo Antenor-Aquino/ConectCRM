@@ -7,9 +7,9 @@ import { call, systemCall } from "../rpc/client";
 import type { DbEnv } from "./environment";
 import { deleteContent, documentsFolderStatus, moveToFolder, putInBrowser, readContent, sha256Hex, storeContent, type ContentRef } from "./fileStore";
 import { MAX_UPLOAD_BYTES } from "./files";
+import { SETTINGS_FILE } from "./settingsTransfer";
 import { addNotification } from "./notifications";
 import { extractPdfText } from "./pdf";
-import type { PermissionedDirectoryHandle } from "./backupFolder";
 
 let envPromise: Promise<DbEnv> | null = null;
 export function currentEnv(): Promise<DbEnv> {
@@ -146,37 +146,11 @@ export async function moveFolderFilesToBrowser(): Promise<number> {
 
 const DOCS_DIR = "documentos";
 
-/** Backup automático: copia para "documentos/" só os arquivos que ainda não estão lá. */
-export async function backupDocuments(handle: PermissionedDirectoryHandle): Promise<string | null> {
-  const env = await currentEnv();
-  const dir = await handle.getDirectoryHandle(DOCS_DIR, { create: true });
-  let added = 0;
-  let missing = 0;
-  for (const b of await call("files.all")) {
-    try {
-      await dir.getFileHandle(b.sha256);
-      continue;
-    } catch {
-      // Ainda não copiado.
-    }
-    try {
-      const blob = await readContent(env, b);
-      const w = await (await dir.getFileHandle(b.sha256, { create: true })).createWritable();
-      await w.write(blob);
-      await w.close();
-      added++;
-    } catch {
-      missing++;
-    }
-  }
-  if (!added && !missing) return null;
-  return `${added} documento(s) novo(s) copiado(s)${missing ? `; ${missing} sem acesso (pasta de documentos sem permissão?)` : ""}.`;
-}
-
-/** Cópia manual: .zip com o banco e os documentos. */
-export async function buildBackupZip(dbBytes: Uint8Array): Promise<Uint8Array> {
+/** Cópia manual: .zip com o banco, os documentos e (opcional) as configurações. */
+export async function buildBackupZip(dbBytes: Uint8Array, settings?: string): Promise<Uint8Array> {
   const env = await currentEnv();
   const files: Record<string, Uint8Array | [Uint8Array, { level: 0 }]> = { "conectcrm.sqlite": dbBytes };
+  if (settings) files[SETTINGS_FILE] = new TextEncoder().encode(settings);
   for (const b of await call("files.all")) {
     try {
       files[`${DOCS_DIR}/${b.sha256}`] = [new Uint8Array(await (await readContent(env, b)).arrayBuffer()), { level: 0 }];
@@ -187,8 +161,8 @@ export async function buildBackupZip(dbBytes: Uint8Array): Promise<Uint8Array> {
   return new Promise((resolve, reject) => zip(files, (err, out) => (err ? reject(err) : resolve(out))));
 }
 
-/** Lê um backup .zip: o banco e os documentos. */
-export async function readBackupZip(bytes: Uint8Array): Promise<{ db: Uint8Array; files: Map<string, Uint8Array> }> {
+/** Lê um backup .zip: o banco, os documentos e as configurações (se vieram). */
+export async function readBackupZip(bytes: Uint8Array): Promise<{ db: Uint8Array; files: Map<string, Uint8Array>; settings: string | null }> {
   const out = await new Promise<Unzipped>((resolve, reject) => unzip(bytes, (err, r) => (err ? reject(err) : resolve(r))));
   const db = out["conectcrm.sqlite"];
   if (!db) throw new Error("Este .zip não é um backup do ConectCRM (falta conectcrm.sqlite).");
@@ -197,7 +171,8 @@ export async function readBackupZip(bytes: Uint8Array): Promise<{ db: Uint8Array
     const m = name.match(new RegExp(`^${DOCS_DIR}/([0-9a-f]{64})$`));
     if (m) files.set(m[1]!, data);
   }
-  return { db, files };
+  const settings = out[SETTINGS_FILE] ? new TextDecoder().decode(out[SETTINGS_FILE]) : null;
+  return { db, files, settings };
 }
 
 /** Depois de restaurar o banco: devolve os documentos ao navegador. */
@@ -206,33 +181,6 @@ export async function restoreDocumentFiles(files: Map<string, Uint8Array>): Prom
   for (const [sha, data] of files) await putInBrowser(env, sha, new Blob([data as BlobPart]));
   if (files.size) await call("files.markInBrowser", { sha256s: [...files.keys()] });
   return files.size;
-}
-
-/** Depois de restaurar um .sqlite: busca na pasta de backup os documentos que faltam. */
-export async function recoverFromBackupFolder(handle: PermissionedDirectoryHandle | null): Promise<number> {
-  if (!handle || (await handle.queryPermission({ mode: "readwrite" })) !== "granted") return 0;
-  const env = await currentEnv();
-  let dir: FileSystemDirectoryHandle;
-  try {
-    dir = await handle.getDirectoryHandle(DOCS_DIR);
-  } catch {
-    return 0;
-  }
-  const found = new Map<string, Uint8Array>();
-  for (const b of await call("files.all")) {
-    try {
-      await readContent(env, b);
-      continue;
-    } catch {
-      // Falta: procura no backup.
-    }
-    try {
-      found.set(b.sha256, new Uint8Array(await (await (await dir.getFileHandle(b.sha256)).getFile()).arrayBuffer()));
-    } catch {
-      // Também não está no backup.
-    }
-  }
-  return restoreDocumentFiles(found);
 }
 
 export type { ContentRef };

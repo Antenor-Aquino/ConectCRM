@@ -1,14 +1,16 @@
 // Configurações → Documentos (GED): onde guardar os arquivos (navegador ou
 // uma pasta do computador) e os tipos de documento (classificação).
 import { useCallback, useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, FolderOpen, HardDrive, KeyRound, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, FileSearch, FolderOpen, HardDrive, History, KeyRound, Plus, SearchCheck, Trash2 } from "lucide-react";
 import { TaButton, TaInput, TaPanel, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { DocumentType } from "../../db/documents";
 import type { DbEnv } from "../../lib/environment";
 import { moveBrowserFilesToFolder, moveFolderFilesToBrowser } from "../../lib/documentFiles";
-import { documentsFolderStatus, forgetDocumentsFolder, pickDocumentsFolder, requestDocumentsFolderAccess, type FolderStatus } from "../../lib/fileStore";
+import { documentsFolderStatus, forgetDocumentsFolder, requestDocumentsFolderAccess, type FolderStatus } from "../../lib/fileStore";
 import { formatBytes } from "../../lib/files";
+import { loadBackupFolderHandle, type DirectoryPickerWindow, type PermissionedDirectoryHandle } from "../../lib/backupFolder";
+import { checkDocuments, chooseDocumentsFolder, locateDocuments, locateSummary, type DocumentsCheck, type LocateProgress } from "../../lib/locateDocuments";
 import { useSession } from "../session";
 import { Switch } from "../ui/Switch";
 import { ColorPicker } from "./TagsSettings";
@@ -16,7 +18,7 @@ import { errorText } from "../../lib/errors";
 
 type Msg = { text: string; kind: "ok" | "err" } | null;
 
-function StoragePanel({ env }: { env: DbEnv }) {
+function StoragePanel({ env, onChanged }: { env: DbEnv; onChanged: () => void }) {
   const { user } = useSession();
   const isAdmin = user.role === "admin";
   const [status, setStatus] = useState<FolderStatus | null>(null);
@@ -49,6 +51,7 @@ function StoragePanel({ env }: { env: DbEnv }) {
     } finally {
       setBusy(false);
       await load();
+      onChanged();
     }
   };
 
@@ -94,11 +97,8 @@ function StoragePanel({ env }: { env: DbEnv }) {
           type="button"
           disabled={!isAdmin || busy}
           onClick={() =>
-            void run(async () => {
-              const h = await pickDocumentsFolder();
-              const moved = await moveBrowserFilesToFolder();
-              return `Pasta "${h.name}" escolhida.${moved ? ` ${moved} arquivo(s) movido(s) para ela.` : ""}`;
-            })
+            // Trocou de pasta com arquivos já guardados: procura cada um na pasta nova.
+            void run(async () => (await chooseDocumentsFolder()) ?? undefined)
           }
           className={cn(
             "rounded-xl border p-4 text-left",
@@ -163,6 +163,128 @@ function StoragePanel({ env }: { env: DbEnv }) {
           {msg.text}
         </p>
       )}
+    </TaPanel>
+  );
+}
+
+const PHASE_TEXT: Record<LocateProgress["phase"], string> = { scan: "Lendo a pasta", match: "Conferindo o conteúdo", save: "Atualizando" };
+
+/** Confere se os arquivos estão onde o banco diz e reencontra os que mudaram de lugar. */
+function LocatePanel({ env, rev }: { env: DbEnv; rev: number }) {
+  const { user } = useSession();
+  const isAdmin = user.role === "admin";
+  const [check, setCheck] = useState<DocumentsCheck | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<LocateProgress | null>(null);
+  const [msg, setMsg] = useState<Msg>(null);
+
+  const recheck = useCallback(async () => setCheck(await checkDocuments(env)), [env]);
+  useEffect(() => {
+    void recheck().catch(() => {});
+  }, [recheck, rev]);
+
+  const run = async (fn: () => Promise<string | void>) => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const text = await fn();
+      if (text) setMsg({ text, kind: "ok" });
+    } catch (e) {
+      if (!(e instanceof DOMException && e.name === "AbortError")) setMsg({ text: errorText(e), kind: "err" });
+    } finally {
+      setBusy(false);
+      setProgress(null);
+      await recheck().catch(() => {});
+    }
+  };
+  const locateIn = async (h: PermissionedDirectoryHandle) => locateSummary(await locateDocuments(h, setProgress));
+
+  const missing = check?.missing ?? [];
+  return (
+    <TaPanel
+      title="Conferir e localizar documentos"
+      subtitle="Mudou a pasta de lugar, trocou de computador ou reinstalou a extensão? Aponte onde os arquivos estão agora: o CRM reconhece cada um pelo conteúdo e atualiza os links."
+    >
+      <div data-locate-panel className="space-y-3">
+        {check && (
+          <p
+            data-locate-status={missing.length ? "missing" : "ok"}
+            className={cn("rounded-lg px-3 py-2 text-theme-sm", missing.length ? "bg-warning-50 text-warning-800" : "bg-success-50 text-success-700")}
+          >
+            {missing.length
+              ? `${missing.length} de ${check.total} arquivo(s) não encontrado(s) onde o banco diz.`
+              : `Todos os ${check.total} arquivo(s) estão no lugar.`}
+            {check.noAccess > 0 && ` ${check.noAccess} na pasta de documentos não puderam ser conferidos (falta conceder acesso à pasta).`}
+          </p>
+        )}
+        {missing.length > 0 && (
+          <ul className="max-h-40 space-y-0.5 overflow-auto text-theme-xs text-gray-600 dark:text-gray-400" data-locate-missing>
+            {missing.slice(0, 50).map((b) => (
+              <li key={b.id} className="truncate">
+                • {b.name ?? b.filename ?? "(sem nome)"} <span className="text-gray-400">— {b.path ?? "no navegador"}</span>
+              </li>
+            ))}
+            {missing.length > 50 && <li>… e mais {missing.length - 50}.</li>}
+          </ul>
+        )}
+        <div className="flex flex-wrap gap-2">
+          <TaButton size="sm" startIcon={<SearchCheck size={14} />} disabled={busy} onClick={() => void run(async () => undefined)}>
+            Conferir agora
+          </TaButton>
+          {isAdmin && (
+            <TaButton
+              size="sm"
+              variant={missing.length ? "primary" : "outline"}
+              startIcon={<FileSearch size={14} />}
+              disabled={busy}
+              data-locate-pick
+              onClick={() =>
+                void run(async () => {
+                  const picker = (window as DirectoryPickerWindow).showDirectoryPicker;
+                  if (!picker) throw new Error("Este navegador não permite escolher pasta. Use o Chrome atualizado.");
+                  return locateIn(await picker({ mode: "read", id: "conectcrm-localizar" }));
+                })
+              }
+            >
+              Localizar documentos…
+            </TaButton>
+          )}
+          {isAdmin && missing.length > 0 && (
+            <TaButton
+              size="sm"
+              startIcon={<History size={14} />}
+              disabled={busy}
+              data-locate-backup
+              onClick={() =>
+                void run(async () => {
+                  const h = await loadBackupFolderHandle().catch(() => null);
+                  if (!h) throw new Error("Nenhuma pasta de backup configurada (Configurações → Backup e ambiente).");
+                  if ((await h.queryPermission({ mode: "readwrite" })) !== "granted" && (await h.requestPermission({ mode: "readwrite" })) !== "granted")
+                    throw new Error("Acesso à pasta de backup não concedido.");
+                  return locateIn(h);
+                })
+              }
+            >
+              Buscar no backup
+            </TaButton>
+          )}
+        </div>
+        {progress && (
+          <p className="text-theme-xs text-gray-500" data-locate-progress>
+            {PHASE_TEXT[progress.phase]}… {progress.total ? `${progress.done} de ${progress.total}` : `${progress.done} arquivo(s)`}
+          </p>
+        )}
+        <p className="text-theme-xs text-gray-500">
+          Escolha a pasta onde os arquivos estão agora (pode ser a pasta de documentos nova, a de backup ou outra qualquer; as subpastas também são lidas). Se for
+          a própria pasta de documentos, só os links mudam; se for outra, os arquivos achados são copiados para o lugar dos documentos.
+        </p>
+        {!isAdmin && <p className="text-theme-xs text-gray-500">Só administradores localizam documentos.</p>}
+        {msg && (
+          <p data-locate-result className={`rounded-lg px-3 py-2 text-theme-sm ${msg.kind === "ok" ? "bg-success-50 text-success-700" : "bg-error-50 text-error-700"}`}>
+            {msg.text}
+          </p>
+        )}
+      </div>
     </TaPanel>
   );
 }
@@ -284,9 +406,12 @@ function TypesPanel() {
 }
 
 export function DocumentsSettings({ env }: { env: DbEnv }) {
+  // Trocar a pasta reconfere os arquivos no painel de localizar.
+  const [rev, setRev] = useState(0);
   return (
     <div className="space-y-5">
-      <StoragePanel env={env} />
+      <StoragePanel env={env} onChanged={() => setRev((r) => r + 1)} />
+      <LocatePanel env={env} rev={rev} />
       <TypesPanel />
     </div>
   );

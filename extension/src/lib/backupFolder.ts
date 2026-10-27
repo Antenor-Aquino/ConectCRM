@@ -23,29 +23,33 @@ function openIdb(): Promise<IDBDatabase> {
   });
 }
 
-export async function saveBackupFolderHandle(handle: PermissionedDirectoryHandle): Promise<void> {
+/** "dir" = pasta do backup do banco; "docs" = pasta própria do backup dos documentos. */
+type FolderKey = typeof KEY | "docs";
+
+export async function saveBackupFolderHandle(handle: PermissionedDirectoryHandle | null, key: FolderKey = KEY): Promise<void> {
   const idb = await openIdb();
   await new Promise<void>((resolve, reject) => {
     const tx = idb.transaction(STORE, "readwrite");
-    tx.objectStore(STORE).put(handle, KEY);
+    if (handle) tx.objectStore(STORE).put(handle, key);
+    else tx.objectStore(STORE).delete(key);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
 }
 
-export async function loadBackupFolderHandle(): Promise<PermissionedDirectoryHandle | null> {
+export async function loadBackupFolderHandle(key: FolderKey = KEY): Promise<PermissionedDirectoryHandle | null> {
   const idb = await openIdb();
   return new Promise((resolve, reject) => {
-    const req = idb.transaction(STORE, "readonly").objectStore(STORE).get(KEY);
+    const req = idb.transaction(STORE, "readonly").objectStore(STORE).get(key);
     req.onsuccess = () => resolve((req.result as PermissionedDirectoryHandle | undefined) ?? null);
     req.onerror = () => reject(req.error);
   });
 }
 
-export async function pickBackupFolder(): Promise<PermissionedDirectoryHandle> {
+export async function pickBackupFolder(key: FolderKey = KEY): Promise<PermissionedDirectoryHandle> {
   const picker = (window as DirectoryPickerWindow).showDirectoryPicker;
   if (!picker) throw new Error("Este navegador não permite escolher pasta. Use o Chrome atualizado.");
-  const handle = await picker({ mode: "readwrite", id: "conectcrm-backup" });
-  await saveBackupFolderHandle(handle);
+  const handle = await picker({ mode: "readwrite", id: key === KEY ? "conectcrm-backup" : "conectcrm-backup-docs" });
+  await saveBackupFolderHandle(handle, key);
   return handle;
 }

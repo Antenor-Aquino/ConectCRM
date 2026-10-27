@@ -1,6 +1,6 @@
 // Partes comuns das fichas de contato e organização.
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { CheckCircle2, Circle, Plus, X } from "lucide-react";
+import { CheckCircle2, Circle, Plus, X, Repeat } from "lucide-react";
 import { TaBadge, TaButton, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { ActivityListItem } from "../../db/activities";
@@ -29,7 +29,7 @@ export function DrawerShell({ children, onClose }: { children: ReactNode; onClos
 
 export function InfoRow({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="grid grid-cols-[130px_1fr] gap-2 py-1.5 text-theme-sm">
+    <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-2 py-1.5 text-theme-sm">
       <span className="text-gray-500">{label}</span>
       <span className="min-w-0 break-words text-gray-800 dark:text-white/90">{children || <span className="text-gray-400">—</span>}</span>
     </div>
@@ -147,7 +147,11 @@ export function RelatedTasks({ filter }: { filter: { personId?: string; organiza
               {t.done ? <CheckCircle2 size={18} /> : <Circle size={18} />}
             </button>
             <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setModal({ id: t.id })}>
-              <p className={cn("truncate text-theme-sm", t.done ? "text-gray-400 line-through" : "text-gray-800 dark:text-white/90")}>{t.title}</p>
+              <p className={cn("truncate text-theme-sm", t.done ? "text-gray-400 line-through" : "text-gray-800 dark:text-white/90")}>
+                {t.title}
+                {t.title_ext && <span className="font-normal text-gray-500" data-name-ext> - {t.title_ext}</span>}
+{t.series_id && <Repeat size={12} className="ml-1 inline align-[-1px] text-brand-500" aria-label="Recorrente" data-recurring />}
+              </p>
               <p className={cn("text-theme-xs", taskTiming(t).tone === "danger" ? "text-error-600" : "text-gray-400")}>
                 {t.type_name} · {formatDateTime(t.due_at)} · {taskTiming(t).label}
                 {t.deal_title && ` · ${t.deal_title}`}
@@ -200,13 +204,13 @@ export function ChangeLogList({ table, id }: { table: DataTable; id: string }) {
 
 export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: [T, string][]; value: T; onChange: (t: T) => void }) {
   return (
-    <div className="mb-3 flex gap-1 rounded-lg bg-gray-100 p-1 dark:bg-white/5">
+    <div className="mb-3 flex flex-wrap gap-1 rounded-lg bg-gray-100 p-1 dark:bg-white/5">
       {tabs.map(([id, label]) => (
         <button
           key={id}
           type="button"
           onClick={() => onChange(id)}
-          className={cn("flex-1 rounded-md py-1.5 text-theme-sm font-medium", value === id ? "bg-white text-brand-600 shadow-theme-xs dark:bg-gray-900" : "text-gray-600 dark:text-gray-400")}
+          className={cn("flex-1 whitespace-nowrap rounded-md px-2.5 py-1.5 text-theme-sm font-medium", value === id ? "bg-white text-brand-600 shadow-theme-xs dark:bg-gray-900" : "text-gray-600 dark:text-gray-400")}
         >
           {label}
         </button>

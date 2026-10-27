@@ -60,6 +60,7 @@ export const ENTITY_LABEL: Record<string, string> = {
   custom_field: "Campo personalizado",
   custom_field_group: "Categoria de campos",
   document_type: "Tipo de documento",
+  document_folder: "Pasta",
   document: "Documento",
 };
 const KIND_LABEL: Record<string, string> = { deal: "Negócio", ticket: "Ticket", project: "Projeto" };
@@ -146,6 +147,9 @@ export function describe(db: DatabaseSync, entity: string, id: string): { title:
     case "document_type":
     case "document":
       row = r(`SELECT name AS title, NULL AS detail FROM ${entity} WHERE id = ?`);
+      break;
+    case "document_folder":
+      row = r("SELECT name AS title, 'Pasta do GED' AS detail FROM document_folder WHERE id = ?");
       break;
   }
   return { title: row?.title || ENTITY_LABEL[entity] || "Registro", detail: row?.detail ?? null };
@@ -328,7 +332,7 @@ export function restoreTrashItem(db: DatabaseSync, ctx: DbContext, viewer: Viewe
   });
 }
 
-const FEMININE = new Set(["organization", "activity", "note", "product_category", "tag", "stage", "team", "custom_field_group"]);
+const FEMININE = new Set(["organization", "activity", "note", "product_category", "tag", "stage", "team", "custom_field_group", "document_folder"]);
 const withArticle = (table: string) => `${FEMININE.has(table) ? "a" : "o"} ${ENTITY_LABEL[table]?.toLowerCase() ?? "registro"}`;
 
 /** Sobe pelos "pais" excluídos (etapa → funil) para pedir o de cima. */

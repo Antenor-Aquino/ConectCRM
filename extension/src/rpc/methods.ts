@@ -19,6 +19,12 @@ import * as copilot from "../db/copilot";
 import * as cf from "../db/customFields";
 import * as deals from "../db/deals";
 import * as docs from "../db/documents";
+import * as docBackup from "../db/documentBackup";
+import * as installation from "../db/installation";
+import * as folders from "../db/documentFolders";
+import * as series from "../db/activitySeries";
+import * as contactMsg from "../db/contactMessages";
+import type { RecurrenceRule } from "../lib/recurrence";
 import * as notes from "../db/notes";
 import * as pipelines from "../db/pipelines";
 import * as products from "../db/products";
@@ -28,12 +34,14 @@ import * as stages from "../db/stages";
 import * as trash from "../db/trash";
 import * as waLog from "../db/whatsappLog";
 import { rowHistory, type DataTable, type DbContext } from "../db/repo";
-import { many, one, type DatabaseSync } from "../db/sql";
+import { many, one, withTransaction, type DatabaseSync } from "../db/sql";
 import { hashPin, verifyPin } from "../lib/pin";
 import { ValidationError } from "../lib/validate";
+import { normalizeText } from "../lib/search";
 import * as tags from "../db/tags";
 import * as docCard from "../db/docCard";
 import * as finance from "../db/finance";
+import { contactCardFor } from "../db/contactCard";
 import type { FinanceItem, ReturnPackage } from "../lib/finance/protocol";
 import * as users from "../db/users";
 
@@ -59,6 +67,9 @@ function assertIntegrations(db: DatabaseSync, ctx: DbContext): void {
 const MANAGERS: users.Role[] = ["admin", "gestor"];
 
 /** Tarefa fora do escopo do usuário (vendedor: só as suas; gestor: equipe). */
+/** Última vez que as séries recorrentes foram completadas (nesta sessão do banco). */
+let lastSeriesTopUp = 0;
+
 function assertActivityAccess(db: DatabaseSync, ctx: DbContext, id: string): void {
   const scope = activities.activityScope(db, viewer(db, ctx));
   const ok = one(db, `SELECT 1 FROM activity a WHERE a.id = ? AND a.deleted_at IS NULL${scope.sql ? ` AND ${scope.sql}` : ""}`, id, ...scope.params);
@@ -185,6 +196,11 @@ export const methods = {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);
     return finance.cardCounterparty(db, p.id);
   },
+  /** Cartão ganho/concluído: não registrar (ou voltar a registrar) o valor no financeiro. */
+  "finance.setSkip": (db: DatabaseSync, ctx: DbContext, p: { dealId: string; skip: boolean }) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.dealId);
+    finance.setFinanceSkip(db, ctx, p.dealId, p.skip);
+  },
   "finance.card": (db: DatabaseSync, ctx: DbContext, p: Id) => {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);
     return finance.cardFinance(db, p.id);
@@ -226,6 +242,14 @@ export const methods = {
     if (dealId) deals.assertCardAccess(db, viewer(db, ctx), dealId);
     finance.discardFinanceRequest(db, p.id);
   },
+  // Paridade de cadastros (contatos e organizações na Gestão Financeira).
+  "finance.linkContact": (db: DatabaseSync, ctx: DbContext, p: { crmRef: string; sent?: boolean }) => {
+    if (!contactCardFor(db, p.crmRef)) throw new ValidationError("Contato ou organização não encontrado.");
+    finance.linkFinanceContact(db, ctx, p.crmRef, p.sent);
+  },
+  "finance.contactStatus": (db: DatabaseSync, _c: DbContext, p: { crmRef: string }) => finance.financeContactStatus(db, p.crmRef),
+  "finance.pendingContacts": (db: DatabaseSync) => finance.pendingContactCards(db),
+  "finance.contactsSent": (db: DatabaseSync, _c: DbContext, p: { crmRefs: string[] }) => finance.markContactsSent(db, p.crmRefs),
   "finance.requestCounts": (db: DatabaseSync) => finance.financeRequestCounts(db),
   "finance.exportPackage": (db: DatabaseSync, _c: DbContext, p: { version: string }) => finance.exportFinanceRequests(db, p.version),
   "finance.importReturn": (db: DatabaseSync, ctx: DbContext, p: { pkg: ReturnPackage }) => finance.importFinanceReturn(db, ctx, p.pkg),
@@ -325,20 +349,27 @@ export const methods = {
     contacts.listPersons(db, { ...p, viewer: viewer(db, ctx) }),
   "persons.get": (db: DatabaseSync, ctx: DbContext, p: Id) => contacts.getPerson(db, p.id, viewer(db, ctx)),
   "persons.create": (db: DatabaseSync, ctx: DbContext, p: contacts.PersonInput) => contacts.createPerson(db, ctx, p),
-  "persons.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Partial<contacts.PersonInput> }) => contacts.updatePerson(db, ctx, p.id, p.patch),
+  "persons.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Partial<contacts.PersonInput> }) => {
+    contacts.updatePerson(db, ctx, p.id, p.patch);
+    finance.markContactChanged(db, "person", p.id); // paridade com a Gestão Financeira
+  },
   "persons.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => contacts.deletePerson(db, ctx, p.id),
   "persons.findDuplicates": (db: DatabaseSync, _c: DbContext, p: Parameters<typeof contacts.findDuplicatePersons>[1]) =>
     contacts.findDuplicatePersons(db, p),
   "similar.persons": (db: DatabaseSync, ctx: DbContext, p: { name: string; excludeId?: string }) => similar.similarPersons(db, p, viewer(db, ctx)),
   "similar.organizations": (db: DatabaseSync, _c: DbContext, p: { name: string; excludeId?: string }) => similar.similarOrganizations(db, p),
   "similar.cards": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof similar.similarCards>[1]) => similar.similarCards(db, p, viewer(db, ctx)),
-  "persons.setPrimaryOrganization": (db: DatabaseSync, ctx: DbContext, p: { personId: string; organizationId: string }) =>
-    contacts.setPrimaryOrganization(db, ctx, p.personId, p.organizationId),
+  "persons.setPrimaryOrganization": (db: DatabaseSync, ctx: DbContext, p: { personId: string; organizationId: string }) => {
+    contacts.setPrimaryOrganization(db, ctx, p.personId, p.organizationId);
+    finance.markContactChanged(db, "person", p.personId);
+  },
   "organizations.list": (db: DatabaseSync, _c: DbContext, p: Parameters<typeof contacts.listOrganizations>[1] = {}) => contacts.listOrganizations(db, p),
   "organizations.get": (db: DatabaseSync, ctx: DbContext, p: Id) => contacts.getOrganization(db, p.id, viewer(db, ctx)),
   "organizations.create": (db: DatabaseSync, ctx: DbContext, p: contacts.OrganizationInput) => contacts.createOrganization(db, ctx, p),
-  "organizations.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Partial<contacts.OrganizationInput> }) =>
-    contacts.updateOrganization(db, ctx, p.id, p.patch),
+  "organizations.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Partial<contacts.OrganizationInput> }) => {
+    contacts.updateOrganization(db, ctx, p.id, p.patch);
+    finance.markContactChanged(db, "organization", p.id);
+  },
   "organizations.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => contacts.deleteOrganization(db, ctx, p.id),
   "organizations.findByCnpj": (db: DatabaseSync, _c: DbContext, p: { cnpj: string }) => contacts.findOrganizationByCnpj(db, p.cnpj) ?? null,
   "organizations.segments": (db: DatabaseSync) => contacts.listSegments(db),
@@ -388,6 +419,23 @@ export const methods = {
     docView(db, ctx, p.id);
     if (p.patch.restricted !== undefined) docs.assertDocumentOwner(db, viewer(db, ctx), p.id);
     docs.updateDocument(db, ctx, p.id, p.patch);
+  },
+  /** Pastas do GED: árvore com contagens (do que quem vê pode ver). */
+  "documents.folders": (db: DatabaseSync, ctx: DbContext) => docs.folderTree(db, viewer(db, ctx)),
+  "documents.folderCreate": (db: DatabaseSync, ctx: DbContext, p: { name: string; parentId?: string | null }) => folders.createFolder(db, ctx, p),
+  "documents.folderRename": (db: DatabaseSync, ctx: DbContext, p: Id & { name: string }) => folders.renameFolder(db, ctx, p.id, p.name),
+  "documents.folderMove": (db: DatabaseSync, ctx: DbContext, p: Id & { parentId: string | null }) => folders.moveFolder(db, ctx, p.id, p.parentId),
+  /** Excluir pasta: administrador ou quem criou; o conteúdo sobe para a pasta de cima. */
+  "documents.folderDelete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    const v = viewer(db, ctx);
+    const owner = one<{ created_by: string | null }>(db, "SELECT created_by FROM document_folder WHERE id = ?", p.id)?.created_by;
+    if (v && v.role !== "admin" && owner !== v.id) throw new ValidationError("Só o administrador ou quem criou a pasta pode excluí-la.");
+    return folders.deleteFolder(db, ctx, p.id);
+  },
+  /** Mover documentos para uma pasta (null = Sem pasta). */
+  "documents.moveToFolder": (db: DatabaseSync, ctx: DbContext, p: { ids: string[]; folderId: string | null }) => {
+    for (const id of p.ids) docView(db, ctx, id);
+    return folders.moveDocumentsToFolder(db, ctx, p.ids, p.folderId);
   },
   /** Ações em lote: reclassificar. */
   "documents.reclassify": (db: DatabaseSync, ctx: DbContext, p: { ids: string[]; typeId: string }) => {
@@ -531,6 +579,21 @@ export const methods = {
   "files.setLocation": (db: DatabaseSync, ctx: DbContext, p: { blobId: string; location: "browser" | "folder"; path: string | null }) =>
     docs.setBlobLocation(db, ctx, p.blobId, p.location, p.path),
   "files.all": (db: DatabaseSync) => docs.allBlobs(db),
+  "files.locateList": (db: DatabaseSync) => docs.locateBlobs(db),
+  // Mudança de instalação (outra pasta, outro computador): assistente.
+  "installation.check": (db: DatabaseSync, ctx: DbContext, p: { extensionId: string }) => installation.checkInstallation(db, ctx, p.extensionId),
+  "installation.mark": (db: DatabaseSync, ctx: DbContext, p: { extensionId: string }) => {
+    assertRole(db, ctx, ["admin"], "a instalação");
+    installation.markInstallation(db, ctx, p.extensionId);
+  },
+  "files.backupList": (db: DatabaseSync, ctx: DbContext, p: { includeOldVersions?: boolean }) => {
+    assertRole(db, ctx, ["admin"], "o backup dos documentos");
+    return docBackup.documentBackupList(db, p);
+  },
+  "files.relocate": (db: DatabaseSync, ctx: DbContext, p: { items: { blobId: string; location: "browser" | "folder"; path: string | null }[] }) => {
+    assertRole(db, ctx, ["admin"], "a localização dos documentos");
+    return docs.relocateBlobs(db, ctx, p.items);
+  },
   "files.markInBrowser": (db: DatabaseSync, ctx: DbContext, p: { sha256s: string[] }) => docs.markInBrowser(db, ctx, p.sha256s),
   "files.pendingText": (db: DatabaseSync) => docs.pendingTextVersions(db),
   "files.setText": (db: DatabaseSync, ctx: DbContext, p: { versionId: string; text: string | null }) => docs.setVersionText(db, ctx, p.versionId, p.text),
@@ -554,8 +617,15 @@ export const methods = {
   "activities.dueReminders": (db: DatabaseSync, ctx: DbContext) => activities.dueReminders(db, ctx.userId),
   "activities.markReminded": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => activities.markReminded(db, ctx, p.ids),
   // Notificações (spec 10): o service worker pergunta o que avisar e registra o resultado.
-  "notifications.plan": (db: DatabaseSync, ctx: DbContext, p: { settings: Record<string, Partial<NotifySettings>>; now?: string }) =>
-    notify.planNotifications(db, p.now ? new Date(p.now) : new Date(), p.settings, ctx.userId),
+  "notifications.plan": (db: DatabaseSync, ctx: DbContext, p: { settings: Record<string, Partial<NotifySettings>>; now?: string; finance?: boolean }) => {
+    const now = p.now ? new Date(p.now) : new Date();
+    // Atividades recorrentes: completa a janela de dias à frente (no máximo a cada 3 h).
+    if (now.getTime() - lastSeriesTopUp > 3 * 3600_000) {
+      lastSeriesTopUp = now.getTime();
+      series.topUpAllSeries(db, ctx, now);
+    }
+    return notify.planNotifications(db, now, p.settings, ctx.userId, !!p.finance);
+  },
   "notifications.record": (db: DatabaseSync, _c: DbContext, p: { results: Parameters<typeof notify.recordDeliveries>[1] }) => notify.recordDeliveries(db, p.results),
   "notifications.forActivity": (db: DatabaseSync, _c: DbContext, p: Id) => notify.activityDeliveries(db, p.id),
   "activities.setExternalEvent": (db: DatabaseSync, ctx: DbContext, p: Id & Parameters<typeof activities.setActivityExternalEvent>[3]) => {
@@ -564,18 +634,81 @@ export const methods = {
   },
   "cards.search": (db: DatabaseSync, ctx: DbContext, p: { search: string }) => deals.searchCards(db, p.search, viewer(db, ctx)),
   "activities.get": (db: DatabaseSync, _c: DbContext, p: Id) => activities.getActivity(db, p.id),
-  "activities.create": (db: DatabaseSync, ctx: DbContext, p: activities.ActivityInput) => activities.createActivity(db, ctx, p),
-  "activities.update": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Partial<activities.ActivityInput> }) => {
+  /** Com `recurrence`: cria a série e devolve a 1ª ocorrência (spec 02, recorrentes). */
+  "activities.create": (
+    db: DatabaseSync,
+    ctx: DbContext,
+    p: activities.ActivityInput & { recurrence?: RecurrenceRule | null; contactMessage?: contactMsg.ContactMessageInput | null },
+  ) => {
+    const { recurrence, contactMessage, ...input } = p;
+    if (recurrence) return series.createSeries(db, ctx, { ...input, recurrence, ...(contactMessage ? { contactMessage } : {}) }).firstId ?? "";
+    return withTransaction(db, () => {
+      const id = activities.createActivity(db, ctx, input);
+      if (contactMessage) contactMsg.setContactMessage(db, ctx, id, contactMessage);
+      return id;
+    });
+  },
+  /** `scope` (ocorrência de série): "this" (padrão), "following" ou "all"; `recurrence` muda a regra. */
+  "activities.update": (
+    db: DatabaseSync,
+    ctx: DbContext,
+    p: Id & {
+      patch: Partial<activities.ActivityInput>;
+      scope?: series.SeriesScope;
+      recurrence?: RecurrenceRule | null;
+      /** Lembrete para o contato: objeto liga/altera, null desliga, ausente não mexe. */
+      contactMessage?: contactMsg.ContactMessageInput | null;
+    },
+  ) => {
     assertActivityAccess(db, ctx, p.id);
-    activities.updateActivity(db, ctx, p.id, p.patch);
+    if (p.contactMessage !== undefined) {
+      if (p.scope && p.scope !== "this") series.setSeriesContactMessage(db, ctx, p.id, p.scope, p.contactMessage);
+      else contactMsg.setContactMessage(db, ctx, p.id, p.contactMessage);
+    }
+    if (p.scope && p.scope !== "this") {
+      const { done, ...rest } = p.patch;
+      series.updateSeries(db, ctx, p.id, p.scope, rest, p.recurrence ?? undefined);
+      if (done !== undefined && one(db, "SELECT 1 FROM activity WHERE id = ? AND deleted_at IS NULL", p.id)) activities.setActivityDone(db, ctx, p.id, done);
+    } else if (p.recurrence && !one<{ s: string | null }>(db, "SELECT series_id AS s FROM activity WHERE id = ?", p.id)?.s) {
+      // Atividade comum que passou a repetir: vira a 1ª da série.
+      activities.updateActivity(db, ctx, p.id, p.patch);
+      series.makeRecurring(db, ctx, p.id, p.recurrence);
+    } else activities.updateActivity(db, ctx, p.id, p.patch);
+    if (p.patch.done) series.afterOccurrenceDone(db, ctx, p.id);
   },
   "activities.setDone": (db: DatabaseSync, ctx: DbContext, p: Id & { done: boolean }) => {
     assertActivityAccess(db, ctx, p.id);
     activities.setActivityDone(db, ctx, p.id, p.done);
+    if (p.done) series.afterOccurrenceDone(db, ctx, p.id);
   },
-  "activities.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+  /** Ocorrência de série: `scope` "this" (padrão), "following" ou "all". */
+  "activities.delete": (db: DatabaseSync, ctx: DbContext, p: Id & { scope?: series.SeriesScope }) => {
     assertActivityAccess(db, ctx, p.id);
-    return activities.deleteActivity(db, ctx, p.id);
+    return p.scope ? series.deleteFromSeries(db, ctx, p.id, p.scope) : series.deleteActivityOrOccurrence(db, ctx, p.id);
+  },
+  /** Lembrete para o contato: quem pode receber, empresa do funil e o lembrete atual (com a prévia). */
+  "contactMessages.context": (db: DatabaseSync, ctx: DbContext, p: { activityId?: string | null; personId?: string | null; dealId?: string | null }) => {
+    if (p.activityId) assertActivityAccess(db, ctx, p.activityId);
+    return {
+      recipients: contactMsg.contactRecipients(db, p),
+      company: contactMsg.companyForDeal(db, p.dealId),
+      current: p.activityId ? contactMsg.contactMessagePreview(db, p.activityId) : null,
+    };
+  },
+  /** Service worker: o que enviar agora (e o que passou da hora). */
+  "contactMessages.due": (db: DatabaseSync, ctx: DbContext, p: { now?: string }) => contactMsg.dueContactMessages(db, ctx, p.now ? new Date(p.now) : new Date()),
+  "contactMessages.record": (db: DatabaseSync, ctx: DbContext, p: { id: string; ok: boolean; text?: string; error?: string }) =>
+    contactMsg.recordContactMessage(db, ctx, p.id, p),
+  /** Regra da recorrência de uma atividade (null = não repete). */
+  "activities.series": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    assertActivityAccess(db, ctx, p.id);
+    return series.seriesOfActivity(db, p.id);
+  },
+  "activities.endSeries": (db: DatabaseSync, ctx: DbContext, p: Id & { date: string }) => {
+    assertActivityAccess(db, ctx, p.id);
+    const s = series.seriesOfActivity(db, p.id);
+    if (!s) throw new ValidationError("Esta atividade não faz parte de uma recorrência.");
+    return series.endSeries(db, ctx, s.id, p.date);
   },
 
   // Relatórios (respeitam a permissão do usuário)
@@ -600,6 +733,33 @@ export const methods = {
   "copilot.stale": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof copilot.staleDeals>[2]) => copilot.staleDeals(db, viewer(db, ctx), p),
   "copilot.tasks": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof copilot.tasksForCopilot>[2]) => copilot.tasksForCopilot(db, viewer(db, ctx), p),
   "copilot.contacts": (db: DatabaseSync, ctx: DbContext, p: { texto: string }) => copilot.contactsForCopilot(db, viewer(db, ctx), p.texto),
+  /** GED para o Copiloto: busca por texto e/ou pasta (com subpastas); sem nada, as pastas. */
+  "copilot.documents": (db: DatabaseSync, ctx: DbContext, p: { texto?: string; pasta?: string }) => {
+    const tree = docs.folderTree(db, viewer(db, ctx));
+    const pastas = tree.folders.map((f) => ({ pasta: f.path.join(" › "), documentos: f.total }));
+    let folderId: string | undefined;
+    if (p.pasta?.trim()) {
+      const want = normalizeText(p.pasta).split(/\s*[/›>]\s*/).filter(Boolean).join("/");
+      const match = (f: docs.FolderNode) => normalizeText(f.path.join("/")) === want || normalizeText(f.name) === want.split("/").at(-1);
+      const found = tree.folders.filter(match).sort((a, b) => a.path.length - b.path.length)[0];
+      if (!found) return { erro: `Pasta não encontrada: ${p.pasta}`, pastas };
+      folderId = found.id;
+    }
+    if (!folderId && !p.texto?.trim()) return { pastas, sem_pasta: tree.none };
+    const r = docs.listDocuments(db, { search: p.texto, folderId, folderDeep: true, viewer: viewer(db, ctx), limit: 30 });
+    return {
+      total: r.total,
+      documentos: r.items.map((d) => ({
+        nome: d.name,
+        classificacao: d.type_name ?? "Não classificado",
+        pasta: d.folder_path.join(" › ") || "Sem pasta",
+        vinculos: d.links.map((l) => l.label),
+        validade: d.valid_until,
+        enviado_em: d.created_at.slice(0, 10),
+        enviado_por: d.created_by_name,
+      })),
+    };
+  },
   "copilot.structure": (db: DatabaseSync) => copilot.crmStructure(db),
   "copilot.summary": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof copilot.salesSummary>[2]) => copilot.salesSummary(db, viewer(db, ctx), p),
 
@@ -664,6 +824,7 @@ export const methods = {
   "products.usage": (db: DatabaseSync) => products.productUsage(db),
 
   // Produtos e serviços
+  "products.customValues": (db: DatabaseSync, _c: DbContext, p: Id) => products.productCustomValues(db, p.id),
   "products.list": (db: DatabaseSync, _c: DbContext, p: Parameters<typeof products.listProducts>[1] = {}) => products.listProducts(db, p),
   "products.create": (db: DatabaseSync, ctx: DbContext, p: products.ProductInput) => {
     assertRole(db, ctx, MANAGERS, "produtos");

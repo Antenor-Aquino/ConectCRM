@@ -1,4 +1,5 @@
 // Ficha da organização: dados da Receita, contatos, negócios, tarefas, notas e histórico.
+import { useGfActive } from "../useGfActive";
 import { useCallback, useEffect, useState } from "react";
 import { Building2, ExternalLink, Merge, Pencil, Star, Trash2 } from "lucide-react";
 import { TaButton } from "@tailadmin";
@@ -16,6 +17,7 @@ import { formatPhone } from "../ui/PhoneInput";
 import { TagChip } from "../ui/TagPicker";
 import { DocumentsPanel } from "../documents/DocumentsPanel";
 import { ClientFinancePanel } from "./ClientFinancePanel";
+import { GfContactButton } from "./GfContactButton";
 import { ChangeLogList, CustomValuesView, DrawerShell, InfoRow, RelatedCards, RelatedTasks, Tabs } from "./detailParts";
 import { MergeModal } from "./MergeModal";
 import { OrganizationFormModal } from "./OrganizationFormModal";
@@ -42,6 +44,8 @@ export function OrganizationDetail({
   const [o, setO] = useState<OrgData | null | undefined>(undefined);
   const [fields, setFields] = useState<CustomField[]>([]);
   const [tab, setTab] = useState<Tab>("contatos");
+  // Aba Financeiro só com a integração com a Gestão Financeira ativada.
+  const gfActive = !!useGfActive();
   const [editing, setEditing] = useState(false);
   const [merging, setMerging] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,7 +90,9 @@ export function OrganizationDetail({
           </span>
         )}
         <div className="min-w-0 flex-1">
-          <h1 className="text-theme-xl font-semibold text-gray-800 dark:text-white/90">{o.name}</h1>
+          <h1 className="text-theme-xl font-semibold text-gray-800 dark:text-white/90">{o.name}
+            {o.name_ext && <span className="font-normal text-gray-500" data-name-ext> - {o.name_ext}</span>}
+          </h1>
           {o.legal_name && <p className="text-theme-sm text-gray-500">{o.legal_name}</p>}
         </div>
       </div>
@@ -94,6 +100,7 @@ export function OrganizationDetail({
         <TaButton startIcon={<Pencil size={15} />} onClick={() => setEditing(true)}>
           Editar
         </TaButton>
+        <GfContactButton crmRef={`organization:${o.id}`} refreshKey={o.version} />
         <TaButton startIcon={<Merge size={15} />} onClick={() => setMerging(true)}>
           Mesclar duplicada
         </TaButton>
@@ -117,8 +124,8 @@ export function OrganizationDetail({
       </div>
       <ErrorText>{error}</ErrorText>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
-        <div>
+      <div className="grid gap-6 lg:grid-cols-[minmax(260px,2fr)_minmax(0,3fr)]">
+        <div className="min-w-0">
           <SectionLabel className="mt-0">Empresa</SectionLabel>
           <InfoRow label="CNPJ">{o.cnpj && formatCnpj(o.cnpj)}</InfoRow>
           <InfoRow label="Segmento">{o.segment}</InfoRow>
@@ -150,14 +157,14 @@ export function OrganizationDetail({
             </>
           )}
         </div>
-        <div>
+        <div className="min-w-0">
           <Tabs<Tab>
             tabs={[
               ["contatos", `Contatos (${o.persons.length})`],
               ["negocios", "Negócios"],
               ["tarefas", "Atividades"],
               ["documentos", "Documentos"],
-              ["financeiro", "Financeiro"],
+              ...(gfActive ? ([["financeiro", "Financeiro"]] as [Tab, string][]) : []),
               ["notas", "Notas"],
               ["historico", "Histórico"],
             ]}
@@ -173,6 +180,7 @@ export function OrganizationDetail({
                   <li key={p.id}>
                     <button type="button" className="flex w-full items-center gap-2 py-2.5 text-left text-theme-sm text-brand-600 hover:underline" onClick={() => onOpenPerson(p.id)}>
                       {p.name}
+                      {p.name_ext && <span className="text-gray-500"> - {p.name_ext}</span>}
                       {!!p.is_primary && <Star size={11} fill="currentColor" className="text-warning-500" />}
                     </button>
                   </li>
@@ -181,7 +189,7 @@ export function OrganizationDetail({
             ))}
           {tab === "negocios" && <RelatedCards filter={{ organizationId: o.id }} onOpenCard={onOpenCard} />}
           {tab === "tarefas" && <RelatedTasks filter={{ organizationId: o.id }} />}
-          {tab === "financeiro" && <ClientFinancePanel filter={{ organizationId: o.id }} onOpenCard={onOpenCard} />}
+          {gfActive && tab === "financeiro" && <ClientFinancePanel filter={{ organizationId: o.id }} onOpenCard={onOpenCard} />}
           {tab === "documentos" && <DocumentsPanel type="organization" id={o.id} />}
           {tab === "notas" && <NotesPanel entityType="organization" entityId={o.id} />}
           {tab === "historico" && <ChangeLogList table="organization" id={o.id} />}

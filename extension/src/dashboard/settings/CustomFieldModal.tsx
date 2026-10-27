@@ -2,7 +2,7 @@
 // chave reservada {{…}}, Sempre mostrar / Esconder / Obrigatório; opções
 // (listas) e restrição por funil (negócio, ticket, projeto).
 import { useEffect, useState } from "react";
-import { Asterisk, Eye, GripVertical, Lock, Plus, Trash2 } from "lucide-react";
+import { Asterisk, Eye, GripVertical, Lock, Plus, Tag, Trash2 } from "lucide-react";
 import { TaButton, TaInput, TaModal, TaSelect, TaTextarea } from "@tailadmin";
 import { call } from "../../rpc/client";
 import { CUSTOM_FIELD_TYPE_LABEL, type CustomField, type CustomFieldEntity, type CustomFieldGroup, type CustomFieldType } from "../../db/customFields";
@@ -48,6 +48,7 @@ export function CustomFieldModal({
   const [alwaysShow, setAlwaysShow] = useState(!!field?.always_show);
   const [hidden, setHidden] = useState(!!field?.hidden);
   const [required, setRequired] = useState(!!field?.required);
+  const [withName, setWithName] = useState(!!field?.show_with_name);
   const [active, setActive] = useState(field ? !!field.active : true);
   const [options, setOptions] = useState<{ id?: string; label: string }[]>(field?.options.map((o) => ({ id: o.id, label: o.label })) ?? []);
   const [pipelineIds, setPipelineIds] = useState<string[]>(field?.pipelineIds ?? []);
@@ -91,6 +92,7 @@ export function CustomFieldModal({
       alwaysShow,
       hidden,
       required,
+      showWithName: withName,
       ...(isList(type) ? { options: options.filter((o) => o.label.trim()) } : {}),
       ...(PIPELINE_TYPE[entity] ? { pipelineIds } : {}),
       groupId: groupId || null,
@@ -207,6 +209,7 @@ export function CustomFieldModal({
             if (v) {
               setAlwaysShow(false);
               setRequired(false);
+              setWithName(false);
             }
           }}
         />
@@ -217,6 +220,14 @@ export function CustomFieldModal({
           checked={required}
           disabled={hidden}
           onChange={setRequired}
+        />
+        <SwitchRow
+          icon={<Tag size={18} />}
+          label="Exibir junto com o nome"
+          help={`O valor aparece ao lado do nome ${WITH_NAME_EXAMPLE[entity]}. No máximo 2 campos por cadastro.`}
+          checked={withName && !hidden}
+          disabled={hidden}
+          onChange={setWithName}
         />
       </div>
 
@@ -257,3 +268,14 @@ export function CustomFieldModal({
     </TaModal>
   );
 }
+
+/** Exemplo do "Exibir junto com o nome" para cada cadastro. */
+const WITH_NAME_EXAMPLE: Record<CustomFieldEntity, string> = {
+  person: "do contato (ex.: “Maria José - Diretora”)",
+  organization: "da organização (ex.: “AEB Sistemas - Saúde”)",
+  deal: "do negócio, no quadro e no cartão",
+  ticket: "do ticket, no quadro e no cartão",
+  project: "da etapa de projeto, no quadro e no cartão",
+  activity: "da atividade, nas listas de atividades",
+  product: "do produto, na lista e ao escolher o produto",
+};

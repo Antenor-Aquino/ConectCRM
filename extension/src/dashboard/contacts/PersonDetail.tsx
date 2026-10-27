@@ -1,4 +1,5 @@
 // Ficha do contato: dados, organizações, negócios, tarefas, notas e histórico.
+import { useGfActive } from "../useGfActive";
 import { useCallback, useEffect, useState } from "react";
 import { Lock, Merge, MessageCircle, Pencil, Star, Trash2 } from "lucide-react";
 import { TaBadge, TaButton } from "@tailadmin";
@@ -15,6 +16,7 @@ import { formatPhone } from "../ui/PhoneInput";
 import { TagChip } from "../ui/TagPicker";
 import { DocumentsPanel } from "../documents/DocumentsPanel";
 import { ClientFinancePanel } from "./ClientFinancePanel";
+import { GfContactButton } from "./GfContactButton";
 import { ChangeLogList, CustomValuesView, DrawerShell, InfoRow, RelatedCards, RelatedTasks, Tabs } from "./detailParts";
 import { MergeModal } from "./MergeModal";
 import { PersonFormModal } from "./PersonFormModal";
@@ -41,6 +43,8 @@ export function PersonDetail({
   const [p, setP] = useState<PersonData | null | undefined>(undefined);
   const [fields, setFields] = useState<CustomField[]>([]);
   const [tab, setTab] = useState<Tab>("negocios");
+  // Aba Financeiro só com a integração com a Gestão Financeira ativada.
+  const gfActive = !!useGfActive();
   const [editing, setEditing] = useState(false);
   const [merging, setMerging] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +78,8 @@ export function PersonDetail({
         )}
         <div className="min-w-0 flex-1">
           <h1 className="flex items-center gap-2 text-theme-xl font-semibold text-gray-800 dark:text-white/90">
-            {p.name} {!!p.is_private && <Lock size={15} className="text-gray-400" aria-label="Contato privado" />}
+            {p.name}
+            {p.name_ext && <span className="font-normal text-gray-500" data-name-ext> - {p.name_ext}</span>} {!!p.is_private && <Lock size={15} className="text-gray-400" aria-label="Contato privado" />}
           </h1>
           {p.organizations[0] && <p className="text-theme-sm text-gray-500">{p.organizations[0].name}</p>}
         </div>
@@ -88,6 +93,7 @@ export function PersonDetail({
             WhatsApp
           </TaButton>
         )}
+        <GfContactButton crmRef={`person:${p.id}`} refreshKey={p.version} />
         <TaButton startIcon={<Merge size={15} />} onClick={() => setMerging(true)}>
           Mesclar duplicado
         </TaButton>
@@ -111,8 +117,8 @@ export function PersonDetail({
       </div>
       <ErrorText>{error}</ErrorText>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
-        <div>
+      <div className="grid gap-6 lg:grid-cols-[minmax(260px,2fr)_minmax(0,3fr)]">
+        <div className="min-w-0">
           <SectionLabel className="mt-0">Dados</SectionLabel>
           <InfoRow label="E-mail">{p.email && <EmailLink email={p.email} className="text-brand-600">{p.email}</EmailLink>}</InfoRow>
           <InfoRow label="Celular">{p.phone && <PhoneLink phone={p.phone} className="text-brand-600">{formatPhone(p.phone)}</PhoneLink>}</InfoRow>
@@ -150,13 +156,13 @@ export function PersonDetail({
             </p>
           )}
         </div>
-        <div>
+        <div className="min-w-0">
           <Tabs<Tab>
             tabs={[
               ["negocios", "Negócios"],
               ["tarefas", "Atividades"],
               ["documentos", "Documentos"],
-              ["financeiro", "Financeiro"],
+              ...(gfActive ? ([["financeiro", "Financeiro"]] as [Tab, string][]) : []),
               ["notas", "Notas"],
               ["historico", "Histórico"],
             ]}
@@ -165,7 +171,7 @@ export function PersonDetail({
           />
           {tab === "negocios" && <RelatedCards filter={{ personId: p.id }} onOpenCard={onOpenCard} />}
           {tab === "tarefas" && <RelatedTasks filter={{ personId: p.id }} />}
-          {tab === "financeiro" && <ClientFinancePanel filter={{ personId: p.id }} onOpenCard={onOpenCard} />}
+          {gfActive && tab === "financeiro" && <ClientFinancePanel filter={{ personId: p.id }} onOpenCard={onOpenCard} />}
           {tab === "documentos" && <DocumentsPanel type="person" id={p.id} />}
           {tab === "notas" && <NotesPanel entityType="person" entityId={p.id} />}
           {tab === "historico" && <ChangeLogList table="person" id={p.id} />}

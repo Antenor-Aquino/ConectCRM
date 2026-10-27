@@ -12,6 +12,8 @@ import { MoneyInput } from "../ui/MoneyInput";
 import { Field } from "../ui/form";
 import { call } from "../../rpc/client";
 import type { CardFinance, FinanceEntry, FinanceRequestRow } from "../../db/finance";
+import type { DealItem } from "../../db/deals";
+import { itemsNotes } from "../../lib/finance/itemsNotes";
 import type { LaunchCounterparty } from "../../lib/finance/protocol";
 import { GF_ENV_LABEL, listByOrigin, loadGfSettings, openLaunch, type GfSettings } from "../../lib/finance/gfBridge";
 import { formatCents, formatDateTime } from "../../lib/format";
@@ -30,6 +32,10 @@ export function FinanceTab({
   autoLaunch,
   onAutoLaunchDone,
   onSynced,
+  concluded,
+  items,
+  financeSkip,
+  onFinanceSkip,
 }: {
   cardId: string;
   title: string;
@@ -37,11 +43,18 @@ export function FinanceTab({
   /** "Negócio", "Projeto"... (vai no rótulo da origem lá). */
   cardLabel: string;
   onOpenSettings?: () => void;
-  /** Abrir já a receita (ex.: ao marcar como ganho). */
-  autoLaunch?: boolean;
+  /** Abrir já a receita (ex.: ao marcar como ganho): com o valor do cartão ou para informar outro valor. */
+  autoLaunch?: false | "card" | "custom";
   onAutoLaunchDone?: () => void;
   /** Cópia local atualizada (a aba mostra a quantidade). */
   onSynced?: () => void;
+  /** Desfecho positivo já dado ("Ganho", "Resolvido"...), para lembrar a receita que falta. */
+  concluded?: string | null;
+  /** Produtos e serviços do cartão: vão nas observações da receita. */
+  items?: DealItem[];
+  /** "Não registrar no financeiro" escolhido ao ganhar/concluir. */
+  financeSkip?: boolean;
+  onFinanceSkip?: (skip: boolean) => void;
 }) {
   const [settings, setSettings] = useState<GfSettings | null>(null);
   const [data, setData] = useState<CardFinance | null>(null);
@@ -51,8 +64,11 @@ export function FinanceTab({
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
   const launchWindow = useRef<number | null>(null);
+  // Lançamento novo aberto lá: só existe depois de "Salvar". Fechou sem salvar = avisa aqui.
+  const [pending, setPending] = useState<{ mode: "income" | "expense"; before: number; closed: boolean } | null>(null);
   const [requests, setRequests] = useState<FinanceRequestRow[]>([]);
   const [requestMode, setRequestMode] = useState<"income" | "expense" | null>(null);
+  const [requestCustom, setRequestCustom] = useState(false);
 
   const loadLocal = useCallback(async () => {
     setData(await call("finance.card", { id: cardId }));
@@ -90,7 +106,7 @@ export function FinanceTab({
     const onRemoved = (id: number) => {
       if (id !== launchWindow.current) return;
       launchWindow.current = null;
-      void refresh();
+      void refresh().then(() => setPending((p) => p && { ...p, closed: true }));
     };
     const onFocus = () => {
       if (launchWindow.current === null) void refresh();
@@ -112,20 +128,25 @@ export function FinanceTab({
   const direct = !!settings?.gfId && settings.direct && live === "ok";
   const packageMode = !!settings?.package && !direct;
 
-  async function launch(mode: "income" | "expense", edit?: FinanceEntry) {
+  async function launch(mode: "income" | "expense", edit?: FinanceEntry, opts: { customAmount?: boolean } = {}) {
     setError(null);
     if (!counterparty) {
       setError("Para lançar no financeiro, vincule uma organização ou um contato a este cartão.");
       return;
     }
     if (!direct) {
-      if (packageMode && !edit) setRequestMode(mode);
+      if (packageMode && !edit) {
+        setRequestCustom(!!opts.customAmount);
+        setRequestMode(mode);
+      }
       return;
     }
     if (!settings?.gfId) return;
-    const suggested = suggestedFor(mode);
+    const suggested = opts.customAmount ? null : suggestedFor(mode);
     setOpening(true);
     try {
+      // A ficha completa vai junto no lançamento; dali em diante, as alterações do cadastro também.
+      void call("finance.linkContact", { crmRef: counterparty.crmRef, sent: true });
       launchWindow.current = await openLaunch(settings.gfId, {
         mode,
         description: title,
@@ -134,7 +155,9 @@ export function FinanceTab({
         origin: { app: "conectcrm", ref: cardId, label: `${cardLabel} "${title}" (ConectCRM)` },
         walletId: "empresa",
         editTxId: edit?.id ?? null,
+        notes: mode === "income" && !edit ? itemsNotes(items ?? []) : null,
       });
+      if (!edit) setPending({ mode, before: (data?.entries ?? []).filter((e) => e.type === mode).length, closed: false });
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -148,7 +171,7 @@ export function FinanceTab({
     if (!autoLaunch || autoDone.current || live === "loading" || counterparty === undefined) return;
     autoDone.current = true;
     onAutoLaunchDone?.();
-    if ((settings?.gfId && settings.direct) || settings?.package) void launch("income");
+    if ((settings?.gfId && settings.direct) || settings?.package) void launch("income", undefined, { customAmount: autoLaunch === "custom" });
   });
 
   if (!settings || live === "loading" || counterparty === undefined) return <p className="text-theme-sm text-gray-500">Carregando…</p>;
@@ -173,6 +196,11 @@ export function FinanceTab({
   const s = data?.summary;
   const canLaunch = direct;
   const canAsk = canLaunch || packageMode;
+  const pendingNoun = pending?.mode === "income" ? "receita" : "despesa";
+  const pendingSaved = !!pending && entries.filter((e) => e.type === pending.mode).length > pending.before;
+  // Concluído com valor e sem nenhuma receita (nem pedido no pacote): lembra de lançar.
+  const missingIncome =
+    !!concluded && !financeSkip && !!valueCents && canAsk && !!counterparty && !pending && !(s?.incomeCents ?? 0) && !requests.some((r) => r.request.mode === "income");
 
   return (
     <div className="space-y-3" data-finance-tab>
@@ -221,6 +249,56 @@ export function FinanceTab({
         <p className="rounded-lg bg-warning-50 px-3 py-2 text-theme-xs text-warning-800">A Gestão Financeira está no {GF_ENV_LABEL.demo}: estes valores não são os reais.</p>
       )}
       {error && <p className="text-theme-sm text-error-600">{error}</p>}
+      {pending && !pending.closed && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg bg-brand-50 px-3 py-2 text-theme-sm text-brand-800 dark:bg-brand-500/10 dark:text-brand-300" data-finance-window-open>
+          <span className="min-w-0 flex-1">
+            A janela da Gestão Financeira está aberta: confira os dados e clique em <b>Salvar {pending.mode === "income" ? "Receita" : "Despesa"}</b>. A {pendingNoun} só é lançada depois de salvar.
+          </span>
+          <TaButton size="sm" onClick={() => launchWindow.current !== null && void chrome.windows.update(launchWindow.current, { focused: true })}>
+            Mostrar a janela
+          </TaButton>
+        </div>
+      )}
+      {pending?.closed && !pendingSaved && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg bg-warning-50 px-3 py-2 text-theme-sm text-warning-800" data-finance-not-saved>
+          <span className="min-w-0 flex-1">
+            A janela da Gestão Financeira foi fechada <b>sem salvar</b>: a {pendingNoun} não foi lançada.
+          </span>
+          <TaButton size="sm" variant="primary" onClick={() => void launch(pending.mode)}>
+            Abrir de novo
+          </TaButton>
+          <button type="button" className="text-theme-xs text-warning-700 hover:underline" onClick={() => setPending(null)}>
+            Dispensar
+          </button>
+        </div>
+      )}
+      {pending?.closed && pendingSaved && (
+        <p className="rounded-lg bg-success-50 px-3 py-2 text-theme-sm text-success-700" data-finance-saved>
+          {pending.mode === "income" ? "Receita lançada" : "Despesa lançada"} na Gestão Financeira.
+        </p>
+      )}
+      {financeSkip && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg bg-gray-100 px-3 py-2 text-theme-sm text-gray-700 dark:bg-white/5 dark:text-gray-300" data-finance-skip>
+          <span className="min-w-0 flex-1">
+            Marcado para <b>não registrar o valor do cartão</b> no financeiro. Lançamentos avulsos (Receita/Despesa) continuam possíveis.
+          </span>
+          {onFinanceSkip && (
+            <button type="button" className="text-theme-xs text-brand-600 hover:underline" onClick={() => onFinanceSkip(false)}>
+              Voltar a registrar
+            </button>
+          )}
+        </div>
+      )}
+      {missingIncome && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg bg-warning-50 px-3 py-2 text-theme-sm text-warning-800" data-finance-missing-income>
+          <span className="min-w-0 flex-1">
+            Este cartão está como <b>{concluded}</b> com valor de <b>{formatCents(valueCents)}</b>, mas ainda não tem receita lançada na Gestão Financeira.
+          </span>
+          <TaButton size="sm" variant="primary" disabled={opening} onClick={() => void launch("income")}>
+            Lançar receita
+          </TaButton>
+        </div>
+      )}
 
       {s && entries.length > 0 && (
         <div className="grid grid-cols-3 gap-2 text-theme-xs" data-finance-summary>
@@ -267,7 +345,8 @@ export function FinanceTab({
         <RequestModal
           mode={requestMode}
           title={title}
-          suggestedCents={suggestedFor(requestMode)}
+          suggestedCents={requestCustom ? null : suggestedFor(requestMode)}
+          initialNotes={requestMode === "income" ? itemsNotes(items ?? []) : null}
           onClose={() => setRequestMode(null)}
           onSave={async (input) => {
             await call("finance.requestCreate", { dealId: cardId, ...input });
@@ -346,12 +425,14 @@ function RequestModal({
   mode,
   title,
   suggestedCents,
+  initialNotes,
   onClose,
   onSave,
 }: {
   mode: "income" | "expense";
   title: string;
   suggestedCents: number | null;
+  initialNotes?: string | null;
   onClose: () => void;
   onSave: (input: { mode: "income" | "expense"; description: string; amountCents: number | null; dueDate: string | null; competenceDate: string | null; notes: string | null }) => Promise<void>;
 }) {
@@ -359,7 +440,7 @@ function RequestModal({
   const [amount, setAmount] = useState(suggestedCents ?? 0);
   const [dueDate, setDueDate] = useState(today());
   const [competenceDate, setCompetenceDate] = useState(today());
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes] = useState(initialNotes ?? "");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const income = mode === "income";

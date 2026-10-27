@@ -26,6 +26,7 @@ export default defineConfig({
       input: {
         dashboard: resolve(__dirname, "src/dashboard/dashboard.html"),
         popup: resolve(__dirname, "src/popup/popup.html"),
+        alert: resolve(__dirname, "src/alert/alert.html"),
         offscreen: resolve(__dirname, "src/offscreen/offscreen.html"),
         background: resolve(__dirname, "src/background/service-worker.ts"),
       },

@@ -26,6 +26,7 @@ interface Draft {
 
 export function PipelineSettingsModal({ pipeline, onClose, onSaved }: { pipeline: Pipeline | null; onClose: () => void; onSaved: (archived: boolean) => void }) {
   const [name, setName] = useState("");
+  const [company, setCompany] = useState("");
   const [stages, setStages] = useState<Draft[]>([]);
   const [original, setOriginal] = useState<{ id: string; name: string }[]>([]);
   const [moveTo, setMoveTo] = useState<Record<string, string>>({});
@@ -36,6 +37,7 @@ export function PipelineSettingsModal({ pipeline, onClose, onSaved }: { pipeline
   useEffect(() => {
     if (!pipeline) return;
     setName(pipeline.name);
+    setCompany(pipeline.company_name ?? "");
     setTab("etapas");
     setCardKeys(parseCardFields(pipeline.card_fields, pipeline.type));
     setError(null);
@@ -64,7 +66,7 @@ export function PipelineSettingsModal({ pipeline, onClose, onSaved }: { pipeline
     setError(null);
     try {
       const isDefault = JSON.stringify(cardKeys) === JSON.stringify(DEFAULT_CARD_FIELDS[pipeline!.type]);
-      await call("pipelines.update", { id: pipeline!.id, patch: { name, cardFields: isDefault ? null : cardKeys } });
+      await call("pipelines.update", { id: pipeline!.id, patch: { name, companyName: company, cardFields: isDefault ? null : cardKeys } });
       await call("stages.save", {
         pipelineId: pipeline!.id,
         stages: stages.map((s) => ({
@@ -88,6 +90,9 @@ export function PipelineSettingsModal({ pipeline, onClose, onSaved }: { pipeline
         <TaInput value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
       <p className="text-theme-xs text-gray-500">Tipo: {PIPELINE_TYPE_LABEL[pipeline.type]} (não pode ser alterado).</p>
+      <Field label="Empresa" hint="Opcional. Assina os lembretes por WhatsApp das atividades dos cartões deste funil (ex.: “Antenor · AEB Sistemas”).">
+        <TaInput value={company} placeholder="Nome da empresa" onChange={(e) => setCompany(e.target.value)} data-pipeline-company />
+      </Field>
 
       <div className="mb-1 mt-4 flex gap-1 rounded-lg bg-gray-100 p-1 dark:bg-white/5">
         {(

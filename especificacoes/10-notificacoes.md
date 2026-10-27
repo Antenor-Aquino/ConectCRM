@@ -162,3 +162,62 @@ usuários deste computador configuraram cada canal.
   (Zenvia, Comtele, Mobizon). Uso sugerido: reserva quando o WhatsApp falhar.
 - **Telegram:** canal gratuito e oficial, sugerido como alternativa.
 - **WhatsApp oficial (API da Meta):** para empresas que queiram envio oficial.
+
+## Som (0.2.66)
+
+O Chrome não deixa a extensão escolher o som da notificação. Por isso o aviso
+sai sem o som do sistema (`silent`) e o service worker pede ao documento
+offscreen (o mesmo do banco) para tocar o som escolhido, sintetizado com Web
+Audio (`lib/notify/sounds.ts`; sem arquivos).
+
+- Configurações → Notificações → **Som** (deste computador, salvo na hora):
+  7 sons (Sino, Ding duplo, Marimba, Campainha, Alerta suave, Digital, Pop) e
+  "Sem som"; volume de 0 a 100% com Testar; som por tipo de aviso (lembrete,
+  atrasada, resumo do dia/alertas financeiros; "Igual ao geral" por padrão).
+- **Repetir**: toca de novo a cada 1 minuto, até 3 vezes, enquanto o aviso
+  estiver na tela (`chrome.storage.session`, conferido no alarme de 1 min).
+- **Sem som das X às Y**: o aviso aparece, sem tocar (diferente do "Horário de
+  silêncio", que segura o aviso).
+- Padrão: Sino a 70%, sem repetir. Último som tocado fica em
+  `chrome.storage.session` (`conectcrm-sound-last`), para diagnóstico.
+
+## Janela de aviso (0.2.68)
+
+O balão do Chrome depende do sistema: com as notificações do Chrome
+desligadas no Windows/macOS ou com "Não perturbe"/Assistente de foco, ele não
+aparece — e o som (tocado pela extensão) toca do mesmo jeito. Por isso, todo
+aviso do Chrome também entra numa **janela do CRM** (`src/alert`), aberta no
+canto da janela do Chrome (ou onde o Chrome escolher, se recusar a posição),
+com **Concluir**, **Adiar 10 min**, **Abrir** e **OK**; vários avisos
+empilham na mesma janela, que fecha quando o último é resolvido. Fechar a
+janela no X dá todos como vistos (o som para de repetir). Ligada por padrão em
+Configurações → Notificações → Som e janela de aviso, com o botão **Testar
+aviso** e a orientação para ativar as notificações do Chrome no Windows/Mac.
+
+## Lembrete para o contato por WhatsApp (0.2.69)
+
+No formulário da atividade, em Lembretes: **Lembrar o contato pelo WhatsApp**.
+Ligado, abre ao lado o cartão **Mensagem para o contato**: Para (contato da
+atividade ou do cartão; só os que têm celular), Quando (15 min, 30 min, 1 h,
+2 h ou 1 dia antes), Link da reunião (fica na atividade; o Meet/Teams criado
+pelo CRM também preenche), Enviar pelo número (Z-API ou WhatsApp Web de
+Configurações → WhatsApp), a hora do envio, o modelo editável com as
+variáveis e a prévia como no WhatsApp.
+
+- **Variáveis**: {nome}, {nome_completo}, {quando} (hoje/amanhã/na terça,
+  28/10), {hora}, {data}, {link}, {atividade}, {meu_nome} (responsável),
+  {minha_empresa} (empresa do funil do cartão: Editar funil → Empresa). Sem
+  link, some a linha do link; sem funil ou sem empresa, some a empresa com o
+  que a liga ao nome (" · ", " da ").
+- **Modelo padrão** e antecedência/número padrão em Configurações →
+  Notificações → Lembrete para o contato (por usuário).
+- **Envio** pelo service worker, com o Chrome aberto (mesmo com o CRM
+  fechado). Chrome fechado na hora: sai quando ele abrir, se a atividade ainda
+  não começou; senão fica "não enviada" e o usuário é avisado (balão, janela de
+  aviso e sino). Falha da Z-API/WhatsApp Web: "não enviada" + aviso; salvar de
+  novo reagenda.
+- **Editável até o envio** (mudar o início muda a hora do envio); enviado, fica
+  só para leitura. Atividade concluída antes: cancela. O envio vira nota na
+  atividade e no contato. Recorrentes: cada ocorrência leva o seu.
+- Tabela `activity_contact_message`; `pipeline.company_name`.
+- Futuro: agendamento na nuvem (envio com o computador desligado).

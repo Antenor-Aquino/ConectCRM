@@ -57,7 +57,10 @@ como na gestão financeira.
 
 ## 5. Mockups de CRM × padrão financeiro
 
-- Layout dos mockups mantido: lista de funis à esquerda, quadro Kanban com
+- Layout dos mockups mantido: lista de funis à esquerda (retrátil: « no
+  cabeçalho "Funis" ou o ícone de painel do quadro recolhem a lista numa faixa
+  estreita com a sigla de cada funil — nome no balão — e » reabre; a escolha
+  fica guardada), quadro Kanban com
   colunas, modais de cadastro com seções em caixa-alta cinza, botões
   "Criar e abrir" / "Criar" / "Salvar".
 - Aparência aplicada a eles: cores, fonte, botões, inputs, badges, raios e

@@ -22,6 +22,8 @@ export interface CopilotContext {
   /** Título do cartão aberto (para a IA e para confirmar ao usuário). */
   cardTitle?: string | null;
   now?: Date;
+  /** Integração com a Gestão Financeira ativada (sem ela, nada de ferramentas nem orientações financeiras). */
+  finance?: boolean;
 }
 
 /** Roda uma consulta pelo nome; erros viram { erro } para a IA explicar. */
@@ -29,6 +31,9 @@ export type ToolExecutor = (name: string, args: Record<string, unknown>) => Prom
 
 const MAX_ROUNDS = 8;
 const TOOLS = [...DATA_TOOLS, RESPOND_TOOL];
+/** Ferramentas que leem a Gestão Financeira: só com a integração ativada. */
+export const FINANCE_TOOLS = ["resumo_financeiro", "pendencias_financeiras"];
+const toolsFor = (ctx: CopilotContext) => (ctx.finance ? TOOLS : TOOLS.filter((t) => !FINANCE_TOOLS.includes(t.name)));
 
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
@@ -47,10 +52,14 @@ export function buildSystemPrompt(c: CopilotContext): string {
     "TAREFAS: atrasada = pendente com a finalização vencida ou, sem finalização, com o início num dia anterior a hoje. " +
       "Para 'atrasadas' ou 'a mais atrasada', use listar_tarefas com situacao 'atrasadas' (vem da mais antiga para a mais recente, com atrasadaHaDias). " +
       "Se vier vazio, confira também situacao 'pendentes' antes de dizer que não há nada pendente.",
-    "PERÍODOS: converta 'este mês', 'mês passado', 'trimestre', 'este ano' etc. em datas AAAA-MM-DD a partir de hoje antes de chamar resumo_comercial ou resumo_financeiro.",
-    "FINANCEIRO: dinheiro de verdade (faturamento, lucro, margem, contas a receber, inadimplência) vem de resumo_financeiro e pendencias_financeiras (lançamentos da Gestão Financeira pelos cartões); o valor do cartão é só a expectativa do negócio. Diga a data da leitura quando relevante.",
+    `PERÍODOS: converta 'este mês', 'mês passado', 'trimestre', 'este ano' etc. em datas AAAA-MM-DD a partir de hoje antes de chamar resumo_comercial${c.finance ? " ou resumo_financeiro" : ""}.`,
+    ...(c.finance
+      ? [
+          "FINANCEIRO: dinheiro de verdade (faturamento, lucro, margem, contas a receber, inadimplência) vem de resumo_financeiro e pendencias_financeiras (lançamentos da Gestão Financeira pelos cartões); o valor do cartão é só a expectativa do negócio. Diga a data da leitura quando relevante.",
+        ]
+      : []),
     "NOMES: funil e responsável aceitam parte do nome. Se a ferramenta devolver 'erro' com 'opcoes', mostre as opções e pergunte qual é; não adivinhe.",
-    "PANORAMA: para 'como estou', 'pontos de atenção' ou 'o que fazer hoje', combine listar_tarefas (atrasadas e hoje), negocios_parados, resumo_comercial do mês atual e pendencias_financeiras.",
+    `PANORAMA: para 'como estou', 'pontos de atenção' ou 'o que fazer hoje', combine listar_tarefas (atrasadas e hoje), negocios_parados${c.finance ? ", resumo_comercial do mês atual e pendencias_financeiras" : " e resumo_comercial do mês atual"}.`,
     "NEGÓCIO ESPECÍFICO: localize com buscar_cartoes e depois use detalhar_cartao; para resumir, cubra situação, histórico recente (notas e atividades), riscos e próximo passo.",
     "",
     "RESPOSTA: termine SEMPRE chamando a ferramenta 'responder'. Use 'tabela' quando houver linhas comparáveis (lista de negócios, atividades, responsáveis); senão null. " +
@@ -91,8 +100,8 @@ function stringify(v: unknown): string {
   }
 }
 
-async function runTool(execute: ToolExecutor, name: string, args: Record<string, unknown>): Promise<unknown> {
-  if (!DATA_TOOLS.some((t) => t.name === name)) return { erro: `Ferramenta desconhecida: ${name}` };
+async function runTool(execute: ToolExecutor, name: string, args: Record<string, unknown>, ctx: CopilotContext): Promise<unknown> {
+  if (!DATA_TOOLS.some((t) => t.name === name) || (!ctx.finance && FINANCE_TOOLS.includes(name))) return { erro: `Ferramenta desconhecida: ${name}` };
   try {
     return await execute(name, args ?? {});
   } catch (e) {
@@ -179,7 +188,7 @@ async function runOpenAiLike(s: AiSettings, history: CopilotMessage[], ctx: Copi
   const { prov, key, model } = credentials(s);
   const label = AI_LABELS[prov];
   const url = prov === "openai" ? "https://api.openai.com/v1/chat/completions" : "https://api.deepseek.com/chat/completions";
-  const tools = TOOLS.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: jsonSchema(t.parameters) } }));
+  const tools = toolsFor(ctx).map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: jsonSchema(t.parameters) } }));
   const messages: any[] = [{ role: "system", content: buildSystemPrompt(ctx) }, ...history];
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const last = round === MAX_ROUNDS - 1;
@@ -211,7 +220,7 @@ async function runOpenAiLike(s: AiSettings, history: CopilotMessage[], ctx: Copi
     }
     messages.push({ role: "assistant", content: msg.content ?? null, tool_calls: calls });
     for (const c of calls) {
-      messages.push({ role: "tool", tool_call_id: c.id, content: stringify(await runTool(execute, c.function.name, parse(c.function.arguments))) });
+      messages.push({ role: "tool", tool_call_id: c.id, content: stringify(await runTool(execute, c.function.name, parse(c.function.arguments), ctx)) });
     }
   }
   throw new Error("O Copiloto não conseguiu concluir a resposta (muitas consultas em sequência). Tente uma pergunta mais específica.");
@@ -222,7 +231,7 @@ async function runOpenAiLike(s: AiSettings, history: CopilotMessage[], ctx: Copi
 async function runClaude(s: AiSettings, history: CopilotMessage[], ctx: CopilotContext, execute: ToolExecutor): Promise<CopilotCard> {
   const { key, model } = credentials(s);
   const headers = { "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" };
-  const tools = TOOLS.map((t) => ({ name: t.name, description: t.description, input_schema: jsonSchema(t.parameters) }));
+  const tools = toolsFor(ctx).map((t) => ({ name: t.name, description: t.description, input_schema: jsonSchema(t.parameters) }));
   const messages: any[] = history.map((h) => ({ role: h.role, content: h.content }));
   const call = (toolChoice: unknown) =>
     post("https://api.anthropic.com/v1/messages", headers, { model, max_tokens: 4096, system: buildSystemPrompt(ctx), messages, tools, tool_choice: toolChoice }, "Claude");
@@ -242,7 +251,7 @@ async function runClaude(s: AiSettings, history: CopilotMessage[], ctx: CopilotC
       return normalizeCard(use.input, ctx.cardId);
     }
     const results = [];
-    for (const u of uses) results.push({ type: "tool_result", tool_use_id: u.id, content: stringify(await runTool(execute, u.name, u.input)) });
+    for (const u of uses) results.push({ type: "tool_result", tool_use_id: u.id, content: stringify(await runTool(execute, u.name, u.input, ctx)) });
     messages.push({ role: "user", content: results });
   }
   throw new Error("O Copiloto não conseguiu concluir a resposta (muitas consultas em sequência). Tente uma pergunta mais específica.");
@@ -253,7 +262,7 @@ async function runClaude(s: AiSettings, history: CopilotMessage[], ctx: CopilotC
 async function runGemini(s: AiSettings, history: CopilotMessage[], ctx: CopilotContext, execute: ToolExecutor): Promise<CopilotCard> {
   const { key, model } = credentials(s);
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
-  const tools = [{ functionDeclarations: TOOLS.map((t) => ({ name: t.name, description: t.description, parameters: geminiSchema(t.parameters) })) }];
+  const tools = [{ functionDeclarations: toolsFor(ctx).map((t) => ({ name: t.name, description: t.description, parameters: geminiSchema(t.parameters) })) }];
   const contents: any[] = history.map((h) => ({ role: h.role === "assistant" ? "model" : "user", parts: [{ text: h.content }] }));
   const call = (force: boolean) =>
     post(
@@ -283,7 +292,7 @@ async function runGemini(s: AiSettings, history: CopilotMessage[], ctx: CopilotC
       return normalizeCard(fc.args, ctx.cardId);
     }
     const responses = [];
-    for (const f of fcs) responses.push({ functionResponse: { name: f.name, response: { result: await runTool(execute, f.name, f.args ?? {}) } } });
+    for (const f of fcs) responses.push({ functionResponse: { name: f.name, response: { result: await runTool(execute, f.name, f.args ?? {}, ctx) } } });
     contents.push({ role: "function", parts: responses });
   }
   throw new Error("O Copiloto não conseguiu concluir a resposta (muitas consultas em sequência). Tente uma pergunta mais específica.");

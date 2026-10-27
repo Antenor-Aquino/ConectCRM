@@ -192,6 +192,7 @@ export function BoardList({
                       title={r.title}
                     >
                       {r.title}
+                      {r.title_ext && <span className="font-normal text-gray-500" data-name-ext> - {r.title_ext}</span>}
                     </span>
                     {r.status !== "open" && (
                       <span

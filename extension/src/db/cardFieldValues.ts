@@ -8,6 +8,7 @@ import { formatCustomRaw } from "./cardHistory";
 import type { PipelineType } from "./pipelines";
 import { many, one, type DatabaseSync } from "./sql";
 import { websiteUrl } from "../lib/contactLinks";
+import { nameExtras, withExtra } from "./nameExtras";
 
 export type CardFieldValue =
   /** `phone`/`email`/`url`: destino do link (WhatsApp / provedor de e-mail / site). */
@@ -86,6 +87,13 @@ export function cardFieldValues(
      WHERE d.id IN (${marks})`,
     ...cardIds,
   );
+  // Contato e organização com os campos marcados para aparecer junto com o nome.
+  const personEx = nameExtras(db, "person", rows.map((r) => r.person_id));
+  const orgEx = nameExtras(db, "organization", rows.map((r) => r.organization_id));
+  for (const r of rows) {
+    if (r.person_name) r.person_name = withExtra(r.person_name, personEx.get(r.person_id ?? ""));
+    if (r.org_name) r.org_name = withExtra(r.org_name, orgEx.get(r.organization_id ?? ""));
+  }
 
   const tags = new Map<string, { name: string; color: string | null }[]>();
   if (keys.includes("tags")) {

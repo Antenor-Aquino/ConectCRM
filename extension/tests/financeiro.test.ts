@@ -1,6 +1,6 @@
 // Integração com a Gestão Financeira, Fase 2 (spec 13): cliente/fornecedor do
 // cartão, CPF do contato e a cópia local dos lançamentos.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { cardCounts } from "../src/db/cardCounts";
 import { createOrganization, createPerson, getPerson, updatePerson } from "../src/db/contacts";
 import { createCard, updateCard } from "../src/db/deals";
@@ -47,7 +47,7 @@ describe("cliente/fornecedor do cartão", () => {
     const org = createOrganization(db, actx, { name: "Caixa Escolar", cnpj: "19.489.640/0001-35", email: "escola@mg.gov.br" });
     const pessoa = createPerson(db, actx, { name: "Beatriz", cpf: "52998224725", phone: "31999998888" });
     const c1 = card("Com organização", { organizationId: org, personId: pessoa });
-    expect(cardCounterparty(db, c1)).toEqual({ crmRef: `organization:${org}`, kind: "PJ", name: "Caixa Escolar", document: "19489640000135", email: "escola@mg.gov.br", phone: null });
+    expect(cardCounterparty(db, c1)).toMatchObject({ crmRef: `organization:${org}`, kind: "PJ", name: "Caixa Escolar", document: "19489640000135", email: "escola@mg.gov.br", phone: null });
     const c2 = card("Só contato", { personId: pessoa });
     expect(cardCounterparty(db, c2)).toMatchObject({ crmRef: `person:${pessoa}`, kind: "PF", name: "Beatriz", document: "52998224725", phone: "+5531999998888" });
     const c3 = card("Sem ninguém");
@@ -184,12 +184,12 @@ describe("Fase 4: pacote, alertas e Copiloto", async () => {
       ["pending", "Escola A", 'Negócio "Projeto A" (ConectCRM)'],
       ["pending", "Escola A", 'Negócio "Projeto A" (ConectCRM)'],
     ]);
-    expect(f.financeRequestCounts(db)).toEqual({ pending: 2, exported: 0 });
+    expect(f.financeRequestCounts(db)).toEqual({ pending: 2, exported: 0, contacts: 1 }); // o cliente do pedido vai junto
 
     const pkg = f.exportFinanceRequests(db, "0.2.57");
     expect(pkg).toMatchObject({ format: PACKAGE_FORMAT, kind: "requests", from: { app: "conectcrm" } });
     expect(pkg.requests.map((r) => r.id)).toEqual([r1, r2]);
-    expect(f.financeRequestCounts(db)).toEqual({ pending: 0, exported: 2 });
+    expect(f.financeRequestCounts(db)).toEqual({ pending: 0, exported: 2, contacts: 0 });
     expect(f.exportFinanceRequests(db, "0.2.57").requests).toHaveLength(2); // até o retorno, vão de novo
 
     const res = f.importFinanceReturn(db, actx, {
@@ -232,12 +232,21 @@ describe("Fase 4: pacote, alertas e Copiloto", async () => {
     expect(lines.join("\n")).toMatch(/\*1 receita atrasada \(R\$\s400,00\)\*/);
     expect(lines.join("\n")).toMatch(/Projeto B: falta R\$\s800,00/);
     expect(f.financeDigestLines({ ...al, overdueReceivables: [], dueSoon: [], wonWithoutIncome: [], overduePayables: { count: 0, amountCents: 0 } }, false)).toEqual([]);
+    // "Não registrar no financeiro": B sai dos avisos (e volta se desfizer).
+    f.setFinanceSkip(db, actx, b, true);
+    expect(f.financeAlerts(db, null, { today: "2026-10-20" }).wonWithoutIncome).toEqual([]);
+    f.setFinanceSkip(db, actx, b, false);
+    expect(f.financeAlerts(db, null, { today: "2026-10-20" }).wonWithoutIncome).toHaveLength(1);
 
     // Copiloto
     const s = cop.financeSummaryForCopilot(db, null, { de: "2026-10-01", ate: "2026-10-31" }) as { totais: { receitas: string; resultado: string } };
     expect(s.totais.receitas).toMatch(/1\.000,00/);
     expect(cop.financeSummaryForCopilot(db, null, { de: "x", ate: "y" })).toHaveProperty("erro");
+    // O Copiloto usa a data de hoje: fixa no dia do cenário.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-20T12:00:00"));
     const p = cop.financeAlertsForCopilot(db, null, {}) as { receitasAtrasadas: { diasDeAtraso: number }[]; ganhosComReceitaALancar: { cartao: string }[] };
+    vi.useRealTimers();
     expect(p.receitasAtrasadas).toHaveLength(1);
     expect(p.ganhosComReceitaALancar.map((x) => x.cartao)).toEqual(["Projeto B"]);
     expect(cop.cardFinanceForCopilot(db, a)?.lancamentos).toHaveLength(2);

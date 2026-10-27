@@ -7,6 +7,7 @@ import { likeTerm, normalizeText, searchTerms } from "../lib/search";
 import { optionalText, requireText, ValidationError } from "../lib/validate";
 import { activityScope } from "./activities";
 import { cardScope } from "./deals";
+import { activeFolders, checkFolder, folderAndDescendants, folderPaths, type DocumentFolder } from "./documentFolders";
 import { insertRow, restore, softDelete, updateRow, type DbContext } from "./repo";
 import { moveToTrash, type TrashNotice } from "./trash";
 import { many, one, run, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
@@ -284,6 +285,8 @@ export interface DocumentInput {
   restricted?: boolean;
   tagIds?: string[];
   links?: DocLinkRef[];
+  /** Pasta do GED (null = "Sem pasta"). */
+  folderId?: string | null;
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -312,6 +315,7 @@ export function createDocument(db: DatabaseSync, ctx: DbContext, input: Document
       doc_date: docDate,
       valid_until: validUntil,
       restricted: input.restricted ? 1 : 0,
+      folder_id: checkFolder(db, input.folderId),
     });
     const versionId = insertVersion(db, ctx, id, 1, input.file);
     updateRow(db, ctx, "document", id, { current_version_id: versionId });
@@ -330,6 +334,7 @@ export function updateDocument(db: DatabaseSync, ctx: DbContext, id: string, pat
     if (patch.docDate !== undefined) data.doc_date = checkDate(patch.docDate, "Data do documento");
     if (patch.validUntil !== undefined) data.valid_until = checkDate(patch.validUntil, "Validade");
     if (patch.restricted !== undefined) data.restricted = patch.restricted ? 1 : 0;
+    if (patch.folderId !== undefined) data.folder_id = checkFolder(db, patch.folderId);
     if (Object.keys(data).length) updateRow(db, ctx, "document", id, data);
     if (patch.tagIds !== undefined) setEntityTags(db, ctx, "document", id, patch.tagIds);
   });
@@ -464,7 +469,7 @@ export function assertDocumentOwner(db: DatabaseSync, viewer: Viewer | null | un
 
 // ---------- Auditoria (acessos sem alteração) ----------
 
-export type DocumentAction = "view" | "download" | "whatsapp";
+export type DocumentAction = "view" | "download" | "whatsapp" | "relocate";
 
 export function logDocumentEvent(db: DatabaseSync, ctx: DbContext, documentId: string, action: DocumentAction, detail?: string | null): void {
   run(
@@ -571,6 +576,10 @@ export interface DocumentFilter {
   validity?: DocValidity;
   unlinked?: boolean;
   tagIds?: string[];
+  /** Pasta aberta ("none" = Sem pasta). */
+  folderId?: string | "none";
+  /** Com a pasta: incluir as subpastas (ex.: ao pesquisar dentro dela). */
+  folderDeep?: boolean;
   trash?: boolean;
   sort?: "name" | "created_at" | "valid_until" | "size" | "type";
   dir?: "asc" | "desc";
@@ -606,6 +615,9 @@ export interface DocumentListItem {
   text_status: string;
   links: DocLink[];
   tags: { id: string; name: string; color: string }[];
+  folder_id: string | null;
+  /** Caminho da pasta (["Comercial", "Propostas"]); vazio = Sem pasta. */
+  folder_path: string[];
 }
 
 export function localDate(d = new Date()): string {
@@ -634,7 +646,8 @@ const HAYSTACK = `ged_norm(
      UNION ALL SELECT a.title FROM document_link l JOIN activity a ON a.id = l.entity_id WHERE l.document_id = d.id AND l.deleted_at IS NULL AND l.entity_type = 'activity'
      UNION ALL SELECT p.name || ' ' || COALESCE(p.email, '') FROM document_link l JOIN person p ON p.id = l.entity_id WHERE l.document_id = d.id AND l.deleted_at IS NULL AND l.entity_type = 'person'
      UNION ALL SELECT o.name || ' ' || COALESCE(o.cnpj, '') FROM document_link l JOIN organization o ON o.id = l.entity_id WHERE l.document_id = d.id AND l.deleted_at IS NULL AND l.entity_type = 'organization'
-  )), '')
+  )), '') || ' ' ||
+  COALESCE((SELECT fo.name FROM document_folder fo WHERE fo.id = d.folder_id AND fo.deleted_at IS NULL), '')
 ) || ' ' || COALESCE(v.text_content, '')`;
 
 /** Função de normalização usada na busca (registrada a cada consulta; é barato). */
@@ -673,6 +686,12 @@ function documentWhere(db: DatabaseSync, f: DocumentFilter): { sql: string; para
   else if (f.validity === "soon") add("d.valid_until >= ? AND d.valid_until <= ?", today, addDays(today, 30));
   else if (f.validity === "valid") add("d.valid_until > ?", addDays(today, 30));
   else if (f.validity === "none") add("d.valid_until IS NULL");
+  if (f.folderId === "none")
+    add("(d.folder_id IS NULL OR NOT EXISTS (SELECT 1 FROM document_folder fo WHERE fo.id = d.folder_id AND fo.deleted_at IS NULL))");
+  else if (f.folderId) {
+    const ids = f.folderDeep ? folderAndDescendants(db, f.folderId) : [f.folderId];
+    add(`d.folder_id IN (${ids.map(() => "?").join(", ")})`, ...ids);
+  }
   for (const tagId of f.tagIds ?? []) add("EXISTS (SELECT 1 FROM entity_tag et WHERE et.entity_id = d.id AND et.tag_id = ? AND et.deleted_at IS NULL)", tagId);
   const scope = documentScope(db, f.viewer);
   if (scope.sql) add(scope.sql.replace(/^ AND /, ""), ...scope.params);
@@ -698,7 +717,7 @@ export function listDocuments(db: DatabaseSync, f: DocumentFilter = {}): { items
   const { sql, params } = documentWhere(db, f);
   const terms = searchTerms(f.search ?? "");
   const termSql = terms.map(() => "hay LIKE ? ESCAPE '\\'").join(" AND ");
-  const inner = `SELECT d.id, d.name, d.type_id, t.name AS type_name, t.color AS type_color, d.description, d.doc_date, d.valid_until, d.restricted,
+  const inner = `SELECT d.id, d.name, d.folder_id, d.type_id, t.name AS type_name, t.color AS type_color, d.description, d.doc_date, d.valid_until, d.restricted,
       d.created_at, d.created_by, u.name AS created_by_name, d.updated_at, d.deleted_at, v.id AS version_id, v.number AS version_number,
       (SELECT COUNT(*) FROM document_version vc WHERE vc.document_id = d.id) AS versions,
       v.filename, v.mime, v.size_bytes, b.sha256, v.text_status${terms.length ? `, ${HAYSTACK} AS hay` : ""}
@@ -711,7 +730,7 @@ export function listDocuments(db: DatabaseSync, f: DocumentFilter = {}): { items
     .split(", ")
     .map((c) => (c.endsWith("IS NULL") ? c : `${c} ${dir}`))
     .join(", ");
-  const rows = many<Omit<DocumentListItem, "links" | "tags"> & { hay?: string }>(
+  const rows = many<Omit<DocumentListItem, "links" | "tags" | "folder_path"> & { hay?: string }>(
     db,
     `SELECT * FROM (${inner}) ${outerWhere} ORDER BY ${sort}, id LIMIT ? OFFSET ?`,
     ...allParams,
@@ -722,8 +741,10 @@ export function listDocuments(db: DatabaseSync, f: DocumentFilter = {}): { items
     db,
     rows.map((r) => r.id),
   );
+  const paths = folderPaths(db);
   const items = rows.map(({ hay: _hay, ...r }) => ({
     ...r,
+    folder_path: (r.folder_id && paths.get(r.folder_id)) || [],
     links: links.get(r.id) ?? [],
     tags: getEntityTags(db, r.id).map((t) => ({ id: t.id, name: t.name, color: t.color })),
   }));
@@ -734,6 +755,53 @@ export function listDocuments(db: DatabaseSync, f: DocumentFilter = {}): { items
 export function documentsFor(db: DatabaseSync, type: DocLinkType, id: string, viewer?: Viewer | null): DocumentListItem[] {
   const key = { deal: "dealId", activity: "activityId", person: "personId", organization: "organizationId" }[type] as "dealId";
   return listDocuments(db, { [key]: id, viewer, limit: 500, sort: "created_at" }).items;
+}
+
+// ---------- Pastas: árvore com contagens ----------
+
+export interface FolderNode extends DocumentFolder {
+  path: string[];
+  /** Documentos direto nesta pasta (que quem vê pode ver). */
+  count: number;
+  /** Com os das subpastas. */
+  total: number;
+}
+
+export interface FolderTree {
+  folders: FolderNode[];
+  /** Documentos sem pasta. */
+  none: number;
+  all: number;
+}
+
+export function folderTree(db: DatabaseSync, viewer?: Viewer | null): FolderTree {
+  const folders = activeFolders(db);
+  const ids = new Set(folders.map((f) => f.id));
+  const scope = documentScope(db, viewer);
+  const counts = many<{ folder_id: string | null; n: number }>(
+    db,
+    `SELECT d.folder_id, COUNT(*) AS n FROM document d WHERE d.deleted_at IS NULL AND d.purged_at IS NULL${scope.sql} GROUP BY d.folder_id`,
+    ...scope.params,
+  );
+  const direct = new Map<string, number>();
+  let none = 0;
+  let all = 0;
+  for (const c of counts) {
+    all += c.n;
+    if (c.folder_id && ids.has(c.folder_id)) direct.set(c.folder_id, c.n);
+    else none += c.n;
+  }
+  const paths = folderPaths(db, folders);
+  return {
+    folders: folders.map((f) => ({
+      ...f,
+      path: paths.get(f.id) ?? [f.name],
+      count: direct.get(f.id) ?? 0,
+      total: folderAndDescendants(db, f.id, folders).reduce((a, id) => a + (direct.get(id) ?? 0), 0),
+    })),
+    none,
+    all,
+  };
 }
 
 export interface DocumentVersionInfo {
@@ -753,9 +821,9 @@ export interface DocumentDetail extends DocumentListItem {
 }
 
 export function getDocument(db: DatabaseSync, id: string): DocumentDetail | undefined {
-  const row = one<Omit<DocumentListItem, "links" | "tags">>(
+  const row = one<Omit<DocumentListItem, "links" | "tags" | "folder_path">>(
     db,
-    `SELECT d.id, d.name, d.type_id, t.name AS type_name, t.color AS type_color, d.description, d.doc_date, d.valid_until, d.restricted,
+    `SELECT d.id, d.name, d.folder_id, d.type_id, t.name AS type_name, t.color AS type_color, d.description, d.doc_date, d.valid_until, d.restricted,
        d.created_at, d.created_by, u.name AS created_by_name, d.updated_at, d.deleted_at, v.id AS version_id, v.number AS version_number,
        (SELECT COUNT(*) FROM document_version vc WHERE vc.document_id = d.id) AS versions,
        v.filename, v.mime, v.size_bytes, b.sha256, v.text_status
@@ -766,6 +834,7 @@ export function getDocument(db: DatabaseSync, id: string): DocumentDetail | unde
   const tags = getEntityTags(db, id);
   return {
     ...row,
+    folder_path: (row.folder_id && folderPaths(db).get(row.folder_id)) || [],
     links: documentLinks(db, [id]).get(id) ?? [],
     tags: tags.map((t) => ({ id: t.id, name: t.name, color: t.color })),
     tagIds: tags.map((t) => t.id),
@@ -882,7 +951,7 @@ export interface AuditEntry {
   text: string;
 }
 
-const ACTION_TEXT: Record<string, string> = { view: "Visualizou", download: "Baixou", whatsapp: "Enviou pelo WhatsApp" };
+const ACTION_TEXT: Record<string, string> = { view: "Visualizou", download: "Baixou", whatsapp: "Enviou pelo WhatsApp", relocate: "Arquivo localizado em" };
 /** "ao cartão" / "do cartão", "à tarefa" / "da tarefa"... */
 const LINK_LABEL: Record<DocLinkType, { to: string; from: string }> = {
   deal: { to: "ao cartão", from: "do cartão" },
@@ -909,6 +978,9 @@ export function documentAudit(db: DatabaseSync, id: string): AuditEntry[] {
     if (field === "doc_date" || field === "valid_until") return String(v).split("-").reverse().join("/");
     return String(v);
   };
+  // Nome da pasta mesmo que ela já tenha sido excluída.
+  const folderLabel = (v: unknown) =>
+    v ? `“${one<{ name: string }>(db, "SELECT name FROM document_folder WHERE id = ?", String(v))?.name ?? "pasta excluída"}”` : "Sem pasta";
   const linkLabel = (type: DocLinkType, eid: string, dir: "to" | "from") => {
     const table = LINK_TABLE[type];
     const col = type === "deal" || type === "activity" ? "title" : "name";
@@ -937,6 +1009,7 @@ export function documentAudit(db: DatabaseSync, id: string): AuditEntry[] {
       else {
         if (ch.purged_at) push("Excluiu definitivamente");
         for (const [k, [a, b]] of Object.entries(ch)) if (FIELD_LABEL[k]) push(`${FIELD_LABEL[k]}: ${fmt(k, a)} → ${fmt(k, b)}`);
+        if (ch.folder_id) push(`Moveu de ${folderLabel(ch.folder_id[0])} para ${folderLabel(ch.folder_id[1])}`);
       }
     } else if (l.table_name === "document_version" && l.op === "insert") {
       push(`Versão ${ch.number?.[1]}: ${ch.filename?.[1]}`);
@@ -1023,6 +1096,50 @@ export function markInBrowser(db: DatabaseSync, ctx: DbContext, sha256s: string[
 /** Todos os arquivos em uso (backup). */
 export function allBlobs(db: DatabaseSync): { sha256: string; location: BlobLocation; path: string | null; mime: string }[] {
   return many(db, "SELECT sha256, location, path, mime FROM file_blob WHERE deleted_at IS NULL AND location <> 'legacy'");
+}
+
+/** Um arquivo do GED com o que ajuda a reencontrá-lo (Localizar documentos). */
+export interface LocateBlob {
+  id: string;
+  sha256: string;
+  location: "browser" | "folder";
+  path: string | null;
+  mime: string;
+  size_bytes: number;
+  created_at: string;
+  /** Nome do documento e do arquivo da primeira versão que usa o arquivo. */
+  name: string | null;
+  filename: string | null;
+}
+
+export function locateBlobs(db: DatabaseSync): LocateBlob[] {
+  return many(
+    db,
+    `SELECT b.id, b.sha256, b.location, b.path, b.mime, b.size_bytes, b.created_at,
+       (SELECT d.name FROM document_version v JOIN document d ON d.id = v.document_id WHERE v.blob_id = b.id ORDER BY v.created_at LIMIT 1) AS name,
+       (SELECT v.filename FROM document_version v WHERE v.blob_id = b.id ORDER BY v.created_at LIMIT 1) AS filename
+     FROM file_blob b WHERE b.deleted_at IS NULL AND b.location <> 'legacy'`,
+  );
+}
+
+/**
+ * Grava onde os arquivos foram reencontrados (mudança de pasta, de computador
+ * ou de instalação). Cada documento afetado ganha um registro na auditoria.
+ */
+export function relocateBlobs(db: DatabaseSync, ctx: DbContext, items: { blobId: string; location: "browser" | "folder"; path: string | null }[]): number {
+  return withTransaction(db, () => {
+    let n = 0;
+    for (const it of items) {
+      if (it.location === "folder" && !it.path) throw new ValidationError("Caminho do arquivo ausente.");
+      if (!updateRow(db, ctx, "file_blob", it.blobId, { location: it.location, path: it.location === "folder" ? it.path : null })) continue;
+      n++;
+      const detail = it.location === "folder" ? `"${it.path}"` : "neste navegador";
+      for (const d of many<{ id: string }>(db, "SELECT DISTINCT document_id AS id FROM document_version WHERE blob_id = ?", it.blobId)) {
+        logDocumentEvent(db, ctx, d.id, "relocate", detail);
+      }
+    }
+    return n;
+  });
 }
 
 /** PDFs cujo texto ainda não foi lido (anexos antigos). */

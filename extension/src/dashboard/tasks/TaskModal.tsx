@@ -3,7 +3,7 @@
 // (duração/lembrete), Finalização (opcional), Vinculado a e Tags.
 // Tipos de reunião podem criar o evento no Google Agenda / Outlook.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, Circle, Link2, Paperclip, Trash2, Video, X } from "lucide-react";
+import { Check, ChevronDown, Circle, Link2, MessageCircle, Paperclip, Trash2, Video, X } from "lucide-react";
 import { TaButton, TaInput, TaModal, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { Activity, ActivityType } from "../../db/activities";
@@ -26,7 +26,14 @@ import { errorText } from "../../lib/errors";
 import { ACTIVE_CHANNELS, CHANNEL_LABEL, activeSettings, channelReady, loadNotifySettings, type Channel, type NotifySettings, type ReminderRule } from "../../lib/notify/settings";
 import { formatDateTime } from "../../lib/format";
 import { RemindersEditor } from "../ui/RemindersEditor";
+import { ContactTemplateEditor } from "../ui/ContactTemplateEditor";
+import { Switch } from "../ui/Switch";
+import { CONTACT_MINUTES_OPTIONS, leadText } from "../../lib/notify/contactMessage";
+import { loadSenders, type WhatsAppSender } from "../../lib/whatsappSenders";
 import { LinkedTextarea } from "../ui/LinkedTextarea";
+import { RecurrenceEditor, ScopeDialog, type Scope } from "./RecurrenceEditor";
+import { describeRule, type RecurrenceRule } from "../../lib/recurrence";
+import { Repeat } from "lucide-react";
 
 const KIND_LABEL = { deal: "Negócio", ticket: "Ticket", project: "Projeto" } as const;
 
@@ -164,6 +171,21 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
   const [calMsg, setCalMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Recorrência: a regra (null = não repete), a série da atividade aberta e a pergunta "só esta / próximas / todas".
+  const [recurrence, setRecurrence] = useState<RecurrenceRule | null>(null);
+  const [series, setSeries] = useState<{ id: string; rule: RecurrenceRule; startAt: string; index: number } | null>(null);
+  const [askScope, setAskScope] = useState<"save" | "delete" | null>(null);
+  // Lembrete para o contato por WhatsApp (0.2.69).
+  const [meetingUrl, setMeetingUrl] = useState("");
+  const [contactOn, setContactOn] = useState(false);
+  const [contact, setContact] = useState<{ personId: string; minutesBefore: number; template: string; senderId: string | null }>({
+    personId: "",
+    minutesBefore: 60,
+    template: "",
+    senderId: null,
+  });
+  const [contactCtx, setContactCtx] = useState<Awaited<ReturnType<typeof call<"contactMessages.context">>> | null>(null);
+  const [autoSenders, setAutoSenders] = useState<WhatsAppSender[]>([]);
 
   useEffect(() => {
     void call("activityTypes.list", {}).then((list) => {
@@ -183,7 +205,9 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
     void loadNotifySettings(user.id).then((n) => {
       setNotify(activeSettings(n));
       if (!request.id) setReminders(n.defaults);
+      setContact((c) => (c.template ? c : { ...c, template: n.contact.template, minutesBefore: n.contact.minutes, senderId: n.contact.senderId }));
     });
+    void loadSenders(user.id).then((r) => setAutoSenders(r.senders.filter((x) => x.via === "zapi" || x.via === "web")));
     if (request.dealId) {
       void call("cards.get", { id: request.dealId }).then((c) => c && setLink({ id: c.id, label: c.title }));
     }
@@ -202,8 +226,16 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
       setDuration(a.duration_min);
       setReminders(a.reminders);
       void call("notifications.forActivity", { id: a.id }).then(setDeliveries);
+      if (a.series_id) {
+        const s = await call("activities.series", { id: a.id });
+        if (s) {
+          setSeries({ id: s.id, rule: s.rule, startAt: s.startAt, index: s.index });
+          setRecurrence(s.rule);
+        }
+      }
       setValues(a.customValues);
       setGuests(a.guests ? (JSON.parse(a.guests) as string[]) : []);
+      setMeetingUrl(a.meeting_url ?? "");
       if (a.deal_id) {
         const c = await call("cards.get", { id: a.deal_id });
         if (c) setLink({ id: c.id, label: c.title });
@@ -250,6 +282,24 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
 
   const owner = useMemo(() => users.find((u) => u.id === ownerId), [users, ownerId]);
 
+  // Quem pode receber o lembrete (contato da atividade e do cartão), empresa do funil e o lembrete salvo.
+  const personForContact = request.personId ?? existing?.person_id ?? null;
+  useEffect(() => {
+    if (!loaded) return;
+    void call("contactMessages.context", { activityId: request.id ?? null, personId: personForContact, dealId: link?.id ?? null }).then((c) => {
+      setContactCtx(c);
+      if (c.current) {
+        setContactOn(true);
+        setContact({ personId: c.current.person_id, minutesBefore: c.current.minutes_before, template: c.current.template, senderId: c.current.sender_id });
+      } else {
+        setContact((x) => (x.personId && c.recipients.some((r) => r.id === x.personId) ? x : { ...x, personId: c.recipients.find((r) => r.phone)?.id ?? c.recipients[0]?.id ?? "" }));
+      }
+    });
+  }, [loaded, link?.id, personForContact, request.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const contactSent = contactCtx?.current?.status === "sent";
+  const recipient = contactCtx?.recipients.find((r) => r.id === contact.personId) ?? null;
+  const withPhone = contactCtx?.recipients.filter((r) => r.phone) ?? [];
+
   async function findSlots() {
     setCalMsg(null);
     try {
@@ -260,7 +310,20 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
     }
   }
 
-  async function save() {
+  const ruleChanged = !!series && JSON.stringify(recurrence) !== JSON.stringify(series.rule);
+  const dateChanged = !!existing && new Date(existing.due_at).getTime() !== when.getTime();
+
+  async function save(scope?: Scope) {
+    // Ocorrência de série: pergunta antes se vale para esta, as próximas ou todas.
+    if (series && !scope) {
+      if (!recurrence) {
+        setError("Para parar de repetir, use “Encerrar série” (abaixo do campo Repetir).");
+        return;
+      }
+      setAskScope("save");
+      return;
+    }
+    setAskScope(null);
     setSaving(true);
     setError(null);
     const input = {
@@ -278,7 +341,21 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
       ...(request.personId && !link ? { personId: request.personId } : {}),
       ...(request.organizationId && !link ? { organizationId: request.organizationId } : {}),
       customValues: values,
+      meetingUrl: meetingUrl.trim() || null,
     };
+    if (contactOn && !contactSent) {
+      if (!recipient?.phone) {
+        setError("Para lembrar o contato pelo WhatsApp, escolha um contato com celular cadastrado.");
+        setSaving(false);
+        return;
+      }
+      if (!contact.senderId) {
+        setError("Escolha por qual número o lembrete do contato vai sair (Z-API ou WhatsApp Web).");
+        setSaving(false);
+        return;
+      }
+    }
+    const contactMessage = contactSent ? undefined : contactOn ? contact : contactCtx?.current ? null : undefined;
     if (endAt && endAt < when) {
       setError("A finalização não pode ser antes do início.");
       setSaving(false);
@@ -286,14 +363,20 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
     }
     let id = request.id;
     try {
-      if (id) await call("activities.update", { id, patch: input });
-      else id = await call("activities.create", input);
+      if (id) {
+        await call("activities.update", {
+          id,
+          patch: input,
+          ...(contactMessage !== undefined ? { contactMessage } : {}),
+          ...(series ? { scope: scope ?? "this", ...(ruleChanged ? { recurrence } : {}) } : recurrence ? { recurrence } : {}),
+        });
+      } else id = await call("activities.create", { ...input, recurrence, ...(contactMessage ? { contactMessage } : {}) });
     } catch (e) {
       setError(errorText(e));
       setSaving(false);
       return;
     }
-    if (isMeeting && makeEvent) {
+    if (isMeeting && makeEvent && !recurrence) {
       try {
         const ev = await createCalendarEvent(provider, {
           title,
@@ -324,7 +407,25 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
   }
 
   return (
-    <TaModal isOpen onClose={onClose} title={request.id ? "Editar atividade" : "Nova atividade"} width="max-w-3xl">
+    <TaModal isOpen onClose={onClose} title={request.id ? (series ? "Editar atividade recorrente" : "Editar atividade") : "Nova atividade"} width="max-w-3xl">
+      {askScope && (
+        <ScopeDialog
+          action={askScope}
+          ruleChanged={askScope === "save" && ruleChanged}
+          onClose={() => setAskScope(null)}
+          onChoose={async (scope) => {
+            if (askScope === "save") return void save(scope);
+            setAskScope(null);
+            await call("activities.delete", { id: request.id!, scope });
+            onSaved();
+          }}
+        />
+      )}
+      {series && (
+        <p className="-mt-2 mb-3 flex items-center gap-1.5 text-theme-xs text-brand-700 dark:text-brand-300" data-series-banner>
+          <Repeat size={13} /> {describeRule(series.rule, new Date(series.startAt))}
+        </p>
+      )}
       {!loaded ? (
         <p className="text-theme-sm text-gray-500">Carregando…</p>
       ) : (
@@ -363,6 +464,110 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
               <div className="ml-8 mt-3">
                 {request.id ? <DocumentsPanel type="activity" id={request.id} compact /> : <PendingFiles pending={pending} onPending={setPending} />}
               </div>
+              {contactOn && (
+                <div className="ml-8 mt-4 rounded-xl border border-success-200 bg-success-25 p-3 dark:border-success-500/30 dark:bg-success-500/5" data-contact-card>
+                  <p className="mb-2 flex items-center gap-1.5 text-theme-sm font-semibold text-gray-800 dark:text-white/90">
+                    <MessageCircle size={15} className="text-success-600" /> Mensagem para o contato
+                  </p>
+                  {contactCtx?.current && contactCtx.current.status !== "pending" && (
+                    <p
+                      className={cn(
+                        "mb-2 rounded-lg px-2.5 py-1.5 text-theme-xs",
+                        contactSent ? "bg-success-50 text-success-700" : "bg-error-50 text-error-700",
+                      )}
+                      data-contact-status
+                    >
+                      {contactSent
+                        ? `Enviada em ${formatDateTime(contactCtx.current.sent_at!)}. Não pode mais ser alterada.`
+                        : contactCtx.current.status === "canceled"
+                          ? `Cancelada: ${contactCtx.current.error ?? ""}`
+                          : `Não enviada: ${contactCtx.current.error ?? ""} Salve de novo para reagendar.`}
+                    </p>
+                  )}
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="text-theme-xs text-gray-500">
+                      Para
+                      <select
+                        className="mt-1 h-9 w-full rounded-lg border border-gray-300 bg-white px-2 text-theme-sm dark:border-gray-700 dark:bg-gray-900"
+                        value={contact.personId}
+                        disabled={contactSent}
+                        onChange={(e) => setContact({ ...contact, personId: e.target.value })}
+                        aria-label="Contato que recebe"
+                      >
+                        {(contactCtx?.recipients ?? []).map((r) => (
+                          <option key={r.id} value={r.id} disabled={!r.phone}>
+                            {r.name} {r.phone ? `· ${r.phone}` : "(sem celular)"}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-theme-xs text-gray-500">
+                      Quando
+                      <select
+                        className="mt-1 h-9 w-full rounded-lg border border-gray-300 bg-white px-2 text-theme-sm dark:border-gray-700 dark:bg-gray-900"
+                        value={contact.minutesBefore}
+                        disabled={contactSent}
+                        onChange={(e) => setContact({ ...contact, minutesBefore: Number(e.target.value) })}
+                        aria-label="Quando enviar"
+                      >
+                        {[...new Set([...CONTACT_MINUTES_OPTIONS, contact.minutesBefore])]
+                          .sort((a, b) => a - b)
+                          .map((m) => (
+                            <option key={m} value={m}>
+                              {leadText(m)}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    <label className="col-span-2 text-theme-xs text-gray-500">
+                      Link da reunião
+                      <input
+                        className="mt-1 h-9 w-full rounded-lg border border-gray-300 bg-white px-2.5 text-theme-sm dark:border-gray-700 dark:bg-gray-900"
+                        placeholder="https://meet.google.com/… (opcional)"
+                        value={meetingUrl}
+                        disabled={contactSent}
+                        onChange={(e) => setMeetingUrl(e.target.value)}
+                        aria-label="Link da reunião"
+                      />
+                    </label>
+                    <label className="col-span-2 text-theme-xs text-gray-500">
+                      Enviar pelo número
+                      <select
+                        className="mt-1 h-9 w-full rounded-lg border border-gray-300 bg-white px-2 text-theme-sm dark:border-gray-700 dark:bg-gray-900"
+                        value={contact.senderId ?? ""}
+                        disabled={contactSent}
+                        onChange={(e) => setContact({ ...contact, senderId: e.target.value || null })}
+                        aria-label="Número de origem do lembrete"
+                      >
+                        <option value="">{autoSenders.length ? "Escolher…" : "Cadastre em Configurações → WhatsApp"}</option>
+                        {autoSenders.map((x) => (
+                          <option key={x.id} value={x.id}>
+                            {x.name} ({x.via === "zapi" ? "Z-API" : "WhatsApp Web"})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <p className="my-2 text-theme-xs text-gray-600 dark:text-gray-400" data-contact-when>
+                    Envio: <b>{formatDateTime(new Date(when.getTime() - contact.minutesBefore * 60_000).toISOString())}</b>
+                    {new Date(when.getTime() - contact.minutesBefore * 60_000) < new Date() && !contactSent && " (já passou: sai assim que salvar, se a atividade ainda não tiver começado)"}
+                  </p>
+                  <ContactTemplateEditor
+                    value={contactSent ? (contactCtx?.current?.sent_text ?? contact.template) : contact.template}
+                    disabled={contactSent}
+                    onChange={(template) => setContact({ ...contact, template })}
+                    now={new Date(when.getTime() - contact.minutesBefore * 60_000)}
+                    vars={{
+                      personName: recipient?.name ?? "contato",
+                      start: when,
+                      link: meetingUrl.trim() ? (/^https?:\/\//i.test(meetingUrl.trim()) ? meetingUrl.trim() : `https://${meetingUrl.trim()}`) : null,
+                      activityTitle: title,
+                      myName: owner?.name ?? user.name,
+                      company: contactCtx?.company ?? null,
+                    }}
+                  />
+                </div>
+              )}
               {existing?.external_event_id && (
                 <div className="ml-8 mt-3 rounded-lg bg-brand-25 p-3 text-theme-sm text-gray-700 dark:bg-brand-500/10 dark:text-gray-300">
                   Evento criado no {PROVIDER_LABEL[existing.external_provider === "microsoft" ? "microsoft" : "google"]}.
@@ -411,6 +616,36 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
                   }}
                 />
               </Field>
+              <Field label="Repetir" hint={series ? `Ocorrência ${series.index > 0 ? `nº ${series.index}` : "avulsa"} de uma série.` : "Opcional: diária, dias úteis, semanal, mensal, anual ou a cada X dias."}>
+                <RecurrenceEditor value={recurrence} start={series && !dateChanged ? new Date(series.startAt) : when} onChange={setRecurrence} />
+                {series && (
+                  <button
+                    type="button"
+                    className="mt-1.5 text-theme-xs text-brand-600 hover:underline"
+                    data-end-series
+                    onClick={async () => {
+                      const today = new Date();
+                      const def = `${String(today.getDate()).padStart(2, "0")}/${String(today.getMonth() + 1).padStart(2, "0")}/${today.getFullYear()}`;
+                      const v = prompt("Encerrar a série em (dd/mm/aaaa): as ocorrências pendentes depois dessa data saem; as concluídas ficam.", def);
+                      const m = v?.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+                      if (!m) return;
+                      const date = `${m[3]}-${m[2]!.padStart(2, "0")}-${m[1]!.padStart(2, "0")}`;
+                      try {
+                        const n = await call("activities.endSeries", { id: request.id!, date });
+                        alert(`Série encerrada em ${v}. ${n} ocorrência(s) pendente(s) depois dessa data saíram.`);
+                        onSaved();
+                      } catch (e) {
+                        setError(errorText(e));
+                      }
+                    }}
+                  >
+                    Encerrar série…
+                  </button>
+                )}
+                {recurrence && isMeeting && (
+                  <p className="mt-1 text-theme-xs text-gray-500">Em reuniões recorrentes o evento não é criado no Google Agenda/Outlook.</p>
+                )}
+              </Field>
               <Field label="Lembretes" hint="Quanto tempo antes do início e por onde avisar.">
                 <RemindersEditor
                   value={reminders}
@@ -419,6 +654,23 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
                   ready={notify ? (Object.fromEntries(ACTIVE_CHANNELS.map((c) => [c, channelReady(notify, c)])) as Record<Channel, boolean>) : undefined}
                 />
                 {deliveries.length > 0 && <DeliveryLog list={deliveries} />}
+                <div className="mt-3 rounded-lg border border-gray-200 p-2.5 dark:border-gray-800" data-contact-toggle>
+                  <label className={cn("flex items-start gap-2.5 text-theme-sm text-gray-700 dark:text-gray-300", !withPhone.length && !contactOn && "opacity-60")}>
+                    <Switch checked={contactOn} disabled={(!withPhone.length && !contactOn) || contactSent} onChange={setContactOn} />
+                    <span>
+                      Lembrar o contato pelo WhatsApp
+                      <span className="block text-theme-xs text-gray-500">
+                        {contactSent
+                          ? "Lembrete já enviado."
+                          : withPhone.length
+                            ? "Envio automático antes do início, com o Chrome aberto (mesmo com o CRM fechado)."
+                            : contactCtx?.recipients.length
+                              ? `Cadastre o celular de ${contactCtx.recipients[0]!.name} para usar.`
+                              : "Vincule um contato (ou um cartão com contato) para usar."}
+                      </span>
+                    </span>
+                  </label>
+                </div>
               </Field>
               <Field label="Finalização" hint="Opcional. Sem finalização, a atividade nunca fica atrasada.">
                 <EndPicker value={endAt} start={when} onChange={setEndAt} />
@@ -527,6 +779,7 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
                 className="ml-auto"
                 startIcon={<Trash2 size={15} />}
                 onClick={async () => {
+                  if (series) return setAskScope("delete");
                   if (!confirm("Excluir esta atividade? Vai para a lixeira, de onde pode ser restaurado.")) return;
                   await call("activities.delete", { id: request.id! });
                   onSaved();
