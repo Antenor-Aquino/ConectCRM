@@ -9,7 +9,6 @@ import { deleteContent, documentsFolderStatus, moveToFolder, putInBrowser, readC
 import { MAX_UPLOAD_BYTES } from "./files";
 import { addNotification } from "./notifications";
 import { extractPdfText } from "./pdf";
-import type { PermissionedDirectoryHandle } from "./backupFolder";
 
 let envPromise: Promise<DbEnv> | null = null;
 export function currentEnv(): Promise<DbEnv> {
@@ -146,33 +145,6 @@ export async function moveFolderFilesToBrowser(): Promise<number> {
 
 const DOCS_DIR = "documentos";
 
-/** Backup automático: copia para "documentos/" só os arquivos que ainda não estão lá. */
-export async function backupDocuments(handle: PermissionedDirectoryHandle): Promise<string | null> {
-  const env = await currentEnv();
-  const dir = await handle.getDirectoryHandle(DOCS_DIR, { create: true });
-  let added = 0;
-  let missing = 0;
-  for (const b of await call("files.all")) {
-    try {
-      await dir.getFileHandle(b.sha256);
-      continue;
-    } catch {
-      // Ainda não copiado.
-    }
-    try {
-      const blob = await readContent(env, b);
-      const w = await (await dir.getFileHandle(b.sha256, { create: true })).createWritable();
-      await w.write(blob);
-      await w.close();
-      added++;
-    } catch {
-      missing++;
-    }
-  }
-  if (!added && !missing) return null;
-  return `${added} documento(s) novo(s) copiado(s)${missing ? `; ${missing} sem acesso (pasta de documentos sem permissão?)` : ""}.`;
-}
-
 /** Cópia manual: .zip com o banco e os documentos. */
 export async function buildBackupZip(dbBytes: Uint8Array): Promise<Uint8Array> {
   const env = await currentEnv();
@@ -206,33 +178,6 @@ export async function restoreDocumentFiles(files: Map<string, Uint8Array>): Prom
   for (const [sha, data] of files) await putInBrowser(env, sha, new Blob([data as BlobPart]));
   if (files.size) await call("files.markInBrowser", { sha256s: [...files.keys()] });
   return files.size;
-}
-
-/** Depois de restaurar um .sqlite: busca na pasta de backup os documentos que faltam. */
-export async function recoverFromBackupFolder(handle: PermissionedDirectoryHandle | null): Promise<number> {
-  if (!handle || (await handle.queryPermission({ mode: "readwrite" })) !== "granted") return 0;
-  const env = await currentEnv();
-  let dir: FileSystemDirectoryHandle;
-  try {
-    dir = await handle.getDirectoryHandle(DOCS_DIR);
-  } catch {
-    return 0;
-  }
-  const found = new Map<string, Uint8Array>();
-  for (const b of await call("files.all")) {
-    try {
-      await readContent(env, b);
-      continue;
-    } catch {
-      // Falta: procura no backup.
-    }
-    try {
-      found.set(b.sha256, new Uint8Array(await (await (await dir.getFileHandle(b.sha256)).getFile()).arrayBuffer()));
-    } catch {
-      // Também não está no backup.
-    }
-  }
-  return restoreDocumentFiles(found);
 }
 
 export type { ContentRef };

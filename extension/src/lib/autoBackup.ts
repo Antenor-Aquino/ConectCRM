@@ -13,10 +13,13 @@ export interface AutoBackupSettings {
   frequency: BackupFrequency;
   lastRunAt: string | null;
   folderName: string | null;
+  /** Quantos backups automáticos manter (0 = todos). Os mais antigos são apagados da pasta. */
+  keepDaily: number;
+  keepWeekly: number;
 }
 
 const KEY = "conectcrm-auto-backup";
-const DEFAULTS: AutoBackupSettings = { enabled: false, frequency: "daily", lastRunAt: null, folderName: null };
+const DEFAULTS: AutoBackupSettings = { enabled: false, frequency: "daily", lastRunAt: null, folderName: null, keepDaily: 0, keepWeekly: 0 };
 
 export async function loadAutoBackupSettings(): Promise<AutoBackupSettings> {
   return { ...DEFAULTS, ...((await chrome.storage.local.get(KEY))[KEY] as Partial<AutoBackupSettings> | undefined) };
@@ -61,23 +64,45 @@ export function isBackupDue(frequency: BackupFrequency, lastRunAt: string | null
   return frequency === "daily" ? localDateKey(now) !== localDateKey(last) : startOfWeekKey(now) !== startOfWeekKey(last);
 }
 
-/** Grava o arquivo na pasta e registra a data (backup automático ou "Fazer backup agora"). */
+const AUTO_PREFIX = { daily: "diario_conectcrm-backup-auto-", weekly: "Semanal_conectcrm-backup-auto-" } as const;
+
+/** Quais backups automáticos apagar para ficar só com os `keep` mais recentes (0 = guarda todos). */
+export function backupsToPrune(names: string[], frequency: BackupFrequency, keep: number): string[] {
+  if (!keep) return [];
+  const mine = names.filter((n) => n.startsWith(AUTO_PREFIX[frequency]) && n.endsWith(".sqlite")).sort();
+  return mine.slice(0, Math.max(0, mine.length - keep));
+}
+
+/** Apaga da pasta os backups automáticos além do limite (os manuais nunca são apagados). */
+export async function pruneBackups(handle: FileSystemDirectoryHandle, settings: Pick<AutoBackupSettings, "keepDaily" | "keepWeekly">): Promise<number> {
+  if (!settings.keepDaily && !settings.keepWeekly) return 0;
+  const names: string[] = [];
+  for await (const n of (handle as unknown as { keys(): AsyncIterable<string> }).keys()) names.push(n);
+  const drop = [...backupsToPrune(names, "daily", settings.keepDaily), ...backupsToPrune(names, "weekly", settings.keepWeekly)];
+  for (const n of drop) await handle.removeEntry(n).catch(() => {});
+  return drop.length;
+}
+
+/** Grava o arquivo na pasta e registra a data (backup automático ou "Fazer backup agora").
+ * Os documentos do GED têm backup próprio (lib/docBackup). */
 export async function writeBackup(
   getBytes: () => Promise<Uint8Array>,
   handle: PermissionedDirectoryHandle,
   settings: AutoBackupSettings,
   filename = autoBackupFilename(settings.frequency),
-  /** Copia também os documentos do GED (devolve um resumo para o aviso). */
-  saveDocuments?: (handle: PermissionedDirectoryHandle) => Promise<string | null>,
 ): Promise<string> {
   const bytes = await getBytes();
   const file = await handle.getFileHandle(filename, { create: true });
   const writable = await file.createWritable();
   await writable.write(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "application/x-sqlite3" }));
   await writable.close();
-  const docs = saveDocuments ? await saveDocuments(handle) : null;
+  const pruned = await pruneBackups(handle, settings).catch(() => 0);
   await saveAutoBackupSettings({ ...settings, lastRunAt: new Date().toISOString(), folderName: handle.name });
-  await addNotification({ kind: "success", title: "Backup concluído", message: `Salvo em "${handle.name}/${filename}".${docs ? ` ${docs}` : ""}` });
+  await addNotification({
+    kind: "success",
+    title: "Backup concluído",
+    message: `Salvo em "${handle.name}/${filename}".${pruned ? ` ${pruned} backup(s) automático(s) antigo(s) apagado(s) (limite de retenção).` : ""}`,
+  });
   return filename;
 }
 
@@ -89,17 +114,14 @@ export type AutoBackupCheck =
 
 /** Chamada ao abrir o CRM. Sem permissão (o Chrome pede de novo após reiniciar),
  * devolve "needs-permission" para a tela pedir a autorização com um clique. */
-export async function checkAutoBackup(
-  getBytes: () => Promise<Uint8Array>,
-  saveDocuments?: (handle: PermissionedDirectoryHandle) => Promise<string | null>,
-): Promise<AutoBackupCheck> {
+export async function checkAutoBackup(getBytes: () => Promise<Uint8Array>): Promise<AutoBackupCheck> {
   const settings = await loadAutoBackupSettings();
   if (!settings.enabled || !isBackupDue(settings.frequency, settings.lastRunAt)) return { status: "skipped" };
   const handle = await loadBackupFolderHandle();
   if (!handle) return { status: "skipped" };
   if ((await handle.queryPermission({ mode: "readwrite" })) !== "granted") return { status: "needs-permission", handle, settings };
   try {
-    await writeBackup(getBytes, handle, settings, undefined, saveDocuments);
+    await writeBackup(getBytes, handle, settings);
     return { status: "done" };
   } catch (err) {
     const message = errorText(err);

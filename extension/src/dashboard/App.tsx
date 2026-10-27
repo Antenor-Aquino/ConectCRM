@@ -3,13 +3,14 @@ import { Building2, Sparkles, CalendarDays, Trash2, CircleCheck, Filter, FolderA
 import { AppLayout, TopNavBar, cn, type TopNavItem } from "@tailadmin";
 import { call, DATA_CHANGED_EVENT, exportDatabase, systemCall, TRASH_EVENT } from "../rpc/client";
 import { checkAutoBackup, type AutoBackupCheck } from "../lib/autoBackup";
-import { backupDocuments, checkDocumentExpiry, deleteOrphans } from "../lib/documentFiles";
+import { checkDocumentExpiry, deleteOrphans } from "../lib/documentFiles";
+import { checkDocBackup, type DocBackupCheck } from "../lib/docBackup";
 import type { OpenCardMessage } from "../rpc/protocol";
 import type { DbEnv } from "../lib/environment";
 import type { Pipeline, PipelineType } from "../db/pipelines";
 import type { QuickCreateOption } from "../lib/quickCreate";
 import { CardFormModal, type CardFormRequest } from "./cards/CardFormModal";
-import { AutoBackupPermissionModal } from "./components/AutoBackupPermissionModal";
+import { AutoBackupPermissionModal, DocBackupPermissionModal } from "./components/AutoBackupPermissionModal";
 import { ComingSoonModal } from "./components/ComingSoonModal";
 import { COPILOT_EVENT, CopilotPanel, type CopilotRequest } from "./copilot/CopilotPanel";
 import { EnvironmentSwitch } from "./components/EnvironmentSwitch";
@@ -152,6 +153,12 @@ function Main() {
     void call("trash.count").then(setTrashCount).catch(() => {});
   }, []);
   const [backupPending, setBackupPending] = useState<Extract<AutoBackupCheck, { status: "needs-permission" }> | null>(null);
+  const [docBackupPending, setDocBackupPending] = useState<Extract<DocBackupCheck, { status: "needs-permission" }> | null>(null);
+  // Backup dos documentos: depois do backup do banco (que pode ter acabado de receber a autorização da mesma pasta).
+  const runDocBackupCheck = () =>
+    void checkDocBackup()
+      .then((r) => r.status === "needs-permission" && setDocBackupPending(r))
+      .catch(() => {});
   useEffect(() => {
     void systemCall<DbEnv>("system.env").then((e) => {
       setEnv(e);
@@ -162,8 +169,9 @@ function Main() {
         .then(refreshTrashCount)
         .catch(() => {});
       if (e !== "production") return;
-      void checkAutoBackup(exportDatabase, backupDocuments).then((r) => {
+      void checkAutoBackup(exportDatabase).then((r) => {
         if (r.status === "needs-permission") setBackupPending(r);
+        else runDocBackupCheck();
       });
     });
   }, []);
@@ -419,7 +427,19 @@ function Main() {
             });
           }}
         />
-        {backupPending && <AutoBackupPermissionModal handle={backupPending.handle} settings={backupPending.settings} onClose={() => setBackupPending(null)} />}
+        {backupPending && (
+          <AutoBackupPermissionModal
+            handle={backupPending.handle}
+            settings={backupPending.settings}
+            onClose={() => {
+              setBackupPending(null);
+              runDocBackupCheck();
+            }}
+          />
+        )}
+        {docBackupPending && !backupPending && (
+          <DocBackupPermissionModal handle={docBackupPending.handle} settings={docBackupPending.settings} onClose={() => setDocBackupPending(null)} />
+        )}
         {docOpen && <DocumentViewer documentId={docOpen} onClose={() => setDocOpen(null)} />}
         {taskOpen && (
           <TaskModal

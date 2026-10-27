@@ -19,6 +19,7 @@ import * as copilot from "../db/copilot";
 import * as cf from "../db/customFields";
 import * as deals from "../db/deals";
 import * as docs from "../db/documents";
+import * as docBackup from "../db/documentBackup";
 import * as folders from "../db/documentFolders";
 import * as series from "../db/activitySeries";
 import * as contactMsg from "../db/contactMessages";
@@ -578,6 +579,10 @@ export const methods = {
     docs.setBlobLocation(db, ctx, p.blobId, p.location, p.path),
   "files.all": (db: DatabaseSync) => docs.allBlobs(db),
   "files.locateList": (db: DatabaseSync) => docs.locateBlobs(db),
+  "files.backupList": (db: DatabaseSync, ctx: DbContext, p: { includeOldVersions?: boolean }) => {
+    assertRole(db, ctx, ["admin"], "o backup dos documentos");
+    return docBackup.documentBackupList(db, p);
+  },
   "files.relocate": (db: DatabaseSync, ctx: DbContext, p: { items: { blobId: string; location: "browser" | "folder"; path: string | null }[] }) => {
     assertRole(db, ctx, ["admin"], "a localização dos documentos");
     return docs.relocateBlobs(db, ctx, p.items);

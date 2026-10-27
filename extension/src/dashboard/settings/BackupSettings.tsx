@@ -1,7 +1,8 @@
 // Configurações → Backup (mesma lógica da gestao-financeira-extensao):
-// backup automático diário/semanal numa pasta escolhida, backup manual,
-// download de uma cópia (.zip com os documentos do GED), restauração e
-// ambiente de teste.
+// backup automático diário/semanal do banco numa pasta escolhida (com
+// retenção), backup dos documentos do GED (rotina própria, DocBackupPanel),
+// download de uma cópia (.zip com os documentos), restauração e ambiente de
+// teste.
 import { useEffect, useRef, useState } from "react";
 import { DatabaseBackup, Download, FolderOpen, RefreshCw, Upload } from "lucide-react";
 import { TaButton, TaPanel, TaSelect } from "@tailadmin";
@@ -15,7 +16,11 @@ import {
   type BackupFrequency,
 } from "../../lib/autoBackup";
 import { loadBackupFolderHandle, pickBackupFolder } from "../../lib/backupFolder";
-import { backupDocuments, buildBackupZip, readBackupZip, recoverFromBackupFolder, restoreDocumentFiles, saveBlobAs } from "../../lib/documentFiles";
+import { buildBackupZip, readBackupZip, restoreDocumentFiles, saveBlobAs } from "../../lib/documentFiles";
+import { recoverFromBackups } from "../../lib/locateDocuments";
+import { call } from "../../rpc/client";
+import { formatBytes } from "../../lib/files";
+import { DocBackupPanel } from "./DocBackupSettings";
 import type { DbEnv } from "../../lib/environment";
 import { formatDateTime } from "../../lib/format";
 import { addNotification } from "../../lib/notifications";
@@ -97,6 +102,30 @@ export function BackupSettings({ env }: { env: DbEnv }) {
             </div>
           </div>
         </div>
+        <div className="mt-3 grid gap-3 text-theme-sm md:grid-cols-2">
+          {(
+            [
+              ["keepDaily", "Backups diários a manter", [7, 15, 30, 60, 90]],
+              ["keepWeekly", "Backups semanais a manter", [4, 8, 12, 26, 52]],
+            ] as const
+          ).map(([key, label, options]) => (
+            <label key={key} className="block">
+              <span className="mb-1.5 block font-medium text-gray-700 dark:text-gray-300">{label}</span>
+              <TaSelect data-retention={key} value={settings[key]} disabled={!isAdmin} onChange={(e) => void update({ [key]: Number(e.target.value) })}>
+                <option value={0}>Todos (não apagar)</option>
+                {options.map((n) => (
+                  <option key={n} value={n}>
+                    Os {n} mais recentes
+                  </option>
+                ))}
+              </TaSelect>
+            </label>
+          ))}
+        </div>
+        <p className="mt-3 text-theme-xs text-gray-500">
+          Os backups automáticos além do limite são apagados da pasta a cada novo backup; os feitos em "Fazer backup agora" nunca são apagados. Os documentos têm
+          backup próprio, abaixo.
+        </p>
         <p className="mt-3 text-theme-xs text-gray-500">
           Último backup: {settings.lastRunAt ? formatDateTime(settings.lastRunAt) : "nunca"}. O Chrome pede a autorização da pasta de novo sempre que é reiniciado; o CRM
           avisa e faz o backup no mesmo clique.
@@ -111,7 +140,7 @@ export function BackupSettings({ env }: { env: DbEnv }) {
               const handle = await loadBackupFolderHandle();
               if (!handle) throw new Error("Escolha a pasta primeiro.");
               if ((await handle.requestPermission({ mode: "readwrite" })) !== "granted") throw new Error("Permissão da pasta não concedida.");
-              const name = await writeBackup(exportDatabase, handle, settings, manualBackupFilename(), backupDocuments);
+              const name = await writeBackup(exportDatabase, handle, settings, manualBackupFilename());
               setSettings(await loadAutoBackupSettings());
               return `Backup salvo: ${name}`;
             })
@@ -121,6 +150,8 @@ export function BackupSettings({ env }: { env: DbEnv }) {
         </TaButton>
       </TaPanel>
 
+      <DocBackupPanel env={env} dbFolder={settings.folderName} />
+
       <TaPanel title="Cópia e restauração" subtitle="Baixe uma cópia (.zip com o banco e os documentos) ou restaure um backup (.zip ou .sqlite).">
         <div className="flex flex-wrap gap-2">
           <TaButton
@@ -128,6 +159,9 @@ export function BackupSettings({ env }: { env: DbEnv }) {
             startIcon={<Download size={15} />}
             onClick={() =>
               void run(async () => {
+                // Tudo vai para a memória: com muitos documentos o navegador pode não aguentar.
+                const total = (await call("files.locateList")).reduce((n, b) => n + b.size_bytes, 0);
+                if (total > 1024 ** 3 && !confirm(`Os documentos somam ${formatBytes(total)}: a cópia em .zip pode travar o navegador. Para documentos, prefira o backup dos documentos (abaixo). Baixar mesmo assim?`)) return;
                 const bytes = await buildBackupZip(await exportDatabase());
                 saveBlobAs(new Blob([bytes as BlobPart], { type: "application/zip" }), manualBackupFilename().replace(/\.sqlite$/, ".zip"));
                 return "Cópia baixada (banco e documentos).";
@@ -154,8 +188,8 @@ export function BackupSettings({ env }: { env: DbEnv }) {
                 const isZip = raw[0] === 0x50 && raw[1] === 0x4b;
                 const backup = isZip ? await readBackupZip(raw) : null;
                 await restoreDatabase(backup ? backup.db : raw);
-                // Documentos: os do .zip; num .sqlite, os que estiverem na pasta de backup.
-                const docs = backup ? await restoreDocumentFiles(backup.files) : await recoverFromBackupFolder(await loadBackupFolderHandle());
+                // Documentos: os do .zip; num .sqlite, os que faltarem são buscados nas pastas de backup.
+                const docs = backup ? await restoreDocumentFiles(backup.files) : await recoverFromBackups().catch(() => 0);
                 await addNotification({
                   kind: "success",
                   title: "Backup restaurado",

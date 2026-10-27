@@ -11,7 +11,7 @@ import { call } from "../rpc/client";
 import type { DbEnv } from "./environment";
 import { dirFor, folderPath, grantedFolder, hasInBrowser, loadDocumentsFolder, putInBrowser, sha256Hex, writeToFolder } from "./fileStore";
 import { currentEnv } from "./documentFiles";
-import type { PermissionedDirectoryHandle } from "./backupFolder";
+import { loadBackupFolderHandle, type PermissionedDirectoryHandle } from "./backupFolder";
 
 export interface DocumentsCheck {
   total: number;
@@ -207,4 +207,32 @@ export function locateSummary(r: LocateResult): string {
   if (r.copied) parts.push(`${r.copied} recuperado(s) e copiado(s) para o lugar dos documentos`);
   if (r.stillMissing.length) parts.push(`${r.stillMissing.length} continua(m) sem arquivo`);
   return `${parts.join("; ") || "Nenhum arquivo encontrado"} (${r.scanned} arquivo(s) examinado(s)).`;
+}
+
+/** Pastas de backup configuradas (a do banco e a própria dos documentos), sem repetir. */
+export async function backupFolders(): Promise<PermissionedDirectoryHandle[]> {
+  const out: PermissionedDirectoryHandle[] = [];
+  for (const key of ["dir", "docs"] as const) {
+    const h = await loadBackupFolderHandle(key).catch(() => null);
+    if (!h) continue;
+    let dup = false;
+    for (const o of out) if (await o.isSameEntry(h).catch(() => false)) dup = true;
+    if (!dup) out.push(h);
+  }
+  return out;
+}
+
+/** Depois de restaurar um banco: traz das pastas de backup os documentos que faltam. */
+export async function recoverFromBackups(onProgress?: (p: LocateProgress) => void): Promise<number> {
+  let n = 0;
+  for (const h of await backupFolders()) {
+    const ok =
+      (await h.queryPermission({ mode: "read" }).catch(() => "denied")) === "granted" ||
+      (await h.requestPermission({ mode: "read" }).catch(() => "denied")) === "granted";
+    if (!ok) continue;
+    const r = await locateDocuments(h, onProgress);
+    n += r.copied + r.relinked;
+    if (!r.stillMissing.length) break;
+  }
+  return n;
 }

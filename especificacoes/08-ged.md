@@ -132,9 +132,12 @@ salvo assim mesmo e a janela lista o motivo antes de fechar.
 - Arquivos iguais são guardados uma vez só.
 - Lixeira: 30 dias; depois (ou na exclusão definitiva) o arquivo é apagado se
   nenhum outro documento o usa.
-- Backup automático: além do `.sqlite`, copia para `documentos/` só os
-  arquivos novos. Cópia manual: `.zip` (banco + documentos). Restaurar aceita
-  `.zip` ou `.sqlite` (neste caso busca os documentos na pasta de backup).
+- Backup dos documentos: rotina própria desde a 0.2.73 (seção "Backup dos
+  documentos" abaixo). Até a 0.2.72 o backup do banco copiava os arquivos para
+  `documentos/<sha256>`; essas cópias continuam sendo lidas na recuperação.
+  Cópia manual: `.zip` (banco + documentos; avisa acima de 1 GB). Restaurar
+  aceita `.zip` ou `.sqlite` (neste caso busca os documentos que faltam nas
+  pastas de backup, pelo Localizar documentos).
 - Atualização da 0.1.x: anexos de cartão e atividade viram documentos "não
   classificados" com os vínculos da regra acima; o conteúdo sai do banco na
   primeira abertura e o texto dos PDFs é lido ao abrir o GED.
@@ -317,3 +320,36 @@ computador muda ou a extensão é reinstalada, os links quebram. Para isso:
   arquivo no lugar indicado" com o botão **Localizar documentos**.
 - Cada documento relocalizado ganha na auditoria "Arquivo localizado em …".
   Só administradores relocalizam.
+
+## Backup dos documentos (0.2.73)
+
+Rotina separada do backup do banco, em Configurações → Backup e ambiente →
+**Backup dos documentos (GED)**:
+
+- **Pasta**: a mesma do backup do banco ou outra (HD externo, OneDrive…).
+  Grava em `<pasta>/ConectCRM - Documentos/`.
+- **Espelho legível**: as mesmas pastas do GED e o nome do documento com o
+  código do conteúdo: `Comercial/Contratos/Contrato Perseus (fe2d460b).pdf`.
+  Versões anteriores (opcional) em `_versões anteriores/…/Nome v1 (…).pdf`.
+  `indice.csv` (abre no Excel: classificação, pasta, versão, vínculos,
+  validade, quem enviou, SHA-256) e `LEIA-ME.txt`.
+- **Incremental**: o controle fica em `.conectcrm-espelho.json`; só copia o
+  que é novo. Documento renomeado ou movido no GED é movido no espelho (sem
+  reler o arquivo). O que sai do GED (lixeira, exclusão) vai para
+  `_removidos/AAAA-MM-DD/` e é apagado depois de 7/30/90/365 dias.
+- **Frequência**: a cada abertura do CRM (no máximo 1 vez por hora), diário,
+  semanal ou só manual. Roda ao abrir o CRM (só Produção); sem autorização da
+  pasta (Chrome reiniciado), abre a janela "Backup dos documentos pendente"
+  — autorizar já faz o backup; fechar não interrompe.
+- **Conferência**: normal confere tamanho e o registro; a completa (botão ou
+  semanal, opcional) lê cada arquivo e compara o conteúdo, regravando o que
+  estiver diferente.
+- **Situação**: último backup, quantidade, tamanho, contagens e erros; aviso
+  no sino em erro e se ficar 3/7/15/30 dias sem backup.
+- Primeira vez: herda "ativado" e a frequência do backup do banco.
+- Para recuperar: Configurações → Documentos → Localizar documentos (ou
+  Buscar no backup) reconhece os arquivos do espelho pelo código no nome.
+
+Backup do banco ganhou **retenção**: manter os N diários / N semanais
+automáticos mais recentes (padrão: todos). Os de "Fazer backup agora" nunca
+são apagados.
