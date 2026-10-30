@@ -172,23 +172,7 @@ export function FunnelsView({
             Novo funil
           </TaButton>
         </section>
-      ) : cardFull ? (
-        <CardDetail
-          key={openCardId}
-          cardId={openCardId!}
-          pipeline={selected}
-          mode="full"
-          onToggleMode={toggleCardMode}
-          onClose={() => onOpenCard(null)}
-          onChanged={() => void onChanged()}
-          pipelines={pipelines}
-          onGoToCard={(pipelineId, cardId) => {
-            // Abre o funil de destino com o cartão (o mesmo, ou a cópia).
-            onSelect(pipelineId);
-            onOpenCard(cardId);
-          }}
-        />
-      ) : (
+      ) : cardFull ? null : (
         <Board
           pipeline={selected}
           refreshKey={refreshKey}
@@ -221,11 +205,13 @@ export function FunnelsView({
         />
       )}
       {stats && <FunnelStatsModal pipeline={selected} onClose={() => setStats(false)} />}
-      {openCardId && selected && !cardFull && (
+      {/* Sempre neste lugar da árvore, nos dois modos: alternar painel/tela cheia não remonta o cartão. */}
+      {openCardId && selected && (
         <CardDetail
           key={openCardId}
           cardId={openCardId}
           pipeline={selected}
+          mode={cardFull ? "full" : "drawer"}
           onToggleMode={toggleCardMode}
           onClose={() => onOpenCard(null)}
           onChanged={() => void onChanged()}

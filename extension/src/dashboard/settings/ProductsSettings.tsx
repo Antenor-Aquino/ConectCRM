@@ -2,7 +2,8 @@
 // dos negócios, com categorias.
 import { useCallback, useEffect, useState } from "react";
 import { Pencil, Plus, Search, Trash2 } from "lucide-react";
-import { TaBadge, TaButton, TaInput, TaModal, TaPanel, TaSelect, TaTextarea, cn } from "@tailadmin";
+import { TaBadge, TaButton, TaInput, TaPanel, TaSelect, TaTextarea, cn } from "@tailadmin";
+import { GuardedModal } from "../ui/GuardedModal";
 import { call } from "../../rpc/client";
 import { RECURRENCE_LABEL, RECURRENCES, type Product, type ProductKind, type Recurrence } from "../../db/products";
 import { formatCents } from "../../lib/format";
@@ -177,7 +178,7 @@ function ProductModal({
   }
 
   return (
-    <TaModal isOpen onClose={onClose} title={product ? "Editar produto/serviço" : "Novo produto/serviço"}>
+    <GuardedModal isOpen onClose={onClose} title={product ? "Editar produto/serviço" : "Novo produto/serviço"}>
       <div className="grid grid-cols-[1fr_2fr] gap-3">
         <Field label="Código">
           <TaInput value={code} onChange={(e) => setCode(e.target.value)} placeholder="Ex.: LIC-01" />
@@ -237,7 +238,7 @@ function ProductModal({
           Salvar
         </TaButton>
       </div>
-    </TaModal>
+    </GuardedModal>
   );
 }
 
@@ -254,7 +255,7 @@ function CategoriesModal({ categories, onClose, onChanged }: { categories: { id:
     }
   };
   return (
-    <TaModal isOpen onClose={onClose} title="Categorias de produtos">
+    <GuardedModal isOpen onClose={onClose} title="Categorias de produtos">
       <div className="mb-3 flex gap-2">
         <TaInput placeholder="Nova categoria" value={name} onChange={(e) => setName(e.target.value)} />
         <TaButton variant="primary" disabled={!name.trim()} onClick={() => void run(async () => {
@@ -276,6 +277,6 @@ function CategoriesModal({ categories, onClose, onChanged }: { categories: { id:
         {categories.length === 0 && <p className="py-2 text-theme-sm text-gray-400">Nenhuma categoria.</p>}
       </ul>
       <ErrorText>{error}</ErrorText>
-    </TaModal>
+    </GuardedModal>
   );
 }

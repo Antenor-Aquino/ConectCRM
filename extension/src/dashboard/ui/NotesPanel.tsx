@@ -14,6 +14,7 @@ import { MAX_UPLOAD_BYTES } from "../../lib/files";
 import { DocumentViewer } from "../documents/DocumentViewer";
 import { FileTypeIcon } from "../documents/docUi";
 import { LinkedText } from "./LinkedText";
+import { useDraft } from "./unsaved";
 
 type NoteDoc = Note["documents"][number];
 /** Imagem no editor: nova (arquivo colado) ou já guardada no GED (docId). */
@@ -123,6 +124,9 @@ function NoteEditor({
   const [images, setImages] = useState<EditorImage[]>(startImages);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Texto ou imagem ainda não salvos: avisa antes de fechar o cartão (a aba pode ser trocada sem perder).
+  const dirty = body !== startBody || images.length !== startImages.length;
+  useDraft(onCancel ? "Edição de nota" : "Nota nova", dirty, "notas");
 
   // Miniaturas das imagens que já estavam no GED.
   useEffect(() => {

@@ -244,3 +244,35 @@ sem avisos, abas ou selos.
   sai dos avisos e relatórios de "ganhos com receita a lançar"; a aba
   Financeiro mostra a marca com "Voltar a registrar") ou **Decidir depois**.
   Lançamentos avulsos continuam possíveis em qualquer caso.
+
+## Cartão com financeiro não se perde (CRM 0.2.75)
+
+O lançamento na Gestão Financeira aponta para o cartão pelo id (`origin_ref`).
+Excluir o cartão — e, passado o prazo da lixeira, apagá-lo de vez — deixaria o
+lançamento sem referência (o "resultado por cartão" e Relatórios → Financeiro
+perderiam o vínculo). Regra:
+
+- **Cartão com lançamento não pode ser excluído; só arquivado.** Arquivar
+  (`deal.archived_at`) tira o cartão do quadro e da lista, mas ele continua no
+  banco, na busca, na ficha do contato e em Relatórios → Financeiro, e ainda
+  recebe lançamentos pela aba Financeiro (abrindo-o pelo filtro "Arquivados"
+  ou pela busca).
+- **Para excluir de verdade**: na Gestão Financeira, estornar os lançamentos
+  pagos e excluir todos; na próxima tentativa o CRM relê a Gestão Financeira e libera.
+- **O que conta como "tem financeiro"** (`db/financeLock.ts`): lançamentos na
+  cópia local (`finance_entry`) e pedidos do modo pacote ainda pendentes ou
+  exportados (`finance_request`). Pedido "launched" não conta (já está na cópia
+  como lançamento; contar de novo travaria o cartão para sempre).
+- **Barreira no banco**: `deleteCard` chama `assertNoFinance`, então vale para
+  exclusão individual, em lote (`cards.bulk`) e Copiloto. Em lote, os bloqueados
+  são pulados e relatados; os demais seguem.
+- **Conferência na tela** (`lib/finance/deleteGuard.ts`): antes de excluir, no modo
+  direto, o CRM lê a Gestão Financeira ao vivo (atualiza a cópia). Se ela não
+  responde e o cartão nunca foi lido, **bloqueia** ("não consegui confirmar o
+  financeiro"). Modo pacote ou integração nunca ligada: vale o que o banco sabe.
+- **Diálogo** (`DeleteBlockedDialog`): explica o motivo e oferece Arquivar, Ver
+  Financeiro e, em lote, "Excluir só os outros".
+- **Lixeira**: `purgeTrash` (manual, "esvaziar" e limpeza por prazo) não apaga
+  cartão que tem financeiro; ele fica na lixeira marcado "Tem financeiro: não é
+  apagado" (restaure e arquive). Vale também para cartões excluídos antes desta regra.
+- Só o CRM mudou: o protocolo entre as extensões é o mesmo.

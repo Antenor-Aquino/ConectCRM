@@ -2,7 +2,8 @@
 // e etapas com cor.
 import { useEffect, useState } from "react";
 import { Trash2, Plus } from "lucide-react";
-import { TaButton, TaInput, TaModal, TaSelect, badgePalette, type BadgeColor } from "@tailadmin";
+import { TaButton, TaInput, TaSelect, badgePalette, type BadgeColor } from "@tailadmin";
+import { GuardedModal } from "../ui/GuardedModal";
 import { call } from "../../rpc/client";
 import type { PipelineType } from "../../db/pipelines";
 import { colorLabel } from "../../lib/colors";
@@ -67,7 +68,7 @@ export function NewPipelineModal({
   }
 
   return (
-    <TaModal isOpen={isOpen} onClose={onClose} title="Novo funil">
+    <GuardedModal isOpen={isOpen} onClose={onClose} title="Novo funil">
       <div className="space-y-4">
         <label className="block">
           <span className="mb-1.5 block text-theme-sm font-medium text-gray-700 dark:text-gray-300">Nome do funil *</span>
@@ -137,6 +138,6 @@ export function NewPipelineModal({
           </TaButton>
         </div>
       </div>
-    </TaModal>
+    </GuardedModal>
   );
 }
