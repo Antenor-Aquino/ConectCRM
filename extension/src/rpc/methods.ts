@@ -41,6 +41,7 @@ import { normalizeText } from "../lib/search";
 import * as tags from "../db/tags";
 import * as docCard from "../db/docCard";
 import * as finance from "../db/finance";
+import { cardFinanceLocks } from "../db/financeLock";
 import { contactCardFor } from "../db/contactCard";
 import type { FinanceItem, ReturnPackage } from "../lib/finance/protocol";
 import * as users from "../db/users";
@@ -200,6 +201,12 @@ export const methods = {
   "finance.setSkip": (db: DatabaseSync, ctx: DbContext, p: { dealId: string; skip: boolean }) => {
     deals.assertCardAccess(db, viewer(db, ctx), p.dealId);
     finance.setFinanceSkip(db, ctx, p.dealId, p.skip);
+  },
+  /** Lançamentos e pedidos de cada cartão: quem tem não pode ser excluído (só arquivado). */
+  "cards.financeLocks": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => {
+    const v = viewer(db, ctx);
+    for (const id of p.ids) deals.assertCardAccess(db, v, id);
+    return cardFinanceLocks(db, p.ids);
   },
   "finance.card": (db: DatabaseSync, ctx: DbContext, p: Id) => {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);

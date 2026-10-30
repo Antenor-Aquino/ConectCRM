@@ -1,7 +1,8 @@
 // Configurações → Equipes: definem a visão "Minha equipe" e o que o gestor vê.
 import { useEffect, useState } from "react";
 import { Crown, Pencil, Plus, Trash2 } from "lucide-react";
-import { TaButton, TaInput, TaModal, TaPanel } from "@tailadmin";
+import { TaButton, TaInput, TaPanel } from "@tailadmin";
+import { GuardedModal } from "../ui/GuardedModal";
 import { call } from "../../rpc/client";
 import { ROLE_LABEL, type Team } from "../../db/users";
 import { useSession } from "../session";
@@ -106,7 +107,7 @@ function TeamModal({ team, onClose, onSaved }: { team: Team | null; onClose: () 
   }
 
   return (
-    <TaModal isOpen onClose={onClose} title={team ? "Editar equipe" : "Nova equipe"}>
+    <GuardedModal isOpen onClose={onClose} title={team ? "Editar equipe" : "Nova equipe"}>
       <Field label="Nome da equipe" required>
         <TaInput autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Comercial SP" />
       </Field>
@@ -148,6 +149,6 @@ function TeamModal({ team, onClose, onSaved }: { team: Team | null; onClose: () 
           Salvar
         </TaButton>
       </div>
-    </TaModal>
+    </GuardedModal>
   );
 }

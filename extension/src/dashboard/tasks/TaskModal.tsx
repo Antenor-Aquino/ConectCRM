@@ -3,7 +3,8 @@
 // (duração/lembrete), Finalização (opcional), Vinculado a e Tags.
 // Tipos de reunião podem criar o evento no Google Agenda / Outlook.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, Circle, Link2, MessageCircle, Paperclip, Trash2, Video, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Check, ChevronDown, Circle, Link2, MessageCircle, Minus, Paperclip, Pencil, Trash2, Video, X } from "lucide-react";
 import { TaButton, TaInput, TaModal, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { Activity, ActivityType } from "../../db/activities";
@@ -28,6 +29,7 @@ import { formatDateTime } from "../../lib/format";
 import { RemindersEditor } from "../ui/RemindersEditor";
 import { ContactTemplateEditor } from "../ui/ContactTemplateEditor";
 import { Switch } from "../ui/Switch";
+import { UnsavedDialog, useDraft } from "../ui/unsaved";
 import { CONTACT_MINUTES_OPTIONS, leadText } from "../../lib/notify/contactMessage";
 import { loadSenders, type WhatsAppSender } from "../../lib/whatsappSenders";
 import { LinkedTextarea } from "../ui/LinkedTextarea";
@@ -128,7 +130,21 @@ function GuestsInput({ value, onChange }: { value: string[]; onChange: (v: strin
   );
 }
 
-export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest; onClose: () => void; onSaved: () => void }) {
+export function TaskModal({
+  request,
+  onClose,
+  onSaved,
+  minimized = false,
+  onMinimizedChange,
+}: {
+  request: TaskRequest;
+  onClose: () => void;
+  onSaved: () => void;
+  /** Minimizada: some da frente (para consultar o cartão) mas o que foi digitado continua aqui. */
+  minimized?: boolean;
+  /** Se informado, mostra o botão Minimizar. */
+  onMinimizedChange?: (minimized: boolean) => void;
+}) {
   const { user, users, label } = useSession();
   const [types, setTypes] = useState<ActivityType[]>([]);
   const [loaded, setLoaded] = useState(!request.id);
@@ -310,6 +326,37 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
     }
   }
 
+  // Rascunho: o que o usuário mexeu e ainda não salvou. Compara com o estado já carregado (sem contar o
+  // que a tela preenche sozinha) e também registra qualquer digitação/seleção feita no formulário.
+  const snap = JSON.stringify([
+    title,
+    description,
+    done,
+    typeId,
+    ownerId,
+    when.getTime(),
+    endAt?.getTime() ?? null,
+    tagIds,
+    duration,
+    reminders,
+    values,
+    meetingUrl,
+    recurrence,
+    pending.map((f) => `${f.name}:${f.size}`),
+  ]);
+  const [baseline, setBaseline] = useState<string | null>(null);
+  const [touched, setTouched] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
+  useEffect(() => {
+    if (baseline !== null || !loaded || !types.length || !notify) return;
+    const t = setTimeout(() => setBaseline(snap), 600);
+    return () => clearTimeout(t);
+  }, [baseline, loaded, types.length, notify, snap]);
+  const dirty = touched || (baseline !== null && snap !== baseline);
+  const draftLabel = request.id ? `Edição da atividade “${title.trim() || "sem nome"}”` : `Atividade nova${title.trim() ? ` “${title.trim()}”` : ""}`;
+  useDraft(draftLabel, dirty, "tarefas");
+  const requestClose = () => (dirty ? setConfirmClose(true) : onClose());
+
   const ruleChanged = !!series && JSON.stringify(recurrence) !== JSON.stringify(series.rule);
   const dateChanged = !!existing && new Date(existing.due_at).getTime() !== when.getTime();
 
@@ -407,7 +454,28 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
   }
 
   return (
-    <TaModal isOpen onClose={onClose} title={request.id ? (series ? "Editar atividade recorrente" : "Editar atividade") : "Nova atividade"} width="max-w-3xl">
+    <>
+    <TaModal
+      isOpen={!minimized}
+      onClose={requestClose}
+      title={request.id ? (series ? "Editar atividade recorrente" : "Editar atividade") : "Nova atividade"}
+      width="max-w-3xl"
+      headerExtra={
+        onMinimizedChange && (
+          <button
+            type="button"
+            onClick={() => onMinimizedChange(true)}
+            title="Minimizar: continua com o que você digitou e libera o cartão para consulta"
+            aria-label="Minimizar"
+            data-task-minimize
+            className="text-white/90 hover:text-white"
+          >
+            <Minus size={20} />
+          </button>
+        )
+      }
+    >
+      <div onInputCapture={() => setTouched(true)} onChangeCapture={() => setTouched(true)}>
       {askScope && (
         <ScopeDialog
           action={askScope}
@@ -770,7 +838,7 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
             <TaButton variant="primary" size="md" disabled={saving || !title.trim()} onClick={() => void save()}>
               Salvar
             </TaButton>
-            <TaButton size="md" onClick={onClose}>
+            <TaButton size="md" onClick={requestClose}>
               Cancelar
             </TaButton>
             {request.id && (
@@ -791,7 +859,48 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
           </div>
         </>
       )}
+      </div>
     </TaModal>
+    {minimized &&
+      createPortal(
+        <div
+          className="fixed bottom-4 right-4 z-[99999] flex max-w-sm items-center gap-1 rounded-xl border border-warning-300 bg-warning-50 p-1 shadow-theme-lg dark:border-warning-500/40 dark:bg-gray-900"
+          data-task-minimized
+        >
+          <button
+            type="button"
+            onClick={() => onMinimizedChange?.(false)}
+            title="Reabrir a atividade"
+            className="flex min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-left text-theme-sm font-medium text-warning-800 hover:bg-warning-100 dark:text-warning-300 dark:hover:bg-white/5"
+          >
+            <Pencil size={14} className="shrink-0" />
+            <span className="truncate">Atividade em edição: {title.trim() || "sem nome"}</span>
+            <span className="shrink-0 text-theme-xs underline">Reabrir</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirmClose(true)}
+            title="Descartar"
+            aria-label="Descartar a atividade em edição"
+            className="rounded-lg p-2 text-gray-500 hover:bg-error-50 hover:text-error-600"
+          >
+            <X size={14} />
+          </button>
+        </div>,
+        document.body,
+      )}
+    {confirmClose && (
+      <UnsavedDialog
+        items={[{ key: "this", scope: "this", label: draftLabel }]}
+        confirmLabel="Descartar atividade"
+        onStay={() => {
+          setConfirmClose(false);
+          onMinimizedChange?.(false);
+        }}
+        onDiscard={onClose}
+      />
+    )}
+    </>
   );
 }
 

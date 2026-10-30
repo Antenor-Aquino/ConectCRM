@@ -2,7 +2,7 @@
 // resolvido/não resolvido, concluído/não concluído conforme o tipo),
 // notas, tarefas e histórico de alterações.
 import { useGfActive } from "../useGfActive";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -64,22 +64,17 @@ import { errorText } from "../../lib/errors";
 import { RECURRENCE_LABEL, type Recurrence } from "../../db/products";
 import { ExternalOrigin } from "../ui/ExternalOrigin";
 import { FinanceTab } from "./FinanceTab";
+import { DeleteBlockedDialog } from "./DeleteBlockedDialog";
+import { checkCardsForDelete, type DeleteCheck } from "../../lib/finance/deleteGuard";
 import { loadGfSettings } from "../../lib/finance/gfBridge";
+import { DraftScope, useDraft, useLeaveGuard } from "../ui/unsaved";
+import { useDrafts } from "../../lib/drafts";
 
 type Tab = "notas" | "tarefas" | "documentos" | "historico" | "financeiro";
 
 export type CardDetailMode = "drawer" | "full";
 
-export function CardDetail({
-  cardId,
-  pipeline,
-  onClose,
-  onChanged,
-  mode = "drawer",
-  onToggleMode,
-  pipelines = [],
-  onGoToCard,
-}: {
+type CardDetailProps = {
   cardId: string;
   pipeline: Pipeline;
   /** Funis para "Mudar de funil" (só os do mesmo tipo aparecem). */
@@ -91,7 +86,30 @@ export function CardDetail({
   /** drawer = painel lateral sobre o quadro; full = ocupa a área do quadro. */
   mode?: CardDetailMode;
   onToggleMode?: () => void;
-}) {
+};
+
+/**
+ * Tela principal do cartão. O que for digitado nas notas, atividades e campos fica
+ * em memória enquanto o cartão estiver aberto; para sair é preciso salvar ou descartar.
+ */
+export function CardDetail(props: CardDetailProps) {
+  return (
+    <DraftScope.Provider value={props.cardId}>
+      <CardDetailInner {...props} />
+    </DraftScope.Provider>
+  );
+}
+
+function CardDetailInner({
+  cardId,
+  pipeline,
+  onClose: onCloseRaw,
+  onChanged,
+  mode = "drawer",
+  onToggleMode,
+  pipelines = [],
+  onGoToCard: onGoToCardRaw,
+}: CardDetailProps) {
   const text = CARD_TEXT[pipeline.type];
   const [card, setCard] = useState<CardData | null>(null);
   const [stages, setStages] = useState<Stage[]>([]);
@@ -104,12 +122,22 @@ export function CardDetail({
   const [askFinance, setAskFinance] = useState(false);
   // Aba Financeiro e resultado só com a integração com a Gestão Financeira ativada.
   const gfActive = !!useGfActive();
+  // Rascunhos (notas, atividades, campos): fechar o cartão ou ir para outro pergunta antes de perder.
+  const { guard, dialog: leaveDialog } = useLeaveGuard(cardId);
+  const drafts = useDrafts(cardId);
+  const onClose = () => guard(onCloseRaw);
+  const onGoToCard = onGoToCardRaw && ((pipelineId: string, id: string) => guard(() => onGoToCardRaw(pipelineId, id)));
+  // Atividade minimizada: o modal some para consultar o cartão, mas o que foi digitado continua.
+  const [tasksMin, setTasksMin] = useState(false);
+  const [openedTaskMin, setOpenedTaskMin] = useState(false);
+  const savedCustom = useRef<string | null>(null);
   // Origem aberta a partir do histórico.
   const [noteFocus, setNoteFocus] = useState<string | null>(null);
   const [taskOpen, setTaskOpen] = useState<string | null>(null);
   const [docOpen, setDocOpen] = useState<string | null>(null);
   const [itemsOpen, setItemsOpen] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
+  const [deleteBlock, setDeleteBlock] = useState<DeleteCheck | null>(null);
   const [pipelineAction, setPipelineAction] = useState<"move" | "clone" | null>(null);
   // Quantidades nas abas (balão verde) e atividades atrasadas (balão vermelho).
   const [counts, setCounts] = useState<CardCounts | null>(null);
@@ -130,9 +158,12 @@ export function CardDetail({
       return;
     }
     setCard(c);
+    savedCustom.current = JSON.stringify(c.customValues);
     setTitle(c.title);
     setDescription(c.description ?? "");
   }, [cardId]);
+  // Campos personalizados editados e ainda sem "Salvar campos personalizados".
+  useDraft("Campos personalizados do cartão", !!card && savedCustom.current !== null && JSON.stringify(card.customValues) !== savedCustom.current, "geral");
 
   useEffect(() => {
     void load();
@@ -153,6 +184,24 @@ export function CardDetail({
     }
   };
   const update = (patch: Record<string, unknown>) => run(() => call("cards.update", { id: cardId, patch }));
+
+  /** Cartão com financeiro não se exclui (só arquiva): confere ao vivo antes de perguntar. */
+  async function requestDelete() {
+    setError(null);
+    try {
+      const check = await checkCardsForDelete([cardId]);
+      if (check.blocked.length) {
+        setDeleteBlock(check);
+        return;
+      }
+    } catch (e) {
+      setError(errorText(e));
+      return;
+    }
+    if (confirm(`Excluir este ${text.noun}? Vai para a lixeira com as atividades e notas, de onde pode ser restaurado.`)) {
+      if (await run(() => call("cards.delete", { id: cardId }))) onCloseRaw();
+    }
+  }
 
   useEffect(() => {
     void call("cards.counts", { id: cardId })
@@ -296,9 +345,7 @@ export function CardDetail({
         <TaButton
           variant="ghost"
           startIcon={<Trash2 size={15} />}
-          onClick={() => {
-            if (confirm(`Excluir este ${text.noun}? Vai para a lixeira com as atividades e notas, de onde pode ser restaurado.`)) void run(() => call("cards.delete", { id: cardId })).then(onClose);
-          }}
+          onClick={() => void requestDelete()}
         >
           Excluir
         </TaButton>
@@ -569,6 +616,7 @@ export function CardDetail({
             ).map(([id, label]) => {
               const count = counts && { historico: counts.history, notas: counts.notes, tarefas: counts.activities, documentos: counts.documents, financeiro: counts.finance || null }[id];
               const overdue = id === "tarefas" ? (counts?.activitiesOverdue ?? 0) : 0;
+              const unsaved = drafts.some((d) => d.tab === (id === "notas" ? "notas" : id === "tarefas" ? "tarefas" : id));
               return (
                 <button
                   key={id}
@@ -602,11 +650,13 @@ export function CardDetail({
                       {overdue}
                     </span>
                   )}
+                  {unsaved && <span className="h-2 w-2 rounded-full bg-warning-500" title="Há algo digitado e ainda não salvo nesta aba" data-unsaved-dot />}
                 </button>
               );
             })}
           </div>
-          {tab === "notas" && (
+          {/* Notas e atividades ficam montadas (só escondidas) para não perder o que foi digitado ao trocar de aba. */}
+          <div hidden={tab !== "notas"}>
             <NotesPanel
               entityType="deal"
               entityId={cardId}
@@ -616,16 +666,19 @@ export function CardDetail({
               }}
               highlightId={noteFocus}
             />
-          )}
-          {tab === "tarefas" && (
+          </div>
+          <div hidden={tab !== "tarefas"}>
             <TasksTab
               cardId={cardId}
+              visible={tab === "tarefas"}
+              minimized={tasksMin}
+              onMinimizedChange={setTasksMin}
               onChanged={() => {
                 onChanged();
                 recount();
               }}
             />
-          )}
+          </div>
           {tab === "documentos" && <DocumentsPanel type="deal" id={cardId} onChanged={recount} />}
           {gfActive && tab === "financeiro" && (
             <FinanceTab
@@ -662,15 +715,39 @@ export function CardDetail({
       {taskOpen && (
         <TaskModal
           request={{ id: taskOpen }}
-          onClose={() => setTaskOpen(null)}
+          minimized={openedTaskMin}
+          onMinimizedChange={setOpenedTaskMin}
+          onClose={() => {
+            setTaskOpen(null);
+            setOpenedTaskMin(false);
+          }}
           onSaved={() => {
             setTaskOpen(null);
+            setOpenedTaskMin(false);
             void load();
             onChanged();
           }}
         />
       )}
       {docOpen && <DocumentViewer documentId={docOpen} onClose={() => setDocOpen(null)} />}
+      {leaveDialog}
+      {deleteBlock && (
+        <DeleteBlockedDialog
+          items={deleteBlock.blocked.map((b) => ({ ...b, title: card.title, archived: !!card.archived_at }))}
+          freeCount={0}
+          offlineReason={deleteBlock.offlineReason}
+          onClose={() => setDeleteBlock(null)}
+          onOpenFinance={
+            gfActive
+              ? () => {
+                  setDeleteBlock(null);
+                  setTab("financeiro");
+                }
+              : undefined
+          }
+          onArchive={() => void run(() => call("cards.archive", { id: cardId, archived: true })).then(() => setDeleteBlock(null))}
+        />
+      )}
 
       <ItemsEditor
         open={itemsOpen}
@@ -862,18 +939,20 @@ function Shell({
       {cardId && <ExternalOrigin localId={cardId} />}
     </div>
   );
-  if (mode === "full") {
-    return (
-      <section className="@container relative min-w-0 flex-1 rounded-2xl border border-gray-200 bg-white p-6 shadow-theme-xs dark:border-gray-800 dark:bg-gray-900">
-        {buttons}
-        {children}
-      </section>
-    );
-  }
+  // Mesma estrutura nos dois modos (só muda o CSS): alternar painel lateral/tela cheia não remonta
+  // o conteúdo, então o que foi digitado nas notas e atividades não se perde.
+  const full = mode === "full";
   return (
-    <div className="fixed inset-0 z-[9999] flex justify-end">
-      <div className="fixed inset-0 bg-gray-900/40" onClick={onClose} aria-hidden />
-      <div className="@container relative h-full w-full max-w-[1100px] overflow-y-auto bg-white p-6 shadow-theme-xl dark:bg-gray-900">
+    <div className={full ? "relative flex min-w-0 flex-1" : "fixed inset-0 z-[9999] flex justify-end"}>
+      {!full && <div className="fixed inset-0 bg-gray-900/40" onClick={onClose} aria-hidden />}
+      <div
+        className={cn(
+          "@container relative",
+          full
+            ? "min-w-0 flex-1 rounded-2xl border border-gray-200 bg-white p-6 shadow-theme-xs dark:border-gray-800 dark:bg-gray-900"
+            : "h-full w-full max-w-[1100px] overflow-y-auto bg-white p-6 shadow-theme-xl dark:bg-gray-900",
+        )}
+      >
         {buttons}
         {children}
       </div>
@@ -881,20 +960,38 @@ function Shell({
   );
 }
 
-function TasksTab({ cardId, onChanged }: { cardId: string; onChanged: () => void }) {
+function TasksTab({
+  cardId,
+  visible,
+  minimized,
+  onMinimizedChange,
+  onChanged,
+}: {
+  cardId: string;
+  /** A aba continua montada quando escondida; ao voltar a ficar visível, relê a lista. */
+  visible: boolean;
+  minimized: boolean;
+  onMinimizedChange: (minimized: boolean) => void;
+  onChanged: () => void;
+}) {
   const [tasks, setTasks] = useState<ActivityListItem[]>([]);
   const [modal, setModal] = useState<TaskRequest | null>(null);
   const load = useCallback(() => call("activities.list", { dealId: cardId }).then(setTasks), [cardId]);
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (visible) void load();
+  }, [load, visible]);
+  // Já há uma atividade em edição (minimizada): reabre ela em vez de começar outra e perder o que foi digitado.
+  const open = (request: TaskRequest) => {
+    if (modal) onMinimizedChange(false);
+    else setModal(request);
+  };
   const after = async () => {
     await load();
     onChanged();
   };
   return (
     <div>
-      <TaButton variant="primary" startIcon={<PlusCircle size={15} />} onClick={() => setModal({ dealId: cardId })}>
+      <TaButton variant="primary" startIcon={<PlusCircle size={15} />} onClick={() => open({ dealId: cardId })}>
         Nova atividade
       </TaButton>
       <ul className="mt-3 divide-y divide-gray-100 dark:divide-gray-800">
@@ -917,7 +1014,7 @@ function TasksTab({ cardId, onChanged }: { cardId: string; onChanged: () => void
               <span className="text-brand-500">
                 <ActivityIcon name={t.type_icon} />
               </span>
-              <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setModal({ id: t.id })}>
+              <button type="button" className="min-w-0 flex-1 text-left" onClick={() => open({ id: t.id })}>
                 <p className={cn("truncate text-theme-sm", t.done ? "text-gray-400 line-through" : "text-gray-800 dark:text-white/90")}>
                   {t.title}
                   {t.title_ext && <span className="font-normal text-gray-500" data-name-ext> - {t.title_ext}</span>}
@@ -936,9 +1033,15 @@ function TasksTab({ cardId, onChanged }: { cardId: string; onChanged: () => void
       {modal && (
         <TaskModal
           request={modal}
-          onClose={() => setModal(null)}
+          minimized={minimized}
+          onMinimizedChange={onMinimizedChange}
+          onClose={() => {
+            setModal(null);
+            onMinimizedChange(false);
+          }}
           onSaved={async () => {
             setModal(null);
+            onMinimizedChange(false);
             await after();
           }}
         />

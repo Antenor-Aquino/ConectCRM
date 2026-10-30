@@ -4,7 +4,8 @@
 import { pushPendingContacts } from "../../lib/finance/sync";
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Loader2, Search, Star, X } from "lucide-react";
-import { TaButton, TaInput, TaModal, TaTextarea } from "@tailadmin";
+import { TaButton, TaInput, TaTextarea } from "@tailadmin";
+import { GuardedModal } from "../ui/GuardedModal";
 import { call } from "../../rpc/client";
 import type { CustomField, CustomValue } from "../../db/customFields";
 import { formatCepInput, lookupCep } from "../../lib/cep";
@@ -204,7 +205,7 @@ export function OrganizationFormModal({
   );
 
   return (
-    <TaModal isOpen onClose={onClose} title={organizationId ? "Editar organização" : "Nova organização"} width="max-w-xl">
+    <GuardedModal isOpen onClose={onClose} title={organizationId ? "Editar organização" : "Nova organização"} width="max-w-xl">
       {!loaded ? (
         <p className="text-theme-sm text-gray-500">Carregando…</p>
       ) : (
@@ -340,6 +341,6 @@ export function OrganizationFormModal({
           </div>
         </>
       )}
-    </TaModal>
+    </GuardedModal>
   );
 }
