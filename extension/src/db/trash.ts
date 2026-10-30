@@ -6,6 +6,7 @@ import { newId, nowIso } from "../lib/ids";
 import { formatDate } from "../lib/format";
 import { ValidationError } from "../lib/validate";
 import type { OrphanBlob } from "./documents";
+import { cardFinanceLock, hasFinance } from "./financeLock";
 import { DATA_TABLES, restore, softDelete, updateRow, type DataTable, type DbContext } from "./repo";
 import { many, one, run, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
 import type { Viewer } from "./users";
@@ -36,6 +37,8 @@ export interface TrashItem {
   expires_at: string;
   /** Quantos registros foram junto (atividades e notas do cartão...). */
   related: number;
+  /** Cartão com lançamento na Gestão Financeira: a lixeira não o apaga (restaure e arquive). */
+  finance_locked: boolean;
 }
 
 interface LoggedChange {
@@ -218,7 +221,7 @@ export function listTrash(db: DatabaseSync, viewer: Viewer | null, filter: { ent
     where.push("t.entity = ?");
     params.push(filter.entity);
   }
-  const rows = many<Omit<TrashItem, "expires_at" | "related"> & { changes: string }>(
+  const rows = many<Omit<TrashItem, "expires_at" | "related" | "finance_locked"> & { changes: string }>(
     db,
     `SELECT t.id, t.entity, t.record_id, t.title, t.detail, t.deleted_at, t.deleted_by, u.name AS deleted_by_name, t.changes
      FROM trash_item t LEFT JOIN app_user u ON u.id = t.deleted_by
@@ -235,7 +238,12 @@ export function listTrash(db: DatabaseSync, viewer: Viewer | null, filter: { ent
     if (q && !`${r.title} ${r.detail ?? ""}`.toLowerCase().includes(q)) continue;
     const list = JSON.parse(changes) as LoggedChange[];
     const related = new Set(list.filter((c) => c.op === "delete" && c.row_id !== r.record_id && RELATED_TABLES.has(c.table)).map((c) => c.row_id)).size;
-    out.push({ ...r, expires_at: expiresAt(r.deleted_at, days), related });
+    out.push({
+      ...r,
+      expires_at: expiresAt(r.deleted_at, days),
+      related,
+      finance_locked: r.entity === "deal" && hasFinance(cardFinanceLock(db, r.record_id)),
+    });
   }
   return out;
 }
@@ -422,17 +430,23 @@ function hardDelete(db: DatabaseSync, ctx: DbContext, table: DataTable, id: stri
 
 export interface PurgeResult {
   purged: number;
+  /** Cartões com financeiro que ficaram na lixeira (não se apaga o vínculo com a Gestão Financeira). */
+  protected: number;
   /** Arquivos de documentos que ficaram sem uso (a tela apaga o conteúdo). */
   orphans: OrphanBlob[];
 }
 
 /** Exclui definitivamente os itens (sem volta). */
 export function purgeTrash(db: DatabaseSync, ctx: DbContext, ids: string[], purgeDocuments: (ids: string[]) => OrphanBlob[]): PurgeResult {
-  const out: PurgeResult = { purged: 0, orphans: [] };
+  const out: PurgeResult = { purged: 0, protected: 0, orphans: [] };
   withTransaction(db, () => {
     for (const id of ids) {
       const item = one<{ entity: string; record_id: string; changes: string }>(db, "SELECT entity, record_id, changes FROM trash_item WHERE id = ?", id);
       if (!item) continue;
+      if (item.entity === "deal" && hasFinance(cardFinanceLock(db, item.record_id))) {
+        out.protected++;
+        continue;
+      }
       if (item.entity === "document") {
         out.orphans.push(...purgeDocuments([item.record_id]));
       } else {

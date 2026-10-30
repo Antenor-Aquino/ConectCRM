@@ -11,6 +11,7 @@ import { isCardFieldKey } from "../lib/cardFields";
 import { normalizeText } from "../lib/search";
 import { OVERDUE_COND, overdueParams, startOfDay } from "../lib/taskTiming";
 import { getRow, insertRow, softDelete, updateRow, type DbContext } from "./repo";
+import { assertNoFinance } from "./financeLock";
 import { moveToTrash, type TrashNotice } from "./trash";
 import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
 import { createTag, getEntityTags, setEntityTags, type Tag } from "./tags";
@@ -489,8 +490,12 @@ export function setCardStatus(
   });
 }
 
-/** Para a lixeira, com as atividades e notas do cartão (voltam juntas ao restaurar). */
+/**
+ * Para a lixeira, com as atividades e notas do cartão (voltam juntas ao restaurar).
+ * Cartão com lançamento na Gestão Financeira não é excluído: arquive.
+ */
 export function deleteCard(db: DatabaseSync, ctx: DbContext, id: string): TrashNotice {
+  assertNoFinance(db, id);
   return moveToTrash(db, ctx, "deal", id, () => {
     for (const a of many<{ id: string }>(db, "SELECT id FROM activity WHERE deal_id = ? AND deleted_at IS NULL", id)) softDelete(db, ctx, "activity", a.id);
     for (const n of many<{ id: string }>(db, "SELECT id FROM note WHERE entity_type = ? AND entity_id = ? AND deleted_at IS NULL", "deal", id))

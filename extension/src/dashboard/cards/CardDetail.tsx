@@ -64,6 +64,8 @@ import { errorText } from "../../lib/errors";
 import { RECURRENCE_LABEL, type Recurrence } from "../../db/products";
 import { ExternalOrigin } from "../ui/ExternalOrigin";
 import { FinanceTab } from "./FinanceTab";
+import { DeleteBlockedDialog } from "./DeleteBlockedDialog";
+import { checkCardsForDelete, type DeleteCheck } from "../../lib/finance/deleteGuard";
 import { loadGfSettings } from "../../lib/finance/gfBridge";
 
 type Tab = "notas" | "tarefas" | "documentos" | "historico" | "financeiro";
@@ -110,6 +112,7 @@ export function CardDetail({
   const [docOpen, setDocOpen] = useState<string | null>(null);
   const [itemsOpen, setItemsOpen] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
+  const [deleteBlock, setDeleteBlock] = useState<DeleteCheck | null>(null);
   const [pipelineAction, setPipelineAction] = useState<"move" | "clone" | null>(null);
   // Quantidades nas abas (balão verde) e atividades atrasadas (balão vermelho).
   const [counts, setCounts] = useState<CardCounts | null>(null);
@@ -153,6 +156,24 @@ export function CardDetail({
     }
   };
   const update = (patch: Record<string, unknown>) => run(() => call("cards.update", { id: cardId, patch }));
+
+  /** Cartão com financeiro não se exclui (só arquiva): confere ao vivo antes de perguntar. */
+  async function requestDelete() {
+    setError(null);
+    try {
+      const check = await checkCardsForDelete([cardId]);
+      if (check.blocked.length) {
+        setDeleteBlock(check);
+        return;
+      }
+    } catch (e) {
+      setError(errorText(e));
+      return;
+    }
+    if (confirm(`Excluir este ${text.noun}? Vai para a lixeira com as atividades e notas, de onde pode ser restaurado.`)) {
+      if (await run(() => call("cards.delete", { id: cardId }))) onClose();
+    }
+  }
 
   useEffect(() => {
     void call("cards.counts", { id: cardId })
@@ -296,9 +317,7 @@ export function CardDetail({
         <TaButton
           variant="ghost"
           startIcon={<Trash2 size={15} />}
-          onClick={() => {
-            if (confirm(`Excluir este ${text.noun}? Vai para a lixeira com as atividades e notas, de onde pode ser restaurado.`)) void run(() => call("cards.delete", { id: cardId })).then(onClose);
-          }}
+          onClick={() => void requestDelete()}
         >
           Excluir
         </TaButton>
@@ -671,6 +690,23 @@ export function CardDetail({
         />
       )}
       {docOpen && <DocumentViewer documentId={docOpen} onClose={() => setDocOpen(null)} />}
+      {deleteBlock && (
+        <DeleteBlockedDialog
+          items={deleteBlock.blocked.map((b) => ({ ...b, title: card.title, archived: !!card.archived_at }))}
+          freeCount={0}
+          offlineReason={deleteBlock.offlineReason}
+          onClose={() => setDeleteBlock(null)}
+          onOpenFinance={
+            gfActive
+              ? () => {
+                  setDeleteBlock(null);
+                  setTab("financeiro");
+                }
+              : undefined
+          }
+          onArchive={() => void run(() => call("cards.archive", { id: cardId, archived: true })).then(() => setDeleteBlock(null))}
+        />
+      )}
 
       <ItemsEditor
         open={itemsOpen}

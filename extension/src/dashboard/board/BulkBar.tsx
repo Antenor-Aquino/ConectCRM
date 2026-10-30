@@ -42,6 +42,8 @@ import { RemindersEditor } from "../ui/RemindersEditor";
 import { loadNotifySettings, type ReminderRule } from "../../lib/notify/settings";
 import { createPersonQuick, searchPersons } from "../cards/searchers";
 import { StagePill } from "../ui/StageSelect";
+import { DeleteBlockedDialog } from "../cards/DeleteBlockedDialog";
+import { checkCardsForDelete, type DeleteCheck } from "../../lib/finance/deleteGuard";
 
 type Dialog = "pipeline" | "lost" | "addTags" | "removeTags" | "field" | "contact" | "activity" | null;
 
@@ -67,6 +69,7 @@ export function BulkBar({
   const [menu, setMenu] = useState<"stage" | "owner" | "more" | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [busy, setBusy] = useState(false);
+  const [blocked, setBlocked] = useState<DeleteCheck | null>(null);
   const all = useMemo(() => columns.flatMap((c) => c.cards.map((card) => ({ card, stage: c }))), [columns]);
   const chosen = all.filter((x) => selected.includes(x.card.id));
   const n = chosen.length;
@@ -76,11 +79,12 @@ export function BulkBar({
   const anyClosed = chosen.some((x) => x.card.status !== "open");
 
   /** Executa e avisa: "3 negócios movidos" (+ os que falharam). */
-  async function apply(action: BulkAction, done: string) {
+  async function apply(action: BulkAction, done: string, ids: string[] = selected) {
     setBusy(true);
     try {
-      const r = await call("cards.bulk", { ids: selected, action });
+      const r = await call("cards.bulk", { ids, action });
       setDialog(null);
+      setBlocked(null);
       setMenu(null);
       // "movidos" → "movido" quando é um só.
       const verb = r.done === 1 ? done.replace(/^(\S+)os\b/u, "$1o") : done;
@@ -90,6 +94,25 @@ export function BulkBar({
     } finally {
       setBusy(false);
     }
+  }
+
+  /** Cartão com financeiro não se exclui (só arquiva): confere ao vivo e separa os bloqueados. */
+  async function requestDelete() {
+    setMenu(null);
+    setBusy(true);
+    try {
+      const check = await checkCardsForDelete(selected);
+      if (check.blocked.length) {
+        setBlocked(check);
+        return;
+      }
+    } catch (e) {
+      onDone("", [{ id: "", title: "", message: errorText(e) }]);
+      return;
+    } finally {
+      setBusy(false);
+    }
+    if (confirm(`Excluir ${n} ${plural}? Vão para a lixeira (com as atividades e notas), de onde podem ser restaurados.`)) void apply({ type: "delete" }, "excluídos");
   }
 
   function exportExcel() {
@@ -230,7 +253,7 @@ export function BulkBar({
           <button
             type="button"
             className={cn(item, "text-error-600")}
-            onClick={() => confirm(`Excluir ${n} ${plural}? Vão para a lixeira (com as atividades e notas), de onde podem ser restaurados.`) && void apply({ type: "delete" }, "excluídos")}
+            onClick={() => void requestDelete()}
           >
             <Trash2 size={15} /> Excluir
           </button>
@@ -241,6 +264,29 @@ export function BulkBar({
         {formatCents(chosen.reduce((a, x) => a + x.card.value_cents, 0))} no total{user.role !== "admin" ? " · só os cartões que você pode editar" : ""}
       </span>
 
+      {blocked && (
+        <DeleteBlockedDialog
+          items={blocked.blocked.map((b) => {
+            const c = all.find((x) => x.card.id === b.id)?.card;
+            return { ...b, title: c?.title ?? b.id, archived: !!c?.archived_at };
+          })}
+          freeCount={blocked.free.length}
+          offlineReason={blocked.offlineReason}
+          busy={busy}
+          onClose={() => setBlocked(null)}
+          onArchive={() =>
+            void apply(
+              { type: "archive" },
+              "arquivados",
+              blocked.blocked.filter((b) => !all.find((x) => x.card.id === b.id)?.card.archived_at).map((b) => b.id),
+            )
+          }
+          onDeleteFree={() =>
+            confirm(`Excluir ${blocked.free.length} ${blocked.free.length === 1 ? text.noun : `${text.noun}s`} sem financeiro? Vão para a lixeira.`) &&
+            void apply({ type: "delete" }, "excluídos", blocked.free)
+          }
+        />
+      )}
       {dialog === "pipeline" && (
         <PipelineDialog pipeline={pipeline} cards={chosen.map((x) => x.card)} busy={busy} onClose={() => setDialog(null)} onApply={apply} />
       )}
