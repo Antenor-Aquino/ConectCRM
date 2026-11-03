@@ -2,8 +2,17 @@
 // preenchimento das variáveis. Usado pelo banco (texto que sai), pelo
 // formulário da atividade (prévia) e por Configurações (modelo padrão).
 
-export const CONTACT_TEMPLATE_DEFAULT = [
+/** Saudação do modelo padrão até a 0.2.76, quando {nome} era o primeiro nome. */
+export const CONTACT_TEMPLATE_DEFAULT_V1 = [
   "Olá, {nome}! 👋",
+  "Passando para lembrar da nossa conversa {quando} às {hora}.",
+  "🔗 {link}",
+  "Se surgir algum imprevisto, é só me avisar por aqui. Até já!",
+  "{meu_nome} · {minha_empresa}",
+].join("\n");
+
+export const CONTACT_TEMPLATE_DEFAULT = [
+  "Olá, {primeiro_nome}! 👋",
   "Passando para lembrar da nossa conversa {quando} às {hora}.",
   "🔗 {link}",
   "Se surgir algum imprevisto, é só me avisar por aqui. Até já!",
@@ -14,8 +23,8 @@ export const CONTACT_MINUTES_DEFAULT = 60;
 export const CONTACT_MINUTES_OPTIONS = [15, 30, 60, 120, 1440];
 
 export const CONTACT_VARIABLES: { key: string; label: string; example: string }[] = [
-  { key: "nome", label: "Primeiro nome do contato", example: "Maria" },
-  { key: "nome_completo", label: "Nome completo do contato", example: "Maria José da Silva" },
+  { key: "primeiro_nome", label: "Primeiro nome do contato", example: "Maria" },
+  { key: "nome", label: "Nome completo do contato", example: "Maria José da Silva" },
   { key: "quando", label: "hoje / amanhã / na terça, 28/10", example: "hoje" },
   { key: "hora", label: "Hora do início", example: "10:00" },
   { key: "data", label: "Data do início", example: "28/10/2026" },
@@ -58,7 +67,9 @@ export function renderContactMessage(template: string, v: ContactVars, now = new
   if (!v.company?.trim()) t = t.replace(/(?:\s+(?:da|de|do)\s+|\s*[·•\-–—|,]\s*)?\{minha_empresa\}/gi, "");
   const first = v.personName.trim().split(/\s+/)[0] ?? "";
   const values: Record<string, string> = {
-    nome: first,
+    primeiro_nome: first,
+    nome: v.personName.trim(),
+    // Até a 0.2.76: {nome_completo} (hoje {nome}). Continua valendo nos modelos antigos.
     nome_completo: v.personName.trim(),
     quando: whenText(v.start, now),
     hora: `${pad(v.start.getHours())}:${pad(v.start.getMinutes())}`,

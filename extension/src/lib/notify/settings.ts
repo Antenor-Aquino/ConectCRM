@@ -3,7 +3,7 @@
 // para o backup. Cada usuário tem as suas; quem envia os e-mails é a conta
 // Google/Microsoft conectada neste computador.
 
-import { CONTACT_MINUTES_DEFAULT, CONTACT_TEMPLATE_DEFAULT } from "./contactMessage";
+import { CONTACT_MINUTES_DEFAULT, CONTACT_TEMPLATE_DEFAULT, CONTACT_TEMPLATE_DEFAULT_V1 } from "./contactMessage";
 
 export type Channel = "chrome" | "email" | "whatsapp";
 export const CHANNELS: Channel[] = ["chrome", "email", "whatsapp"];
@@ -52,6 +52,11 @@ export const DEFAULT_NOTIFY: NotifySettings = {
   contact: { template: CONTACT_TEMPLATE_DEFAULT, minutes: CONTACT_MINUTES_DEFAULT, senderId: null },
 };
 
+/** Modelo salvo igual ao padrão antigo ({nome} era o primeiro nome): vira o padrão novo, com {primeiro_nome}. */
+function withContactDefaults(c: NotifySettings["contact"]): NotifySettings["contact"] {
+  return c.template === CONTACT_TEMPLATE_DEFAULT_V1 ? { ...c, template: CONTACT_TEMPLATE_DEFAULT } : c;
+}
+
 /** Completa preferências salvas por versões anteriores. */
 export function withDefaults(s: Partial<NotifySettings> | undefined): NotifySettings {
   return {
@@ -63,7 +68,7 @@ export function withDefaults(s: Partial<NotifySettings> | undefined): NotifySett
     digest: { ...DEFAULT_NOTIFY.digest, ...s?.digest },
     overdue: { ...DEFAULT_NOTIFY.overdue, ...s?.overdue },
     quiet: { ...DEFAULT_NOTIFY.quiet, ...s?.quiet },
-    contact: { ...DEFAULT_NOTIFY.contact, ...s?.contact },
+    contact: withContactDefaults({ ...DEFAULT_NOTIFY.contact, ...s?.contact }),
     defaults: s?.defaults ?? DEFAULT_NOTIFY.defaults,
   };
 }
