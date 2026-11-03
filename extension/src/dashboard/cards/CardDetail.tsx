@@ -52,6 +52,7 @@ import { DocumentsPanel } from "../documents/DocumentsPanel";
 import { LinkedTextarea } from "../ui/LinkedTextarea";
 import { NotesPanel } from "../ui/NotesPanel";
 import { TaskModal, type TaskRequest } from "../tasks/TaskModal";
+import { ScopeDialog } from "../tasks/RecurrenceEditor";
 import { DocumentViewer } from "../documents/DocumentViewer";
 import { ActivityIcon } from "../../lib/activityIcons";
 import { taskTiming } from "../../lib/taskTiming";
@@ -884,6 +885,8 @@ function Shell({
 function TasksTab({ cardId, onChanged }: { cardId: string; onChanged: () => void }) {
   const [tasks, setTasks] = useState<ActivityListItem[]>([]);
   const [modal, setModal] = useState<TaskRequest | null>(null);
+  /** Atividade recorrente a excluir: pergunta só esta / as próximas / toda a série. */
+  const [askDelete, setAskDelete] = useState<string | null>(null);
   const load = useCallback(() => call("activities.list", { dealId: cardId }).then(setTasks), [cardId]);
   useEffect(() => {
     void load();
@@ -928,6 +931,33 @@ function TasksTab({ cardId, onChanged }: { cardId: string; onChanged: () => void
                   {t.owner_name && ` · ${t.owner_name}`}
                 </p>
               </button>
+              <span className="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  title="Duplicar: abre uma atividade nova igual a esta, para você ajustar"
+                  aria-label="Duplicar"
+                  data-task-duplicate={t.id}
+                  onClick={() => setModal({ copyFrom: t.id, dealId: cardId })}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-brand-600 dark:hover:bg-white/5"
+                >
+                  <Copy size={16} />
+                </button>
+                <button
+                  type="button"
+                  title="Excluir (vai para a lixeira, de onde pode ser restaurada)"
+                  aria-label="Excluir"
+                  data-task-delete={t.id}
+                  onClick={async () => {
+                    if (t.series_id) return setAskDelete(t.id);
+                    if (!confirm("Excluir esta atividade? Vai para a lixeira, de onde pode ser restaurado.")) return;
+                    await call("activities.delete", { id: t.id });
+                    await after();
+                  }}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-error-50 hover:text-error-600 dark:hover:bg-error-500/10"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </span>
             </li>
           );
         })}
@@ -939,6 +969,18 @@ function TasksTab({ cardId, onChanged }: { cardId: string; onChanged: () => void
           onClose={() => setModal(null)}
           onSaved={async () => {
             setModal(null);
+            await after();
+          }}
+        />
+      )}
+      {askDelete && (
+        <ScopeDialog
+          action="delete"
+          onClose={() => setAskDelete(null)}
+          onChoose={async (scope) => {
+            const id = askDelete;
+            setAskDelete(null);
+            await call("activities.delete", { id, scope });
             await after();
           }}
         />

@@ -144,3 +144,19 @@ contando da conclusão, na hora do início. A frase da regra aparece embaixo
 - Atividade comum que passa a repetir vira a 1ª ocorrência da série.
 - Ícone ↻ nas listas (atividades, cartão, contato/organização). Em reuniões
   recorrentes o evento não é criado no Google Agenda/Outlook.
+
+## Duplicar e excluir pela lista (0.2.75)
+
+- **Duplicar** abre uma atividade **nova** ("Nova atividade (cópia)") preenchida
+  com tudo o que está salvo na origem: nome, tipo, responsável, início,
+  finalização, duração, descrição, lembretes, tags, campos personalizados,
+  convidados, link da reunião, vínculo (cartão, ou contato e organização) e o
+  lembrete para o contato por WhatsApp (como novo, a enviar). O usuário ajusta
+  o que quiser e salva; nada é gravado antes disso.
+  - Não vão junto: a recorrência (a cópia é avulsa; dá para ligar em Repetir),
+    os anexos, a situação concluída e o histórico de avisos enviados.
+  - Onde: na lista de atividades do cartão (ícone ao lado da lixeira) e no
+    rodapé da janela "Editar atividade" (a cópia parte do que está salvo).
+- **Lixeira** na lista de atividades do cartão: pede confirmação e manda para a
+  lixeira, com o aviso "Restaurar / Ver lixeira" (spec 11). Atividade
+  recorrente pergunta o alcance (só esta, esta e as próximas, toda a série).
