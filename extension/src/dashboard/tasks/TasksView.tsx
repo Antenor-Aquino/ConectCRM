@@ -14,6 +14,7 @@ import { taskTiming } from "../../lib/taskTiming";
 import { useSession } from "../session";
 import { Avatar } from "../ui/Avatar";
 import { TaskModal, type TaskRequest } from "./TaskModal";
+import { TaskRowActions } from "./TaskRowActions";
 import { errorText } from "../../lib/errors";
 
 type Period = "hoje" | "amanha" | "semana" | "mes" | "todas" | "personalizado" | "atrasadas" | "proximos7";
@@ -266,6 +267,7 @@ export function TasksView({
           </span>
         </div>
         {a.owner_name && <Avatar name={a.owner_name} size={24} title={`Responsável: ${a.owner_name}`} />}
+        <TaskRowActions task={a} onDuplicate={() => setModal({ copyFrom: a.id })} onDeleted={() => setReload((n) => n + 1)} />
       </li>
     );
   };
