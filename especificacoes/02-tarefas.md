@@ -30,7 +30,7 @@ Modal largo em **duas colunas**, botão ✕ no canto.
 | **Tipo** | Lista com ícone e busca (com botão de limpar). Padrão: **Tarefa** |
 | **Responsável** | Avatar + nome. O usuário atual aparece como **"Antenor (Você)"**; os demais com o tipo: "Maria (vendedor)". Padrão: o usuário atual |
 | **Início** | Texto por extenso: **"16 de outubro às 18:25"**. Padrão: o momento do cadastro; pode ser alterado e pode ser futuro. Abre o painel da seção 2 |
-| **Finalização** (opcional) | Data/hora de entrega. Vazio = "Sem finalização (opcional)"; ao abrir, sugere o dia seguinte ao início às 18:00. Nunca antes do início. Sem finalização, fica atrasada quando o início é de um dia que já passou |
+| **Finalização** (opcional) | Data/hora de entrega. Vazio = "Sem finalização (opcional)"; ao clicar, sugere o mesmo dia, 5 min depois do início (0.2.80; perto da meia-noite, 23:59). Nunca antes do início. Sem finalização, fica atrasada quando o início é de um dia que já passou |
 | **Vinculado a** (opcional) | Busca um **negócio, ticket ou etapa de projeto**. Pode ficar vazio (atividade avulsa). Com vínculo, a atividade herda contato e organização do cartão |
 | **Tags** | Tags próprias de atividade (Configurações → Tags → Atividade) |
 | **Campos personalizados** | Os criados em Configurações → Campos personalizados → Atividade |
