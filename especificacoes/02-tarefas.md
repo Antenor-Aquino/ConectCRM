@@ -163,7 +163,7 @@ contando da conclusão, na hora do início. A frase da regra aparece embaixo
   lixeira, com o aviso "Restaurar / Ver lixeira" (spec 11). Atividade
   recorrente pergunta o alcance (só esta, esta e as próximas, toda a série).
 
-## Vincular a atividade a um contato (0.2.78)
+## Vincular a atividade a um contato (0.2.78; cadastro pelo nome: 0.2.79)
 
 - **Vinculado a** busca cartões (negócio, ticket, etapa de projeto) **e
   contatos**; cada item mostra se é cartão ou "Contato".
@@ -175,3 +175,10 @@ contando da conclusão, na hora do início. A frase da regra aparece embaixo
   organização do cartão.
 - Aberta na ficha do contato, já vem vinculada a ele. Na edição, a atividade
   sem cartão mostra o contato no campo; tirar o vínculo tira o contato.
+- **Completar o cadastro sem sair da atividade (0.2.79):** o nome do contato
+  no campo é um link que abre "Editar contato" por cima da atividade (celular,
+  e-mail, organização…). Contato sem celular: o lembrete pelo WhatsApp mostra
+  "Cadastrar o celular de …", que abre o mesmo cadastro. Ao salvar, os dados
+  já valem na atividade aberta: o nome no campo, o celular em "Para" (o
+  lembrete fica disponível) e o e-mail como convidado da reunião.
+

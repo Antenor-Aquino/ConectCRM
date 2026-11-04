@@ -15,6 +15,7 @@ import { useSession } from "../session";
 import { Avatar } from "../ui/Avatar";
 import { Combobox, type ComboItem } from "../ui/Combobox";
 import { createPersonQuick, searchPersons } from "../cards/searchers";
+import { PersonFormModal } from "../contacts/PersonFormModal";
 import { CustomFieldsForm } from "../ui/CustomFieldsForm";
 import { ErrorText, Field } from "../ui/form";
 import { Popover } from "../ui/Popover";
@@ -215,6 +216,9 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
   });
   const [contactCtx, setContactCtx] = useState<Awaited<ReturnType<typeof call<"contactMessages.context">>> | null>(null);
   const [autoSenders, setAutoSenders] = useState<WhatsAppSender[]>([]);
+  // Cadastro do contato aberto daqui (completar celular, e-mail…); ao salvar, os dados entram na atividade.
+  const [editPersonId, setEditPersonId] = useState<string | null>(null);
+  const [contactRev, setContactRev] = useState(0);
 
   useEffect(() => {
     void call("activityTypes.list", {}).then((list) => {
@@ -337,7 +341,7 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
         setContact((x) => (x.personId && c.recipients.some((r) => r.id === x.personId) ? x : { ...x, personId: c.recipients.find((r) => r.phone)?.id ?? c.recipients[0]?.id ?? "" }));
       }
     });
-  }, [loaded, link?.id, personForContact, sourceId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loaded, link?.id, personForContact, sourceId, contactRev]); // eslint-disable-line react-hooks/exhaustive-deps
   const contactSent = contactCtx?.current?.status === "sent";
   const recipient = contactCtx?.recipients.find((r) => r.id === contact.personId) ?? null;
   const withPhone = contactCtx?.recipients.filter((r) => r.phone) ?? [];
@@ -469,12 +473,29 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
     return <TaskModal request={{ copyFrom: request.id }} onClose={onClose} onSaved={onSaved} />;
   }
 
+  const personEditor = editPersonId && (
+    <PersonFormModal
+      personId={editPersonId}
+      onClose={() => setEditPersonId(null)}
+      onSaved={async (id) => {
+        setEditPersonId(null);
+        // Nome e celular atualizados já valem aqui: no campo e no lembrete pelo WhatsApp.
+        if (id === linkPersonId) {
+          const p = await call("persons.get", { id });
+          if (p) setLink(personItem(p.id, p.name));
+        }
+        setContactRev((n) => n + 1);
+      }}
+    />
+  );
+
   if (uploadAfter) {
     return <UploadModal files={uploadAfter.files} context={{ type: "activity", id: uploadAfter.taskId }} onClose={onSaved} onSaved={onSaved} />;
   }
 
   return (
     <TaModal isOpen onClose={onClose} title={request.id ? (series ? "Editar atividade recorrente" : "Editar atividade") : copying ? "Nova atividade (cópia)" : "Nova atividade"} width="max-w-3xl">
+      {personEditor}
       {askScope && (
         <ScopeDialog
           action={askScope}
@@ -737,6 +758,16 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
                       </span>
                     </span>
                   </label>
+                  {!contactSent && !withPhone.length && !!contactCtx?.recipients.length && (
+                    <button
+                      type="button"
+                      data-contact-add-phone
+                      onClick={() => setEditPersonId(contactCtx.recipients[0]!.id)}
+                      className="mt-1.5 ml-12 text-theme-xs font-medium text-brand-600 hover:underline"
+                    >
+                      Cadastrar o celular de {contactCtx.recipients[0]!.name.split(/\s+/)[0]}
+                    </button>
+                  )}
                 </div>
               </Field>
               <Field label="Finalização" hint="Opcional. Sem finalização, a atividade nunca fica atrasada.">
@@ -750,6 +781,8 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
                   placeholder="Buscar negócio, ticket, projeto ou contato"
                   onCreate={createLinkPerson}
                   createLabel="Cadastrar contato"
+                  onOpenValue={linkPersonId ? () => setEditPersonId(linkPersonId) : undefined}
+                  openTitle="Abrir o cadastro do contato (celular, e-mail…)"
                 />
               </Field>
               <Field label="Tags">
@@ -834,7 +867,8 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
               )}
               {link && (
                 <p className="mt-1 flex items-center gap-1 text-theme-xs text-gray-500">
-                  <Link2 size={12} /> {linkDealId ? "Contato e organização vêm do cartão vinculado." : "Vinculada ao contato (e à organização principal dele)."}
+                  <Link2 size={12} />{" "}
+                  {linkDealId ? "Contato e organização vêm do cartão vinculado." : "Vinculada ao contato (e à organização principal dele). Clique no nome para completar o cadastro."}
                 </p>
               )}
             </div>
