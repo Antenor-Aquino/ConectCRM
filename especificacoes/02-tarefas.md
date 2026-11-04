@@ -162,3 +162,16 @@ contando da conclusão, na hora do início. A frase da regra aparece embaixo
 - **Lixeira** nas mesmas listas: pede confirmação e manda para a
   lixeira, com o aviso "Restaurar / Ver lixeira" (spec 11). Atividade
   recorrente pergunta o alcance (só esta, esta e as próximas, toda a série).
+
+## Vincular a atividade a um contato (0.2.78)
+
+- **Vinculado a** busca cartões (negócio, ticket, etapa de projeto) **e
+  contatos**; cada item mostra se é cartão ou "Contato".
+- Contato que não existe: **Cadastrar contato "…"** cria na hora (com o aviso
+  de nome parecido já cadastrado) e já deixa a atividade vinculada a ele.
+- Vinculada a um contato, a atividade grava o contato e a organização
+  principal dele (aparece nas fichas dos dois); o lembrete pelo WhatsApp usa
+  esse contato. Vinculada a um cartão, continua herdando contato e
+  organização do cartão.
+- Aberta na ficha do contato, já vem vinculada a ele. Na edição, a atividade
+  sem cartão mostra o contato no campo; tirar o vínculo tira o contato.
