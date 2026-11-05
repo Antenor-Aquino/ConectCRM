@@ -11,6 +11,7 @@ import type { DataTable } from "../../db/repo";
 import { formatCents, formatDateTime } from "../../lib/format";
 import { taskTiming } from "../../lib/taskTiming";
 import { useSession } from "../session";
+import { TaskRowActions } from "../tasks/TaskRowActions";
 import { TaskModal, type TaskRequest } from "../tasks/TaskModal";
 
 export function DrawerShell({ children, onClose }: { children: ReactNode; onClose: () => void }) {
@@ -157,6 +158,7 @@ export function RelatedTasks({ filter }: { filter: { personId?: string; organiza
                 {t.deal_title && ` · ${t.deal_title}`}
               </p>
             </button>
+            <TaskRowActions task={t} onDuplicate={() => setModal({ copyFrom: t.id, ...filter })} onDeleted={() => void load()} />
           </li>
         ))}
       </ul>

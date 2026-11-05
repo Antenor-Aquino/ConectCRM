@@ -3,7 +3,7 @@
 // (duração/lembrete), Finalização (opcional), Vinculado a e Tags.
 // Tipos de reunião podem criar o evento no Google Agenda / Outlook.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, Circle, Link2, MessageCircle, Paperclip, Trash2, Video, X } from "lucide-react";
+import { Check, ChevronDown, Circle, Copy, Link2, MessageCircle, Paperclip, Trash2, Video, X } from "lucide-react";
 import { TaButton, TaInput, TaModal, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { Activity, ActivityType } from "../../db/activities";
@@ -45,6 +45,8 @@ export interface TaskRequest {
   organizationId?: string;
   /** Já abre como reunião (popup do WhatsApp → "Agendar reunião"). */
   meeting?: boolean;
+  /** Duplicar: abre uma atividade nova preenchida com tudo desta (sem repetir, sem anexos). */
+  copyFrom?: string;
 }
 
 async function searchCards(text: string): Promise<ComboItem[]> {
@@ -131,7 +133,14 @@ function GuestsInput({ value, onChange }: { value: string[]; onChange: (v: strin
 export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest; onClose: () => void; onSaved: () => void }) {
   const { user, users, label } = useSession();
   const [types, setTypes] = useState<ActivityType[]>([]);
-  const [loaded, setLoaded] = useState(!request.id);
+  // Duplicar: a atividade de origem (o que está salvo nela).
+  const sourceId = request.id ?? request.copyFrom;
+  const copying = !request.id && !!request.copyFrom;
+  const [loaded, setLoaded] = useState(!sourceId);
+  /** Contato e organização da origem (cópia sem cartão vinculado). */
+  const [copyLinks, setCopyLinks] = useState<{ personId: string | null; organizationId: string | null }>({ personId: null, organizationId: null });
+  /** Na tela de edição: abre a cópia no lugar. */
+  const [duplicating, setDuplicating] = useState(false);
   const [existing, setExisting] = useState<Activity | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -204,20 +213,21 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
     void call("customFields.list", { entity: "activity" }).then(setFields);
     void loadNotifySettings(user.id).then((n) => {
       setNotify(activeSettings(n));
-      if (!request.id) setReminders(n.defaults);
+      if (!sourceId) setReminders(n.defaults);
       setContact((c) => (c.template ? c : { ...c, template: n.contact.template, minutesBefore: n.contact.minutes, senderId: n.contact.senderId }));
     });
     void loadSenders(user.id).then((r) => setAutoSenders(r.senders.filter((x) => x.via === "zapi" || x.via === "web")));
     if (request.dealId) {
       void call("cards.get", { id: request.dealId }).then((c) => c && setLink({ id: c.id, label: c.title }));
     }
-    if (!request.id) return;
-    void call("activities.get", { id: request.id }).then(async (a) => {
+    if (!sourceId) return;
+    void call("activities.get", { id: sourceId }).then(async (a) => {
       if (!a) return;
-      setExisting(a);
+      if (copying) setCopyLinks({ personId: a.person_id, organizationId: a.organization_id });
+      else setExisting(a);
       setTitle(a.title);
       setDescription(a.description ?? "");
-      setDone(!!a.done);
+      setDone(copying ? false : !!a.done);
       setTypeId(a.type_id);
       setOwnerId(a.owner_id);
       setWhen(new Date(a.due_at));
@@ -225,8 +235,9 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
       setTagIds(a.tagIds);
       setDuration(a.duration_min);
       setReminders(a.reminders);
-      void call("notifications.forActivity", { id: a.id }).then(setDeliveries);
-      if (a.series_id) {
+      if (!copying) void call("notifications.forActivity", { id: a.id }).then(setDeliveries);
+      // A cópia é avulsa: a recorrência da origem não vai junto (dá para ligar em Repetir).
+      if (a.series_id && !copying) {
         const s = await call("activities.series", { id: a.id });
         if (s) {
           setSeries({ id: s.id, rule: s.rule, startAt: s.startAt, index: s.index });
@@ -249,7 +260,7 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
   // Trocar o tipo troca só esse começo; nome reescrito pelo usuário não muda.
   const titlePrefix = useRef("");
   useEffect(() => {
-    if (request.id || !type) return;
+    if (sourceId || !type) return;
     const next = `${type.name} `;
     const prev = titlePrefix.current;
     setTitle((cur) => {
@@ -258,7 +269,7 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
       return cur;
     });
     titlePrefix.current = next;
-  }, [type, request.id]);
+  }, [type, sourceId]);
   const isMeeting = !!type?.is_meeting && !existing?.external_event_id;
 
   useEffect(() => {
@@ -283,11 +294,12 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
   const owner = useMemo(() => users.find((u) => u.id === ownerId), [users, ownerId]);
 
   // Quem pode receber o lembrete (contato da atividade e do cartão), empresa do funil e o lembrete salvo.
-  const personForContact = request.personId ?? existing?.person_id ?? null;
+  const personForContact = request.personId ?? existing?.person_id ?? copyLinks.personId ?? null;
   useEffect(() => {
     if (!loaded) return;
-    void call("contactMessages.context", { activityId: request.id ?? null, personId: personForContact, dealId: link?.id ?? null }).then((c) => {
-      setContactCtx(c);
+    void call("contactMessages.context", { activityId: sourceId ?? null, personId: personForContact, dealId: link?.id ?? null }).then((c) => {
+      // Cópia: o lembrete da origem vem preenchido, mas como novo (nunca "já enviado").
+      setContactCtx(copying ? { ...c, current: null } : c);
       if (c.current) {
         setContactOn(true);
         setContact({ personId: c.current.person_id, minutesBefore: c.current.minutes_before, template: c.current.template, senderId: c.current.sender_id });
@@ -295,7 +307,7 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
         setContact((x) => (x.personId && c.recipients.some((r) => r.id === x.personId) ? x : { ...x, personId: c.recipients.find((r) => r.phone)?.id ?? c.recipients[0]?.id ?? "" }));
       }
     });
-  }, [loaded, link?.id, personForContact, request.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loaded, link?.id, personForContact, sourceId]); // eslint-disable-line react-hooks/exhaustive-deps
   const contactSent = contactCtx?.current?.status === "sent";
   const recipient = contactCtx?.recipients.find((r) => r.id === contact.personId) ?? null;
   const withPhone = contactCtx?.recipients.filter((r) => r.phone) ?? [];
@@ -338,8 +350,8 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
       reminders,
       done,
       dealId: link?.id ?? null,
-      ...(request.personId && !link ? { personId: request.personId } : {}),
-      ...(request.organizationId && !link ? { organizationId: request.organizationId } : {}),
+      ...((request.personId ?? copyLinks.personId) && !link ? { personId: request.personId ?? copyLinks.personId } : {}),
+      ...((request.organizationId ?? copyLinks.organizationId) && !link ? { organizationId: request.organizationId ?? copyLinks.organizationId } : {}),
       customValues: values,
       meetingUrl: meetingUrl.trim() || null,
     };
@@ -402,12 +414,16 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
     else onSaved();
   }
 
+  if (duplicating && request.id) {
+    return <TaskModal request={{ copyFrom: request.id }} onClose={onClose} onSaved={onSaved} />;
+  }
+
   if (uploadAfter) {
     return <UploadModal files={uploadAfter.files} context={{ type: "activity", id: uploadAfter.taskId }} onClose={onSaved} onSaved={onSaved} />;
   }
 
   return (
-    <TaModal isOpen onClose={onClose} title={request.id ? (series ? "Editar atividade recorrente" : "Editar atividade") : "Nova atividade"} width="max-w-3xl">
+    <TaModal isOpen onClose={onClose} title={request.id ? (series ? "Editar atividade recorrente" : "Editar atividade") : copying ? "Nova atividade (cópia)" : "Nova atividade"} width="max-w-3xl">
       {askScope && (
         <ScopeDialog
           action={askScope}
@@ -777,6 +793,17 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
               <TaButton
                 variant="ghost"
                 className="ml-auto"
+                startIcon={<Copy size={15} />}
+                title="Abre uma atividade nova igual a esta (como está salva), para você ajustar"
+                data-task-duplicate
+                onClick={() => setDuplicating(true)}
+              >
+                Duplicar
+              </TaButton>
+            )}
+            {request.id && (
+              <TaButton
+                variant="ghost"
                 startIcon={<Trash2 size={15} />}
                 onClick={async () => {
                   if (series) return setAskScope("delete");

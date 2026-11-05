@@ -52,6 +52,7 @@ import { DocumentsPanel } from "../documents/DocumentsPanel";
 import { LinkedTextarea } from "../ui/LinkedTextarea";
 import { NotesPanel } from "../ui/NotesPanel";
 import { TaskModal, type TaskRequest } from "../tasks/TaskModal";
+import { TaskRowActions } from "../tasks/TaskRowActions";
 import { DocumentViewer } from "../documents/DocumentViewer";
 import { ActivityIcon } from "../../lib/activityIcons";
 import { taskTiming } from "../../lib/taskTiming";
@@ -928,6 +929,7 @@ function TasksTab({ cardId, onChanged }: { cardId: string; onChanged: () => void
                   {t.owner_name && ` · ${t.owner_name}`}
                 </p>
               </button>
+              <TaskRowActions task={t} onDuplicate={() => setModal({ copyFrom: t.id, dealId: cardId })} onDeleted={() => void after()} />
             </li>
           );
         })}
