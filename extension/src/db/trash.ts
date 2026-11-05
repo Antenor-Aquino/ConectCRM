@@ -62,6 +62,8 @@ export const ENTITY_LABEL: Record<string, string> = {
   document_type: "Tipo de documento",
   document_folder: "Pasta",
   document: "Documento",
+  todo_list: "Lista de tarefas",
+  todo_task: "Tarefa (To Do)",
 };
 const KIND_LABEL: Record<string, string> = { deal: "Negócio", ticket: "Ticket", project: "Projeto" };
 
@@ -150,6 +152,12 @@ export function describe(db: DatabaseSync, entity: string, id: string): { title:
       break;
     case "document_folder":
       row = r("SELECT name AS title, 'Pasta do GED' AS detail FROM document_folder WHERE id = ?");
+      break;
+    case "todo_list":
+      row = r("SELECT name AS title, 'Lista do To Do' AS detail FROM todo_list WHERE id = ?");
+      break;
+    case "todo_task":
+      row = r("SELECT t.title, 'To Do · ' || COALESCE(l.name, 'Tarefas') AS detail FROM todo_task t LEFT JOIN todo_list l ON l.id = t.list_id WHERE t.id = ?");
       break;
   }
   return { title: row?.title || ENTITY_LABEL[entity] || "Registro", detail: row?.detail ?? null };
