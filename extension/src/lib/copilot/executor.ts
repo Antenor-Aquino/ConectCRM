@@ -26,6 +26,11 @@ export const rpcExecutor: ToolExecutor = async (name, a) => {
         situacao: (["atrasadas", "hoje", "proximos_7_dias", "pendentes"] as const).find((s) => s === a.situacao),
         responsavel: str(a.responsavel),
       });
+    case "listar_todo":
+      return call("copilot.todo", {
+        situacao: (["meudia", "hoje", "atrasadas", "importantes", "pendentes"] as const).find((s) => s === a.situacao),
+        lista: str(a.lista),
+      });
     case "negocios_parados":
       return call("copilot.stale", { dias: num(a.dias), funil: str(a.funil), responsavel: str(a.responsavel) });
     case "buscar_contatos":

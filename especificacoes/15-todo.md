@@ -111,3 +111,32 @@ Em 1745 px cabem todos os itens.
 - Banco: `todo_group` e `todo_list.group_id` (migração 0029); RPC
   `todo.groupCreate/groupRename/groupDelete`, `todo.arrange`,
   `todo.taskReorder`; `todo.lists` devolve também `groups`.
+
+## Fase 5 — Integração com o CRM (0.2.88)
+
+- **Do cartão para o To Do:** botão "Adicionar ao To Do" no detalhe do
+  cartão — cria a tarefa com o nome do cartão, ligada a ele e ao contato
+  principal, no Meu Dia.
+- **Da atividade para o To Do:** "Adicionar ao To Do" no rodapé da atividade
+  — tarefa ligada à atividade (e ao cartão/contato dela), vencendo no dia da
+  atividade (no Meu Dia se for hoje). Pedir de novo não duplica.
+- **Do To Do para o CRM:** no painel da tarefa, bloco "No CRM":
+  - **Vincular a negócio ou contato** (mesma busca do "Vinculado a" das
+    atividades); o vínculo abre o cartão/contato e pode ser desfeito no X;
+  - **Criar atividade no CRM** abre o formulário de atividade já com título,
+    descrição (observações) e dia (vencimento, às 09:00), ligado ao mesmo
+    cartão/contato; ao salvar, a tarefa fica ligada à atividade
+    ("Atividade pendente/concluída" abre a atividade).
+- **Concluir junto:** concluir/reabrir a tarefa conclui/reabre a atividade
+  ligada, e o contrário também (pelo CRM, pelo aviso ou pela lista de
+  atividades). Sem acesso à atividade, só o To Do muda.
+- Linha da tarefa mostra o cartão (se o nome for diferente do título) ou o
+  contato. Tarefa que se repete leva os vínculos de cartão/contato para a
+  próxima.
+- **Copiloto:** ferramenta `listar_todo` (Meu Dia, hoje, atrasadas,
+  importantes, por lista) e ação `adicionar_todo` (botão "Pôr no To Do", com
+  vencimento ou no Meu Dia; ligada ao cartão quando aberto no cartão). No
+  panorama do dia o Copiloto inclui o Meu Dia.
+- Banco: `deal_id`, `person_id`, `activity_id` em `todo_task` (migração
+  0030); RPC `todo.fromCard`, `todo.fromActivity`, `todo.forDeal`,
+  `copilot.todo`.

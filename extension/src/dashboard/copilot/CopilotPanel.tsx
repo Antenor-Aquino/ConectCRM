@@ -6,7 +6,9 @@
 // e confirmar (DocCardProposal.tsx).
 import { gfIntegrationActive, loadGfSettings } from "../../lib/finance/gfBridge";
 import { useEffect, useRef, useState } from "react";
-import { Check, Download, ExternalLink, Mic, NotebookPen, Paperclip, Send, Sparkles, Square, SquarePen, X, ListPlus, SquarePlus } from "lucide-react";
+import { Check, Download, ExternalLink, Mic, NotebookPen, Paperclip, Send, Sparkles, Square, SquarePen, X, ListPlus, ListTodo, SquarePlus } from "lucide-react";
+import { todayYmd } from "../../lib/todo";
+import { TODO_CHANGED_EVENT } from "../todo/useTodoBadge";
 import { TaButton, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import { AI_LABELS, AI_TRANSCRIBES, aiConfigured, loadAiSettings, transcribeAudio, type AiSettings } from "../../lib/ai";
@@ -526,6 +528,8 @@ function ActionButton({ action, onOpenCard }: { action: CopilotAction; onOpenCar
       <NotebookPen size={14} />
     ) : action.tipo === "criar_cartao" ? (
       <SquarePlus size={14} />
+    ) : action.tipo === "adicionar_todo" ? (
+      <ListTodo size={14} />
     ) : (
       <ExternalLink size={14} />
     );
@@ -539,6 +543,10 @@ function ActionButton({ action, onOpenCard }: { action: CopilotAction; onOpenCar
       if (action.tipo === "criar_cartao") {
         const id = await call("cards.create", { pipelineId: action.funilId!, stageId: action.etapaId ?? undefined, title: action.titulo!, ownerId: user.id });
         setCreated(id);
+      } else if (action.tipo === "adicionar_todo") {
+        const due = action.quando && /^\d{4}-\d{2}-\d{2}/.test(action.quando) ? action.quando.slice(0, 10) : null;
+        await call("todo.taskCreate", { title: action.titulo!, dueDate: due, myDay: !due || due === todayYmd(), dealId: action.cartaoId || null });
+        window.dispatchEvent(new Event(TODO_CHANGED_EVENT));
       } else if (action.tipo === "criar_tarefa") {
         const dueAt = localToIso(action.quando);
         await call("activities.create", { title: action.titulo!, dealId: action.cartaoId, ownerId: user.id, ...(dueAt ? { dueAt } : {}) });
@@ -571,6 +579,8 @@ function ActionButton({ action, onOpenCard }: { action: CopilotAction; onOpenCar
               ? `Cartão criado: ${action.titulo} — clique para abrir`
               : action.tipo === "criar_tarefa"
                 ? `Atividade criada: ${action.titulo}`
+                : action.tipo === "adicionar_todo"
+                  ? `No To Do: ${action.titulo}`
                 : "Nota adicionada ao cartão"
             : action.rotulo}
         </span>

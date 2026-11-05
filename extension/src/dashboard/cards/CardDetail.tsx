@@ -23,7 +23,8 @@ import {
   Trash2,
   Trophy,
   X,
-  XCircle, Repeat } from "lucide-react";
+  XCircle, Repeat, ListTodo } from "lucide-react";
+import { TODO_CHANGED_EVENT } from "../todo/useTodoBadge";
 import { TaBadge, TaButton, TaInput, TaModal, TaTextarea, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { ActivityListItem } from "../../db/activities";
@@ -281,6 +282,7 @@ export function CardDetail({
         >
           Perguntar ao Copiloto
         </TaButton>
+        <AddToTodo cardId={cardId} />
         {onGoToCard && (
           <TaButton variant="ghost" startIcon={<Copy size={15} />} onClick={() => setPipelineAction("clone")}>
             Clonar
@@ -1061,5 +1063,30 @@ function WinFinanceDialog({
         </TaButton>
       </div>
     </TaModal>
+  );
+}
+
+/** "Adicionar ao To Do": tarefa pessoal ligada a este cartão (e ao contato), no Meu Dia. */
+function AddToTodo({ cardId }: { cardId: string }) {
+  const [state, setState] = useState<"idle" | "done" | string>("idle");
+  return (
+    <TaButton
+      variant="ghost"
+      startIcon={state === "done" ? <Check size={15} /> : <ListTodo size={15} />}
+      title={state === "idle" ? "Põe este cartão na sua lista do To Do (Meu Dia)" : state === "done" ? "Está no Meu Dia do To Do" : state}
+      data-card-to-todo
+      disabled={state === "done"}
+      onClick={async () => {
+        try {
+          await call("todo.fromCard", { id: cardId });
+          setState("done");
+          window.dispatchEvent(new Event(TODO_CHANGED_EVENT));
+        } catch (e) {
+          setState(e instanceof Error ? e.message : String(e));
+        }
+      }}
+    >
+      {state === "done" ? "No To Do" : "Adicionar ao To Do"}
+    </TaButton>
   );
 }

@@ -599,7 +599,29 @@ export const methods = {
   "todo.snooze": (db: DatabaseSync, ctx: DbContext, p: Id & { minutes?: number }) => todo.snoozeTodoReminder(db, ctx, p.id, p.minutes),
   "todo.badge": (db: DatabaseSync, ctx: DbContext) => todo.todoBadge(db, ctx),
   "todo.taskCreate": (db: DatabaseSync, ctx: DbContext, p: todo.TodoTaskInput) => todo.createTodoTask(db, ctx, p),
-  "todo.taskUpdate": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Partial<todo.TodoTaskInput> & { done?: boolean } }) => todo.updateTodoTask(db, ctx, p.id, p.patch),
+  "todo.taskUpdate": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Partial<todo.TodoTaskInput> & { done?: boolean } }) => {
+    const next = todo.updateTodoTask(db, ctx, p.id, p.patch);
+    // Tarefa ligada a uma atividade do CRM: concluir/reabrir aqui vale lá também.
+    if (p.patch.done !== undefined) {
+      const t = todo.getTodoTask(db, ctx, p.id);
+      if (t?.activity_id && t.activity_done !== null && !!t.activity_done !== p.patch.done) {
+        try {
+          assertActivityAccess(db, ctx, t.activity_id);
+          activities.setActivityDone(db, ctx, t.activity_id, p.patch.done);
+          if (p.patch.done) series.afterOccurrenceDone(db, ctx, t.activity_id);
+        } catch {
+          // Sem acesso à atividade (de outro usuário): só o To Do muda.
+        }
+      }
+    }
+    return next;
+  },
+  "todo.fromActivity": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    assertActivityAccess(db, ctx, p.id);
+    return todo.todoFromActivity(db, ctx, p.id);
+  },
+  "todo.fromCard": (db: DatabaseSync, ctx: DbContext, p: Id & { title?: string }) => todo.todoFromCard(db, ctx, p.id, p.title),
+  "todo.forDeal": (db: DatabaseSync, ctx: DbContext, p: Id) => todo.todoForDeal(db, ctx, p.id),
   "todo.taskDelete": (db: DatabaseSync, ctx: DbContext, p: Id) => todo.deleteTodoTask(db, ctx, p.id),
   "todo.stepAdd": (db: DatabaseSync, ctx: DbContext, p: { taskId: string; title: string }) => todo.addTodoStep(db, ctx, p.taskId, p.title),
   "todo.stepUpdate": (db: DatabaseSync, ctx: DbContext, p: Id & { title?: string; done?: boolean }) => todo.updateTodoStep(db, ctx, p.id, p),
@@ -699,10 +721,12 @@ export const methods = {
       series.makeRecurring(db, ctx, p.id, p.recurrence);
     } else activities.updateActivity(db, ctx, p.id, p.patch);
     if (p.patch.done) series.afterOccurrenceDone(db, ctx, p.id);
+    if (p.patch.done !== undefined) todo.syncTodoWithActivity(db, ctx, p.id, p.patch.done);
   },
   "activities.setDone": (db: DatabaseSync, ctx: DbContext, p: Id & { done: boolean }) => {
     assertActivityAccess(db, ctx, p.id);
     activities.setActivityDone(db, ctx, p.id, p.done);
+    todo.syncTodoWithActivity(db, ctx, p.id, p.done);
     if (p.done) series.afterOccurrenceDone(db, ctx, p.id);
   },
   /** Ocorrência de série: `scope` "this" (padrão), "following" ou "all". */
@@ -755,6 +779,7 @@ export const methods = {
   "copilot.finance": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof copilot.financeSummaryForCopilot>[2]) => copilot.financeSummaryForCopilot(db, viewer(db, ctx), p),
   "copilot.financeAlerts": (db: DatabaseSync, ctx: DbContext, p: { responsavel?: string }) => copilot.financeAlertsForCopilot(db, viewer(db, ctx), p),
   "copilot.stale": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof copilot.staleDeals>[2]) => copilot.staleDeals(db, viewer(db, ctx), p),
+  "copilot.todo": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof todo.todoForCopilot>[2]) => todo.todoForCopilot(db, ctx, p),
   "copilot.tasks": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof copilot.tasksForCopilot>[2]) => copilot.tasksForCopilot(db, viewer(db, ctx), p),
   "copilot.contacts": (db: DatabaseSync, ctx: DbContext, p: { texto: string }) => copilot.contactsForCopilot(db, viewer(db, ctx), p.texto),
   /** GED para o Copiloto: busca por texto e/ou pasta (com subpastas); sem nada, as pastas. */

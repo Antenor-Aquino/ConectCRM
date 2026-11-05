@@ -67,7 +67,8 @@ export function buildSystemPrompt(c: CopilotContext): string {
       "Em 'sugestoes', 2 a 4 próximos pedidos que façam sentido (regra de SUGESTÕES abaixo).",
     "AÇÕES: em 'acoes', sugira até 3 ações concretas que o usuário aplica com um clique, só com ids que vieram das ferramentas nesta pergunta: " +
       "criar_tarefa (cartaoId, titulo e quando em AAAA-MM-DDTHH:MM, em horário comercial e no futuro), adicionar_nota (cartaoId e texto), abrir_cartao (cartaoId) " +
-      "ou criar_cartao (titulo, funilId e etapaId de estrutura_do_crm; cartaoId vazio). " +
+      "ou criar_cartao (titulo, funilId e etapaId de estrutura_do_crm; cartaoId vazio) " +
+      "ou adicionar_todo (titulo; quando = vencimento AAAA-MM-DD ou null para o Meu Dia de hoje; cartaoId do cartão ligado ou vazio). " +
       "Você NÃO grava nada no CRM: nunca diga que criou; diga que o usuário confirma pelo botão. Sem ação útil, acoes = [].",
     "CRIAR CARTÃO: quando o usuário pedir para criar um negócio/ticket/etapa (ex.: 'crie no funil Casa o cartão Conserto Gaveta Miguel'), NÃO pergunte se ele quer: " +
       "consulte estrutura_do_crm (funil e etapa pelo nome; sem etapa informada, a primeira), confira com buscar_cartoes se já existe cartão com nome igual ou parecido " +
@@ -79,6 +80,9 @@ export function buildSystemPrompt(c: CopilotContext): string {
       "(ex.: 'Crie o cartão Conserto Gaveta Miguel no funil Casa', 'Liste minhas atividades atrasadas'). Nunca 'Você quer…?'.",
     "CRIAR TAREFA OU NOTA: pedido de atividade ou tarefa (mesmo ditado como 'criou/cria a tarefa X para dia 18 às 8 horas'; tarefa é um tipo de atividade) é ordem: entregue criar_tarefa pronta, com titulo " +
       "e quando em AAAA-MM-DDTHH:MM (ano atual; se a data já passou, o próximo ano; sem hora, 09:00). Nota: adicionar_nota com o texto pedido. Não liste atividades no lugar de criar.",
+    "TO DO: o To Do é a lista pessoal de afazeres do usuário (separada das atividades do CRM). Pedidos com 'To Do', 'meu dia', 'lista pessoal', 'me lembre de' " +
+      "ou 'anote para eu fazer' usam listar_todo para consultar e a ação adicionar_todo para incluir (pronta, sem perguntar). 'Atividade', 'tarefa no cartão', " +
+      "reunião ou ligação com cliente continuam sendo criar_tarefa. No PANORAMA do dia, inclua também listar_todo (meudia).",
     c.cardId
       ? `CONTEXTO DO CARTÃO: o Copiloto foi aberto no cartão ${c.cardTitle ? `"${c.cardTitle}" ` : ""}(id ${c.cardId}). Tudo nesta conversa se refere a ESTE cartão, ` +
         "a não ser que o usuário cite outro cartão, contato, organização ou funil: 'crie uma atividade', 'adicione uma nota', 'resuma', 'próximo passo', 'deste negócio' " +

@@ -4,14 +4,16 @@
 // tarefas abertas e "Concluída" — no Meu Dia, também as atividades do CRM de
 // hoje; direita: detalhes da tarefa ou as sugestões do Meu Dia.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, Bell, CalendarDays, Check, ChevronDown, Folder, FolderPlus, GripVertical, Home, Infinity as InfinityIcon, Lightbulb, ListTodo, MoreHorizontal, NotebookPen, Plus, Repeat, Search, Star, Sun, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Bell, Briefcase, CheckSquare, User, CalendarDays, Check, ChevronDown, Folder, FolderPlus, GripVertical, Home, Infinity as InfinityIcon, Lightbulb, ListTodo, MoreHorizontal, NotebookPen, Plus, Repeat, Search, Star, Sun, Trash2, X } from "lucide-react";
 import { TaInput, cn } from "@tailadmin";
 import { call, DATA_CHANGED_EVENT } from "../../rpc/client";
 import type { TodoArrangeItem, TodoGroup, TodoList, TodoSmart, TodoStep, TodoSuggestions, TodoTask, TodoView as View } from "../../db/todo";
 import type { ActivityListItem } from "../../db/activities";
 import { ActivityIcon } from "../../lib/activityIcons";
 import { useSession } from "../session";
-import { TaskModal } from "../tasks/TaskModal";
+import { searchLinks, TaskModal } from "../tasks/TaskModal";
+import { Combobox } from "../ui/Combobox";
+import { useDocumentNav } from "../documents/docUi";
 import { dueLabel, parseRecurrence, PLANNED_GROUPS, plannedGroup, recurrenceLabel, sortTasks, TODO_SORTS, todayYmd, type Recurrence, type TodoSortBy } from "../../lib/todo";
 import { TODO_CHANGED_EVENT } from "./useTodoBadge";
 import { errorText } from "../../lib/errors";
@@ -334,7 +336,7 @@ export function TodoView({ openId, onOpened }: { openId?: string | null; onOpene
         </button>
         <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setSelected(t.id)}>
           <span className={cn("block truncate text-theme-sm", t.done ? "text-gray-400 line-through" : "text-gray-800 dark:text-white/90")}>{t.title}</span>
-          {(showList || due || t.steps_total > 0 || t.notes || t.my_day === today || t.remind_at || t.recurrence) && (
+          {(showList || due || t.steps_total > 0 || t.notes || t.my_day === today || t.remind_at || t.recurrence || crmLabel(t)) && (
             <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-theme-xs text-gray-500">
               {!isMyDay && t.my_day === today && (
                 <span className="flex items-center gap-1 text-brand-600">
@@ -358,6 +360,11 @@ export function TodoView({ openId, onOpened }: { openId?: string | null; onOpene
                 </span>
               )}
               {t.recurrence && <Repeat size={12} aria-label="Repete" />}
+              {crmLabel(t) && (
+                <span className="flex items-center gap-1" title="Vinculada no CRM">
+                  {t.deal_title && t.deal_title !== t.title ? <Briefcase size={12} /> : <User size={12} />} {crmLabel(t)}
+                </span>
+              )}
               {t.notes && <NotebookPen size={12} aria-label="Tem observações" />}
             </span>
           )}
@@ -1078,6 +1085,8 @@ function TaskDetail({ id, lists, onClose, onChanged, onDeleted }: { id: string; 
         {t.my_day === todayYmd() && <X size={14} aria-label="Tirar de Meu Dia" />}
       </button>
 
+      <CrmLinks t={t} onPatch={(p) => void patch(p)} />
+
       <ReminderField value={t.remind_at} reminded={!!t.reminded_at && !t.done} onChange={(v) => void patch({ remindAt: v })} />
       <RepeatField value={parseRecurrence(t.recurrence)} due={t.due_date} onChange={(v) => void patch({ recurrence: v })} />
 
@@ -1529,4 +1538,96 @@ function RepeatField({ value, due, onChange }: { value: Recurrence | null; due: 
       {value && <p className="px-3 pb-2 text-theme-xs text-gray-500">{recurrenceLabel(value)} · ao concluir, cria a próxima</p>}
     </div>
   );
+}
+
+// ---------- Vínculos com o CRM (fase 5) ----------
+
+/** Negócio/contato ligados, atividade do CRM ligada e "Criar atividade no CRM". */
+function CrmLinks({ t, onPatch }: { t: Detail; onPatch: (p: Record<string, unknown>) => void }) {
+  const nav = useDocumentNav();
+  const [modal, setModal] = useState<"new" | "open" | null>(null);
+  const [linking, setLinking] = useState(false);
+  const chip = "flex min-w-0 items-center gap-1.5 rounded-md bg-gray-100 px-2 py-1 text-theme-xs text-gray-700 hover:bg-brand-50 hover:text-brand-700 dark:bg-white/5 dark:text-gray-300";
+  return (
+    <div className="mb-2 rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-800" data-todo-crm-links>
+      <p className="mb-1.5 text-theme-xs font-medium text-gray-600 dark:text-gray-400">No CRM</p>
+      <div className="flex flex-wrap gap-1.5">
+        {t.deal_id && t.deal_title && (
+          <span className="flex min-w-0 items-center">
+            <button type="button" data-todo-link-deal className={chip} title="Abrir o cartão" onClick={() => t.pipeline_id && nav?.openCard(t.pipeline_id, t.deal_id!)}>
+              <Briefcase size={12} className="shrink-0" /> <span className="truncate">{t.deal_title}</span>
+            </button>
+            <button type="button" title="Desvincular" onClick={() => onPatch({ dealId: null })} className="ml-0.5 text-gray-300 hover:text-error-600">
+              <X size={12} />
+            </button>
+          </span>
+        )}
+        {t.person_id && t.person_name && (
+          <span className="flex min-w-0 items-center">
+            <button type="button" data-todo-link-person className={chip} title="Abrir o contato" onClick={() => nav?.openPerson(t.person_id!)}>
+              <User size={12} className="shrink-0" /> <span className="truncate">{t.person_name}</span>
+            </button>
+            <button type="button" title="Desvincular" onClick={() => onPatch({ personId: null })} className="ml-0.5 text-gray-300 hover:text-error-600">
+              <X size={12} />
+            </button>
+          </span>
+        )}
+        {t.activity_id && t.activity_done !== null && (
+          <button type="button" data-todo-link-activity className={chip} title="Abrir a atividade do CRM" onClick={() => setModal("open")}>
+            <CheckSquare size={12} className="shrink-0" /> Atividade {t.activity_done ? "concluída" : "pendente"}
+          </button>
+        )}
+      </div>
+      {linking ? (
+        <div className="mt-2" data-todo-link-search>
+          <Combobox
+            value={null}
+            search={searchLinks}
+            placeholder="Buscar negócio, ticket, projeto ou contato"
+            onChange={(item) => {
+              setLinking(false);
+              if (!item) return;
+              const [kind, id] = item.id.split(":");
+              onPatch(kind === "deal" ? { dealId: id } : { personId: id });
+            }}
+          />
+        </div>
+      ) : (
+        <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+          <button type="button" data-todo-link-add onClick={() => setLinking(true)} className="text-theme-xs text-brand-600 hover:underline">
+            Vincular a negócio ou contato
+          </button>
+          {(!t.activity_id || t.activity_done === null) && (
+            <button type="button" data-todo-make-activity onClick={() => setModal("new")} className="text-theme-xs text-brand-600 hover:underline">
+              Criar atividade no CRM
+            </button>
+          )}
+        </div>
+      )}
+      {modal === "new" && (
+        <TaskModal
+          request={{ fromTodo: { title: t.title, description: t.notes, dueDate: t.due_date }, dealId: t.deal_id ?? undefined, personId: t.person_id ?? undefined }}
+          onClose={() => setModal(null)}
+          onCreated={(id) => onPatch({ activityId: id })}
+          onSaved={() => setModal(null)}
+        />
+      )}
+      {modal === "open" && t.activity_id && (
+        <TaskModal
+          request={{ id: t.activity_id }}
+          onClose={() => setModal(null)}
+          onSaved={() => {
+            setModal(null);
+            onPatch({});
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Vínculo mostrado na linha: o cartão (se o nome não repete o título) ou o contato. */
+function crmLabel(t: TodoTask): string | null {
+  if (t.deal_title && t.deal_title !== t.title) return t.deal_title;
+  return t.person_name;
 }
