@@ -7,6 +7,9 @@ import { listTrash, restoreTrashItem } from "../src/db/trash";
 import { createUser } from "../src/db/users";
 import { methods } from "../src/rpc/methods";
 import { freshDb } from "./helpers";
+import { todayYmd } from "../src/lib/todo";
+
+const todayYmdOr = (d?: string) => d ?? todayYmd();
 
 async function setup() {
   const { db, ctx: sys } = await freshDb();
@@ -104,5 +107,53 @@ describe("To Do", () => {
     expect(todo.listTodoTasks(db, ana, { smart: "todas" }).open).toEqual([]);
     expect(() => todo.updateTodoTask(db, ana, t, { done: true })).toThrow(/não encontrada/);
     expect(() => methods["todo.taskCreate"](db, ana, { title: "x", listId: minha })).toThrow(/Lista não encontrada/);
+  });
+  it("lembrete: avisa uma vez, adiar volta a valer, concluída não avisa; contador", async () => {
+    const { db, ctx, ana } = await setup();
+    const a = todo.createTodoTask(db, ctx, { title: "Pagar boleto", remindAt: "2026-11-05T12:00:00.000Z" });
+    const b = todo.createTodoTask(db, ctx, { title: "Feita", remindAt: "2026-11-05T11:00:00.000Z" });
+    todo.createTodoTask(db, ctx, { title: "Depois", remindAt: "2026-11-05T15:00:00.000Z" });
+    todo.updateTodoTask(db, ctx, b, { done: true });
+    expect(todo.todoDueReminders(db, ctx, "2026-11-05T11:59:00.000Z")).toEqual([]);
+    expect(todo.todoDueReminders(db, ctx, "2026-11-05T12:00:30.000Z").map((r) => r.title)).toEqual(["Pagar boleto"]);
+    expect(todo.todoDueReminders(db, ctx, "2026-11-05T12:01:30.000Z")).toEqual([]); // não repete
+    expect(todo.todoDueReminders(db, ana, "2026-11-05T23:00:00.000Z")).toEqual([]); // só do dono
+    todo.snoozeTodoReminder(db, ctx, a, 10);
+    const t = todo.getTodoTask(db, ctx, a)!;
+    expect(t.reminded_at).toBeNull();
+    expect(new Date(t.remind_at!).getTime()).toBeGreaterThan(Date.now() + 9 * 60_000);
+    // Mudar o lembrete zera o "já avisado".
+    todo.updateTodoTask(db, ctx, a, { remindAt: "2026-11-05T12:00:00.000Z" });
+    expect(todo.todoDueReminders(db, ctx, "2026-11-05T12:05:00.000Z").map((r) => r.title)).toEqual(["Pagar boleto"]);
+    expect(() => todo.updateTodoTask(db, ctx, a, { remindAt: "amanhã" })).toThrow(/inválid/);
+    // Contador: Meu Dia + vencidas/hoje + lembrete chegado (cada tarefa uma vez).
+    const today = "2026-11-05";
+    todo.createTodoTask(db, ctx, { title: "No meu dia", myDay: true, dueDate: "2026-11-01" });
+    todo.createTodoTask(db, ctx, { title: "Futura", dueDate: "2026-12-01" });
+    expect(todo.todoBadge(db, ctx, todayYmdOr(today), "2026-11-05T12:30:00.000Z")).toBe(2);
+  });
+
+  it("repetir: concluir cria a próxima com etapas desmarcadas e o lembrete na mesma hora", async () => {
+    const { db, ctx } = await setup();
+    const lista = todo.createTodoList(db, ctx, { name: "Casa" });
+    const id = todo.createTodoTask(db, ctx, { title: "Regar plantas", listId: lista, important: true, notes: "varanda", recurrence: { every: 1, unit: "week" }, dueDate: "2999-01-07", remindAt: "2999-01-07T11:30:00.000Z" });
+    todo.addTodoStep(db, ctx, id, "Vasos");
+    todo.updateTodoStep(db, ctx, todo.getTodoTask(db, ctx, id)!.steps[0]!.id, { done: true });
+    const next = todo.updateTodoTask(db, ctx, id, { done: true })!;
+    expect(next).toBeTruthy();
+    const n = todo.getTodoTask(db, ctx, next)!;
+    expect([n.title, n.list_id, n.important, n.notes, n.due_date, n.done]).toEqual(["Regar plantas", lista, 1, "varanda", "2999-01-14", 0]);
+    expect(JSON.parse(n.recurrence!)).toEqual({ every: 1, unit: "week" });
+    expect(new Date(n.remind_at!).getUTCHours()).toBe(new Date("2999-01-07T11:30:00.000Z").getUTCHours());
+    expect(n.steps.map((s) => [s.title, s.done])).toEqual([["Vasos", 0]]);
+    // A concluída deixa de repetir: reabrir e concluir de novo não cria outra.
+    expect(todo.getTodoTask(db, ctx, id)!.recurrence).toBeNull();
+    todo.updateTodoTask(db, ctx, id, { done: false });
+    expect(todo.updateTodoTask(db, ctx, id, { done: true })).toBeNull();
+    // Repetir sem vencimento: vence hoje.
+    const sem = todo.createTodoTask(db, ctx, { title: "Água" });
+    todo.updateTodoTask(db, ctx, sem, { recurrence: { every: 1, unit: "day" } });
+    expect(todo.getTodoTask(db, ctx, sem)!.due_date).toBe(todayYmdOr());
+    expect(() => todo.updateTodoTask(db, ctx, sem, { recurrence: { every: 1, unit: "hora" } as never })).toThrow(/inválida/);
   });
 });

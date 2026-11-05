@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Building2, Sparkles, CalendarDays, Trash2, CircleCheck, Filter, ListTodo, FolderArchive, LineChart, Settings, User, Workflow } from "lucide-react";
 import { AppLayout, TopNavBar, cn, type TopNavItem } from "@tailadmin";
 import { call, DATA_CHANGED_EVENT, exportDatabase, systemCall, TRASH_EVENT } from "../rpc/client";
@@ -41,6 +41,7 @@ import { errorText } from "../lib/errors";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { MOVE_ASSISTANT_EVENT, MoveAssistant } from "./components/MoveAssistant";
 import { DocumentViewer } from "./documents/DocumentViewer";
+import { useTodoBadge } from "./todo/useTodoBadge";
 
 // Menu principal (spec 01, seção 1).
 const NAV: TopNavItem[] = [
@@ -124,6 +125,13 @@ function Main() {
   useEffect(() => {
     if (taskFromUrl) setTab("tarefas");
   }, [taskFromUrl]);
+  // Clique no lembrete do To Do: ?todo=<id> abre a tarefa no To Do.
+  const [todoFromUrl, setTodoFromUrl] = useState<string | null>(() => new URLSearchParams(location.search).get("todo"));
+  useEffect(() => {
+    if (todoFromUrl) setTab("todo");
+  }, [todoFromUrl]);
+  const todoBadge = useTodoBadge();
+  const nav = useMemo(() => NAV.map((i) => (i.id === "todo" ? { ...i, badge: todoBadge } : i)), [todoBadge]);
   const contactsChanged = () => setContactsKey((k) => k + 1);
   // Popup do WhatsApp → "Abrir no CRM": ?negocio=<id> abre o cartão no funil dele.
   useEffect(() => {
@@ -286,7 +294,7 @@ function Main() {
           <TopNavBar
             brandName="ConectCRM"
             brandIcon={<Workflow size={16} />}
-            items={NAV}
+            items={nav}
             actionItems={[SETTINGS_ITEM]}
             activeId={tab}
             onSelect={setTab}
@@ -394,7 +402,7 @@ function Main() {
             }}
           />
         ) : tab === "todo" ? (
-          <TodoView />
+          <TodoView openId={todoFromUrl} onOpened={() => setTodoFromUrl(null)} />
         ) : tab === "contatos" ? (
           <PersonsView refreshKey={contactsKey} onOpen={setPersonOpen} onNew={() => setNewPerson(true)} />
         ) : tab === "organizacoes" ? (

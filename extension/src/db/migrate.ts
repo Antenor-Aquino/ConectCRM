@@ -27,6 +27,7 @@ import migration0024 from "./migrations/0024_lembrete_contato.sql?raw";
 import migration0025 from "./migrations/0025_cartao_sem_financeiro.sql?raw";
 import migration0026 from "./migrations/0026_primeiro_nome.sql?raw";
 import migration0027 from "./migrations/0027_todo.sql?raw";
+import migration0028 from "./migrations/0028_todo_lembretes.sql?raw";
 
 export const MIGRATIONS: { name: string; sql: string }[] = [
   { name: "0000_init.sql", sql: migration0000 },
@@ -57,6 +58,7 @@ export const MIGRATIONS: { name: string; sql: string }[] = [
   { name: "0025_cartao_sem_financeiro.sql", sql: migration0025 },
   { name: "0026_primeiro_nome.sql", sql: migration0026 },
   { name: "0027_todo.sql", sql: migration0027 },
+  { name: "0028_todo_lembretes.sql", sql: migration0028 },
 ];
 
 /** Aplica as migrations pendentes; devolve quantas rodaram. */

@@ -4,7 +4,7 @@
 // tarefas abertas e "Concluída" — no Meu Dia, também as atividades do CRM de
 // hoje; direita: detalhes da tarefa ou as sugestões do Meu Dia.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CalendarDays, Check, ChevronDown, Home, Infinity as InfinityIcon, Lightbulb, ListTodo, MoreHorizontal, NotebookPen, Plus, Search, Star, Sun, Trash2, X } from "lucide-react";
+import { Bell, CalendarDays, Check, ChevronDown, Home, Infinity as InfinityIcon, Lightbulb, ListTodo, MoreHorizontal, NotebookPen, Plus, Repeat, Search, Star, Sun, Trash2, X } from "lucide-react";
 import { TaInput, cn } from "@tailadmin";
 import { call, DATA_CHANGED_EVENT } from "../../rpc/client";
 import type { TodoList, TodoSmart, TodoStep, TodoSuggestions, TodoTask, TodoView as View } from "../../db/todo";
@@ -12,7 +12,8 @@ import type { ActivityListItem } from "../../db/activities";
 import { ActivityIcon } from "../../lib/activityIcons";
 import { useSession } from "../session";
 import { TaskModal } from "../tasks/TaskModal";
-import { dueLabel, PLANNED_GROUPS, plannedGroup, todayYmd } from "../../lib/todo";
+import { dueLabel, parseRecurrence, PLANNED_GROUPS, plannedGroup, recurrenceLabel, todayYmd, type Recurrence } from "../../lib/todo";
+import { TODO_CHANGED_EVENT } from "./useTodoBadge";
 import { errorText } from "../../lib/errors";
 import { formatDate } from "../../lib/format";
 import { Popover } from "../ui/Popover";
@@ -52,7 +53,7 @@ const writePref = (key: string, v: unknown) => {
   }
 };
 
-export function TodoView() {
+export function TodoView({ openId, onOpened }: { openId?: string | null; onOpened?: () => void } = {}) {
   const [lists, setLists] = useState<TodoList[]>([]);
   const [counts, setCounts] = useState<Record<TodoSmart, number>>({ meudia: 0, importante: 0, planejado: 0, todas: 0, tarefas: 0 });
   const [view, setViewState] = useState<View>(() => readPref<View>(VIEW_KEY, { smart: "meudia" }));
@@ -81,6 +82,7 @@ export function TodoView() {
     const r = await call("todo.lists");
     setLists(r.lists);
     setCounts(r.counts);
+    window.dispatchEvent(new Event(TODO_CHANGED_EVENT));
     return r.lists;
   }, []);
   const loadTasks = useCallback(async () => {
@@ -96,6 +98,12 @@ export function TodoView() {
   const reload = useCallback(async () => {
     await Promise.all([loadLists(), loadTasks()]);
   }, [loadLists, loadTasks]);
+  // Clique no lembrete (?todo=<id>): abre a tarefa.
+  useEffect(() => {
+    if (!openId) return;
+    setSelected(openId);
+    onOpened?.();
+  }, [openId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     void loadLists();
@@ -178,7 +186,7 @@ export function TodoView() {
         </button>
         <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setSelected(t.id)}>
           <span className={cn("block truncate text-theme-sm", t.done ? "text-gray-400 line-through" : "text-gray-800 dark:text-white/90")}>{t.title}</span>
-          {(showList || due || t.steps_total > 0 || t.notes || t.my_day === today) && (
+          {(showList || due || t.steps_total > 0 || t.notes || t.my_day === today || t.remind_at || t.recurrence) && (
             <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-theme-xs text-gray-500">
               {!isMyDay && t.my_day === today && (
                 <span className="flex items-center gap-1 text-brand-600">
@@ -196,6 +204,12 @@ export function TodoView() {
                   <CalendarDays size={12} /> {due.text}
                 </span>
               )}
+              {t.remind_at && !t.done && (
+                <span className={cn("flex items-center gap-1", !t.reminded_at && "text-brand-600")} title="Lembrete">
+                  <Bell size={12} /> {remindText(t.remind_at)}
+                </span>
+              )}
+              {t.recurrence && <Repeat size={12} aria-label="Repete" />}
               {t.notes && <NotebookPen size={12} aria-label="Tem observações" />}
             </span>
           )}
@@ -597,6 +611,9 @@ function TaskDetail({ id, lists, onClose, onChanged, onDeleted }: { id: string; 
         {t.my_day === todayYmd() && <X size={14} aria-label="Tirar de Meu Dia" />}
       </button>
 
+      <ReminderField value={t.remind_at} reminded={!!t.reminded_at && !t.done} onChange={(v) => void patch({ remindAt: v })} />
+      <RepeatField value={parseRecurrence(t.recurrence)} due={t.due_date} onChange={(v) => void patch({ recurrence: v })} />
+
       <div className="space-y-3 border-t border-gray-100 pt-3 dark:border-gray-800">
         <label className="block text-theme-xs font-medium text-gray-600 dark:text-gray-400">
           Data de vencimento
@@ -607,6 +624,9 @@ function TaskDetail({ id, lists, onClose, onChanged, onDeleted }: { id: string; 
                 <X size={16} />
               </button>
             )}
+          </span>
+          <span className="mt-1.5 block">
+            <QuickDates onPick={(d) => void patch({ dueDate: d })} />
           </span>
         </label>
         <label className="block text-theme-xs font-medium text-gray-600 dark:text-gray-400">
@@ -816,5 +836,230 @@ function SuggestionsPanel({ onClose, onAdd, refreshKey }: { onClose: () => void;
           </div>
         ))}
     </aside>
+  );
+}
+
+// ---------- Lembrete e repetir (fase 3) ----------
+
+const pad = (n: number) => String(n).padStart(2, "0");
+/** ISO → valor do <input type="datetime-local"> (hora local). */
+const toLocalInput = (iso: string) => {
+  const d = new Date(iso);
+  return `${todayYmd(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+const at = (days: number, h: number, m = 0) => {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  d.setHours(h, m, 0, 0);
+  return d;
+};
+const nextMonday = () => (8 - new Date().getDay()) % 7 || 7;
+
+/** "Hoje 14:30", "Amanhã 09:00", "sex., 28/11 09:00". */
+function remindText(iso: string): string {
+  const d = new Date(iso);
+  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const ymd = todayYmd(d);
+  if (ymd === todayYmd()) return `Hoje ${hm}`;
+  if (ymd === todayYmd(at(1, 0))) return `Amanhã ${hm}`;
+  return `${dueLabel(ymd).text.replace(/^Atrasada · /, "")} ${hm}`;
+}
+
+function QuickDates({ onPick }: { onPick: (ymd: string) => void }) {
+  const opts: [string, Date][] = [
+    ["Hoje", at(0, 0)],
+    ["Amanhã", at(1, 0)],
+    ["Próx. semana", at(nextMonday(), 0)],
+  ];
+  return (
+    <span className="flex gap-1">
+      {opts.map(([label, d]) => (
+        <button
+          key={label}
+          type="button"
+          data-todo-due-quick={label}
+          onClick={() => onPick(todayYmd(d))}
+          className="whitespace-nowrap rounded-md border border-gray-200 px-1.5 py-1 text-[11px] text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/5"
+        >
+          {label}
+        </button>
+      ))}
+    </span>
+  );
+}
+
+/** "Lembrar-me": atalhos (mais tarde hoje, amanhã 9h, próxima semana) ou data e hora. */
+function ReminderField({ value, reminded, onChange }: { value: string | null; reminded: boolean; onChange: (iso: string | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const later = at(0, new Date().getHours() + 3);
+  const quick: [string, Date][] = [
+    ...(later.getDate() === new Date().getDate() ? ([[`Mais tarde hoje (${pad(later.getHours())}:00)`, later]] as [string, Date][]) : []),
+    ["Amanhã (09:00)", at(1, 9)],
+    ["Próxima semana (seg., 09:00)", at(nextMonday(), 9)],
+  ];
+  return (
+    <div className="mb-2 rounded-lg border border-gray-200 dark:border-gray-800" data-todo-remind>
+      <div className="flex items-center gap-2 px-3 py-2">
+        <Bell size={16} className={value ? "text-brand-500" : "text-gray-500"} />
+        <button type="button" onClick={() => setOpen(!open)} className={cn("flex-1 text-left text-theme-sm", value ? "text-brand-700 dark:text-brand-300" : "text-gray-600 dark:text-gray-300")}>
+          {value ? (
+            <>
+              Lembrete: {remindText(value)}
+              {reminded && <span className="block text-theme-xs text-gray-500">Lembrete já enviado</span>}
+            </>
+          ) : (
+            "Lembrar-me"
+          )}
+        </button>
+        {value && (
+          <button type="button" title="Tirar o lembrete" data-todo-remind-clear onClick={() => onChange(null)} className="text-gray-400 hover:text-error-600">
+            <X size={14} />
+          </button>
+        )}
+      </div>
+      {open && (
+        <div className="space-y-1 border-t border-gray-100 px-3 py-2 dark:border-gray-800">
+          {quick.map(([label, d]) => (
+            <button
+              key={label}
+              type="button"
+              data-todo-remind-quick={label}
+              onClick={() => {
+                onChange(d.toISOString());
+                setOpen(false);
+              }}
+              className="block w-full rounded px-2 py-1 text-left text-theme-sm text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-white/5"
+            >
+              {label}
+            </button>
+          ))}
+          <label className="block px-2 pt-1 text-theme-xs text-gray-500">
+            Escolher data e hora
+            <TaInput
+              type="datetime-local"
+              data-todo-remind-input
+              defaultValue={value ? toLocalInput(value) : ""}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v && !Number.isNaN(new Date(v).getTime())) onChange(new Date(v).toISOString());
+              }}
+            />
+          </label>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const WEEK = ["D", "S", "T", "Q", "Q", "S", "S"];
+const WEEK_FULL = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+
+/** "Repetir": diariamente, dias da semana, semanal, mensal, anual ou personalizado. */
+function RepeatField({ value, due, onChange }: { value: Recurrence | null; due: string | null; onChange: (r: Recurrence | null) => void }) {
+  const [custom, setCustom] = useState(false);
+  const dueDow = due ? new Date(`${due}T12:00:00`).getDay() : new Date().getDay();
+  const presets: [string, Recurrence][] = [
+    ["Diariamente", { every: 1, unit: "day" }],
+    ["Dias da semana", { every: 1, unit: "week", weekdays: [1, 2, 3, 4, 5] }],
+    ["Semanalmente", { every: 1, unit: "week" }],
+    ["Mensalmente", { every: 1, unit: "month" }],
+    ["Anualmente", { every: 1, unit: "year" }],
+  ];
+  const current = value ? presets.findIndex(([, r]) => JSON.stringify(r) === JSON.stringify(value)) : -1;
+  const draft: Recurrence = value ?? { every: 1, unit: "week", weekdays: [dueDow] };
+  const set = (r: Partial<Recurrence>) => onChange(parseRecurrence({ ...draft, ...r }));
+  return (
+    <div className="mb-3 rounded-lg border border-gray-200 dark:border-gray-800" data-todo-repeat>
+      <div className="flex items-center gap-2 px-3 py-2">
+        <Repeat size={16} className={value ? "text-brand-500" : "text-gray-500"} />
+        <select
+          data-todo-repeat-select
+          className={cn("flex-1 bg-transparent text-theme-sm outline-none", value ? "text-brand-700 dark:text-brand-300" : "text-gray-600 dark:text-gray-300")}
+          value={custom || (value && current < 0) ? "custom" : current >= 0 ? String(current) : ""}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === "custom") {
+              setCustom(true);
+              if (!value) onChange(draft);
+            } else {
+              setCustom(false);
+              onChange(v === "" ? null : presets[Number(v)]![1]);
+            }
+          }}
+        >
+          <option value="">Repetir</option>
+          {presets.map(([label], i) => (
+            <option key={label} value={i}>
+              {label}
+            </option>
+          ))}
+          <option value="custom">Personalizado…</option>
+        </select>
+        {value && (
+          <button
+            type="button"
+            title="Não repetir"
+            onClick={() => {
+              setCustom(false);
+              onChange(null);
+            }}
+            className="text-gray-400 hover:text-error-600"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
+      {value && (custom || current < 0) && (
+        <div className="space-y-2 border-t border-gray-100 px-3 py-2 text-theme-sm dark:border-gray-800" data-todo-repeat-custom>
+          <div className="flex items-center gap-2">
+            A cada
+            <input
+              type="number"
+              min={1}
+              max={99}
+              data-todo-repeat-every
+              className="h-8 w-14 rounded-md border border-gray-300 bg-white px-2 dark:border-gray-700 dark:bg-gray-900"
+              value={value.every}
+              onChange={(e) => set({ every: Number(e.target.value) || 1 })}
+            />
+            <select
+              data-todo-repeat-unit
+              className="h-8 rounded-md border border-gray-300 bg-white px-2 dark:border-gray-700 dark:bg-gray-900"
+              value={value.unit}
+              onChange={(e) => set({ unit: e.target.value as Recurrence["unit"], weekdays: e.target.value === "week" ? [dueDow] : undefined })}
+            >
+              <option value="day">{value.every > 1 ? "dias" : "dia"}</option>
+              <option value="week">{value.every > 1 ? "semanas" : "semana"}</option>
+              <option value="month">{value.every > 1 ? "meses" : "mês"}</option>
+              <option value="year">{value.every > 1 ? "anos" : "ano"}</option>
+            </select>
+          </div>
+          {value.unit === "week" && (
+            <div className="flex gap-1">
+              {WEEK.map((l, i) => {
+                const on = value.weekdays?.includes(i);
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    title={WEEK_FULL[i]}
+                    data-todo-repeat-day={i}
+                    onClick={() => {
+                      const cur = value.weekdays ?? [];
+                      const next = on ? cur.filter((x) => x !== i) : [...cur, i];
+                      set({ weekdays: next.length ? next : undefined });
+                    }}
+                    className={cn("h-7 w-7 rounded-full text-[11px] font-semibold", on ? "bg-brand-500 text-white" : "bg-gray-100 text-gray-600 dark:bg-white/5 dark:text-gray-300")}
+                  >
+                    {l}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+      {value && <p className="px-3 pb-2 text-theme-xs text-gray-500">{recurrenceLabel(value)} · ao concluir, cria a próxima</p>}
+    </div>
   );
 }
