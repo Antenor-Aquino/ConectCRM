@@ -589,6 +589,7 @@ export const methods = {
   "todo.listDelete": (db: DatabaseSync, ctx: DbContext, p: Id) => todo.deleteTodoList(db, ctx, p.id),
   "todo.tasks": (db: DatabaseSync, ctx: DbContext, p: { view: todo.TodoView; search?: string }) => todo.listTodoTasks(db, ctx, p.view, { search: p.search }),
   "todo.task": (db: DatabaseSync, ctx: DbContext, p: Id) => todo.getTodoTask(db, ctx, p.id),
+  "todo.suggestions": (db: DatabaseSync, ctx: DbContext) => todo.todoSuggestions(db, ctx),
   "todo.taskCreate": (db: DatabaseSync, ctx: DbContext, p: todo.TodoTaskInput) => todo.createTodoTask(db, ctx, p),
   "todo.taskUpdate": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Partial<todo.TodoTaskInput> & { done?: boolean } }) => todo.updateTodoTask(db, ctx, p.id, p.patch),
   "todo.taskDelete": (db: DatabaseSync, ctx: DbContext, p: Id) => todo.deleteTodoTask(db, ctx, p.id),

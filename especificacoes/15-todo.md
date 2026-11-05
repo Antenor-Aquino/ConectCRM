@@ -45,3 +45,22 @@ Com o item novo, o menu não cabia em telas comuns. Agora os itens que não
 cabem vão para **"Mais"** (na mesma ordem) e o "+" fica sempre à vista; a
 pesquisa geral vira só a lupa abaixo de 1920 px (abre no clique ou Ctrl+K).
 Em 1745 px cabem todos os itens.
+
+## Fase 2 — Meu Dia (0.2.85)
+
+- **Meu Dia** é a primeira lista inteligente e a tela que abre por padrão,
+  com a data por extenso no cabeçalho. Tarefa criada nela entra em Meu Dia.
+- Vale **só para hoje**: `my_day` guarda a data (AAAA-MM-DD); à meia-noite a
+  lista começa vazia de novo, sem apagar nada (a tarefa continua na lista dela).
+  As concluídas de hoje aparecem em "Concluída".
+- **Adicionar a Meu Dia** / "Adicionada a Meu Dia" no painel de detalhes; nas
+  outras listas a linha mostra a marca "☀ Meu Dia".
+- **Sugestões** (botão com a lâmpada): "De dias anteriores" (estavam em Meu Dia
+  e não foram concluídas), "Vencem hoje ou atrasadas" e "Importantes"; o "+"
+  põe a tarefa em Meu Dia. Cada tarefa aparece em um só grupo.
+- **Atividades do CRM hoje**: abaixo das tarefas, as atividades do usuário que
+  são do dia (mesmo critério do filtro "Hoje" de Atividades), com horário, tipo
+  e vínculo; dá para concluir/reabrir ali e o clique abre a atividade. Seção
+  recolhível (lembra o estado). As atividades continuam no módulo Atividades —
+  o To Do só as mostra.
+- RPC novo `todo.suggestions`; contador `meudia` em `todo.lists`.

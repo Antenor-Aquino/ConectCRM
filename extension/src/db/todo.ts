@@ -2,12 +2,13 @@
 // (benchmark: Microsoft To Do). Cada usuário vê só o que é dele (owner_id).
 // Listas inteligentes: Importante, Planejado, Todas e Tarefas (sem lista).
 import { nowIso } from "../lib/ids";
+import { todayYmd } from "../lib/todo";
 import { optionalText, requireText, ValidationError } from "../lib/validate";
 import { insertRow, softDelete, updateRow, type DbContext } from "./repo";
 import { moveToTrash, type TrashNotice } from "./trash";
 import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
 
-export type TodoSmart = "importante" | "planejado" | "todas" | "tarefas";
+export type TodoSmart = "meudia" | "importante" | "planejado" | "todas" | "tarefas";
 export type TodoView = { smart: TodoSmart } | { listId: string };
 
 export const LIST_COLORS = ["blue", "green", "red", "orange", "purple", "pink", "slate"] as const;
@@ -85,19 +86,21 @@ export function listTodoLists(db: DatabaseSync, ctx: DbContext): TodoList[] {
   );
 }
 
-/** Contadores das listas inteligentes (pendentes). */
-export function todoCounts(db: DatabaseSync, ctx: DbContext): Record<TodoSmart, number> {
+/** Contadores das listas inteligentes (pendentes). `today` = AAAA-MM-DD local. */
+export function todoCounts(db: DatabaseSync, ctx: DbContext, today = todayYmd()): Record<TodoSmart, number> {
   const c = one<Record<TodoSmart, number>>(
     db,
     `SELECT
+       COALESCE(SUM(my_day = ?), 0) AS meudia,
        COALESCE(SUM(important = 1), 0) AS importante,
        COALESCE(SUM(due_date IS NOT NULL), 0) AS planejado,
        COUNT(*) AS todas,
        COALESCE(SUM(list_id IS NULL), 0) AS tarefas
      FROM todo_task WHERE owner_id = ? AND done = 0 AND deleted_at IS NULL`,
+    today,
     ownerOf(ctx),
   );
-  return c ?? { importante: 0, planejado: 0, todas: 0, tarefas: 0 };
+  return c ?? { meudia: 0, importante: 0, planejado: 0, todas: 0, tarefas: 0 };
 }
 
 export function createTodoList(db: DatabaseSync, ctx: DbContext, input: { name: string; color?: string }): string {
@@ -145,13 +148,22 @@ const TASK_COLS = `t.id, t.list_id, l.name AS list_name, t.title, t.notes, t.imp
   (SELECT COUNT(*) FROM todo_step s WHERE s.task_id = t.id AND s.deleted_at IS NULL AND s.done = 1) AS steps_done`;
 
 /** Tarefas de uma lista (ou lista inteligente): abertas e concluídas. */
-export function listTodoTasks(db: DatabaseSync, ctx: DbContext, view: TodoView, opts: { search?: string } = {}): { open: TodoTask[]; done: TodoTask[] } {
+export function listTodoTasks(
+  db: DatabaseSync,
+  ctx: DbContext,
+  view: TodoView,
+  opts: { search?: string; today?: string } = {},
+): { open: TodoTask[]; done: TodoTask[] } {
   const where = ["t.owner_id = ?", "t.deleted_at IS NULL"];
   const params: SqlValue[] = [ownerOf(ctx)];
   if ("listId" in view) {
     requireList(db, ctx, view.listId);
     where.push("t.list_id = ?");
     params.push(view.listId);
+  } else if (view.smart === "meudia") {
+    // Meu Dia "zera" à meia-noite: vale só o que foi posto hoje.
+    where.push("t.my_day = ?");
+    params.push(opts.today ?? todayYmd());
   } else if (view.smart === "importante") where.push("t.important = 1");
   else if (view.smart === "planejado") where.push("t.due_date IS NOT NULL");
   else if (view.smart === "tarefas") where.push("t.list_id IS NULL");
@@ -167,7 +179,7 @@ export function listTodoTasks(db: DatabaseSync, ctx: DbContext, view: TodoView, 
     ...params,
   );
   // Em "Todas" e nas inteligentes, as concluídas não aparecem (como no Microsoft To Do), exceto numa lista.
-  const showDone = "listId" in view || view.smart === "tarefas";
+  const showDone = "listId" in view || view.smart === "tarefas" || view.smart === "meudia";
   return {
     open: rows.filter((r) => !r.done),
     done: showDone ? rows.filter((r) => r.done).sort((a, b) => (b.done_at ?? "").localeCompare(a.done_at ?? "")) : [],
@@ -184,6 +196,8 @@ export function getTodoTask(db: DatabaseSync, ctx: DbContext, id: string): (Todo
 
 export interface TodoTaskInput {
   title: string;
+  /** Pôr em "Meu Dia" (hoje) — ou tirar (false). */
+  myDay?: boolean;
   listId?: string | null;
   important?: boolean;
   dueDate?: string | null;
@@ -203,6 +217,7 @@ export function createTodoTask(db: DatabaseSync, ctx: DbContext, input: TodoTask
     notes: optionalText(input.notes),
     important: input.important ? 1 : 0,
     due_date: ymd(input.dueDate, "Data de vencimento"),
+    my_day: input.myDay ? todayYmd() : null,
     position: top + 1,
   });
 }
@@ -214,6 +229,7 @@ export function updateTodoTask(db: DatabaseSync, ctx: DbContext, id: string, pat
   if (patch.notes !== undefined) data.notes = optionalText(patch.notes);
   if (patch.important !== undefined) data.important = patch.important ? 1 : 0;
   if (patch.dueDate !== undefined) data.due_date = ymd(patch.dueDate, "Data de vencimento");
+  if (patch.myDay !== undefined) data.my_day = patch.myDay ? todayYmd() : null;
   if (patch.listId !== undefined && patch.listId !== cur.list_id) {
     if (patch.listId) requireList(db, ctx, patch.listId);
     data.list_id = patch.listId;
@@ -233,6 +249,30 @@ function deleteTaskRows(db: DatabaseSync, ctx: DbContext, id: string): void {
 export function deleteTodoTask(db: DatabaseSync, ctx: DbContext, id: string): TrashNotice {
   requireTask(db, ctx, id);
   return moveToTrash(db, ctx, "todo_task", id, () => deleteTaskRows(db, ctx, id));
+}
+
+// ---------- Meu Dia: sugestões ----------
+
+export interface TodoSuggestions {
+  /** Estavam em Meu Dia em dias anteriores e não foram concluídas. */
+  earlier: TodoTask[];
+  /** Vencem hoje ou já venceram (fora do Meu Dia de hoje). */
+  due: TodoTask[];
+  /** Importantes ainda abertas (fora das de cima). */
+  important: TodoTask[];
+}
+
+/** Sugestões para montar o Meu Dia (como a lâmpada do Microsoft To Do). */
+export function todoSuggestions(db: DatabaseSync, ctx: DbContext, today = todayYmd()): TodoSuggestions {
+  const base = `SELECT ${TASK_COLS} FROM todo_task t LEFT JOIN todo_list l ON l.id = t.list_id
+    WHERE t.owner_id = ? AND t.deleted_at IS NULL AND t.done = 0 AND (t.my_day IS NULL OR t.my_day <> ?)`;
+  const owner = ownerOf(ctx);
+  const earlier = many<TodoTask>(db, `${base} AND t.my_day IS NOT NULL ORDER BY t.my_day DESC, t.position DESC LIMIT 20`, owner, today);
+  const seen = new Set(earlier.map((t) => t.id));
+  const due = many<TodoTask>(db, `${base} AND t.due_date <= ? ORDER BY t.due_date, t.position DESC LIMIT 20`, owner, today, today).filter((t) => !seen.has(t.id));
+  due.forEach((t) => seen.add(t.id));
+  const important = many<TodoTask>(db, `${base} AND t.important = 1 ORDER BY t.position DESC LIMIT 20`, owner, today).filter((t) => !seen.has(t.id));
+  return { earlier, due, important };
 }
 
 // ---------- Etapas ----------
