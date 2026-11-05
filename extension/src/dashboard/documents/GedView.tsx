@@ -64,7 +64,7 @@ const SORT_LABEL: Record<NonNullable<DocumentFilter["sort"]>, string> = {
   valid_until: "Validade",
   size: "Tamanho",
 };
-const ENTITY_KEY = { deal: "dealId", activity: "activityId", person: "personId", organization: "organizationId" } as const;
+const ENTITY_KEY = { deal: "dealId", activity: "activityId", person: "personId", organization: "organizationId", todo: "todoId" } as const;
 
 function readUrlFilter(): Filter {
   if (!location.hash.startsWith("#ged?")) return {};
@@ -464,6 +464,7 @@ export function GedView({ onLocate }: { onLocate?: () => void } = {}) {
                     activityId: undefined,
                     personId: undefined,
                     organizationId: undefined,
+                    todoId: undefined,
                     linkLabel: l?.label,
                     ...(l ? { [ENTITY_KEY[l.type]]: l.id } : {}),
                   })

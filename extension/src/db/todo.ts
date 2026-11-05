@@ -58,6 +58,8 @@ export interface TodoTask {
   person_name: string | null;
   activity_id: string | null;
   activity_done: number | null;
+  /** Arquivos do GED vinculados à tarefa (anexos e imagens das observações). */
+  docs: number;
   done: number;
   done_at: string | null;
   position: number;
@@ -258,7 +260,9 @@ const TASK_JOINS = `LEFT JOIN todo_list l ON l.id = t.list_id
   LEFT JOIN activity a ON a.id = t.activity_id AND a.deleted_at IS NULL`;
 const TASK_COLS = `t.id, t.list_id, l.name AS list_name, t.title, t.notes, t.important, t.due_date, t.my_day, t.remind_at, t.reminded_at, t.recurrence, t.deal_id, d.title AS deal_title, d.pipeline_id, t.person_id, p.name AS person_name, t.activity_id, a.done AS activity_done, t.done, t.done_at, t.position, t.created_at,
   (SELECT COUNT(*) FROM todo_step s WHERE s.task_id = t.id AND s.deleted_at IS NULL) AS steps_total,
-  (SELECT COUNT(*) FROM todo_step s WHERE s.task_id = t.id AND s.deleted_at IS NULL AND s.done = 1) AS steps_done`;
+  (SELECT COUNT(*) FROM todo_step s WHERE s.task_id = t.id AND s.deleted_at IS NULL AND s.done = 1) AS steps_done,
+  (SELECT COUNT(*) FROM document_link dl JOIN document dd ON dd.id = dl.document_id AND dd.deleted_at IS NULL
+     WHERE dl.entity_type = 'todo' AND dl.entity_id = t.id AND dl.deleted_at IS NULL) AS docs`;
 
 /** Tarefas de uma lista (ou lista inteligente): abertas e concluídas. */
 export function listTodoTasks(

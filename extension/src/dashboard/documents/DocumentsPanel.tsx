@@ -19,7 +19,7 @@ import { FileTypeIcon, LinkChip, RestrictedBadge, TypeBadge, ValidityBadge } fro
 import { UploadModal } from "./UploadModal";
 import { errorText } from "../../lib/errors";
 
-const NOUN: Record<DocLinkType, string> = { deal: "deste cartão", activity: "desta atividade", person: "deste contato", organization: "desta organização" };
+const NOUN: Record<DocLinkType, string> = { deal: "deste cartão", activity: "desta atividade", person: "deste contato", organization: "desta organização", todo: "desta tarefa" };
 
 export function DocumentsPanel({ type, id, onChanged, compact }: { type: DocLinkType; id: string; onChanged?: () => void; compact?: boolean }) {
   const { user } = useSession();
