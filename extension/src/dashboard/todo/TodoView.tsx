@@ -4,15 +4,15 @@
 // tarefas abertas e "Concluída" — no Meu Dia, também as atividades do CRM de
 // hoje; direita: detalhes da tarefa ou as sugestões do Meu Dia.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bell, CalendarDays, Check, ChevronDown, Home, Infinity as InfinityIcon, Lightbulb, ListTodo, MoreHorizontal, NotebookPen, Plus, Repeat, Search, Star, Sun, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Bell, CalendarDays, Check, ChevronDown, Folder, FolderPlus, GripVertical, Home, Infinity as InfinityIcon, Lightbulb, ListTodo, MoreHorizontal, NotebookPen, Plus, Repeat, Search, Star, Sun, Trash2, X } from "lucide-react";
 import { TaInput, cn } from "@tailadmin";
 import { call, DATA_CHANGED_EVENT } from "../../rpc/client";
-import type { TodoList, TodoSmart, TodoStep, TodoSuggestions, TodoTask, TodoView as View } from "../../db/todo";
+import type { TodoArrangeItem, TodoGroup, TodoList, TodoSmart, TodoStep, TodoSuggestions, TodoTask, TodoView as View } from "../../db/todo";
 import type { ActivityListItem } from "../../db/activities";
 import { ActivityIcon } from "../../lib/activityIcons";
 import { useSession } from "../session";
 import { TaskModal } from "../tasks/TaskModal";
-import { dueLabel, parseRecurrence, PLANNED_GROUPS, plannedGroup, recurrenceLabel, todayYmd, type Recurrence } from "../../lib/todo";
+import { dueLabel, parseRecurrence, PLANNED_GROUPS, plannedGroup, recurrenceLabel, sortTasks, TODO_SORTS, todayYmd, type Recurrence, type TodoSortBy } from "../../lib/todo";
 import { TODO_CHANGED_EVENT } from "./useTodoBadge";
 import { errorText } from "../../lib/errors";
 import { formatDate } from "../../lib/format";
@@ -36,6 +36,12 @@ const COLOR: Record<string, string> = {
 };
 const VIEW_KEY = "conectcrm-todo-view";
 const DONE_KEY = "conectcrm-todo-done-open";
+const SORT_KEY = "conectcrm-todo-sort";
+const GROUPS_CLOSED_KEY = "conectcrm-todo-groups-closed";
+type SortPref = { by: TodoSortBy; dir: "asc" | "desc" };
+const viewKey = (v: View) => ("smart" in v ? `smart:${v.smart}` : `list:${v.listId}`);
+/** O que está sendo arrastado: uma tarefa, uma lista ou um grupo. */
+type Drag = { kind: "task" | "list" | "group"; id: string } | null;
 
 const readPref = <T,>(key: string, fallback: T): T => {
   try {
@@ -55,6 +61,12 @@ const writePref = (key: string, v: unknown) => {
 
 export function TodoView({ openId, onOpened }: { openId?: string | null; onOpened?: () => void } = {}) {
   const [lists, setLists] = useState<TodoList[]>([]);
+  const [listGroups, setListGroups] = useState<TodoGroup[]>([]);
+  const [closedGroups, setClosedGroups] = useState<string[]>(() => readPref(GROUPS_CLOSED_KEY, []));
+  const [newGroup, setNewGroup] = useState<string | null>(null);
+  const [sorts, setSorts] = useState<Record<string, SortPref>>(() => readPref(SORT_KEY, {}));
+  const [drag, setDrag] = useState<Drag>(null);
+  const [dropOn, setDropOn] = useState<string | null>(null);
   const [counts, setCounts] = useState<Record<TodoSmart, number>>({ meudia: 0, importante: 0, planejado: 0, todas: 0, tarefas: 0 });
   const [view, setViewState] = useState<View>(() => readPref<View>(VIEW_KEY, { smart: "meudia" }));
   const [tasks, setTasks] = useState<{ open: TodoTask[]; done: TodoTask[] }>({ open: [], done: [] });
@@ -81,6 +93,7 @@ export function TodoView({ openId, onOpened }: { openId?: string | null; onOpene
   const loadLists = useCallback(async () => {
     const r = await call("todo.lists");
     setLists(r.lists);
+    setListGroups(r.groups);
     setCounts(r.counts);
     window.dispatchEvent(new Event(TODO_CHANGED_EVENT));
     return r.lists;
@@ -129,6 +142,19 @@ export function TodoView({ openId, onOpened }: { openId?: string | null; onOpene
     await reload();
   };
 
+  const sideItems = useMemo(
+    () =>
+      [
+        ...lists.filter((l) => !l.group_id).map((l) => ({ kind: "list" as const, pos: l.position, list: l })),
+        ...listGroups.map((g) => ({ kind: "group" as const, pos: g.position, group: g, lists: lists.filter((l) => l.group_id === g.id) })),
+      ].sort((a, b) => a.pos - b.pos),
+    [lists, listGroups],
+  );
+  const toggleGroup = (id: string) => {
+    const next = closedGroups.includes(id) ? closedGroups.filter((x) => x !== id) : [...closedGroups, id];
+    setClosedGroups(next);
+    writePref(GROUPS_CLOSED_KEY, next);
+  };
   const currentList = "listId" in view ? lists.find((l) => l.id === view.listId) : undefined;
   const title = "smart" in view ? SMART.find((s) => s.id === view.smart)!.label : (currentList?.name ?? "Lista");
   const accent = currentList ? (COLOR[currentList.color] ?? COLOR.blue) : COLOR.blue;
@@ -153,12 +179,124 @@ export function TodoView({ openId, onOpened }: { openId?: string | null; onOpene
   const toggleDone = (t: TodoTask) => void run(() => call("todo.taskUpdate", { id: t.id, patch: { done: !t.done } }));
   const toggleStar = (t: TodoTask) => void run(() => call("todo.taskUpdate", { id: t.id, patch: { important: !t.important } }));
 
+  // Ordenar (por lista; padrão: ordem manual, de arrastar).
+  const sort: SortPref = sorts[viewKey(view)] ?? { by: "manual", dir: "asc" };
+  const setSort = (p: SortPref | null) => {
+    const next = { ...sorts };
+    if (p && p.by !== "manual") next[viewKey(view)] = p;
+    else delete next[viewKey(view)];
+    setSorts(next);
+    writePref(SORT_KEY, next);
+  };
+  const openSorted = useMemo(() => sortTasks(tasks.open, sort.by, sort.dir), [tasks.open, sort.by, sort.dir]);
+  const canReorder = sort.by === "manual" && !search;
+
   // Planejado: grupos por vencimento.
   const groups = useMemo(() => {
-    if (!("smart" in view && view.smart === "planejado")) return [["", tasks.open] as const];
+    if (!("smart" in view && view.smart === "planejado")) return [["", openSorted] as const];
     const today = todayYmd();
-    return PLANNED_GROUPS.map((g) => [g, tasks.open.filter((t) => t.due_date && plannedGroup(t.due_date, today) === g)] as const).filter(([, l]) => l.length);
-  }, [tasks.open, view]);
+    return PLANNED_GROUPS.map((g) => [g, openSorted.filter((t) => t.due_date && plannedGroup(t.due_date, today) === g)] as const).filter(([, l]) => l.length);
+  }, [openSorted, view]);
+
+  // ---------- Arrastar ----------
+  const endDrag = () => {
+    setDrag(null);
+    setDropOn(null);
+  };
+  /** Menu de listas como está: listas soltas e grupos, na ordem. */
+  const arrangement = (): TodoArrangeItem[] => sideItems.map((it) => (it.kind === "list" ? { list: it.list.id } : { group: it.group.id, lists: it.lists.map((l) => l.id) }));
+  const saveArrangement = (items: TodoArrangeItem[]) => void run(() => call("todo.arrange", { items }));
+  /** Tira a lista de onde está (solta ou num grupo). */
+  const without = (items: TodoArrangeItem[], listId: string): TodoArrangeItem[] =>
+    items.filter((it) => !("list" in it && it.list === listId)).map((it) => ("group" in it ? { ...it, lists: it.lists.filter((l) => l !== listId) } : it));
+  /** Soltou sobre uma lista do menu. */
+  const dropOnList = (target: TodoList) => {
+    const d = drag;
+    endDrag();
+    if (!d || d.id === target.id) return;
+    if (d.kind === "task") return void moveTaskTo({ listId: target.id });
+    if (d.kind === "list") {
+      const items = without(arrangement(), d.id);
+      if (target.group_id) {
+        const g = items.find((it) => "group" in it && it.group === target.group_id) as { group: string; lists: string[] };
+        g.lists.splice(g.lists.indexOf(target.id), 0, d.id);
+      } else items.splice(items.findIndex((it) => "list" in it && it.list === target.id), 0, { list: d.id });
+      return saveArrangement(items);
+    }
+    // Grupo solto sobre uma lista: vai para antes dela (ou do grupo dela).
+    const items = arrangement();
+    const moving = items.find((it) => "group" in it && it.group === d.id)!;
+    const rest = items.filter((it) => it !== moving);
+    const at = rest.findIndex((it) => ("list" in it ? it.list === target.id : it.group === target.group_id));
+    rest.splice(at < 0 ? rest.length : at, 0, moving);
+    saveArrangement(rest);
+  };
+  /** Soltou sobre o título de um grupo: a lista entra no fim dele; o grupo vai para antes. */
+  const dropOnGroup = (groupId: string) => {
+    const d = drag;
+    endDrag();
+    if (!d || d.id === groupId) return;
+    if (d.kind === "list") {
+      const items = without(arrangement(), d.id);
+      (items.find((it) => "group" in it && it.group === groupId) as { lists: string[] }).lists.push(d.id);
+      setClosedGroups((c) => c.filter((x) => x !== groupId));
+      return saveArrangement(items);
+    }
+    if (d.kind === "group") {
+      const items = arrangement();
+      const moving = items.find((it) => "group" in it && it.group === d.id)!;
+      const rest = items.filter((it) => it !== moving);
+      rest.splice(rest.findIndex((it) => "group" in it && it.group === groupId), 0, moving);
+      saveArrangement(rest);
+    }
+  };
+  /** Soltou no fim do menu: lista sai do grupo e vai para o fim; grupo vai para o fim. */
+  const dropAtEnd = () => {
+    const d = drag;
+    endDrag();
+    if (!d || d.kind === "task") return;
+    const items = d.kind === "list" ? without(arrangement(), d.id) : arrangement().filter((it) => !("group" in it && it.group === d.id));
+    items.push(d.kind === "list" ? { list: d.id } : arrangement().find((it) => "group" in it && it.group === d.id)!);
+    saveArrangement(items);
+  };
+  /** Tarefa solta numa lista inteligente ou numa lista. */
+  const moveTaskTo = (patch: Record<string, unknown>) => {
+    const id = drag?.id;
+    endDrag();
+    if (id) void run(() => call("todo.taskUpdate", { id, patch }));
+  };
+  const SMART_DROP: Partial<Record<TodoSmart, Record<string, unknown>>> = {
+    meudia: { myDay: true },
+    importante: { important: true },
+    planejado: { dueDate: todayYmd() },
+    tarefas: { listId: null },
+  };
+  /** Tarefa solta sobre outra (ordem manual): entra no lugar dela. */
+  const dropOnTask = (target: TodoTask) => {
+    const id = drag?.kind === "task" ? drag.id : null;
+    endDrag();
+    if (!id || id === target.id || !canReorder) return;
+    const ids = openSorted.map((t) => t.id).filter((x) => x !== id);
+    const from = openSorted.findIndex((t) => t.id === id);
+    const to = openSorted.findIndex((t) => t.id === target.id);
+    ids.splice(ids.indexOf(target.id) + (from < to ? 1 : 0), 0, id);
+    void run(() => call("todo.taskReorder", { ids }));
+  };
+  const dropProps = (key: string, accept: boolean, onDrop: () => void) =>
+    accept
+      ? {
+          onDragOver: (e: React.DragEvent) => {
+            e.preventDefault();
+            if (dropOn !== key) setDropOn(key);
+          },
+          onDragLeave: () => dropOn === key && setDropOn(null),
+          onDrop: (e: React.DragEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onDrop();
+          },
+        }
+      : {};
 
   const row = (t: TodoTask) => {
     const due = t.due_date ? dueLabel(t.due_date) : null;
@@ -166,7 +304,17 @@ export function TodoView({ openId, onOpened }: { openId?: string | null; onOpene
       <li
         key={t.id}
         data-todo-task={t.title}
+        draggable={!t.done}
+        onDragStart={(e) => {
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", t.title);
+          setDrag({ kind: "task", id: t.id });
+        }}
+        onDragEnd={endDrag}
+        {...dropProps(`task:${t.id}`, drag?.kind === "task" && canReorder && !t.done, () => dropOnTask(t))}
         className={cn(
+          dropOn === `task:${t.id}` && "ring-2 ring-brand-300",
+          drag?.kind === "task" && drag.id === t.id && "opacity-50",
           "group flex items-center gap-3 rounded-lg border border-transparent bg-white px-3 py-2.5 shadow-theme-xs hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-white/5",
           selected === t.id && "border-brand-300 bg-brand-25 dark:bg-brand-500/10",
         )}
@@ -235,23 +383,84 @@ export function TodoView({ openId, onOpened }: { openId?: string | null; onOpene
         <ul className="space-y-0.5">
           {SMART.map((s) => (
             <li key={s.id}>
-              <SideItem active={"smart" in view && view.smart === s.id} icon={s.icon} label={s.label} count={counts[s.id]} onClick={() => setView({ smart: s.id })} />
+              <SideItem
+                active={"smart" in view && view.smart === s.id}
+                icon={s.icon}
+                label={s.label}
+                count={counts[s.id]}
+                onClick={() => setView({ smart: s.id })}
+                highlight={dropOn === `smart:${s.id}`}
+                drop={dropProps(`smart:${s.id}`, drag?.kind === "task" && !!SMART_DROP[s.id], () => moveTaskTo(SMART_DROP[s.id]!))}
+              />
             </li>
           ))}
         </ul>
         <div className="my-2 border-t border-gray-100 dark:border-gray-800" />
         <ul className="space-y-0.5" data-todo-lists>
-          {lists.map((l) => (
-            <li key={l.id}>
-              <SideItem
-                active={"listId" in view && view.listId === l.id}
-                icon={<ListTodo size={17} style={{ color: COLOR[l.color] ?? COLOR.blue }} />}
-                label={l.name}
-                count={l.pending}
-                onClick={() => setView({ listId: l.id })}
-              />
+          {sideItems.map((it) => {
+            const listItem = (l: TodoList, inGroup: boolean) => (
+              <li key={l.id} className={inGroup ? "pl-4" : ""}>
+                <SideItem
+                  active={"listId" in view && view.listId === l.id}
+                  icon={<ListTodo size={17} style={{ color: COLOR[l.color] ?? COLOR.blue }} />}
+                  label={l.name}
+                  count={l.pending}
+                  onClick={() => setView({ listId: l.id })}
+                  highlight={dropOn === `list:${l.id}`}
+                  dragProps={{
+                    draggable: true,
+                    onDragStart: (e: React.DragEvent) => {
+                      e.dataTransfer.effectAllowed = "move";
+                      e.dataTransfer.setData("text/plain", l.name);
+                      setDrag({ kind: "list", id: l.id });
+                    },
+                    onDragEnd: endDrag,
+                  }}
+                  drop={dropProps(`list:${l.id}`, !!drag && drag.id !== l.id, () => dropOnList(l))}
+                />
+              </li>
+            );
+            if (it.kind === "list") return listItem(it.list, false);
+            const closed = closedGroups.includes(it.group.id);
+            return (
+              <li key={it.group.id} data-todo-group={it.group.name}>
+                <GroupHeader
+                  group={it.group}
+                  closed={closed}
+                  count={it.lists.length}
+                  onToggle={() => toggleGroup(it.group.id)}
+                  onChanged={() => void reload()}
+                  onError={setError}
+                  highlight={dropOn === `group:${it.group.id}`}
+                  dragProps={{
+                    draggable: true,
+                    onDragStart: (e: React.DragEvent) => {
+                      e.dataTransfer.effectAllowed = "move";
+                      e.dataTransfer.setData("text/plain", it.group.name);
+                      setDrag({ kind: "group", id: it.group.id });
+                    },
+                    onDragEnd: endDrag,
+                  }}
+                  drop={dropProps(`group:${it.group.id}`, !!drag && drag.kind !== "task" && drag.id !== it.group.id, () => dropOnGroup(it.group.id))}
+                />
+                {!closed && (
+                  <ul className="space-y-0.5">
+                    {it.lists.map((l) => listItem(l, true))}
+                    {!it.lists.length && <li className="py-1 pl-10 text-theme-xs text-gray-400">Arraste listas para cá</li>}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
+          {drag && drag.kind !== "task" && (
+            <li
+              data-todo-drop-end
+              {...dropProps("end", true, dropAtEnd)}
+              className={cn("rounded-lg border border-dashed px-3 py-1.5 text-center text-theme-xs text-gray-400", dropOn === "end" ? "border-brand-400 text-brand-600" : "border-gray-300")}
+            >
+              Soltar aqui (fora de grupo)
             </li>
-          ))}
+          )}
         </ul>
         {newList === null ? (
           <button
@@ -279,6 +488,32 @@ export function TodoView({ openId, onOpened }: { openId?: string | null; onOpene
                 const id = await call("todo.listCreate", { name });
                 setView({ listId: id });
               });
+            }}
+          />
+        )}
+        {newGroup === null ? (
+          <button
+            type="button"
+            data-todo-new-group
+            onClick={() => setNewGroup("")}
+            className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-theme-sm text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-white/5"
+          >
+            <FolderPlus size={17} /> Novo grupo
+          </button>
+        ) : (
+          <TaInput
+            autoFocus
+            className="mt-1"
+            placeholder="Nome do grupo (Enter)"
+            value={newGroup}
+            onChange={(e) => setNewGroup(e.target.value)}
+            onBlur={() => !newGroup.trim() && setNewGroup(null)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setNewGroup(null);
+              if (e.key !== "Enter" || !newGroup.trim()) return;
+              const name = newGroup.trim();
+              setNewGroup(null);
+              void run(() => call("todo.groupCreate", { name, listIds: currentList ? [currentList.id] : [] }));
             }}
           />
         )}
@@ -314,12 +549,45 @@ export function TodoView({ openId, onOpened }: { openId?: string | null; onOpene
               <Lightbulb size={16} /> Sugestões
             </button>
           )}
-          {currentList && <ListMenu list={currentList} onChanged={() => void reload()} onDeleted={() => setView({ smart: "tarefas" })} onError={setError} />}
+          {currentList && (
+            <ListMenu
+              list={currentList}
+              groups={listGroups}
+              onMoveToGroup={(groupId) => {
+                const items = without(arrangement(), currentList.id);
+                if (groupId) (items.find((it) => "group" in it && it.group === groupId) as { lists: string[] }).lists.push(currentList.id);
+                else items.push({ list: currentList.id });
+                saveArrangement(items);
+              }}
+              onChanged={() => void reload()}
+              onDeleted={() => setView({ smart: "tarefas" })}
+              onError={setError}
+            />
+          )}
+          <SortMenu value={sort} onChange={setSort} />
           <div className="relative ml-auto w-64">
             <Search size={15} className="pointer-events-none absolute left-3 top-3 text-gray-400" />
             <TaInput className="pl-9" placeholder="Pesquisar nesta lista" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
         </div>
+
+        {sort.by !== "manual" && (
+          <div className="mb-3 flex items-center gap-1 text-theme-xs text-gray-600 dark:text-gray-400" data-todo-sorted>
+            <button
+              type="button"
+              title="Inverter a ordem"
+              data-todo-sort-dir
+              onClick={() => setSort({ ...sort, dir: sort.dir === "asc" ? "desc" : "asc" })}
+              className="flex items-center gap-1 rounded-md px-2 py-1 hover:bg-white dark:hover:bg-white/5"
+            >
+              {sort.dir === "asc" ? <ArrowUp size={13} /> : <ArrowDown size={13} />}
+              Ordenado por: {TODO_SORTS.find((x) => x.id === sort.by)?.label.toLowerCase()}
+            </button>
+            <button type="button" title="Voltar à ordem manual" data-todo-sort-clear onClick={() => setSort(null)} className="rounded p-1 hover:bg-white hover:text-error-600 dark:hover:bg-white/5">
+              <X size={13} />
+            </button>
+          </div>
+        )}
 
         <div className="mb-4 flex items-center gap-3 rounded-lg bg-white px-3 py-2.5 shadow-theme-xs dark:bg-gray-900">
           <Plus size={18} className="text-brand-500" />
@@ -398,25 +666,203 @@ export function TodoView({ openId, onOpened }: { openId?: string | null; onOpene
   );
 }
 
-function SideItem({ active, icon, label, count, onClick }: { active: boolean; icon: React.ReactNode; label: string; count: number; onClick: () => void }) {
+type DropProps = Partial<Pick<React.HTMLAttributes<HTMLElement>, "onDragOver" | "onDragLeave" | "onDrop">>;
+type DragProps = { draggable?: boolean; onDragStart?: (e: React.DragEvent) => void; onDragEnd?: () => void };
+
+function SideItem({
+  active,
+  icon,
+  label,
+  count,
+  onClick,
+  highlight,
+  drop,
+  dragProps,
+}: {
+  active: boolean;
+  icon: React.ReactNode;
+  label: string;
+  count: number;
+  onClick: () => void;
+  highlight?: boolean;
+  drop?: DropProps;
+  dragProps?: DragProps;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
+      {...dragProps}
+      {...drop}
+      data-todo-side={label}
       className={cn(
-        "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-theme-sm",
+        "group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-theme-sm",
         active ? "bg-brand-50 font-medium text-brand-600 dark:bg-brand-500/15 dark:text-brand-400" : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/5",
+        highlight && "ring-2 ring-brand-400",
       )}
     >
       <span className="shrink-0">{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {count > 0 && <span className="text-theme-xs text-gray-500">{count}</span>}
+      {dragProps?.draggable && <GripVertical size={13} className="-mr-1.5 shrink-0 cursor-grab text-gray-300 opacity-0 group-hover:opacity-100" aria-hidden />}
     </button>
   );
 }
 
+/** Título do grupo de listas: recolher, renomear, desagrupar. */
+function GroupHeader({
+  group,
+  closed,
+  count,
+  onToggle,
+  onChanged,
+  onError,
+  highlight,
+  drop,
+  dragProps,
+}: {
+  group: TodoGroup;
+  closed: boolean;
+  count: number;
+  onToggle: () => void;
+  onChanged: () => void;
+  onError: (m: string) => void;
+  highlight?: boolean;
+  drop?: DropProps;
+  dragProps?: DragProps;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState<string | null>(null);
+  const act = async (fn: () => Promise<unknown>) => {
+    try {
+      await fn();
+    } catch (e) {
+      onError(errorText(e));
+    }
+    onChanged();
+  };
+  if (name !== null)
+    return (
+      <TaInput
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onBlur={() => setName(null)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setName(null);
+          if (e.key === "Enter") {
+            const v = name;
+            setName(null);
+            void act(() => call("todo.groupRename", { id: group.id, name: v }));
+          }
+        }}
+      />
+    );
+  return (
+    <div
+      {...dragProps}
+      {...drop}
+      className={cn("group relative flex items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-theme-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/5", highlight && "ring-2 ring-brand-400")}
+    >
+      <button type="button" aria-expanded={!closed} data-todo-group-toggle onClick={onToggle} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+        <ChevronDown size={15} className={cn("shrink-0 text-gray-400 transition-transform", closed && "-rotate-90")} />
+        <Folder size={16} className="shrink-0 text-gray-500" />
+        <span className="min-w-0 flex-1 truncate font-medium">{group.name}</span>
+        {closed && count > 0 && <span className="text-theme-xs text-gray-400">{count} {count === 1 ? "lista" : "listas"}</span>}
+      </button>
+      <button type="button" title="Opções do grupo" data-todo-group-menu onClick={() => setOpen(!open)} className="rounded p-0.5 text-gray-400 opacity-0 hover:text-gray-700 group-hover:opacity-100">
+        <MoreHorizontal size={15} />
+      </button>
+      <Popover open={open} onClose={() => setOpen(false)} className="right-0 top-8 w-52 py-1">
+        <button
+          type="button"
+          className="block w-full px-3.5 py-2 text-left text-theme-sm hover:bg-gray-50 dark:hover:bg-white/5"
+          onClick={() => {
+            setOpen(false);
+            setName(group.name);
+          }}
+        >
+          Renomear grupo
+        </button>
+        <button
+          type="button"
+          data-todo-group-delete
+          className="block w-full px-3.5 py-2 text-left text-theme-sm hover:bg-gray-50 dark:hover:bg-white/5"
+          onClick={() => {
+            setOpen(false);
+            void act(() => call("todo.groupDelete", { id: group.id }));
+          }}
+        >
+          Desagrupar listas
+        </button>
+      </Popover>
+    </div>
+  );
+}
+
+/** "Ordenar": importância, vencimento, alfabética, criação (por lista). */
+function SortMenu({ value, onChange }: { value: SortPref; onChange: (p: SortPref | null) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        title="Ordenar"
+        data-todo-sort
+        onClick={() => setOpen(!open)}
+        className={cn("flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-theme-sm", value.by !== "manual" ? "text-brand-600" : "text-gray-600 hover:bg-white dark:text-gray-300 dark:hover:bg-white/5")}
+      >
+        <ArrowUpDown size={16} /> Ordenar
+      </button>
+      <Popover open={open} onClose={() => setOpen(false)} className="w-56 py-1">
+        <p className="px-3.5 pb-1 pt-1.5 text-theme-xs font-semibold uppercase text-gray-400">Ordenar por</p>
+        {TODO_SORTS.map((o) => (
+          <button
+            key={o.id}
+            type="button"
+            data-todo-sort-by={o.id}
+            onClick={() => {
+              setOpen(false);
+              onChange({ by: o.id, dir: "asc" });
+            }}
+            className={cn("flex w-full items-center justify-between px-3.5 py-2 text-left text-theme-sm hover:bg-gray-50 dark:hover:bg-white/5", value.by === o.id && "text-brand-600")}
+          >
+            {o.label}
+            {value.by === o.id && <Check size={14} />}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false);
+            onChange(null);
+          }}
+          className={cn("flex w-full items-center justify-between border-t border-gray-100 px-3.5 py-2 text-left text-theme-sm hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-white/5", value.by === "manual" && "text-brand-600")}
+        >
+          Manual (arrastar)
+          {value.by === "manual" && <Check size={14} />}
+        </button>
+      </Popover>
+    </div>
+  );
+}
+
 /** "…" da lista: renomear, cor e excluir. */
-function ListMenu({ list, onChanged, onDeleted, onError }: { list: TodoList; onChanged: () => void; onDeleted: () => void; onError: (m: string) => void }) {
+function ListMenu({
+  list,
+  groups,
+  onMoveToGroup,
+  onChanged,
+  onDeleted,
+  onError,
+}: {
+  list: TodoList;
+  groups: TodoGroup[];
+  onMoveToGroup: (groupId: string | null) => void;
+  onChanged: () => void;
+  onDeleted: () => void;
+  onError: (m: string) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState<string | null>(null);
   const act = async (fn: () => Promise<unknown>) => {
@@ -475,6 +921,27 @@ function ListMenu({ list, onChanged, onDeleted, onError }: { list: TodoList; onC
             />
           ))}
         </div>
+        {groups.length > 0 && (
+          <label className="block border-t border-gray-100 px-3.5 py-2 text-theme-xs text-gray-500 dark:border-gray-800">
+            Grupo
+            <select
+              data-todo-list-group
+              className="mt-1 h-9 w-full rounded-lg border border-gray-300 bg-white px-2 text-theme-sm text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+              value={list.group_id ?? ""}
+              onChange={(e) => {
+                setOpen(false);
+                onMoveToGroup(e.target.value || null);
+              }}
+            >
+              <option value="">Sem grupo</option>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <button
           type="button"
           data-todo-list-delete

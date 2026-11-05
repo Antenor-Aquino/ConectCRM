@@ -88,3 +88,26 @@ Em 1745 px cabem todos os itens.
 - Banco: `remind_at`, `reminded_at`, `recurrence` em `todo_task` (migração
   0028); RPC `todo.dueReminders` (service worker, a cada minuto), `todo.snooze`,
   `todo.badge`; regras em `lib/todo.ts` (`nextDue`, `nextOccurrence`).
+
+## Fase 4 — Organização (0.2.87)
+
+- **Grupos de listas** (como no Microsoft To Do): "Novo grupo" no menu
+  lateral (a lista aberta já entra nele); o título do grupo recolhe/abre
+  (lembra o estado; recolhido mostra "n listas"); "…" do grupo: Renomear e
+  **Desagrupar listas** (as listas ficam soltas no lugar do grupo; nada vai
+  para a lixeira). No "…" da lista: **Grupo** (mover para um grupo ou "Sem
+  grupo").
+- **Arrastar no menu:** lista sobre outra lista = vai para antes dela (entra
+  no grupo dela, se tiver); lista sobre o título de um grupo = entra no fim
+  do grupo; "Soltar aqui (fora de grupo)" = sai do grupo e vai para o fim.
+  Grupos também se arrastam.
+- **Arrastar tarefas:** sobre outra tarefa = ordem manual; sobre uma lista do
+  menu = muda de lista; sobre Meu Dia, Importante, Planejado (vence hoje) ou
+  Tarefas (sem lista) = aplica isso.
+- **Ordenar** (por lista; lembra a escolha): Importância, Data de vencimento
+  (sem data no fim), Ordem alfabética, Data de criação; a faixa "Ordenado
+  por…" inverte a ordem (↑/↓) e o X volta à ordem manual. Com ordenação
+  ativa ou pesquisando, arrastar entre tarefas fica desligado.
+- Banco: `todo_group` e `todo_list.group_id` (migração 0029); RPC
+  `todo.groupCreate/groupRename/groupDelete`, `todo.arrange`,
+  `todo.taskReorder`; `todo.lists` devolve também `groups`.
