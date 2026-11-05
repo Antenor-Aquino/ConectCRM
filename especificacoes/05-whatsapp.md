@@ -86,3 +86,24 @@ com miniatura das imagens. Segue a permissão do cartão.
   atual (o WhatsApp muda a página com frequência); o caminho hoje são os
   recortes de tela com IA.
 - Copiloto de IA dentro do CRM, ZapSign e Asaas: Fase 11.
+
+## Número do contato da conversa (0.2.83)
+
+O popup lê o número da conversa aberta no WhatsApp Web (`lib/whatsapp.ts`,
+`readOpenChat`), nesta ordem de confiança:
+
+1. **Painel "Dados do contato"** aberto à direita: o número atual. Procurado a
+   partir do título do painel; nunca na lista de conversas (`#pane-side`), que
+   mostra números de outros contatos.
+2. **Cabeçalho** da conversa (contato sem nome salvo mostra o número).
+3. **Código das mensagens** (`true_5511…@c.us_ID`): só a parte da conversa (o
+   início), nunca o remetente/citação do fim; vale a mensagem mais recente.
+   Conversas novas usam `@lid` (sem número), então pode sobrar só o número de
+   mensagens antigas — por isso é a fonte menos confiável.
+
+- Fontes com números diferentes: o popup mostra **"Esta conversa mostra
+  números diferentes. Qual é o do contato?"** com cada número e de onde veio;
+  o escolhido é o usado para achar, cadastrar ou atualizar o contato.
+- Só o código das mensagens: aviso para conferir em "Dados do contato" (↻).
+- **Cadastrar contato** abre nome e celular editáveis ("confira antes de
+  salvar"), já com o número mais confiável.
