@@ -204,11 +204,18 @@ pelo CRM também preenche), Enviar pelo número (Z-API ou WhatsApp Web de
 Configurações → WhatsApp), a hora do envio, o modelo editável com as
 variáveis e a prévia como no WhatsApp.
 
-- **Variáveis**: {nome}, {nome_completo}, {quando} (hoje/amanhã/na terça,
+- **Variáveis**: {primeiro_nome} (só o primeiro nome do contato), {nome} (nome
+  completo — até a 0.2.76 era o primeiro nome; o antigo {nome_completo} continua
+  valendo), {quando} (hoje/amanhã/na terça,
   28/10), {hora}, {data}, {link}, {atividade}, {meu_nome} (responsável),
   {minha_empresa} (empresa do funil do cartão: Editar funil → Empresa). Sem
   link, some a linha do link; sem funil ou sem empresa, some a empresa com o
   que a liga ao nome (" · ", " da ").
+- Na 0.2.77 o modelo padrão passou a começar por "Olá, {primeiro_nome}!". O
+  modelo de Configurações igual ao padrão antigo vira o novo sozinho, e a
+  migração 0026 troca a saudação dos lembretes ainda não enviados (e das
+  séries) que começam por "Olá, {nome}! 👋". Modelos escritos pelo usuário
+  ficam como estão: neles {nome} passa a ser o nome completo.
 - **Modelo padrão** e antecedência/número padrão em Configurações →
   Notificações → Lembrete para o contato (por usuário).
 - **Envio** pelo service worker, com o Chrome aberto (mesmo com o CRM
