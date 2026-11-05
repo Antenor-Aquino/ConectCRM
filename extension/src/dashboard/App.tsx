@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Building2, Sparkles, CalendarDays, Trash2, CircleCheck, Filter, FolderArchive, LineChart, Settings, User, Workflow } from "lucide-react";
+import { Building2, Sparkles, CalendarDays, Trash2, CircleCheck, Filter, ListTodo, FolderArchive, LineChart, Settings, User, Workflow } from "lucide-react";
 import { AppLayout, TopNavBar, cn, type TopNavItem } from "@tailadmin";
 import { call, DATA_CHANGED_EVENT, exportDatabase, systemCall, TRASH_EVENT } from "../rpc/client";
 import { checkAutoBackup, type AutoBackupCheck } from "../lib/autoBackup";
@@ -35,6 +35,7 @@ import { PersonFormModal } from "./contacts/PersonFormModal";
 import { PersonsView } from "./contacts/PersonsView";
 import { TaskModal } from "./tasks/TaskModal";
 import { TasksView } from "./tasks/TasksView";
+import { TodoView } from "./todo/TodoView";
 import { SessionProvider, useSession } from "./session";
 import { errorText } from "../lib/errors";
 import { GlobalSearch } from "./components/GlobalSearch";
@@ -45,6 +46,7 @@ import { DocumentViewer } from "./documents/DocumentViewer";
 const NAV: TopNavItem[] = [
   { id: "funis", label: "Funis", icon: <Filter /> },
   { id: "tarefas", label: "Atividades", icon: <CircleCheck /> },
+  { id: "todo", label: "To Do", icon: <ListTodo /> },
   { id: "contatos", label: "Contatos", icon: <User /> },
   { id: "organizacoes", label: "Organizações", icon: <Building2 /> },
   { id: "ged", label: "GED", icon: <FolderArchive /> },
@@ -391,6 +393,8 @@ function Main() {
               onOpenOrganization: setOrgOpen,
             }}
           />
+        ) : tab === "todo" ? (
+          <TodoView />
         ) : tab === "contatos" ? (
           <PersonsView refreshKey={contactsKey} onOpen={setPersonOpen} onNew={() => setNewPerson(true)} />
         ) : tab === "organizacoes" ? (

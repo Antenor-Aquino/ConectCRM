@@ -21,6 +21,7 @@ import * as deals from "../db/deals";
 import * as docs from "../db/documents";
 import * as docBackup from "../db/documentBackup";
 import * as installation from "../db/installation";
+import * as todo from "../db/todo";
 import * as folders from "../db/documentFolders";
 import * as series from "../db/activitySeries";
 import * as contactMsg from "../db/contactMessages";
@@ -580,6 +581,20 @@ export const methods = {
     docs.setBlobLocation(db, ctx, p.blobId, p.location, p.path),
   "files.all": (db: DatabaseSync) => docs.allBlobs(db),
   "files.locateList": (db: DatabaseSync) => docs.locateBlobs(db),
+  // To Do (spec 15): sempre do usuário da sessão.
+  "todo.lists": (db: DatabaseSync, ctx: DbContext) => ({ lists: todo.listTodoLists(db, ctx), counts: todo.todoCounts(db, ctx) }),
+  "todo.listCreate": (db: DatabaseSync, ctx: DbContext, p: { name: string; color?: string }) => todo.createTodoList(db, ctx, p),
+  "todo.listUpdate": (db: DatabaseSync, ctx: DbContext, p: Id & { name?: string; color?: string }) => todo.updateTodoList(db, ctx, p.id, p),
+  "todo.listReorder": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => todo.reorderTodoLists(db, ctx, p.ids),
+  "todo.listDelete": (db: DatabaseSync, ctx: DbContext, p: Id) => todo.deleteTodoList(db, ctx, p.id),
+  "todo.tasks": (db: DatabaseSync, ctx: DbContext, p: { view: todo.TodoView; search?: string }) => todo.listTodoTasks(db, ctx, p.view, { search: p.search }),
+  "todo.task": (db: DatabaseSync, ctx: DbContext, p: Id) => todo.getTodoTask(db, ctx, p.id),
+  "todo.taskCreate": (db: DatabaseSync, ctx: DbContext, p: todo.TodoTaskInput) => todo.createTodoTask(db, ctx, p),
+  "todo.taskUpdate": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Partial<todo.TodoTaskInput> & { done?: boolean } }) => todo.updateTodoTask(db, ctx, p.id, p.patch),
+  "todo.taskDelete": (db: DatabaseSync, ctx: DbContext, p: Id) => todo.deleteTodoTask(db, ctx, p.id),
+  "todo.stepAdd": (db: DatabaseSync, ctx: DbContext, p: { taskId: string; title: string }) => todo.addTodoStep(db, ctx, p.taskId, p.title),
+  "todo.stepUpdate": (db: DatabaseSync, ctx: DbContext, p: Id & { title?: string; done?: boolean }) => todo.updateTodoStep(db, ctx, p.id, p),
+  "todo.stepDelete": (db: DatabaseSync, ctx: DbContext, p: Id) => todo.deleteTodoStep(db, ctx, p.id),
   // Mudança de instalação (outra pasta, outro computador): assistente.
   "installation.check": (db: DatabaseSync, ctx: DbContext, p: { extensionId: string }) => installation.checkInstallation(db, ctx, p.extensionId),
   "installation.mark": (db: DatabaseSync, ctx: DbContext, p: { extensionId: string }) => {

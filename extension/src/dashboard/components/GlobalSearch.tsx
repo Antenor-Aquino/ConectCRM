@@ -36,9 +36,9 @@ export function GlobalSearch({ nav }: { nav: GlobalSearchNav }) {
   const [loading, setLoading] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const box = useRef<HTMLDivElement>(null);
-  // Telas menores que 2xl: só a lupa; o campo abre por cima ao clicar (ou Ctrl+K).
+  // Telas com menos de 1920 px: só a lupa (abre espaço para o menu); o campo abre por cima ao clicar (ou Ctrl+K).
   const [expanded, setExpanded] = useState(false);
-  const wide = () => window.matchMedia("(min-width: 1536px)").matches;
+  const wide = () => window.matchMedia("(min-width: 1920px)").matches;
   const focusField = () => {
     setExpanded(true);
     setOpen(true);
@@ -177,20 +177,20 @@ export function GlobalSearch({ nav }: { nav: GlobalSearchNav }) {
 
   let index = -1;
   return (
-    <div ref={box} className="relative h-9 w-9 shrink-0 2xl:w-80" data-global-search>
+    <div ref={box} className="relative h-9 w-9 shrink-0 min-[1920px]:w-80" data-global-search>
       <button
         type="button"
         title="Pesquisar no CRM (Ctrl+K)"
         aria-label="Pesquisa geral"
         onClick={focusField}
         className={cn(
-          "flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5 2xl:hidden",
+          "flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5 min-[1920px]:hidden",
           expanded && "invisible",
         )}
       >
         <Search size={18} />
       </button>
-      <div className={cn("absolute right-0 top-0 w-80 2xl:block 2xl:w-full", expanded ? "block z-[100001]" : "hidden")}>
+      <div className={cn("absolute right-0 top-0 w-80 min-[1920px]:block min-[1920px]:w-full", expanded ? "block z-[100001]" : "hidden")}>
         <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
         <input
           ref={input}
