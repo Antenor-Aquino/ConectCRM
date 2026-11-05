@@ -5,7 +5,8 @@ import { useGfActive } from "../useGfActive";
 import { pushPendingContacts } from "../../lib/finance/sync";
 import { useEffect, useState } from "react";
 import { AlertTriangle, PlusCircle, Star, X } from "lucide-react";
-import { TaButton, TaInput, TaModal, TaTextarea } from "@tailadmin";
+import { TaButton, TaInput, TaTextarea } from "@tailadmin";
+import { GuardedModal } from "../ui/GuardedModal";
 import { call } from "../../rpc/client";
 import type { CustomField, CustomValue } from "../../db/customFields";
 import { useSession } from "../session";
@@ -125,7 +126,7 @@ export function PersonFormModal({
   }
 
   return (
-    <TaModal isOpen onClose={onClose} title={personId ? "Editar contato" : "Criar contato"} width="max-w-xl">
+    <GuardedModal isOpen onClose={onClose} title={personId ? "Editar contato" : "Criar contato"} width="max-w-xl">
       {!loaded ? (
         <p className="text-theme-sm text-gray-500">Carregando…</p>
       ) : (
@@ -267,7 +268,7 @@ export function PersonFormModal({
           </div>
         </>
       )}
-    </TaModal>
+    </GuardedModal>
   );
 }
 

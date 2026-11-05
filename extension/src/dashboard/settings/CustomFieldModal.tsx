@@ -3,7 +3,8 @@
 // (listas) e restrição por funil (negócio, ticket, projeto).
 import { useEffect, useState } from "react";
 import { Asterisk, Eye, GripVertical, Lock, Plus, Tag, Trash2 } from "lucide-react";
-import { TaButton, TaInput, TaModal, TaSelect, TaTextarea } from "@tailadmin";
+import { TaButton, TaInput, TaSelect, TaTextarea } from "@tailadmin";
+import { GuardedModal } from "../ui/GuardedModal";
 import { call } from "../../rpc/client";
 import { CUSTOM_FIELD_TYPE_LABEL, type CustomField, type CustomFieldEntity, type CustomFieldGroup, type CustomFieldType } from "../../db/customFields";
 import type { Pipeline } from "../../db/pipelines";
@@ -107,7 +108,7 @@ export function CustomFieldModal({
   }
 
   return (
-    <TaModal isOpen onClose={onClose} title={field ? "Editar campo personalizado" : "Criar campo personalizado"} width="max-w-xl">
+    <GuardedModal isOpen onClose={onClose} title={field ? "Editar campo personalizado" : "Criar campo personalizado"} width="max-w-xl">
       <Field label="Nome do campo" required>
         <TaInput autoFocus value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
@@ -265,7 +266,7 @@ export function CustomFieldModal({
           Salvar
         </TaButton>
       </div>
-    </TaModal>
+    </GuardedModal>
   );
 }
 

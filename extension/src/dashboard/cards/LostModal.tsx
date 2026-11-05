@@ -1,7 +1,8 @@
 // Marcar como perdido (ou não resolvido / não concluído, conforme o tipo do
 // funil): motivo (cadastro rápido) e observação.
 import { useEffect, useState } from "react";
-import { TaButton, TaInput, TaModal, TaSelect, TaTextarea } from "@tailadmin";
+import { TaButton, TaInput, TaSelect, TaTextarea } from "@tailadmin";
+import { GuardedModal } from "../ui/GuardedModal";
 import { call } from "../../rpc/client";
 import type { PipelineType } from "../../db/pipelines";
 import { OUTCOME_TEXT } from "../../lib/cardTypes";
@@ -37,7 +38,7 @@ export function LostModal({ cardId, type, onClose, onDone }: { cardId: string | 
   }
 
   return (
-    <TaModal isOpen={cardId !== null} onClose={onClose} title={t.markLost} accent="var(--color-error-500)">
+    <GuardedModal isOpen={cardId !== null} onClose={onClose} title={t.markLost} accent="var(--color-error-500)">
       <Field label={t.lossReason}>
         <TaSelect value={reasonId} onChange={(e) => setReasonId(e.target.value)}>
           <option value="">Sem motivo</option>
@@ -64,6 +65,6 @@ export function LostModal({ cardId, type, onClose, onDone }: { cardId: string | 
           {t.markLost}
         </TaButton>
       </div>
-    </TaModal>
+    </GuardedModal>
   );
 }

@@ -55,7 +55,7 @@ describe("lixeira", () => {
     addNote(db, actx, "person", ana, "<p>Mãe do aluno</p>");
     deletePerson(db, actx, ana);
     const [item] = listTrash(db, va);
-    expect(purgeTrash(db, actx, [item!.id], noDocs)).toEqual({ purged: 1, orphans: [] });
+    expect(purgeTrash(db, actx, [item!.id], noDocs)).toEqual({ purged: 1, protected: 0, orphans: [] });
     expect(one(db, "SELECT 1 FROM person WHERE id = ?", ana)).toBeUndefined();
     expect(one(db, "SELECT 1 FROM person_organization WHERE person_id = ?", ana)).toBeUndefined();
     expect(one(db, "SELECT 1 FROM entity_tag WHERE entity_id = ?", ana)).toBeUndefined();

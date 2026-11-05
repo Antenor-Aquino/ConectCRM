@@ -10,6 +10,7 @@ export function TaModal({
   width = "max-w-lg",
   children,
   showCloseButton = true,
+  headerExtra,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -18,6 +19,8 @@ export function TaModal({
   width?: string;
   children: ReactNode;
   showCloseButton?: boolean;
+  /** Botões extras no cabeçalho, antes do X (ex.: minimizar). */
+  headerExtra?: ReactNode;
 }) {
   const modalRef = useRef<HTMLDivElement>(null);
 
@@ -53,10 +56,15 @@ export function TaModal({
             style={{ background: accent ?? "var(--color-brand-500)" }}
           >
             {title && <h3 className="text-base font-semibold text-white">{title}</h3>}
-            {showCloseButton && (
-              <button type="button" onClick={onClose} className="ml-auto text-white/90 hover:text-white">
-                <X size={20} />
-              </button>
+            {(headerExtra || showCloseButton) && (
+              <div className="ml-auto flex items-center gap-3">
+                {headerExtra}
+                {showCloseButton && (
+                  <button type="button" onClick={onClose} className="text-white/90 hover:text-white" aria-label="Fechar">
+                    <X size={20} />
+                  </button>
+                )}
+              </div>
             )}
           </div>
         )}

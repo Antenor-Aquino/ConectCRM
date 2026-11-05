@@ -2,7 +2,8 @@
 // "Nova etapa" (projeto) - spec 01, seções 4, 5 e 5.1.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PlusCircle, X } from "lucide-react";
-import { TaButton, TaInput, TaModal, TaSelect, TaTextarea } from "@tailadmin";
+import { TaButton, TaInput, TaSelect, TaTextarea } from "@tailadmin";
+import { GuardedModal } from "../ui/GuardedModal";
 import { call } from "../../rpc/client";
 import type { CustomField, CustomValue } from "../../db/customFields";
 import type { Pipeline, PipelineType, Stage } from "../../db/pipelines";
@@ -163,7 +164,7 @@ export function CardFormModal({
   const itemsSum = items.reduce((acc, i) => acc + itemTotal(i), 0);
 
   return (
-    <TaModal isOpen={request !== null} onClose={onClose} title={text.newTitle} width="max-w-xl">
+    <GuardedModal isOpen={request !== null} onClose={onClose} title={text.newTitle} width="max-w-xl">
       <Field label={text.titleLabel} required>
         <TaInput autoFocus value={title} placeholder={text.titlePlaceholder} onChange={(e) => setTitle(e.target.value)} />
       </Field>
@@ -351,6 +352,6 @@ export function CardFormModal({
           setItemsOpen(false);
         }}
       />
-    </TaModal>
+    </GuardedModal>
   );
 }

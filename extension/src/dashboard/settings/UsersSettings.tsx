@@ -2,7 +2,8 @@
 // pode alterar o próprio nome, e-mail e PIN.
 import { useCallback, useEffect, useState } from "react";
 import { KeyRound, Pencil, Plus } from "lucide-react";
-import { TaBadge, TaButton, TaInput, TaModal, TaPanel, TaSelect, cn } from "@tailadmin";
+import { TaBadge, TaButton, TaInput, TaPanel, TaSelect, cn } from "@tailadmin";
+import { GuardedModal } from "../ui/GuardedModal";
 import { call } from "../../rpc/client";
 import { ROLE_LABEL, type Role, type User } from "../../db/users";
 import { isValidPin } from "../../lib/pin";
@@ -146,7 +147,7 @@ export function UserModal({
   }
 
   return (
-    <TaModal isOpen onClose={onClose} title={target ? "Editar usuário" : "Novo usuário"}>
+    <GuardedModal isOpen onClose={onClose} title={target ? "Editar usuário" : "Novo usuário"}>
       <Field label="Nome" required>
         <TaInput autoFocus value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
@@ -194,6 +195,6 @@ export function UserModal({
           Salvar
         </TaButton>
       </div>
-    </TaModal>
+    </GuardedModal>
   );
 }

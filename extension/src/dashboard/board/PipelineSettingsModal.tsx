@@ -3,7 +3,8 @@
 // cartão (aba Cartão) e arquivar o funil.
 import { useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
-import { TaButton, TaInput, TaModal, TaSelect, badgePalette, type BadgeColor } from "@tailadmin";
+import { TaButton, TaInput, TaSelect, badgePalette, type BadgeColor } from "@tailadmin";
+import { GuardedModal } from "../ui/GuardedModal";
 import { call } from "../../rpc/client";
 import type { Pipeline } from "../../db/pipelines";
 import { DEFAULT_CARD_FIELDS, parseCardFields } from "../../lib/cardFields";
@@ -85,7 +86,7 @@ export function PipelineSettingsModal({ pipeline, onClose, onSaved }: { pipeline
   }
 
   return (
-    <TaModal isOpen onClose={onClose} title="Editar funil" width="max-w-3xl">
+    <GuardedModal isOpen onClose={onClose} title="Editar funil" width="max-w-3xl">
       <Field label="Nome do funil" required>
         <TaInput value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
@@ -196,6 +197,6 @@ export function PipelineSettingsModal({ pipeline, onClose, onSaved }: { pipeline
           </TaButton>
         </div>
       </div>
-    </TaModal>
+    </GuardedModal>
   );
 }

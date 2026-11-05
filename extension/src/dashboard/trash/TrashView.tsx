@@ -13,6 +13,10 @@ import { useSession } from "../session";
 
 type Msg = { text: string; kind: "ok" | "err" } | null;
 
+/** Cartões com financeiro não são apagados da lixeira (o lançamento perderia o vínculo). */
+const keptNote = (n: number) =>
+  n ? ` ${n === 1 ? "1 cartão ficou" : `${n} cartões ficaram`} na lixeira por ter lançamentos na Gestão Financeira: restaure e arquive.` : "";
+
 const daysLeft = (iso: string) => Math.max(0, Math.ceil((new Date(iso).getTime() - Date.now()) / 86400_000));
 
 export function TrashView({ onOpenSettings }: { onOpenSettings?: () => void }) {
@@ -73,7 +77,9 @@ export function TrashView({ onOpenSettings }: { onOpenSettings?: () => void }) {
     void act(async () => {
       const r = await call("trash.purge", { ids });
       await deleteOrphans(r.orphans);
-      return r.purged === 1 ? "Excluído definitivamente." : `${r.purged} itens excluídos definitivamente.`;
+      const kept = keptNote(r.protected);
+      if (!r.purged && kept) throw new Error(kept.trim());
+      return `${r.purged === 1 ? "Excluído definitivamente." : `${r.purged} itens excluídos definitivamente.`}${kept}`;
     });
   };
 
@@ -82,7 +88,7 @@ export function TrashView({ onOpenSettings }: { onOpenSettings?: () => void }) {
     void act(async () => {
       const r = await call("trash.empty");
       await deleteOrphans(r.orphans);
-      return `Lixeira esvaziada (${r.purged} itens).`;
+      return `Lixeira esvaziada (${r.purged} itens).${keptNote(r.protected)}`;
     });
   };
 
@@ -206,12 +212,18 @@ export function TrashView({ onOpenSettings }: { onOpenSettings?: () => void }) {
                       <td className="py-2.5 text-gray-600 dark:text-gray-400">{i.deleted_by_name ?? "—"}</td>
                       <td className="whitespace-nowrap py-2.5 text-gray-600 dark:text-gray-400">{formatDateTime(i.deleted_at)}</td>
                       <td className="whitespace-nowrap py-2.5">
-                        <span title={formatDateTime(i.expires_at)}>
-                          <TaBadge
-                            color={left <= 3 ? "red" : left <= 7 ? "amber" : "slate"}
-                            label={left === 0 ? "hoje" : `em ${left} dia${left === 1 ? "" : "s"}`}
-                          />
-                        </span>
+                        {i.finance_locked ? (
+                          <span title="Tem lançamentos na Gestão Financeira: a lixeira não apaga. Restaure e arquive o cartão.">
+                            <TaBadge color="amber" label="Tem financeiro: não é apagado" />
+                          </span>
+                        ) : (
+                          <span title={formatDateTime(i.expires_at)}>
+                            <TaBadge
+                              color={left <= 3 ? "red" : left <= 7 ? "amber" : "slate"}
+                              label={left === 0 ? "hoje" : `em ${left} dia${left === 1 ? "" : "s"}`}
+                            />
+                          </span>
+                        )}
                       </td>
                       <td className="whitespace-nowrap py-2.5 text-right">
                         <button

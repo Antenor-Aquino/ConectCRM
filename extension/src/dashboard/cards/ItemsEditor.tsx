@@ -2,7 +2,8 @@
 // livre), quantidade, preço, desconto e total. O valor do negócio vira a soma.
 import { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { TaButton, TaInput, TaModal, TaSelect } from "@tailadmin";
+import { TaButton, TaInput, TaSelect } from "@tailadmin";
+import { GuardedModal } from "../ui/GuardedModal";
 import { call } from "../../rpc/client";
 import type { Product } from "../../db/products";
 import type { DealItemInput } from "../../db/deals";
@@ -54,7 +55,7 @@ export function ItemsEditor({
   };
 
   return (
-    <TaModal isOpen={open} onClose={onClose} title="Produtos e serviços" width="max-w-3xl">
+    <GuardedModal isOpen={open} onClose={onClose} title="Produtos e serviços" width="max-w-3xl">
       <div className={`${GRID} text-theme-xs font-medium text-gray-500`}>
         <span>Produto / serviço</span>
         <span>Qtd.</span>
@@ -120,6 +121,6 @@ export function ItemsEditor({
           </TaButton>
         </div>
       </div>
-    </TaModal>
+    </GuardedModal>
   );
 }

@@ -37,6 +37,8 @@ import { TaskModal } from "./tasks/TaskModal";
 import { TasksView } from "./tasks/TasksView";
 import { TodoView } from "./todo/TodoView";
 import { SessionProvider, useSession } from "./session";
+import { useLeaveGuard } from "./ui/unsaved";
+import { listDrafts } from "../lib/drafts";
 import { errorText } from "../lib/errors";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { MOVE_ASSISTANT_EVENT, MoveAssistant } from "./components/MoveAssistant";
@@ -79,10 +81,22 @@ function Main() {
   const { user } = useSession();
   // #ged?... (filtros do GED na URL) abre direto no GED.
   const [tab, setTabState] = useState(() => (location.hash.startsWith("#ged") ? "ged" : "funis"));
-  const setTab = (t: string) => {
+  // Trocar de tela (ou de cartão/funil) com algo digitado e não salvo pergunta antes; fechar o navegador também.
+  const nav = useLeaveGuard();
+  const goTab = (t: string) => {
     setTabState(t);
     if (t !== "ged" && location.hash) history.replaceState(null, "", `${location.pathname}${location.search}`);
   };
+  const setTab = (t: string) => (t === tab ? goTab(t) : nav.guard(() => goTab(t)));
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!listDrafts().length) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, []);
   /** Tarefa aberta a partir de um vínculo de documento. */
   const [taskOpen, setTaskOpen] = useState<string | null>(null);
   // Documento aberto pela pesquisa geral.
@@ -131,7 +145,7 @@ function Main() {
     if (todoFromUrl) setTab("todo");
   }, [todoFromUrl]);
   const todoBadge = useTodoBadge();
-  const nav = useMemo(() => NAV.map((i) => (i.id === "todo" ? { ...i, badge: todoBadge } : i)), [todoBadge]);
+  const navItems = useMemo(() => NAV.map((i) => (i.id === "todo" ? { ...i, badge: todoBadge } : i)), [todoBadge]);
   const contactsChanged = () => setContactsKey((k) => k + 1);
   // Popup do WhatsApp → "Abrir no CRM": ?negocio=<id> abre o cartão no funil dele.
   useEffect(() => {
@@ -200,15 +214,16 @@ function Main() {
   }, []);
 
   /** Abre um negócio/ticket/etapa a partir de uma ficha de contato ou organização. */
-  const openCardFrom = (pipelineId: string, cardId: string) => {
-    setPersonOpen(null);
-    setOrgOpen(null);
-    setTab("funis");
-    select(pipelineId);
-    setOpenCardId(cardId);
-    // Funil criado depois que a lista foi carregada (ex.: pelo popup): recarrega.
-    if (!pipelines.some((p) => p.id === pipelineId)) void reload();
-  };
+  const openCardFrom = (pipelineId: string, cardId: string) =>
+    nav.guard(() => {
+      setPersonOpen(null);
+      setOrgOpen(null);
+      goTab("funis");
+      select(pipelineId);
+      setOpenCardId(cardId);
+      // Funil criado depois que a lista foi carregada (ex.: pelo popup): recarrega.
+      if (!pipelines.some((p) => p.id === pipelineId)) void reload();
+    });
   openCardRef.current = openCardFrom;
 
   const reload = useCallback(async () => {
@@ -294,7 +309,7 @@ function Main() {
           <TopNavBar
             brandName="ConectCRM"
             brandIcon={<Workflow size={16} />}
-            items={nav}
+            items={navItems}
             actionItems={[SETTINGS_ITEM]}
             activeId={tab}
             onSelect={setTab}
@@ -418,12 +433,12 @@ function Main() {
           <FunnelsView
             pipelines={pipelines}
             selected={selected}
-            onSelect={select}
+            onSelect={(id) => nav.guard(() => select(id))}
             refreshKey={refreshKey}
             onChanged={reload}
             onCreateCard={(p, stageId) => setCardForm({ type: p.type, pipelineId: p.id, stageId })}
             openCardId={openCardId}
-            onOpenCard={setOpenCardId}
+            onOpenCard={(id) => (id === null ? setOpenCardId(null) : nav.guard(() => setOpenCardId(id)))}
           />
         ) : (
           <ReportsView />
@@ -444,6 +459,7 @@ function Main() {
             if (open) setOpenCardId(id);
           }}
         />
+        {nav.dialog}
         <TrashToaster onOpenTrash={() => setTab("lixeira")} />
         <ComingSoonModal feature={comingSoon} onClose={() => setComingSoon(null)} />
         <CopilotPanel
