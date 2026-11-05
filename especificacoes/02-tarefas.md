@@ -182,3 +182,14 @@ contando da conclusão, na hora do início. A frase da regra aparece embaixo
   já valem na atividade aberta: o nome no campo, o celular em "Para" (o
   lembrete fica disponível) e o e-mail como convidado da reunião.
 
+
+## Grupos recolhíveis e filtro Hoje (0.2.82)
+
+- Na tela de Atividades (modo Lista), clicar no nome do grupo (Atrasadas, Em
+  andamento, Hoje, Amanhã, "Qui, 06/11"…) **recolhe ou mostra** as atividades
+  dele, como uma cortina; a seta indica o estado e a contagem continua
+  visível. A escolha fica lembrada neste computador.
+- **Hoje** e **Amanhã** trazem só as atividades do dia — que começam ou
+  terminam nele —, sem as atrasadas nem as em andamento de dias anteriores
+  (mesma regra do cartão "Para hoje"; filtro `dayOnly`). Semana, mês, todas e
+  personalizado continuam mostrando também o que está em aberto no período.

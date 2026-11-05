@@ -295,6 +295,12 @@ export interface ActivityFilter {
   done?: boolean;
   /** Pendentes com data/hora já passada. */
   overdue?: boolean;
+  /**
+   * Filtro de um dia (Hoje, Amanhã): só as que começam ou terminam no período,
+   * sem as atrasadas — a mesma regra do contador "Para hoje". Sem ele, o
+   * período inclui também as que começaram antes e ainda estão em aberto.
+   */
+  dayOnly?: boolean;
   ownerIds?: string[];
   typeId?: string;
   dealId?: string;
@@ -336,8 +342,15 @@ function activityWhere(db: DatabaseSync, f: ActivityFilter): { sql: string; para
   if (f.search?.trim()) add("(a.title LIKE ? OR a.description LIKE ?)", `%${f.search.trim()}%`, `%${f.search.trim()}%`);
   // Período: a tarefa começa antes do fim do período e termina (finalização;
   // sem ela, pendente vale até agora, concluída até a conclusão) depois do início.
-  if (f.to) add("a.due_at < ?", new Date(f.to).toISOString());
-  if (f.from) add(`${EFFECTIVE_END} >= ?`, nowIso(), new Date(f.from).toISOString());
+  if (f.dayOnly && f.from && f.to) {
+    const [from, to] = [new Date(f.from).toISOString(), new Date(f.to).toISOString()];
+    add("((a.due_at >= ? AND a.due_at < ?) OR (a.end_at IS NOT NULL AND a.end_at >= ? AND a.end_at < ?))", from, to, from, to);
+    // Concluídas não são atrasadas: só as pendentes vencidas saem.
+    add(`NOT (${OVERDUE})`, ...overdueParams());
+  } else {
+    if (f.to) add("a.due_at < ?", new Date(f.to).toISOString());
+    if (f.from) add(`${EFFECTIVE_END} >= ?`, nowIso(), new Date(f.from).toISOString());
+  }
   if (f.done !== undefined) add("a.done = ?", f.done ? 1 : 0);
   if (f.overdue) add(OVERDUE, ...overdueParams());
   if (f.ownerIds?.length) add(`a.owner_id IN (${f.ownerIds.map(() => "?").join(", ")})`, ...f.ownerIds);
