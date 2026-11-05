@@ -7,6 +7,10 @@ import { listTrash, restoreTrashItem } from "../src/db/trash";
 import { createUser } from "../src/db/users";
 import { methods } from "../src/rpc/methods";
 import { freshDb } from "./helpers";
+import { createActivity } from "../src/db/activities";
+import { createPerson } from "../src/db/contacts";
+import { createCard } from "../src/db/deals";
+import { createPipeline } from "../src/db/pipelines";
 import { todayYmd } from "../src/lib/todo";
 
 const todayYmdOr = (d?: string) => d ?? todayYmd();
@@ -191,5 +195,44 @@ describe("To Do", () => {
     // Só um trecho (ex.: visão Importante): as outras não mudam de lugar.
     todo.reorderTodoTasks(db, ctx, [ids[2]!, ids[3]!]);
     expect(order()).toEqual(["A", "C", "D", "B"]);
+  });
+  it("integração com o CRM: do cartão, da atividade, criar atividade e concluir junto; Copiloto", async () => {
+    const { db, ctx } = await setup();
+    const pipelineId = createPipeline(db, ctx, { name: "Vendas", type: "comercial", stages: [{ name: "A" }] });
+    const person = createPerson(db, ctx, { name: "Fabiano" });
+    const deal = createCard(db, ctx, { pipelineId, title: "Proposta Stepple", personId: person });
+    // Do cartão: no Meu Dia, ligada ao cartão e ao contato.
+    const fromCard = todo.todoFromCard(db, ctx, deal);
+    const c = todo.getTodoTask(db, ctx, fromCard)!;
+    expect([c.title, c.deal_title, c.person_name, c.pipeline_id, c.my_day]).toEqual(["Proposta Stepple", "Proposta Stepple", "Fabiano", pipelineId, todayYmdOr()]);
+    expect(todo.todoForDeal(db, ctx, deal).map((t) => t.id)).toEqual([fromCard]);
+    // Da atividade: vence no dia dela; repetir o pedido devolve a mesma.
+    const act = createActivity(db, ctx, { title: "Ligar para o Fabiano", dueAt: "2999-03-10T13:00:00.000Z", dealId: deal, personId: person });
+    const r1 = todo.todoFromActivity(db, ctx, act);
+    expect(r1.created).toBe(true);
+    expect(todo.todoFromActivity(db, ctx, act)).toEqual({ id: r1.id, created: false });
+    const a = todo.getTodoTask(db, ctx, r1.id)!;
+    expect([a.title, a.due_date, a.my_day, a.activity_id, a.activity_done, a.deal_id]).toEqual(["Ligar para o Fabiano", "2999-03-10", null, act, 0, deal]);
+    // Concluir no To Do conclui a atividade (via RPC) e vice-versa.
+    methods["todo.taskUpdate"](db, ctx, { id: r1.id, patch: { done: true } });
+    expect(todo.getTodoTask(db, ctx, r1.id)!.activity_done).toBe(1);
+    methods["activities.setDone"](db, ctx, { id: act, done: false });
+    expect(todo.getTodoTask(db, ctx, r1.id)!.done).toBe(0);
+    methods["activities.setDone"](db, ctx, { id: act, done: true });
+    expect(todo.getTodoTask(db, ctx, r1.id)!.done).toBe(1);
+    // Vincular depois e desvincular.
+    const solta = todo.createTodoTask(db, ctx, { title: "Revisar contrato" });
+    todo.updateTodoTask(db, ctx, solta, { personId: person, activityId: act });
+    expect(todo.getTodoTask(db, ctx, solta)!.person_name).toBe("Fabiano");
+    todo.updateTodoTask(db, ctx, solta, { personId: null });
+    expect(todo.getTodoTask(db, ctx, solta)!.person_id).toBeNull();
+    expect(() => todo.updateTodoTask(db, ctx, solta, { dealId: "nao-existe" })).toThrow(/não encontrado/);
+    // Copiloto.
+    const meuDia = todo.todoForCopilot(db, ctx, { situacao: "meudia" });
+    expect("tarefas" in meuDia && meuDia.tarefas.map((t) => [t.titulo, t.negocio, t.contato])).toEqual([["Proposta Stepple", "Proposta Stepple", "Fabiano"]]);
+    todo.createTodoList(db, ctx, { name: "Casa" });
+    todo.createTodoList(db, ctx, { name: "Casa de praia" });
+    expect(todo.todoForCopilot(db, ctx, { lista: "casa" })).toMatchObject({ erro: "Mais de uma lista com esse nome.", opcoes: ["Casa", "Casa de praia"] });
+    expect(todo.todoForCopilot(db, ctx, { lista: "tarefas" })).toMatchObject({ total: 2 });
   });
 });

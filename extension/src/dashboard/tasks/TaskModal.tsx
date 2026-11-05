@@ -35,7 +35,8 @@ import { loadSenders, type WhatsAppSender } from "../../lib/whatsappSenders";
 import { LinkedTextarea } from "../ui/LinkedTextarea";
 import { RecurrenceEditor, ScopeDialog, type Scope } from "./RecurrenceEditor";
 import { describeRule, type RecurrenceRule } from "../../lib/recurrence";
-import { Repeat } from "lucide-react";
+import { ListTodo, Repeat } from "lucide-react";
+import { TODO_CHANGED_EVENT } from "../todo/useTodoBadge";
 
 const KIND_LABEL = { deal: "Negócio", ticket: "Ticket", project: "Projeto" } as const;
 
@@ -49,6 +50,8 @@ export interface TaskRequest {
   meeting?: boolean;
   /** Duplicar: abre uma atividade nova preenchida com tudo desta (sem repetir, sem anexos). */
   copyFrom?: string;
+  /** Vem de uma tarefa do To Do ("Criar atividade no CRM"): título, descrição e dia já preenchidos. */
+  fromTodo?: { title: string; description?: string | null; dueDate?: string | null };
 }
 
 // "Vinculado a": cartão (negócio, ticket, etapa de projeto) ou contato. O id
@@ -61,7 +64,7 @@ const personItem = (id: string, label: string, sublabel?: string | null): ComboI
   icon: <User size={14} className="shrink-0 text-gray-400" />,
 });
 
-async function searchLinks(text: string): Promise<ComboItem[]> {
+export async function searchLinks(text: string): Promise<ComboItem[]> {
   const [cards, persons] = await Promise.all([call("cards.search", { search: text }), searchPersons(text)]);
   return [
     ...cards.map((c) => dealItem(c.id, c.title, `${KIND_LABEL[c.kind]} · ${c.pipeline_name}${c.person_name ? ` · ${c.person_name}` : ""}`)),
@@ -151,7 +154,7 @@ function GuestsInput({ value, onChange }: { value: string[]; onChange: (v: strin
   );
 }
 
-export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest; onClose: () => void; onSaved: () => void }) {
+export function TaskModal({ request, onClose, onSaved, onCreated }: { request: TaskRequest; onClose: () => void; onSaved: () => void; onCreated?: (id: string) => void }) {
   const { user, users, label } = useSession();
   const [types, setTypes] = useState<ActivityType[]>([]);
   // Duplicar: a atividade de origem (o que está salvo nela).
@@ -163,14 +166,22 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
   /** Na tela de edição: abre a cópia no lugar. */
   const [duplicating, setDuplicating] = useState(false);
   const [existing, setExisting] = useState<Activity | null>(null);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
+  const [title, setTitle] = useState(request.fromTodo?.title ?? "");
+  const [description, setDescription] = useState(request.fromTodo?.description ?? "");
+  const [inTodo, setInTodo] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [typeId, setTypeId] = useState("");
   const [ownerId, setOwnerId] = useState<string | null>(user.id);
   const [when, setWhen] = useState(() => {
     const d = new Date();
     d.setSeconds(0, 0);
+    // Da tarefa do To Do com vencimento em outro dia: começa às 09:00 desse dia.
+    const due = request.fromTodo?.dueDate;
+    if (due && /^\d{4}-\d{2}-\d{2}$/.test(due)) {
+      const [y, m, dd] = due.split("-").map(Number);
+      const day = new Date(y!, m! - 1, dd!, 9, 0, 0, 0);
+      if (day.toDateString() !== d.toDateString()) return day;
+    }
     return d;
   });
   const [endAt, setEndAt] = useState<Date | null>(null);
@@ -437,7 +448,10 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
           ...(contactMessage !== undefined ? { contactMessage } : {}),
           ...(series ? { scope: scope ?? "this", ...(ruleChanged ? { recurrence } : {}) } : recurrence ? { recurrence } : {}),
         });
-      } else id = await call("activities.create", { ...input, recurrence, ...(contactMessage ? { contactMessage } : {}) });
+      } else {
+        id = await call("activities.create", { ...input, recurrence, ...(contactMessage ? { contactMessage } : {}) });
+        onCreated?.(id);
+      }
     } catch (e) {
       setError(errorText(e));
       setSaving(false);
@@ -885,6 +899,26 @@ export function TaskModal({ request, onClose, onSaved }: { request: TaskRequest;
               <TaButton
                 variant="ghost"
                 className="ml-auto"
+                startIcon={inTodo ? <Check size={15} /> : <ListTodo size={15} />}
+                title="Põe esta atividade na sua lista do To Do (concluir num lado conclui no outro)"
+                data-task-to-todo
+                disabled={!!inTodo}
+                onClick={async () => {
+                  try {
+                    const r = await call("todo.fromActivity", { id: request.id! });
+                    setInTodo(r.created ? "Adicionada ao To Do" : "Já está no To Do");
+                    window.dispatchEvent(new Event(TODO_CHANGED_EVENT));
+                  } catch (e) {
+                    setError(errorText(e));
+                  }
+                }}
+              >
+                {inTodo ?? "Adicionar ao To Do"}
+              </TaButton>
+            )}
+            {request.id && (
+              <TaButton
+                variant="ghost"
                 startIcon={<Copy size={15} />}
                 title="Abre uma atividade nova igual a esta (como está salva), para você ajustar"
                 data-task-duplicate

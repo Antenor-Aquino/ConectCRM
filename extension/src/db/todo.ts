@@ -50,6 +50,14 @@ export interface TodoTask {
   reminded_at: string | null;
   /** Regra de repetição (JSON de `Recurrence`) ou nulo. */
   recurrence: string | null;
+  /** Vínculos com o CRM (fase 5). */
+  deal_id: string | null;
+  deal_title: string | null;
+  pipeline_id: string | null;
+  person_id: string | null;
+  person_name: string | null;
+  activity_id: string | null;
+  activity_done: number | null;
   done: number;
   done_at: string | null;
   position: number;
@@ -244,7 +252,11 @@ export function deleteTodoList(db: DatabaseSync, ctx: DbContext, id: string): Tr
 
 // ---------- Tarefas ----------
 
-const TASK_COLS = `t.id, t.list_id, l.name AS list_name, t.title, t.notes, t.important, t.due_date, t.my_day, t.remind_at, t.reminded_at, t.recurrence, t.done, t.done_at, t.position, t.created_at,
+const TASK_JOINS = `LEFT JOIN todo_list l ON l.id = t.list_id
+  LEFT JOIN deal d ON d.id = t.deal_id AND d.deleted_at IS NULL
+  LEFT JOIN person p ON p.id = t.person_id AND p.deleted_at IS NULL
+  LEFT JOIN activity a ON a.id = t.activity_id AND a.deleted_at IS NULL`;
+const TASK_COLS = `t.id, t.list_id, l.name AS list_name, t.title, t.notes, t.important, t.due_date, t.my_day, t.remind_at, t.reminded_at, t.recurrence, t.deal_id, d.title AS deal_title, d.pipeline_id, t.person_id, p.name AS person_name, t.activity_id, a.done AS activity_done, t.done, t.done_at, t.position, t.created_at,
   (SELECT COUNT(*) FROM todo_step s WHERE s.task_id = t.id AND s.deleted_at IS NULL) AS steps_total,
   (SELECT COUNT(*) FROM todo_step s WHERE s.task_id = t.id AND s.deleted_at IS NULL AND s.done = 1) AS steps_done`;
 
@@ -274,7 +286,7 @@ export function listTodoTasks(
   }
   const rows = many<TodoTask>(
     db,
-    `SELECT ${TASK_COLS} FROM todo_task t LEFT JOIN todo_list l ON l.id = t.list_id
+    `SELECT ${TASK_COLS} FROM todo_task t ${TASK_JOINS}
      WHERE ${where.join(" AND ")}
      ORDER BY ${"smart" in view && view.smart === "planejado" ? "t.due_date, " : ""}t.position DESC, t.created_at DESC`,
     ...params,
@@ -289,7 +301,7 @@ export function listTodoTasks(
 
 export function getTodoTask(db: DatabaseSync, ctx: DbContext, id: string): (TodoTask & { steps: TodoStep[] }) | null {
   requireTask(db, ctx, id);
-  const t = one<TodoTask>(db, `SELECT ${TASK_COLS} FROM todo_task t LEFT JOIN todo_list l ON l.id = t.list_id WHERE t.id = ?`, id);
+  const t = one<TodoTask>(db, `SELECT ${TASK_COLS} FROM todo_task t ${TASK_JOINS} WHERE t.id = ?`, id);
   if (!t) return null;
   const steps = many<TodoStep>(db, "SELECT id, title, done, position FROM todo_step WHERE task_id = ? AND deleted_at IS NULL ORDER BY position, created_at", id);
   return { ...t, steps };
@@ -307,7 +319,17 @@ export interface TodoTaskInput {
   remindAt?: string | null;
   /** Repetir: regra ou null para não repetir. Sem vencimento, vence hoje. */
   recurrence?: Recurrence | null;
+  /** Vínculos com o CRM: negócio/ticket, contato e atividade. */
+  dealId?: string | null;
+  personId?: string | null;
+  activityId?: string | null;
 }
+
+const refOrNull = (db: DatabaseSync, table: "deal" | "person" | "activity", id: string | null | undefined, label: string): string | null => {
+  if (!id) return null;
+  if (!one(db, `SELECT id FROM ${table} WHERE id = ? AND deleted_at IS NULL`, id)) throw new ValidationError(`${label} não encontrado.`);
+  return id;
+};
 
 const isoOrNull = (v: string | null | undefined): string | null => {
   const t = optionalText(v);
@@ -339,6 +361,9 @@ export function createTodoTask(db: DatabaseSync, ctx: DbContext, input: TodoTask
     my_day: input.myDay ? todayYmd() : null,
     remind_at: isoOrNull(input.remindAt),
     recurrence: recurrenceOrNull(input.recurrence),
+    deal_id: refOrNull(db, "deal", input.dealId, "Negócio"),
+    person_id: refOrNull(db, "person", input.personId, "Contato"),
+    activity_id: refOrNull(db, "activity", input.activityId, "Atividade"),
     position: top + 1,
   });
 }
@@ -355,6 +380,9 @@ export function updateTodoTask(db: DatabaseSync, ctx: DbContext, id: string, pat
     if (patch.listId) requireList(db, ctx, patch.listId);
     data.list_id = patch.listId;
   }
+  if (patch.dealId !== undefined) data.deal_id = refOrNull(db, "deal", patch.dealId, "Negócio");
+  if (patch.personId !== undefined) data.person_id = refOrNull(db, "person", patch.personId, "Contato");
+  if (patch.activityId !== undefined) data.activity_id = refOrNull(db, "activity", patch.activityId, "Atividade");
   if (patch.remindAt !== undefined) {
     data.remind_at = isoOrNull(patch.remindAt);
     data.reminded_at = null;
@@ -382,9 +410,9 @@ export function updateTodoTask(db: DatabaseSync, ctx: DbContext, id: string, pat
 
 /** Próxima ocorrência de uma tarefa que se repete: mesma lista, título, observações, estrela e etapas (desmarcadas). */
 function createNextOccurrence(db: DatabaseSync, ctx: DbContext, id: string): string | null {
-  const t = one<{ list_id: string | null; title: string; notes: string | null; important: number; due_date: string | null; remind_at: string | null; recurrence: string | null }>(
+  const t = one<{ list_id: string | null; title: string; notes: string | null; important: number; due_date: string | null; remind_at: string | null; recurrence: string | null; deal_id: string | null; person_id: string | null }>(
     db,
-    "SELECT list_id, title, notes, important, due_date, remind_at, recurrence FROM todo_task WHERE id = ?",
+    "SELECT list_id, title, notes, important, due_date, remind_at, recurrence, deal_id, person_id FROM todo_task WHERE id = ?",
     id,
   );
   const rule = t && parseRecurrence(t.recurrence);
@@ -402,6 +430,8 @@ function createNextOccurrence(db: DatabaseSync, ctx: DbContext, id: string): str
     due_date: due,
     remind_at: t.remind_at ? sameTimeOn(t.remind_at, due) : null,
     recurrence: t.recurrence,
+    deal_id: t.deal_id,
+    person_id: t.person_id,
     position: top + 1,
   });
   for (const s of many<{ title: string; position: number }>(db, "SELECT title, position FROM todo_step WHERE task_id = ? AND deleted_at IS NULL ORDER BY position", id))
@@ -427,7 +457,7 @@ export function todoDueReminders(db: DatabaseSync, ctx: DbContext, now = nowIso(
   if (!ctx.userId) return [];
   const due = many<TodoReminder>(
     db,
-    `SELECT t.id, t.title, l.name AS list_name, t.due_date, t.remind_at FROM todo_task t LEFT JOIN todo_list l ON l.id = t.list_id
+    `SELECT t.id, t.title, l.name AS list_name, t.due_date, t.remind_at FROM todo_task t ${TASK_JOINS}
      WHERE t.owner_id = ? AND t.deleted_at IS NULL AND t.done = 0 AND t.reminded_at IS NULL AND t.remind_at IS NOT NULL AND t.remind_at <= ?
      ORDER BY t.remind_at LIMIT 20`,
     ctx.userId,
@@ -482,7 +512,7 @@ export interface TodoSuggestions {
 
 /** Sugestões para montar o Meu Dia (como a lâmpada do Microsoft To Do). */
 export function todoSuggestions(db: DatabaseSync, ctx: DbContext, today = todayYmd()): TodoSuggestions {
-  const base = `SELECT ${TASK_COLS} FROM todo_task t LEFT JOIN todo_list l ON l.id = t.list_id
+  const base = `SELECT ${TASK_COLS} FROM todo_task t ${TASK_JOINS}
     WHERE t.owner_id = ? AND t.deleted_at IS NULL AND t.done = 0 AND (t.my_day IS NULL OR t.my_day <> ?)`;
   const owner = ownerOf(ctx);
   const earlier = many<TodoTask>(db, `${base} AND t.my_day IS NOT NULL ORDER BY t.my_day DESC, t.position DESC LIMIT 20`, owner, today);
@@ -520,4 +550,91 @@ export function updateTodoStep(db: DatabaseSync, ctx: DbContext, id: string, pat
 export function deleteTodoStep(db: DatabaseSync, ctx: DbContext, id: string): void {
   requireStep(db, ctx, id);
   softDelete(db, ctx, "todo_step", id);
+}
+
+// ---------- Integração com o CRM (fase 5) ----------
+
+/**
+ * "Adicionar ao To Do" de uma atividade: tarefa ligada a ela (e ao cartão e
+ * contato dela), vencendo no dia da atividade; se for hoje, entra no Meu Dia.
+ * Já existe tarefa aberta ligada à atividade → devolve a mesma.
+ */
+export function todoFromActivity(db: DatabaseSync, ctx: DbContext, activityId: string): { id: string; created: boolean } {
+  const owner = ownerOf(ctx);
+  const has = one<{ id: string }>(db, "SELECT id FROM todo_task WHERE activity_id = ? AND owner_id = ? AND done = 0 AND deleted_at IS NULL", activityId, owner);
+  if (has) return { id: has.id, created: false };
+  const a = one<{ title: string; description: string | null; due_at: string; deal_id: string | null; person_id: string | null }>(
+    db,
+    "SELECT title, description, due_at, deal_id, person_id FROM activity WHERE id = ? AND deleted_at IS NULL",
+    activityId,
+  );
+  if (!a) throw new ValidationError("Atividade não encontrada.");
+  const due = todayYmd(new Date(a.due_at));
+  const id = createTodoTask(db, ctx, {
+    title: a.title,
+    notes: a.description,
+    dueDate: due,
+    myDay: due === todayYmd(),
+    dealId: a.deal_id,
+    personId: a.person_id,
+    activityId,
+  });
+  return { id, created: true };
+}
+
+/** "Adicionar ao To Do" de um cartão: tarefa ligada a ele (e ao contato principal), no Meu Dia. */
+export function todoFromCard(db: DatabaseSync, ctx: DbContext, dealId: string, title?: string): string {
+  const d = one<{ title: string; person_id: string | null }>(db, "SELECT title, person_id FROM deal WHERE id = ? AND deleted_at IS NULL", dealId);
+  if (!d) throw new ValidationError("Negócio não encontrado.");
+  return createTodoTask(db, ctx, { title: optionalText(title) ?? d.title, dealId, personId: d.person_id, myDay: true });
+}
+
+/** Atividade concluída/reaberta no CRM: as tarefas do To Do ligadas a ela acompanham. */
+export function syncTodoWithActivity(db: DatabaseSync, ctx: DbContext, activityId: string, done: boolean): void {
+  for (const t of many<{ id: string; owner_id: string }>(db, "SELECT id, owner_id FROM todo_task WHERE activity_id = ? AND deleted_at IS NULL AND done <> ?", activityId, done ? 1 : 0))
+    updateRow(db, ctx, "todo_task", t.id, { done: done ? 1 : 0, done_at: done ? nowIso() : null });
+}
+
+/** Tarefas ligadas a um cartão (aba do cartão / Copiloto). */
+export function todoForDeal(db: DatabaseSync, ctx: DbContext, dealId: string): TodoTask[] {
+  return many<TodoTask>(db, `SELECT ${TASK_COLS} FROM todo_task t ${TASK_JOINS} WHERE t.owner_id = ? AND t.deal_id = ? AND t.deleted_at IS NULL ORDER BY t.done, t.position DESC`, ownerOf(ctx), dealId);
+}
+
+/** Copiloto: tarefas do To Do do usuário num recorte. */
+export function todoForCopilot(
+  db: DatabaseSync,
+  ctx: DbContext,
+  p: { situacao?: "meudia" | "importantes" | "atrasadas" | "hoje" | "pendentes"; lista?: string },
+  today = todayYmd(),
+): { total: number; tarefas: { id: string; titulo: string; lista: string; vencimento: string | null; importante: boolean; meuDia: boolean; lembrete: string | null; etapas: string; negocio: string | null; contato: string | null }[] } | { erro: string; opcoes?: string[] } {
+  const where: string[] = ["t.owner_id = ?", "t.deleted_at IS NULL", "t.done = 0"];
+  const params: SqlValue[] = [ownerOf(ctx)];
+  if (p.situacao === "meudia") (where.push("t.my_day = ?"), params.push(today));
+  if (p.situacao === "importantes") where.push("t.important = 1");
+  if (p.situacao === "atrasadas") (where.push("t.due_date < ?"), params.push(today));
+  if (p.situacao === "hoje") (where.push("(t.due_date = ? OR t.my_day = ?)"), params.push(today, today));
+  if (p.lista) {
+    const lists = listTodoLists(db, ctx);
+    const q = p.lista.toLocaleLowerCase("pt-BR");
+    const hit = lists.filter((l) => l.name.toLocaleLowerCase("pt-BR").includes(q));
+    if (/^tarefas$/i.test(p.lista.trim())) where.push("t.list_id IS NULL");
+    else if (hit.length === 1) (where.push("t.list_id = ?"), params.push(hit[0]!.id));
+    else return { erro: hit.length ? "Mais de uma lista com esse nome." : "Lista não encontrada.", opcoes: (hit.length ? hit : lists).map((l) => l.name) };
+  }
+  const rows = many<TodoTask>(db, `SELECT ${TASK_COLS} FROM todo_task t ${TASK_JOINS} WHERE ${where.join(" AND ")} ORDER BY t.due_date IS NULL, t.due_date, t.position DESC LIMIT 50`, ...params);
+  return {
+    total: rows.length,
+    tarefas: rows.map((t) => ({
+      id: t.id,
+      titulo: t.title,
+      lista: t.list_name ?? "Tarefas",
+      vencimento: t.due_date,
+      importante: !!t.important,
+      meuDia: t.my_day === today,
+      lembrete: t.remind_at,
+      etapas: t.steps_total ? `${t.steps_done} de ${t.steps_total}` : "",
+      negocio: t.deal_title,
+      contato: t.person_name,
+    })),
+  };
 }
