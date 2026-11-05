@@ -118,3 +118,38 @@ export function sameTimeOn(iso: string, ymd: string): string {
   const [y, m, d] = ymd.split("-").map(Number);
   return new Date(y!, m! - 1, d!, t.getHours(), t.getMinutes()).toISOString();
 }
+
+// ---------- Ordenar (fase 4) ----------
+
+export type TodoSortBy = "manual" | "importancia" | "vencimento" | "alfabetica" | "criacao";
+export const TODO_SORTS: { id: Exclude<TodoSortBy, "manual">; label: string }[] = [
+  { id: "importancia", label: "Importância" },
+  { id: "vencimento", label: "Data de vencimento" },
+  { id: "alfabetica", label: "Ordem alfabética" },
+  { id: "criacao", label: "Data de criação" },
+];
+
+type Sortable = { title: string; important: number; due_date: string | null; created_at: string };
+
+/**
+ * Ordena as tarefas (a ordem manual é a que vem do banco). "asc" é o sentido
+ * natural de cada critério: importantes primeiro, vencimento mais próximo
+ * primeiro (sem data no fim), A→Z, mais nova primeiro.
+ */
+export function sortTasks<T extends Sortable>(tasks: T[], by: TodoSortBy, dir: "asc" | "desc" = "asc"): T[] {
+  if (by === "manual") return tasks;
+  const cmp: (a: T, b: T) => number =
+    by === "importancia"
+      ? (a, b) => b.important - a.important
+      : by === "vencimento"
+        ? (a, b) => (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999")
+        : by === "alfabetica"
+          ? (a, b) => a.title.localeCompare(b.title, "pt-BR", { sensitivity: "base", numeric: true })
+          : (a, b) => b.created_at.localeCompare(a.created_at);
+  const sign = dir === "asc" ? 1 : -1;
+  // Estável: empate mantém a ordem manual.
+  return tasks
+    .map((t, i) => [t, i] as const)
+    .sort(([a, i], [b, j]) => sign * cmp(a, b) || i - j)
+    .map(([t]) => t);
+}

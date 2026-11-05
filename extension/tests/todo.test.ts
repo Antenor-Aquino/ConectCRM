@@ -156,4 +156,40 @@ describe("To Do", () => {
     expect(todo.getTodoTask(db, ctx, sem)!.due_date).toBe(todayYmdOr());
     expect(() => todo.updateTodoTask(db, ctx, sem, { recurrence: { every: 1, unit: "hora" } as never })).toThrow(/inválida/);
   });
+  it("grupos de listas, arrumação do menu e ordem manual das tarefas", async () => {
+    const { db, ctx, ana } = await setup();
+    const casa = todo.createTodoList(db, ctx, { name: "Casa" });
+    const carro = todo.createTodoList(db, ctx, { name: "Carro" });
+    const perseus = todo.createTodoList(db, ctx, { name: "PERSEUS" });
+    const g = todo.createTodoGroup(db, ctx, { name: "Pessoal", listIds: [carro, casa] });
+    const menu = () => {
+      const lists = todo.listTodoLists(db, ctx);
+      const top = [
+        ...lists.filter((l) => !l.group_id).map((l) => ({ p: l.position, s: l.name })),
+        ...todo.listTodoGroups(db, ctx).map((x) => ({ p: x.position, s: `${x.name}[${lists.filter((l) => l.group_id === x.id).map((l) => l.name).join(",")}]` })),
+      ].sort((a, b) => a.p - b.p);
+      return top.map((x) => x.s);
+    };
+    expect(menu()).toEqual(["PERSEUS", "Pessoal[Carro,Casa]"]);
+    const nova = todo.createTodoList(db, ctx, { name: "Nova" });
+    expect(menu()).toEqual(["PERSEUS", "Pessoal[Carro,Casa]", "Nova"]);
+    todo.arrangeTodoLists(db, ctx, [{ group: g, lists: [casa, nova, carro] }, { list: perseus }]);
+    expect(menu()).toEqual(["Pessoal[Casa,Nova,Carro]", "PERSEUS"]);
+    todo.renameTodoGroup(db, ctx, g, "Vida pessoal");
+    expect(() => todo.renameTodoGroup(db, ana, g, "x")).toThrow(/não encontrado/);
+    todo.deleteTodoGroup(db, ctx, g);
+    expect(menu()).toEqual(["Casa", "Nova", "Carro", "PERSEUS"]);
+    expect(todo.listTodoGroups(db, ctx)).toEqual([]);
+    expect(methods["todo.lists"](db, ctx).groups).toEqual([]);
+
+    const ids = ["A", "B", "C", "D"].map((t) => todo.createTodoTask(db, ctx, { title: t, listId: casa }));
+    const order = () => todo.listTodoTasks(db, ctx, { listId: casa }).open.map((t) => t.title);
+    expect(order()).toEqual(["D", "C", "B", "A"]);
+    // Arrastou "A" para o topo.
+    todo.reorderTodoTasks(db, ctx, [ids[0]!, ids[3]!, ids[2]!, ids[1]!]);
+    expect(order()).toEqual(["A", "D", "C", "B"]);
+    // Só um trecho (ex.: visão Importante): as outras não mudam de lugar.
+    todo.reorderTodoTasks(db, ctx, [ids[2]!, ids[3]!]);
+    expect(order()).toEqual(["A", "C", "D", "B"]);
+  });
 });

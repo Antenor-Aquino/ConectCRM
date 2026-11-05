@@ -582,7 +582,12 @@ export const methods = {
   "files.all": (db: DatabaseSync) => docs.allBlobs(db),
   "files.locateList": (db: DatabaseSync) => docs.locateBlobs(db),
   // To Do (spec 15): sempre do usuário da sessão.
-  "todo.lists": (db: DatabaseSync, ctx: DbContext) => ({ lists: todo.listTodoLists(db, ctx), counts: todo.todoCounts(db, ctx) }),
+  "todo.lists": (db: DatabaseSync, ctx: DbContext) => ({ lists: todo.listTodoLists(db, ctx), groups: todo.listTodoGroups(db, ctx), counts: todo.todoCounts(db, ctx) }),
+  "todo.groupCreate": (db: DatabaseSync, ctx: DbContext, p: { name: string; listIds?: string[] }) => todo.createTodoGroup(db, ctx, p),
+  "todo.groupRename": (db: DatabaseSync, ctx: DbContext, p: Id & { name: string }) => todo.renameTodoGroup(db, ctx, p.id, p.name),
+  "todo.groupDelete": (db: DatabaseSync, ctx: DbContext, p: Id) => todo.deleteTodoGroup(db, ctx, p.id),
+  "todo.arrange": (db: DatabaseSync, ctx: DbContext, p: { items: todo.TodoArrangeItem[] }) => todo.arrangeTodoLists(db, ctx, p.items),
+  "todo.taskReorder": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => todo.reorderTodoTasks(db, ctx, p.ids),
   "todo.listCreate": (db: DatabaseSync, ctx: DbContext, p: { name: string; color?: string }) => todo.createTodoList(db, ctx, p),
   "todo.listUpdate": (db: DatabaseSync, ctx: DbContext, p: Id & { name?: string; color?: string }) => todo.updateTodoList(db, ctx, p.id, p),
   "todo.listReorder": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => todo.reorderTodoLists(db, ctx, p.ids),

@@ -1,6 +1,6 @@
 // To Do fase 3: regra de repetição (próxima data) e rótulos.
 import { describe, expect, it } from "vitest";
-import { nextDue, nextOccurrence, parseRecurrence, recurrenceLabel } from "../src/lib/todo";
+import { nextDue, nextOccurrence, parseRecurrence, recurrenceLabel, sortTasks } from "../src/lib/todo";
 
 describe("repetir do To Do", () => {
   it("próxima data", () => {
@@ -30,5 +30,16 @@ describe("repetir do To Do", () => {
     expect(recurrenceLabel({ every: 1, unit: "week", weekdays: [1, 2, 3, 4, 5] })).toBe("Dias da semana");
     expect(recurrenceLabel({ every: 1, unit: "week", weekdays: [1, 3] })).toBe("Semanalmente (seg, qua)");
     expect(recurrenceLabel({ every: 2, unit: "month" })).toBe("A cada 2 meses");
+  });
+  it("ordenar (fase 4)", () => {
+    const t = (title: string, important: number, due_date: string | null, created_at: string) => ({ title, important, due_date, created_at });
+    const list = [t("banana", 0, "2026-11-20", "2026-11-01"), t("Abacate", 1, null, "2026-11-03"), t("caju", 1, "2026-11-10", "2026-11-02"), t("item 10", 0, null, "2026-11-04"), t("item 9", 0, "2026-11-10", "2026-11-05")];
+    const names = (by: Parameters<typeof sortTasks>[1], dir?: "asc" | "desc") => sortTasks(list, by, dir).map((x) => x.title);
+    expect(names("manual")).toEqual(["banana", "Abacate", "caju", "item 10", "item 9"]);
+    expect(names("importancia")).toEqual(["Abacate", "caju", "banana", "item 10", "item 9"]);
+    expect(names("vencimento")).toEqual(["caju", "item 9", "banana", "Abacate", "item 10"]);
+    expect(names("alfabetica")).toEqual(["Abacate", "banana", "caju", "item 9", "item 10"]);
+    expect(names("alfabetica", "desc")).toEqual(["item 10", "item 9", "caju", "banana", "Abacate"]);
+    expect(names("criacao")).toEqual(["item 9", "item 10", "Abacate", "caju", "banana"]);
   });
 });

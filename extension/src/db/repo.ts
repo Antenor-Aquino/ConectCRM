@@ -55,6 +55,7 @@ export const DATA_TABLES = [
   "document_version",
   "document_link",
   "external_ref",
+  "todo_group",
   "todo_list",
   "todo_task",
   "todo_step",

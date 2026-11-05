@@ -19,6 +19,14 @@ export interface TodoList {
   color: string;
   position: number;
   pending: number;
+  /** Grupo de listas (fase 4) ou nulo. */
+  group_id: string | null;
+}
+
+export interface TodoGroup {
+  id: string;
+  name: string;
+  position: number;
 }
 
 export interface TodoStep {
@@ -84,7 +92,7 @@ function requireTask(db: DatabaseSync, ctx: DbContext, id: string): { id: string
 export function listTodoLists(db: DatabaseSync, ctx: DbContext): TodoList[] {
   return many<TodoList>(
     db,
-    `SELECT l.id, l.name, l.color, l.position,
+    `SELECT l.id, l.name, l.color, l.position, l.group_id,
        (SELECT COUNT(*) FROM todo_task t WHERE t.list_id = l.id AND t.done = 0 AND t.deleted_at IS NULL) AS pending
      FROM todo_list l WHERE l.owner_id = ? AND l.deleted_at IS NULL ORDER BY l.position, l.name COLLATE NOCASE`,
     ownerOf(ctx),
@@ -112,7 +120,11 @@ export function createTodoList(db: DatabaseSync, ctx: DbContext, input: { name: 
   const owner = ownerOf(ctx);
   const name = requireText(input.name, "Dê um nome à lista.").slice(0, 80);
   const color = input.color && (LIST_COLORS as readonly string[]).includes(input.color) ? input.color : "blue";
-  const last = one<{ p: number | null }>(db, "SELECT MAX(position) AS p FROM todo_list WHERE owner_id = ? AND deleted_at IS NULL", owner)?.p ?? 0;
+  // Lista nova vai para o fim do menu (depois das listas soltas e dos grupos).
+  const last = Math.max(
+    one<{ p: number | null }>(db, "SELECT MAX(position) AS p FROM todo_list WHERE owner_id = ? AND deleted_at IS NULL AND group_id IS NULL", owner)?.p ?? 0,
+    one<{ p: number | null }>(db, "SELECT MAX(position) AS p FROM todo_group WHERE owner_id = ? AND deleted_at IS NULL", owner)?.p ?? 0,
+  );
   return insertRow(db, ctx, "todo_list", { owner_id: owner, name, color, position: last + 1 });
 }
 
@@ -134,6 +146,90 @@ export function reorderTodoLists(db: DatabaseSync, ctx: DbContext, ids: string[]
       requireList(db, ctx, id);
       updateRow(db, ctx, "todo_list", id, { position: i + 1 });
     });
+  });
+}
+
+// ---------- Grupos de listas e arrumação (fase 4) ----------
+
+export function listTodoGroups(db: DatabaseSync, ctx: DbContext): TodoGroup[] {
+  return many<TodoGroup>(db, "SELECT id, name, position FROM todo_group WHERE owner_id = ? AND deleted_at IS NULL ORDER BY position, name COLLATE NOCASE", ownerOf(ctx));
+}
+
+function requireGroup(db: DatabaseSync, ctx: DbContext, id: string): void {
+  if (!one(db, "SELECT id FROM todo_group WHERE id = ? AND owner_id = ? AND deleted_at IS NULL", id, ownerOf(ctx))) throw new ValidationError("Grupo não encontrado.");
+}
+
+/** Novo grupo no fim do menu; `listIds` entram nele. */
+export function createTodoGroup(db: DatabaseSync, ctx: DbContext, input: { name: string; listIds?: string[] }): string {
+  const owner = ownerOf(ctx);
+  const name = requireText(input.name, "Dê um nome ao grupo.").slice(0, 80);
+  return withTransaction(db, () => {
+    const last = Math.max(
+      one<{ p: number | null }>(db, "SELECT MAX(position) AS p FROM todo_list WHERE owner_id = ? AND deleted_at IS NULL AND group_id IS NULL", owner)?.p ?? 0,
+      one<{ p: number | null }>(db, "SELECT MAX(position) AS p FROM todo_group WHERE owner_id = ? AND deleted_at IS NULL", owner)?.p ?? 0,
+    );
+    const id = insertRow(db, ctx, "todo_group", { owner_id: owner, name, position: last + 1 });
+    (input.listIds ?? []).forEach((l, i) => {
+      requireList(db, ctx, l);
+      updateRow(db, ctx, "todo_list", l, { group_id: id, position: i + 1 });
+    });
+    return id;
+  });
+}
+
+export function renameTodoGroup(db: DatabaseSync, ctx: DbContext, id: string, name: string): void {
+  requireGroup(db, ctx, id);
+  updateRow(db, ctx, "todo_group", id, { name: requireText(name, "Dê um nome ao grupo.").slice(0, 80) });
+}
+
+/** Desfaz o grupo: as listas ficam soltas no lugar dele (nada vai para a lixeira). */
+export function deleteTodoGroup(db: DatabaseSync, ctx: DbContext, id: string): void {
+  requireGroup(db, ctx, id);
+  withTransaction(db, () => {
+    const pos = one<{ position: number }>(db, "SELECT position FROM todo_group WHERE id = ?", id)!.position;
+    const lists = many<{ id: string }>(db, "SELECT id FROM todo_list WHERE group_id = ? AND deleted_at IS NULL ORDER BY position", id);
+    lists.forEach((l, i) => updateRow(db, ctx, "todo_list", l.id, { group_id: null, position: pos + (i + 1) / (lists.length + 1) }));
+    // Lista do grupo já na lixeira: ao restaurar, volta solta.
+    run(db, "UPDATE todo_list SET group_id = NULL WHERE group_id = ?", id);
+    softDelete(db, ctx, "todo_group", id);
+  });
+}
+
+export type TodoArrangeItem = { list: string } | { group: string; lists: string[] };
+
+/**
+ * Arrumação do menu de listas (arrastar): a ordem dos itens de cima (listas
+ * soltas e grupos misturados) e as listas de cada grupo.
+ */
+export function arrangeTodoLists(db: DatabaseSync, ctx: DbContext, items: TodoArrangeItem[]): void {
+  withTransaction(db, () => {
+    items.forEach((it, i) => {
+      if ("list" in it) {
+        requireList(db, ctx, it.list);
+        updateRow(db, ctx, "todo_list", it.list, { group_id: null, position: i + 1 });
+      } else {
+        requireGroup(db, ctx, it.group);
+        updateRow(db, ctx, "todo_group", it.group, { position: i + 1 });
+        it.lists.forEach((l, j) => {
+          requireList(db, ctx, l);
+          updateRow(db, ctx, "todo_list", l, { group_id: it.group, position: j + 1 });
+        });
+      }
+    });
+  });
+}
+
+/**
+ * Nova ordem manual de tarefas (arrastar): as tarefas passadas trocam de
+ * posição entre si, na ordem dada (a de cima primeiro); as outras não mudam.
+ */
+export function reorderTodoTasks(db: DatabaseSync, ctx: DbContext, ids: string[]): void {
+  withTransaction(db, () => {
+    for (const id of ids) requireTask(db, ctx, id);
+    const slots = ids.map((id) => one<{ position: number }>(db, "SELECT position FROM todo_task WHERE id = ?", id)!.position).sort((a, b) => b - a);
+    // Posições repetidas (raro): abre espaço.
+    for (let i = 1; i < slots.length; i++) if (slots[i]! >= slots[i - 1]!) slots[i] = slots[i - 1]! - 0.001;
+    ids.forEach((id, i) => updateRow(db, ctx, "todo_task", id, { position: slots[i]! }));
   });
 }
 
