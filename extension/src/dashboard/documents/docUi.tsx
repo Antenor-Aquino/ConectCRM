@@ -1,7 +1,7 @@
 // Peças comuns do GED: navegação pelos vínculos, etiquetas de vínculo,
 // classificação, validade e ícone do arquivo.
 import { createContext, useContext, type ReactNode } from "react";
-import { Building2, CheckSquare, FileAudio, FileImage, FileSpreadsheet, FileText, File as FileIcon, Filter, Lock, User, X } from "lucide-react";
+import { Building2, CheckSquare, ListTodo, FileAudio, FileImage, FileSpreadsheet, FileText, File as FileIcon, Filter, Lock, User, X } from "lucide-react";
 import { badgePalette, cn, type BadgeColor } from "@tailadmin";
 import type { DocLink, DocLinkType } from "../../db/documents";
 
@@ -11,6 +11,8 @@ export interface DocumentNav {
   openPerson: (id: string) => void;
   openOrganization: (id: string) => void;
   openTask: (id: string) => void;
+  /** Tarefa do To Do (abre o To Do nela). */
+  openTodo?: (id: string) => void;
 }
 
 const NavContext = createContext<DocumentNav | null>(null);
@@ -19,12 +21,13 @@ export const DOC_NAV_EVENT = "conectcrm:documento-navegou";
 export const DocumentNavProvider = NavContext.Provider;
 export const useDocumentNav = () => useContext(NavContext);
 
-export const LINK_TYPE_LABEL: Record<DocLinkType, string> = { deal: "Cartão", activity: "Atividade", person: "Contato", organization: "Organização" };
+export const LINK_TYPE_LABEL: Record<DocLinkType, string> = { deal: "Cartão", activity: "Atividade", person: "Contato", organization: "Organização", todo: "Tarefa do To Do" };
 
 export function LinkIcon({ type, size = 13 }: { type: DocLinkType; size?: number }) {
   if (type === "deal") return <Filter size={size} />;
   if (type === "activity") return <CheckSquare size={size} />;
   if (type === "person") return <User size={size} />;
+  if (type === "todo") return <ListTodo size={size} />;
   return <Building2 size={size} />;
 }
 
@@ -38,6 +41,7 @@ export function LinkChip({ link, onRemove, title }: { link: DocLink; onRemove?: 
     else if (link.type === "activity") nav.openTask(link.id);
     else if (link.type === "person") nav.openPerson(link.id);
     else if (link.type === "organization") nav.openOrganization(link.id);
+    else if (link.type === "todo") nav.openTodo?.(link.id);
   };
   const text = link.type === "deal" && link.sub ? `${link.sub} › ${link.label}` : link.label;
   return (
@@ -53,7 +57,7 @@ export function LinkChip({ link, onRemove, title }: { link: DocLink; onRemove?: 
         <LinkIcon type={link.type} size={12} />
       </span>
       {nav && !onRemove ? (
-        <button type="button" onClick={open} title={title ?? `Abrir ${LINK_TYPE_LABEL[link.type].toLowerCase()}`} className="truncate hover:underline">
+        <button type="button" onClick={open} title={title ?? (link.type === "todo" ? "Abrir a tarefa no To Do" : `Abrir ${LINK_TYPE_LABEL[link.type].toLowerCase()}`)} className="truncate hover:underline">
           {text}
         </button>
       ) : (

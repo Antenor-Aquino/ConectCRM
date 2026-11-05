@@ -82,7 +82,10 @@ function assertActivityAccess(db: DatabaseSync, ctx: DbContext, id: string): voi
 function assertEntityAccess(db: DatabaseSync, ctx: DbContext, type: docs.DocLinkType, id: string): void {
   if (type === "deal") deals.assertCardAccess(db, viewer(db, ctx), id);
   else if (type === "activity") assertActivityAccess(db, ctx, id);
-  else if (type !== "person" && type !== "organization") throw new ValidationError("Tipo de vínculo inválido.");
+  // Tarefa do To Do: só o dono.
+  else if (type === "todo") {
+    if (!one(db, "SELECT 1 FROM todo_task WHERE id = ? AND owner_id = ? AND deleted_at IS NULL", id, ctx.userId ?? "")) throw new ValidationError("Tarefa não encontrada.");
+  } else if (type !== "person" && type !== "organization") throw new ValidationError("Tipo de vínculo inválido.");
 }
 
 function assertLinksAccess(db: DatabaseSync, ctx: DbContext, links: docs.DocLinkRef[] | undefined): void {

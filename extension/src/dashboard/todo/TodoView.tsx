@@ -4,7 +4,7 @@
 // tarefas abertas e "Concluída" — no Meu Dia, também as atividades do CRM de
 // hoje; direita: detalhes da tarefa ou as sugestões do Meu Dia.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, Bell, Briefcase, CheckSquare, User, CalendarDays, Check, ChevronDown, Folder, FolderPlus, GripVertical, Home, Infinity as InfinityIcon, Lightbulb, ListTodo, MoreHorizontal, NotebookPen, Plus, Repeat, Search, Star, Sun, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Bell, Paperclip, Pencil, Briefcase, CheckSquare, User, CalendarDays, Check, ChevronDown, Folder, FolderPlus, GripVertical, Home, Infinity as InfinityIcon, Lightbulb, ListTodo, MoreHorizontal, NotebookPen, Plus, Repeat, Search, Star, Sun, Trash2, X } from "lucide-react";
 import { TaInput, cn } from "@tailadmin";
 import { call, DATA_CHANGED_EVENT } from "../../rpc/client";
 import type { TodoArrangeItem, TodoGroup, TodoList, TodoSmart, TodoStep, TodoSuggestions, TodoTask, TodoView as View } from "../../db/todo";
@@ -12,6 +12,10 @@ import type { ActivityListItem } from "../../db/activities";
 import { ActivityIcon } from "../../lib/activityIcons";
 import { useSession } from "../session";
 import { searchLinks, TaskModal } from "../tasks/TaskModal";
+import { NoteBody, NoteEditor } from "../ui/NotesPanel";
+import { DocumentsPanel } from "../documents/DocumentsPanel";
+import { DocumentViewer } from "../documents/DocumentViewer";
+import type { DocumentListItem } from "../../db/documents";
 import { Combobox } from "../ui/Combobox";
 import { useDocumentNav } from "../documents/docUi";
 import { dueLabel, parseRecurrence, PLANNED_GROUPS, plannedGroup, recurrenceLabel, sortTasks, TODO_SORTS, todayYmd, type Recurrence, type TodoSortBy } from "../../lib/todo";
@@ -336,7 +340,7 @@ export function TodoView({ openId, onOpened }: { openId?: string | null; onOpene
         </button>
         <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setSelected(t.id)}>
           <span className={cn("block truncate text-theme-sm", t.done ? "text-gray-400 line-through" : "text-gray-800 dark:text-white/90")}>{t.title}</span>
-          {(showList || due || t.steps_total > 0 || t.notes || t.my_day === today || t.remind_at || t.recurrence || crmLabel(t)) && (
+          {(showList || due || t.steps_total > 0 || t.notes || t.my_day === today || t.remind_at || t.recurrence || crmLabel(t) || t.docs > 0) && (
             <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-theme-xs text-gray-500">
               {!isMyDay && t.my_day === today && (
                 <span className="flex items-center gap-1 text-brand-600">
@@ -366,6 +370,11 @@ export function TodoView({ openId, onOpened }: { openId?: string | null; onOpene
                 </span>
               )}
               {t.notes && <NotebookPen size={12} aria-label="Tem observações" />}
+              {t.docs > 0 && (
+                <span className="flex items-center gap-0.5" title="Arquivos no GED">
+                  <Paperclip size={12} /> {t.docs}
+                </span>
+              )}
             </span>
           )}
         </button>
@@ -975,7 +984,6 @@ type Detail = TodoTask & { steps: TodoStep[] };
 function TaskDetail({ id, lists, onClose, onChanged, onDeleted }: { id: string; lists: TodoList[]; onClose: () => void; onChanged: () => void; onDeleted: () => void }) {
   const [t, setT] = useState<Detail | null>(null);
   const [title, setTitle] = useState("");
-  const [notes, setNotes] = useState("");
   const [step, setStep] = useState("");
   const [error, setError] = useState<string | null>(null);
   const stepInput = useRef<HTMLInputElement>(null);
@@ -985,7 +993,6 @@ function TaskDetail({ id, lists, onClose, onChanged, onDeleted }: { id: string; 
     setT(d);
     if (d) {
       setTitle(d.title);
-      setNotes(d.notes ?? "");
     }
   }, [id]);
   useEffect(() => {
@@ -1121,18 +1128,7 @@ function TaskDetail({ id, lists, onClose, onChanged, onDeleted }: { id: string; 
             ))}
           </select>
         </label>
-        <label className="block text-theme-xs font-medium text-gray-600 dark:text-gray-400">
-          Observações
-          <textarea
-            data-todo-notes
-            rows={5}
-            className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-theme-sm text-gray-800 outline-none focus:border-brand-300 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
-            placeholder="Adicionar observação"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            onBlur={() => notes !== (t.notes ?? "") && void patch({ notes })}
-          />
-        </label>
+        <TodoNotesAndFiles t={t} onSaveNotes={(v) => patch({ notes: v })} onFilesChanged={onChanged} />
       </div>
 
       {error && <p className="mt-2 rounded-lg bg-error-50 px-3 py-2 text-theme-xs text-error-700">{error}</p>}
@@ -1606,7 +1602,7 @@ function CrmLinks({ t, onPatch }: { t: Detail; onPatch: (p: Record<string, unkno
       )}
       {modal === "new" && (
         <TaskModal
-          request={{ fromTodo: { title: t.title, description: t.notes, dueDate: t.due_date }, dealId: t.deal_id ?? undefined, personId: t.person_id ?? undefined }}
+          request={{ fromTodo: { title: t.title, description: t.notes?.replace(/\[imagem:[\w-]+\]\n?/g, "").trim() || null, dueDate: t.due_date }, dealId: t.deal_id ?? undefined, personId: t.person_id ?? undefined }}
           onClose={() => setModal(null)}
           onCreated={(id) => onPatch({ activityId: id })}
           onSaved={() => setModal(null)}
@@ -1630,4 +1626,91 @@ function CrmLinks({ t, onPatch }: { t: Detail; onPatch: (p: Record<string, unkno
 function crmLabel(t: TodoTask): string | null {
   if (t.deal_title && t.deal_title !== t.title) return t.deal_title;
   return t.person_name;
+}
+
+// ---------- Observações com imagens e anexos (GED) ----------
+
+/**
+ * Observações: imagens coladas (Ctrl+V) ou arrastadas vão para o GED, vinculadas
+ * à tarefa (e ao cartão/contato dela), e aparecem no lugar onde foram coladas —
+ * o mesmo editor das notas. Abaixo, os arquivos da tarefa no GED (anexar, abrir).
+ */
+function TodoNotesAndFiles({ t, onSaveNotes, onFilesChanged }: { t: Detail; onSaveNotes: (v: string) => Promise<void>; onFilesChanged: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [docs, setDocs] = useState<DocumentListItem[]>([]);
+  const [open, setOpen] = useState<string | null>(null);
+  const [rev, setRev] = useState(0);
+  const loadDocs = useCallback(() => call("documents.forEntity", { type: "todo", id: t.id }).then(setDocs).catch(() => setDocs([])), [t.id]);
+  useEffect(() => {
+    void loadDocs();
+  }, [loadDocs, rev]);
+  const noteDocs = docs.map((d) => ({ id: d.id, version_id: d.version_id, name: d.name, filename: d.filename, mime: d.mime }));
+  return (
+    <>
+      <div className="block text-theme-xs font-medium text-gray-600 dark:text-gray-400" data-todo-notes-box>
+        <div className="mb-1 flex items-center justify-between">
+          Observações
+          {!editing && t.notes && (
+            <button type="button" title="Editar as observações" data-todo-notes-edit onClick={() => setEditing(true)} className="rounded p-0.5 text-gray-400 hover:text-brand-600">
+              <Pencil size={13} />
+            </button>
+          )}
+        </div>
+        {editing ? (
+          <NoteEditor
+            key={t.id}
+            entityType="todo"
+            entityId={t.id}
+            initial={t.notes ?? ""}
+            docs={noteDocs}
+            autoFocus
+            saveLabel="Salvar observações"
+            placeholder="Adicionar observação… (cole ou arraste imagens aqui)"
+            imageName="Imagem da tarefa"
+            draftLabel={`Observações da tarefa “${t.title}”`}
+            onSave={async (body) => {
+              await onSaveNotes(body);
+              setEditing(false);
+              setRev((r) => r + 1);
+              onFilesChanged();
+            }}
+            onCancel={() => setEditing(false)}
+          />
+        ) : t.notes ? (
+          <div
+            role="button"
+            tabIndex={0}
+            data-todo-notes
+            title="Clique para editar"
+            onClick={(e) => !(e.target as HTMLElement).closest("button, a") && setEditing(true)}
+            className="cursor-text rounded-lg border border-gray-200 px-3 py-2 font-normal hover:border-brand-300 dark:border-gray-700"
+          >
+            <NoteBody note={{ body: t.notes, documents: noteDocs }} onOpenDoc={setOpen} />
+          </div>
+        ) : (
+          <button
+            type="button"
+            data-todo-notes
+            onClick={() => setEditing(true)}
+            className="w-full rounded-lg border border-dashed border-gray-300 px-3 py-3 text-left font-normal text-gray-400 hover:border-brand-300 hover:text-brand-600 dark:border-gray-700"
+          >
+            Adicionar observação (pode colar ou arrastar imagens)
+          </button>
+        )}
+      </div>
+      <div className="text-theme-xs font-medium text-gray-600 dark:text-gray-400" data-todo-files>
+        <DocumentsPanel
+          key={rev}
+          type="todo"
+          id={t.id}
+          compact
+          onChanged={() => {
+            setRev((r) => r + 1);
+            onFilesChanged();
+          }}
+        />
+      </div>
+      {open && <DocumentViewer documentId={open} onClose={() => setOpen(null)} />}
+    </>
+  );
 }
