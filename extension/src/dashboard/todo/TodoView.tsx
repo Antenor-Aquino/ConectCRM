@@ -5,13 +5,14 @@
 // hoje; direita: detalhes da tarefa ou as sugestões do Meu Dia.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, Bell, Paperclip, Pencil, Briefcase, CheckSquare, User, CalendarDays, Check, ChevronDown, Folder, FolderPlus, GripVertical, Home, Infinity as InfinityIcon, Lightbulb, ListTodo, MoreHorizontal, NotebookPen, Plus, Repeat, Search, Star, Sun, Trash2, X } from "lucide-react";
-import { TaInput, cn } from "@tailadmin";
+import { TaButton, TaInput, TaModal, cn } from "@tailadmin";
 import { call, DATA_CHANGED_EVENT } from "../../rpc/client";
 import type { TodoArrangeItem, TodoGroup, TodoList, TodoSmart, TodoStep, TodoSuggestions, TodoTask, TodoView as View } from "../../db/todo";
 import type { ActivityListItem } from "../../db/activities";
 import { ActivityIcon } from "../../lib/activityIcons";
 import { useSession } from "../session";
 import { searchLinks, TaskModal } from "../tasks/TaskModal";
+import { useDraft } from "../ui/unsaved";
 import { NoteBody, NoteEditor } from "../ui/NotesPanel";
 import { DocumentsPanel } from "../documents/DocumentsPanel";
 import { DocumentViewer } from "../documents/DocumentViewer";
@@ -79,9 +80,13 @@ export function TodoView({ openId, onOpened }: { openId?: string | null; onOpene
   const [selected, setSelectedState] = useState<string | null>(null);
   // Painel da direita: detalhes da tarefa ou sugestões do Meu Dia (um de cada vez).
   const [suggest, setSuggest] = useState(false);
-  const setSelected = (id: string | null) => {
+  // Painel aberto com algo não salvo (título, etapa, observações): trocar de tarefa ou de lista pergunta antes.
+  const detailPending = useRef<(() => boolean) | null>(null);
+  const setSelected = (id: string | null, force = false) => {
+    if (!force && id !== selected && detailPending.current?.() && !confirm("A tarefa aberta tem alterações não salvas. Sair sem salvar?")) return false;
     setSelectedState(id);
     if (id) setSuggest(false);
+    return true;
   };
   const [search, setSearch] = useState("");
   const [newTitle, setNewTitle] = useState("");
@@ -90,8 +95,8 @@ export function TodoView({ openId, onOpened }: { openId?: string | null; onOpene
   const [error, setError] = useState<string | null>(null);
 
   const setView = (v: View) => {
+    if (!setSelected(null)) return;
     setViewState(v);
-    setSelected(null);
     setSuggest(false);
     writePref(VIEW_KEY, v);
   };
@@ -554,8 +559,8 @@ export function TodoView({ openId, onOpened }: { openId?: string | null; onOpene
               type="button"
               data-todo-suggest
               onClick={() => {
+                if (!setSelected(null)) return;
                 setSuggest(!suggest);
-                setSelectedState(null);
               }}
               className={cn(
                 "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-theme-sm font-medium",
@@ -670,10 +675,11 @@ export function TodoView({ openId, onOpened }: { openId?: string | null; onOpene
           key={selected}
           id={selected}
           lists={lists}
-          onClose={() => setSelected(null)}
+          pendingRef={detailPending}
+          onClose={() => setSelected(null, true)}
           onChanged={() => void reload()}
           onDeleted={() => {
-            setSelected(null);
+            setSelected(null, true);
             void reload();
           }}
         />
@@ -981,12 +987,30 @@ function ListMenu({
 type Detail = TodoTask & { steps: TodoStep[] };
 
 /** Painel da direita: etapas, vencimento, lista, observações. Salva ao sair de cada campo. */
-function TaskDetail({ id, lists, onClose, onChanged, onDeleted }: { id: string; lists: TodoList[]; onClose: () => void; onChanged: () => void; onDeleted: () => void }) {
+function TaskDetail({
+  id,
+  lists,
+  pendingRef,
+  onClose,
+  onChanged,
+  onDeleted,
+}: {
+  id: string;
+  lists: TodoList[];
+  pendingRef: { current: (() => boolean) | null };
+  onClose: () => void;
+  onChanged: () => void;
+  onDeleted: () => void;
+}) {
   const [t, setT] = useState<Detail | null>(null);
   const [title, setTitle] = useState("");
   const [step, setStep] = useState("");
   const [error, setError] = useState<string | null>(null);
   const stepInput = useRef<HTMLInputElement>(null);
+  // Observações em edição (o editor informa se há algo digitado e salva por fora).
+  const notesCtl = useRef<{ dirty: boolean; save: () => Promise<boolean> } | null>(null);
+  const [askClose, setAskClose] = useState(false);
+  const [closing, setClosing] = useState(false);
 
   const load = useCallback(async () => {
     const d = await call("todo.task", { id });
@@ -1010,6 +1034,39 @@ function TaskDetail({ id, lists, onClose, onChanged, onDeleted }: { id: string; 
     onChanged();
   };
   const patch = (p: Record<string, unknown>) => save(() => call("todo.taskUpdate", { id, patch: p }));
+
+  /** Algo digitado e ainda não salvo: título, etapa por adicionar ou observações em edição. */
+  const pending = () => !!t && (title.trim() !== t.title || !!step.trim() || !!notesCtl.current?.dirty);
+  /** ✓: salva o que estiver pendente e fecha (fica aberta se algo falhar). */
+  const saveAndClose = async () => {
+    if (!t) return;
+    setClosing(true);
+    try {
+      setError(null);
+      if (title.trim() && title.trim() !== t.title) await call("todo.taskUpdate", { id, patch: { title } });
+      if (step.trim()) {
+        await call("todo.stepAdd", { taskId: id, title: step });
+        setStep("");
+      }
+      if (notesCtl.current?.dirty && !(await notesCtl.current.save())) return;
+      onChanged();
+      onClose();
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setClosing(false);
+    }
+  };
+
+  pendingRef.current = pending;
+  useEffect(
+    () => () => {
+      pendingRef.current = null;
+    },
+    [pendingRef],
+  );
+  // Trocar de tela (menu) ou fechar o navegador com o título/etapa digitados avisa.
+  useDraft(`Tarefa “${t?.title ?? ""}”`, !!t && (title.trim() !== t.title || !!step.trim()));
 
   if (!t) return null;
   return (
@@ -1035,7 +1092,6 @@ function TaskDetail({ id, lists, onClose, onChanged, onDeleted }: { id: string; 
           className={cn("flex-1 resize-none bg-transparent text-base font-semibold text-gray-800 outline-none dark:text-white/90", t.done && "line-through")}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          onBlur={() => title.trim() !== t.title && void patch({ title })}
         />
         <button type="button" title="Importante" onClick={() => void patch({ important: !t.important })} className={t.important ? "text-brand-500" : "text-gray-300 hover:text-brand-400"}>
           <Star size={18} fill={t.important ? "currentColor" : "none"} />
@@ -1128,16 +1184,35 @@ function TaskDetail({ id, lists, onClose, onChanged, onDeleted }: { id: string; 
             ))}
           </select>
         </label>
-        <TodoNotesAndFiles t={t} onSaveNotes={(v) => patch({ notes: v })} onFilesChanged={onChanged} />
+        <TodoNotesAndFiles t={t} notesCtl={notesCtl} onSaveNotes={(v) => patch({ notes: v })} onFilesChanged={onChanged} />
       </div>
 
       {error && <p className="mt-2 rounded-lg bg-error-50 px-3 py-2 text-theme-xs text-error-700">{error}</p>}
 
-      <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3 text-theme-xs text-gray-500 dark:border-gray-800">
-        <button type="button" title="Fechar" onClick={onClose} className="rounded p-1 hover:bg-gray-100 dark:hover:bg-white/5">
-          <X size={16} />
+      <div className="mt-4 flex items-center gap-2 border-t border-gray-100 pt-3 text-theme-xs text-gray-500 dark:border-gray-800">
+        <button
+          type="button"
+          title="Fechar (pergunta se houver algo não salvo)"
+          aria-label="Fechar"
+          data-todo-cancel
+          disabled={closing}
+          onClick={() => (pending() ? setAskClose(true) : onClose())}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-error-500 text-white shadow-theme-xs hover:bg-error-600 disabled:opacity-50"
+        >
+          <X size={18} strokeWidth={3} />
         </button>
-        <span>
+        <button
+          type="button"
+          title="Salvar as alterações e fechar"
+          aria-label="Salvar e fechar"
+          data-todo-save
+          disabled={closing}
+          onClick={() => void saveAndClose()}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-success-500 text-white shadow-theme-xs hover:bg-success-600 disabled:opacity-50"
+        >
+          <Check size={18} strokeWidth={3} />
+        </button>
+        <span className="min-w-0 flex-1 text-center">
           Criada em {formatDate(t.created_at)}
           {!!t.done && t.done_at && ` · concluída em ${formatDate(t.done_at)}`}
         </span>
@@ -1159,6 +1234,32 @@ function TaskDetail({ id, lists, onClose, onChanged, onDeleted }: { id: string; 
           <Trash2 size={16} />
         </button>
       </div>
+      {askClose && (
+        <TaModal isOpen onClose={() => setAskClose(false)} title="Alterações não salvas" width="max-w-lg">
+          <div data-todo-ask-close className="space-y-4 text-theme-sm text-gray-600 dark:text-gray-400">
+            <p>Há alterações nesta tarefa que ainda não foram salvas. Deseja salvar antes de fechar?</p>
+            <div className="flex flex-wrap justify-end gap-2">
+              <TaButton size="sm" variant="ghost" onClick={() => setAskClose(false)}>
+                Continuar editando
+              </TaButton>
+              <TaButton size="sm" variant="ghost" className="text-error-600" data-todo-discard onClick={onClose}>
+                Fechar sem salvar
+              </TaButton>
+              <TaButton
+                size="sm"
+                variant="primary"
+                data-todo-save-close
+                onClick={() => {
+                  setAskClose(false);
+                  void saveAndClose();
+                }}
+              >
+                Salvar e fechar
+              </TaButton>
+            </div>
+          </div>
+        </TaModal>
+      )}
     </aside>
   );
 }
@@ -1635,7 +1736,17 @@ function crmLabel(t: TodoTask): string | null {
  * à tarefa (e ao cartão/contato dela), e aparecem no lugar onde foram coladas —
  * o mesmo editor das notas. Abaixo, os arquivos da tarefa no GED (anexar, abrir).
  */
-function TodoNotesAndFiles({ t, onSaveNotes, onFilesChanged }: { t: Detail; onSaveNotes: (v: string) => Promise<void>; onFilesChanged: () => void }) {
+function TodoNotesAndFiles({
+  t,
+  notesCtl,
+  onSaveNotes,
+  onFilesChanged,
+}: {
+  t: Detail;
+  notesCtl: { current: { dirty: boolean; save: () => Promise<boolean> } | null };
+  onSaveNotes: (v: string) => Promise<void>;
+  onFilesChanged: () => void;
+}) {
   const [editing, setEditing] = useState(false);
   const [docs, setDocs] = useState<DocumentListItem[]>([]);
   const [open, setOpen] = useState<string | null>(null);
@@ -1668,6 +1779,7 @@ function TodoNotesAndFiles({ t, onSaveNotes, onFilesChanged }: { t: Detail; onSa
             placeholder="Adicionar observação… (cole ou arraste imagens aqui)"
             imageName="Imagem da tarefa"
             draftLabel={`Observações da tarefa “${t.title}”`}
+            controlRef={notesCtl}
             onSave={async (body) => {
               await onSaveNotes(body);
               setEditing(false);
