@@ -99,7 +99,10 @@ export function NoteEditor({
   placeholder = "Escreva uma nota… (cole ou arraste imagens aqui)",
   imageName = "Imagem da nota",
   draftLabel,
+  controlRef,
 }: {
+  /** Quem está em volta pode saber se há algo digitado e salvar de fora (ex.: botão ✓ do To Do). */
+  controlRef?: { current: { dirty: boolean; save: () => Promise<boolean> } | null };
   placeholder?: string;
   /** Começo do nome da imagem no GED. */
   imageName?: string;
@@ -181,7 +184,7 @@ export function NoteEditor({
     setBody((b) => b.replace(`${pendingMarker(img.n)}\n`, "").replace(pendingMarker(img.n), ""));
   };
 
-  const save = async () => {
+  const save = async (): Promise<boolean> => {
     setSaving(true);
     setError(null);
     try {
@@ -212,12 +215,21 @@ export function NoteEditor({
       images.forEach((p) => p.file && p.url && URL.revokeObjectURL(p.url));
       setImages([]);
       setBody("");
+      return true;
     } catch (e) {
       setError(errorText(e));
+      return false;
     } finally {
       setSaving(false);
     }
   };
+  if (controlRef) controlRef.current = { dirty, save };
+  useEffect(() => {
+    if (!controlRef) return;
+    return () => {
+      controlRef.current = null;
+    };
+  }, [controlRef]);
 
   return (
     <div data-note-editor>
