@@ -511,3 +511,13 @@ P3 (Administrador, Gestor, Vendedor), P4 (tags por entidade).
 
 - **P5 — Tipo do funil:** adotado que **não pode ser alterado** depois de
   criado (muda os campos dos cartões). Reabrir se necessário.
+
+## Barra de rolagem do quadro sempre visível (0.2.81)
+
+- O quadro (modo Kanban) tem a altura da janela: vai do topo dele até o
+  rodapé da tela e se ajusta ao redimensionar.
+- Cada etapa rola os próprios cartões por dentro; o cabeçalho da etapa
+  (nome, quantidade, valor) fica fixo.
+- Por isso a **barra de rolagem lateral** (para ver as etapas da direita) fica
+  sempre à vista no rodapé do quadro, mais grossa e com mais contraste que a
+  barra padrão. Arrastar cartões entre etapas continua igual.

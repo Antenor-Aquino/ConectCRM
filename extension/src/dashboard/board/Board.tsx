@@ -1,7 +1,7 @@
 // Quadro Kanban do funil (tela inicial do mockup): busca, filtros, visões
 // Fluxo geral / Meu fluxo / Minha equipe, ordenação, colunas com quantidade
 // e soma, "+" tracejado por coluna e arrastar cartões entre etapas.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   BarChart3,
   ChevronDown,
@@ -393,6 +393,28 @@ export function Board({
     void load();
   };
 
+  // Quadro do tamanho da janela (do topo dele até o rodapé da tela): a barra de rolagem lateral fica sempre visível.
+  const columnsRef = useRef<HTMLDivElement>(null);
+  const [columnsHeight, setColumnsHeight] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = columnsRef.current;
+    if (!el) return;
+    const fit = () => {
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      // Abaixo do quadro: o espaço interno do painel e a margem da página.
+      setColumnsHeight(Math.max(360, Math.floor(window.innerHeight - top - 54)));
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    // O topo muda quando a barra de seleção ou um aviso aparecem acima do quadro.
+    const ro = new ResizeObserver(fit);
+    if (el.parentElement) ro.observe(el.parentElement);
+    return () => {
+      window.removeEventListener("resize", fit);
+      ro.disconnect();
+    };
+  }, [mode]);
+
   return (
     <section className="flex min-w-0 flex-1 flex-col rounded-2xl border border-gray-200 bg-white p-5 shadow-theme-xs dark:border-gray-800 dark:bg-gray-900">
       {/* Cabeçalho */}
@@ -632,7 +654,17 @@ export function Board({
         />
       ) : (
         /* Colunas */
-        <div className="flex min-h-[60vh] flex-1 gap-4 overflow-x-auto pb-3 custom-scrollbar">
+        <div
+          ref={columnsRef}
+          data-board-columns
+          style={{ height: columnsHeight ?? undefined }}
+          className={cn(
+            "flex min-h-[360px] shrink-0 gap-4 overflow-x-auto pb-3",
+            // Barra lateral do quadro mais visível que a padrão (trilho e alça com contraste).
+            "[&::-webkit-scrollbar]:h-2.5 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-300 hover:[&::-webkit-scrollbar-thumb]:bg-gray-400",
+            "dark:[&::-webkit-scrollbar-track]:bg-white/5 dark:[&::-webkit-scrollbar-thumb]:bg-gray-600",
+          )}
+        >
           {columns.map((col) =>
             collapsed.has(col.id) ? (
               // Etapa recolhida: coluna estreita com o nome na vertical; aceita cartões arrastados.
@@ -664,7 +696,7 @@ export function Board({
                 }}
                 onDrop={(e) => void onDrop(e)}
                 className={cn(
-                  "flex w-[300px] shrink-0 flex-col rounded-xl bg-gray-50 p-3 transition-colors dark:bg-white/[0.03]",
+                  "flex min-h-0 w-[300px] shrink-0 flex-col rounded-xl bg-gray-50 p-3 transition-colors dark:bg-white/[0.03]",
                   drop?.stageId === col.id && "bg-brand-25 ring-2 ring-brand-200 dark:bg-brand-500/10",
                 )}
               >
@@ -709,7 +741,8 @@ export function Board({
                   </span>
                 </div>
                 <div className="mb-3" />
-                <div className="flex flex-1 flex-col gap-2.5">
+                {/* Os cartões rolam dentro da etapa: o quadro cabe na janela e a barra de rolagem lateral fica sempre à vista. */}
+                <div data-stage-cards className="-mr-2 flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto pr-2 custom-scrollbar">
                   {col.cards.map((card) => (
                     <div key={card.id}>
                       {drop?.stageId === col.id && drop.beforeId === card.id && <div className="mb-2 h-1 rounded bg-brand-400" />}
