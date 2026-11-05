@@ -33,3 +33,88 @@ export function plannedGroup(due: string, today = todayYmd()): PlannedGroup {
   const saturday = addDays(today, 6 - new Date(y!, m! - 1, d!).getDay());
   return due <= saturday ? "Esta semana" : "Depois";
 }
+
+// ---------- Repetir (fase 3) ----------
+
+export type RecurrenceUnit = "day" | "week" | "month" | "year";
+/** A cada `every` dias/semanas/meses/anos; na semana, nos `weekdays` (0 = domingo). */
+export interface Recurrence {
+  every: number;
+  unit: RecurrenceUnit;
+  weekdays?: number[];
+}
+
+const dow = (ymd: string) => {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(y!, m! - 1, d!).getDay();
+};
+
+/** Valida e normaliza (texto JSON do banco ou objeto da tela). Inválida → null. */
+export function parseRecurrence(v: unknown): Recurrence | null {
+  let r: unknown = v;
+  if (typeof v === "string") {
+    try {
+      r = JSON.parse(v);
+    } catch {
+      return null;
+    }
+  }
+  if (!r || typeof r !== "object") return null;
+  const o = r as Record<string, unknown>;
+  const unit = o.unit;
+  if (unit !== "day" && unit !== "week" && unit !== "month" && unit !== "year") return null;
+  const every = Math.min(99, Math.max(1, Math.floor(Number(o.every) || 1)));
+  const weekdays =
+    unit === "week" && Array.isArray(o.weekdays)
+      ? [...new Set(o.weekdays.map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6))].sort()
+      : undefined;
+  return weekdays?.length ? { every, unit, weekdays } : { every, unit };
+}
+
+/** Mês/ano somados mantendo o dia (31 → último dia do mês, 29/02 → 28/02). */
+function addMonths(ymd: string, n: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const first = new Date(y!, m! - 1 + n, 1);
+  const last = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+  return todayYmd(new Date(first.getFullYear(), first.getMonth(), Math.min(d!, last)));
+}
+
+/** Próxima data depois de `from` segundo a regra. */
+export function nextDue(from: string, r: Recurrence): string {
+  if (r.unit === "day") return addDays(from, r.every);
+  if (r.unit === "month") return addMonths(from, r.every);
+  if (r.unit === "year") return addMonths(from, 12 * r.every);
+  if (!r.weekdays?.length) return addDays(from, 7 * r.every);
+  // Semanas contadas a partir da semana (domingo) de `from`.
+  const weekStart = addDays(from, -dow(from));
+  for (let i = 1; i <= 7 * r.every + 7; i++) {
+    const d = addDays(from, i);
+    const weeks = Math.round((new Date(`${addDays(d, -dow(d))}T12:00:00`).getTime() - new Date(`${weekStart}T12:00:00`).getTime()) / (7 * 86_400_000));
+    if (weeks % r.every === 0 && r.weekdays.includes(dow(d))) return d;
+  }
+  return addDays(from, 7 * r.every);
+}
+
+/** Próxima ocorrência que não fique para trás de hoje (tarefa repetida atrasada não gera outra atrasada). */
+export function nextOccurrence(from: string, r: Recurrence, today = todayYmd()): string {
+  let d = nextDue(from, r);
+  for (let i = 0; d < today && i < 1000; i++) d = nextDue(d, r);
+  return d;
+}
+
+const WEEKDAY_SHORT = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+
+/** "Diariamente", "Dias da semana", "Semanalmente (seg, qua)", "A cada 2 meses"… */
+export function recurrenceLabel(r: Recurrence): string {
+  const days = r.weekdays?.length ? ` (${r.weekdays.map((d) => WEEKDAY_SHORT[d]).join(", ")})` : "";
+  if (r.unit === "week" && r.every === 1 && r.weekdays?.join() === "1,2,3,4,5") return "Dias da semana";
+  if (r.every === 1) return { day: "Diariamente", week: "Semanalmente", month: "Mensalmente", year: "Anualmente" }[r.unit] + days;
+  return `A cada ${r.every} ${{ day: "dias", week: "semanas", month: "meses", year: "anos" }[r.unit]}${days}`;
+}
+
+/** Hora local "HH:MM" de um ISO e o ISO da mesma hora em outro dia. */
+export function sameTimeOn(iso: string, ymd: string): string {
+  const t = new Date(iso);
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(y!, m! - 1, d!, t.getHours(), t.getMinutes()).toISOString();
+}

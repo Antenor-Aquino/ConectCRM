@@ -6,6 +6,17 @@ export interface TopNavItem {
   id: string;
   label: string;
   icon: ReactNode;
+  /** Contador ao lado do nome (some quando 0). */
+  badge?: number;
+}
+
+function NavBadge({ n }: { n?: number }) {
+  if (!n) return null;
+  return (
+    <span data-nav-badge className="min-w-[18px] rounded-full bg-brand-500 px-1.5 text-center text-[10.5px] font-semibold leading-[18px] text-white">
+      {n > 99 ? "99+" : n}
+    </span>
+  );
 }
 
 export function TopNavBar({
@@ -109,6 +120,7 @@ export function TopNavBar({
               <span key={item.id} className="flex shrink-0 items-center gap-1.5 px-2.5 py-1.5 text-[12.5px] font-medium md:px-3 md:py-2 md:text-theme-sm">
                 <span className="flex shrink-0 [&_svg]:size-4">{item.icon}</span>
                 <span className="whitespace-nowrap">{item.label}</span>
+                <NavBadge n={item.badge} />
               </span>
             ))}
           </div>
@@ -128,6 +140,7 @@ export function TopNavBar({
               >
                 <span className="flex shrink-0 [&_svg]:size-4">{item.icon}</span>
                 <span className="whitespace-nowrap">{item.label}</span>
+                <NavBadge n={item.badge} />
               </button>
             );
           })}
@@ -197,7 +210,8 @@ function TopNavOverflow({
                 )}
               >
                 <span className="[&_svg]:size-4">{item.icon}</span>
-                {item.label}
+                <span className="flex-1">{item.label}</span>
+                <NavBadge n={item.badge} />
               </button>
             ))}
           </div>

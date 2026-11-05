@@ -260,6 +260,18 @@ async function runContactMessages(userId: string | null): Promise<void> {
   }
 }
 
+// Lembretes do To Do (spec 15, fase 3): balão + janela de aviso com Concluir / Adiar 10 min.
+async function runTodoReminders(userId: string | null): Promise<void> {
+  if (!userId) return;
+  const due = await rpc<{ id: string; title: string; list_name: string | null; remind_at: string }[]>("todo.dueReminders", {}, userId);
+  for (const r of due) {
+    const late = Date.now() - new Date(r.remind_at).getTime() > 5 * 60_000;
+    const when = new Date(r.remind_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    chromeNotify(`todo:${r.id}`, `To Do: ${r.title}`, `${r.list_name ?? "Tarefas"}${late ? ` · lembrete de ${when}` : ""}`, true);
+    await addNotification({ kind: "info", title: `To Do: ${r.title}`, message: r.list_name ?? "Tarefas" });
+  }
+}
+
 async function runNotifications(): Promise<void> {
   if (running) return;
   running = true;
@@ -272,6 +284,7 @@ async function runNotifications(): Promise<void> {
       await chrome.storage.local.set({ [SNOOZE_KEY]: snoozes.filter((x) => !due.includes(x)) });
       for (const x of due) chromeNotify(`task:${x.activityId}`, x.title, x.text, true);
     }
+    await runTodoReminders(userId).catch((e) => console.warn("Lembrete do To Do:", e));
     await runContactMessages(userId).catch((e) => console.warn("Lembrete do contato:", e));
     await refreshFinanceCopy(userId);
     const settings = Object.fromEntries(Object.entries(await loadAllNotifySettings()).map(([id, x]) => [id, activeSettings(x)]));
@@ -331,6 +344,12 @@ async function taskAction(notificationId: string, action: "done" | "snooze"): Pr
   const activityId = notificationId.slice(5);
   chrome.notifications.clear(notificationId);
   await dropAlert(notificationId);
+  if (notificationId.startsWith("todo:")) {
+    const userId = ((await chrome.storage.local.get("conectcrm-current-user"))["conectcrm-current-user"] as string | undefined) ?? null;
+    if (action === "done") await rpc("todo.taskUpdate", { id: activityId, patch: { done: true } }, userId);
+    else await rpc("todo.snooze", { id: activityId, minutes: 10 }, userId);
+    return;
+  }
   {
     const userId = ((await chrome.storage.local.get("conectcrm-current-user"))["conectcrm-current-user"] as string | undefined) ?? null;
     if (action === "done") {
@@ -347,13 +366,13 @@ async function taskAction(notificationId: string, action: "done" | "snooze"): Pr
 }
 
 chrome.notifications.onButtonClicked.addListener((notificationId, button) => {
-  if (!notificationId.startsWith("task:")) return;
+  if (!notificationId.startsWith("task:") && !notificationId.startsWith("todo:")) return;
   void taskAction(notificationId, button === 0 ? "done" : "snooze").catch((e) => console.warn("Notificação:", e));
 });
 
 /** Abre (ou foca) o CRM; na tarefa, quando o aviso é de uma. */
 async function openFromAlert(notificationId: string): Promise<void> {
-  const query = notificationId.startsWith("task:") ? `?tarefa=${notificationId.slice(5)}` : "";
+  const query = notificationId.startsWith("task:") ? `?tarefa=${notificationId.slice(5)}` : notificationId.startsWith("todo:") ? `?todo=${notificationId.slice(5)}` : "";
   const url = chrome.runtime.getURL(`${DASHBOARD}${query}`);
   const tabs = await chrome.tabs.query({ url: chrome.runtime.getURL(`${DASHBOARD}*`) });
   const tab = tabs[0];
@@ -384,7 +403,7 @@ chrome.runtime.onMessage.addListener((msg: AlertActionMessage, _sender, sendResp
 
 // Clique na notificação: abre (ou foca) o CRM já na tarefa.
 chrome.notifications.onClicked.addListener((notificationId) => {
-  if (!notificationId.startsWith("task:") && !notificationId.startsWith("notify:")) return;
+  if (!notificationId.startsWith("task:") && !notificationId.startsWith("todo:") && !notificationId.startsWith("notify:")) return;
   void openFromAlert(notificationId);
 });
 // Fechou o balão: sai da janela de aviso também.

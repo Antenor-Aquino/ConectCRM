@@ -64,3 +64,27 @@ Em 1745 px cabem todos os itens.
   recolhível (lembra o estado). As atividades continuam no módulo Atividades —
   o To Do só as mostra.
 - RPC novo `todo.suggestions`; contador `meudia` em `todo.lists`.
+
+## Fase 3 — Lembretes, repetir e contador (0.2.86)
+
+- **Lembrar-me** (painel de detalhes): atalhos "Mais tarde hoje" (+3 h),
+  "Amanhã (09:00)", "Próxima semana (seg., 09:00)" ou data e hora livres.
+  Na hora, o Chrome avisa (balão + janela de aviso do CRM, com o som escolhido
+  em Notificações) com **Concluir**, **Adiar 10 min**, **Abrir** (abre o To Do
+  na tarefa) e OK; também entra no sino. Avisa uma vez; mudar o lembrete ou
+  adiar volta a valer. Tarefa concluída ou excluída não avisa. Com o Chrome
+  fechado na hora, avisa ao abrir (com "lembrete de dd/mm hh:mm").
+- **Repetir:** Diariamente, Dias da semana, Semanalmente, Mensalmente,
+  Anualmente ou Personalizado (a cada N dias/semanas/meses/anos; na semana,
+  escolhe os dias). Sem vencimento, passa a vencer hoje. Ao **concluir**, cria a
+  próxima na mesma lista (título, observações, estrela e etapas desmarcadas;
+  lembrete na mesma hora do novo dia) e a concluída deixa de repetir — reabrir
+  não duplica. Mês com dia 31 cai no último dia do mês; atrasada gera a próxima
+  a partir de hoje, nunca outra atrasada.
+- Atalhos de vencimento: Hoje, Amanhã, Próx. semana.
+- Linha da tarefa: sino com o horário do lembrete e ícone de repetir.
+- **Contador no menu "To Do":** tarefas abertas no Meu Dia de hoje, vencidas
+  ou que vencem hoje e com lembrete que já chegou (cada uma conta uma vez).
+- Banco: `remind_at`, `reminded_at`, `recurrence` em `todo_task` (migração
+  0028); RPC `todo.dueReminders` (service worker, a cada minuto), `todo.snooze`,
+  `todo.badge`; regras em `lib/todo.ts` (`nextDue`, `nextOccurrence`).
