@@ -73,3 +73,10 @@ export function taskTiming(t: { due_at: string; end_at: string | null; done: num
   if (since > 0) return { label: `atrasada há ${plural(since, "dia", "dias")} (sem finalização)`, tone: "danger", span };
   return { label: "iniciada hoje · sem prazo", tone: "muted", span };
 }
+
+/** Finalização sugerida: 5 min depois do início, no mesmo dia (perto da meia-noite, fica às 23:59). */
+export function suggestedEnd(start: Date): Date {
+  const d = new Date(start.getTime() + 5 * 60_000);
+  d.setSeconds(0, 0);
+  return d.getDate() === start.getDate() ? d : new Date(start.getFullYear(), start.getMonth(), start.getDate(), 23, 59);
+}
