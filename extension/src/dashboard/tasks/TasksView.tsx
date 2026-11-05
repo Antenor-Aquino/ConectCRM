@@ -10,7 +10,7 @@ import { call } from "../../rpc/client";
 import type { ActivityListItem, ActivityType } from "../../db/activities";
 import { ActivityIcon } from "../../lib/activityIcons";
 import { downloadVersion } from "../../lib/documentFiles";
-import { taskTiming } from "../../lib/taskTiming";
+import { isOverdue as isOverdueRule, taskTiming } from "../../lib/taskTiming";
 import { useSession } from "../session";
 import { Avatar } from "../ui/Avatar";
 import { TaskModal, type TaskRequest } from "./TaskModal";
@@ -180,12 +180,13 @@ export function TasksView({
     setReload((n) => n + 1);
   };
 
-  const now = Date.now();
-  const isOverdue = (a: ActivityListItem) => !a.done && !!a.end_at && new Date(a.end_at).getTime() < now;
+  // Mesma regra do contador "Atrasadas": finalização vencida ou, sem finalização, início antes de hoje.
+  const isOverdue = (a: ActivityListItem) => isOverdueRule(a);
   const groups = useMemo(() => {
     const map = new Map<string, ActivityListItem[]>();
     const todayStart = dayStart(new Date()).getTime();
-    // Ordem fixa dos grupos: atrasadas, em andamento e depois por dia de início.
+    // Ordem fixa dos grupos: atrasadas, em andamento (começou antes de hoje e a
+    // finalização ainda não chegou) e depois por dia de início.
     map.set("Atrasadas", []);
     map.set("Em andamento", []);
     for (const a of rows) {
