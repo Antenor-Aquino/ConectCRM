@@ -27,7 +27,7 @@ describe("To Do", () => {
     todo.createTodoTask(db, ctx, { title: "Revisar contrato", listId: perseus, dueDate: "2026-11-10" });
 
     expect(todo.listTodoLists(db, ctx).map((l) => [l.name, l.pending])).toEqual([["Pessoal", 2], ["PERSEUS", 1]]);
-    expect(todo.todoCounts(db, ctx)).toEqual({ importante: 1, planejado: 2, todas: 4, tarefas: 1 });
+    expect(todo.todoCounts(db, ctx)).toEqual({ meudia: 0, importante: 1, planejado: 2, todas: 4, tarefas: 1 });
     expect(titles(todo.listTodoTasks(db, ctx, { listId: pessoal })).open).toEqual(["Teste", "Oficina Voyage"]);
     expect(titles(todo.listTodoTasks(db, ctx, { smart: "planejado" })).open).toEqual(["Revisar contrato", "Teste"]);
     expect(titles(todo.listTodoTasks(db, ctx, { smart: "importante" })).open).toEqual(["Teste"]);
@@ -66,6 +66,34 @@ describe("To Do", () => {
     restoreTrashItem(db, ctx, null, item.id);
     expect(titles(todo.listTodoTasks(db, ctx, { listId: l })).open.sort()).toEqual(["Proposta", "Reunião"]);
     expect(todo.getTodoTask(db, ctx, t1)!.steps.map((s) => s.title)).toEqual(["Planilha"]);
+  });
+
+  it("Meu Dia: vale só hoje (zera à meia-noite) e sugere o que ficou para trás", async () => {
+    const { db, ctx } = await setup();
+    const hoje = todo.createTodoTask(db, ctx, { title: "Responder Natália", myDay: true });
+    const ontem = todo.createTodoTask(db, ctx, { title: "Ligar contador", myDay: true });
+    db.exec(`UPDATE todo_task SET my_day = '2000-01-01' WHERE id = '${ontem}'`); // ficou em um Meu Dia antigo
+    const vence = todo.createTodoTask(db, ctx, { title: "Pagar boleto", dueDate: "2000-01-02" });
+    todo.createTodoTask(db, ctx, { title: "Revisar proposta", important: true });
+    todo.createTodoTask(db, ctx, { title: "Sem nada" });
+
+    expect(titles(todo.listTodoTasks(db, ctx, { smart: "meudia" })).open).toEqual(["Responder Natália"]);
+    expect(todo.todoCounts(db, ctx).meudia).toBe(1);
+    // No dia seguinte, o Meu Dia começa vazio.
+    const amanha = "2999-12-31";
+    expect(todo.listTodoTasks(db, ctx, { smart: "meudia" }, { today: amanha }).open).toEqual([]);
+    expect(todo.todoCounts(db, ctx, amanha).meudia).toBe(0);
+
+    const s = todo.todoSuggestions(db, ctx);
+    expect(s.earlier.map((t) => t.title)).toEqual(["Ligar contador"]);
+    expect(s.due.map((t) => t.title)).toEqual(["Pagar boleto"]);
+    expect(s.important.map((t) => t.title)).toEqual(["Revisar proposta"]);
+    // Aceitar a sugestão põe no Meu Dia de hoje; concluir mantém em "Concluída" do Meu Dia.
+    todo.updateTodoTask(db, ctx, ontem, { myDay: true });
+    todo.updateTodoTask(db, ctx, vence, { myDay: true, done: true });
+    expect(titles(todo.listTodoTasks(db, ctx, { smart: "meudia" }))).toEqual({ open: ["Ligar contador", "Responder Natália"], done: ["Pagar boleto"] });
+    todo.updateTodoTask(db, ctx, hoje, { myDay: false });
+    expect(todo.getTodoTask(db, ctx, hoje)!.my_day).toBeNull();
   });
 
   it("cada usuário vê só o que é dele", async () => {

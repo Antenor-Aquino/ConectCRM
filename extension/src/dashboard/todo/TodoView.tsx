@@ -1,18 +1,24 @@
-// To Do (spec 15, fase 1): lista pessoal de afazeres, separada das Atividades
-// do CRM (benchmark: Microsoft To Do). Esquerda: listas inteligentes e
-// "Minhas listas"; centro: adicionar, tarefas abertas e "Concluída"; direita:
-// detalhes da tarefa (etapas, vencimento, lista, observações).
+// To Do (spec 15): lista pessoal de afazeres, separada das Atividades do CRM
+// (benchmark: Microsoft To Do). Esquerda: listas inteligentes (Meu Dia,
+// Importante, Planejado, Todas, Tarefas) e "Minhas listas"; centro: adicionar,
+// tarefas abertas e "Concluída" — no Meu Dia, também as atividades do CRM de
+// hoje; direita: detalhes da tarefa ou as sugestões do Meu Dia.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CalendarDays, Check, ChevronDown, Home, Infinity as InfinityIcon, ListTodo, MoreHorizontal, NotebookPen, Plus, Search, Star, Trash2, X } from "lucide-react";
+import { CalendarDays, Check, ChevronDown, Home, Infinity as InfinityIcon, Lightbulb, ListTodo, MoreHorizontal, NotebookPen, Plus, Search, Star, Sun, Trash2, X } from "lucide-react";
 import { TaInput, cn } from "@tailadmin";
 import { call, DATA_CHANGED_EVENT } from "../../rpc/client";
-import type { TodoList, TodoSmart, TodoStep, TodoTask, TodoView as View } from "../../db/todo";
+import type { TodoList, TodoSmart, TodoStep, TodoSuggestions, TodoTask, TodoView as View } from "../../db/todo";
+import type { ActivityListItem } from "../../db/activities";
+import { ActivityIcon } from "../../lib/activityIcons";
+import { useSession } from "../session";
+import { TaskModal } from "../tasks/TaskModal";
 import { dueLabel, PLANNED_GROUPS, plannedGroup, todayYmd } from "../../lib/todo";
 import { errorText } from "../../lib/errors";
 import { formatDate } from "../../lib/format";
 import { Popover } from "../ui/Popover";
 
 const SMART: { id: TodoSmart; label: string; icon: React.ReactNode }[] = [
+  { id: "meudia", label: "Meu Dia", icon: <Sun size={17} /> },
   { id: "importante", label: "Importante", icon: <Star size={17} /> },
   { id: "planejado", label: "Planejado", icon: <CalendarDays size={17} /> },
   { id: "todas", label: "Todas", icon: <InfinityIcon size={17} /> },
@@ -48,10 +54,16 @@ const writePref = (key: string, v: unknown) => {
 
 export function TodoView() {
   const [lists, setLists] = useState<TodoList[]>([]);
-  const [counts, setCounts] = useState<Record<TodoSmart, number>>({ importante: 0, planejado: 0, todas: 0, tarefas: 0 });
-  const [view, setViewState] = useState<View>(() => readPref<View>(VIEW_KEY, { smart: "tarefas" }));
+  const [counts, setCounts] = useState<Record<TodoSmart, number>>({ meudia: 0, importante: 0, planejado: 0, todas: 0, tarefas: 0 });
+  const [view, setViewState] = useState<View>(() => readPref<View>(VIEW_KEY, { smart: "meudia" }));
   const [tasks, setTasks] = useState<{ open: TodoTask[]; done: TodoTask[] }>({ open: [], done: [] });
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelectedState] = useState<string | null>(null);
+  // Painel da direita: detalhes da tarefa ou sugestões do Meu Dia (um de cada vez).
+  const [suggest, setSuggest] = useState(false);
+  const setSelected = (id: string | null) => {
+    setSelectedState(id);
+    if (id) setSuggest(false);
+  };
   const [search, setSearch] = useState("");
   const [newTitle, setNewTitle] = useState("");
   const [newList, setNewList] = useState<string | null>(null);
@@ -61,6 +73,7 @@ export function TodoView() {
   const setView = (v: View) => {
     setViewState(v);
     setSelected(null);
+    setSuggest(false);
     writePref(VIEW_KEY, v);
   };
 
@@ -112,6 +125,8 @@ export function TodoView() {
   const title = "smart" in view ? SMART.find((s) => s.id === view.smart)!.label : (currentList?.name ?? "Lista");
   const accent = currentList ? (COLOR[currentList.color] ?? COLOR.blue) : COLOR.blue;
   const showList = "smart" in view;
+  const isMyDay = "smart" in view && view.smart === "meudia";
+  const today = todayYmd();
 
   const addTask = () => {
     const t = newTitle.trim();
@@ -122,6 +137,7 @@ export function TodoView() {
         title: t,
         listId: "listId" in view ? view.listId : null,
         important: "smart" in view && view.smart === "importante",
+        myDay: isMyDay,
         dueDate: "smart" in view && view.smart === "planejado" ? todayYmd() : null,
       }),
     );
@@ -162,8 +178,13 @@ export function TodoView() {
         </button>
         <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setSelected(t.id)}>
           <span className={cn("block truncate text-theme-sm", t.done ? "text-gray-400 line-through" : "text-gray-800 dark:text-white/90")}>{t.title}</span>
-          {(showList || due || t.steps_total > 0 || t.notes) && (
+          {(showList || due || t.steps_total > 0 || t.notes || t.my_day === today) && (
             <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-theme-xs text-gray-500">
+              {!isMyDay && t.my_day === today && (
+                <span className="flex items-center gap-1 text-brand-600">
+                  <Sun size={12} /> Meu Dia
+                </span>
+              )}
               {showList && <span>{t.list_name ?? "Tarefas"}</span>}
               {t.steps_total > 0 && (
                 <span>
@@ -252,10 +273,33 @@ export function TodoView() {
       {/* Tarefas */}
       <section className="min-w-0 flex-1 rounded-2xl border border-gray-200 bg-gray-50 p-5 shadow-theme-xs dark:border-gray-800 dark:bg-white/[0.02]">
         <div className="mb-4 flex flex-wrap items-center gap-3">
-          <h1 className="flex min-w-0 items-center gap-2 text-2xl font-semibold" style={{ color: accent }} data-todo-title>
-            {"smart" in view ? SMART.find((s) => s.id === view.smart)!.icon : <ListTodo size={22} />}
-            <span className="truncate">{title}</span>
-          </h1>
+          <div className="min-w-0">
+            <h1 className="flex min-w-0 items-center gap-2 text-2xl font-semibold" style={{ color: accent }} data-todo-title>
+              {"smart" in view ? SMART.find((s) => s.id === view.smart)!.icon : <ListTodo size={22} />}
+              <span className="truncate">{title}</span>
+            </h1>
+            {isMyDay && (
+              <p className="mt-0.5 text-theme-sm text-gray-500" data-todo-today>
+                {new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })}
+              </p>
+            )}
+          </div>
+          {isMyDay && (
+            <button
+              type="button"
+              data-todo-suggest
+              onClick={() => {
+                setSuggest(!suggest);
+                setSelectedState(null);
+              }}
+              className={cn(
+                "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-theme-sm font-medium",
+                suggest ? "bg-brand-50 text-brand-600 dark:bg-brand-500/15" : "text-gray-600 hover:bg-white dark:text-gray-300 dark:hover:bg-white/5",
+              )}
+            >
+              <Lightbulb size={16} /> Sugestões
+            </button>
+          )}
           {currentList && <ListMenu list={currentList} onChanged={() => void reload()} onDeleted={() => setView({ smart: "tarefas" })} onError={setError} />}
           <div className="relative ml-auto w-64">
             <Search size={15} className="pointer-events-none absolute left-3 top-3 text-gray-400" />
@@ -278,7 +322,13 @@ export function TodoView() {
         {error && <p className="mb-3 rounded-lg bg-error-50 px-3 py-2 text-theme-sm text-error-700">{error}</p>}
 
         {tasks.open.length === 0 && tasks.done.length === 0 && (
-          <p className="py-10 text-center text-theme-sm text-gray-500">{search ? "Nada encontrado." : "Nenhuma tarefa aqui. Escreva acima e tecle Enter."}</p>
+          <p className="py-10 text-center text-theme-sm text-gray-500">
+            {search
+              ? "Nada encontrado."
+              : isMyDay
+                ? "Concentre-se no seu dia: escreva acima ou veja as Sugestões."
+                : "Nenhuma tarefa aqui. Escreva acima e tecle Enter."}
+          </p>
         )}
         {groups.map(([g, list]) => (
           <div key={g || "all"} className="mb-3">
@@ -304,7 +354,17 @@ export function TodoView() {
             {doneOpen && <ul className="space-y-1.5">{tasks.done.map(row)}</ul>}
           </div>
         )}
+
+        {isMyDay && !search && <CrmToday />}
       </section>
+
+      {suggest && isMyDay && !selected && (
+        <SuggestionsPanel
+          onClose={() => setSuggest(false)}
+          onAdd={(id) => void run(() => call("todo.taskUpdate", { id, patch: { myDay: true } }))}
+          refreshKey={counts.meudia}
+        />
+      )}
 
       {/* Detalhes */}
       {selected && (
@@ -521,6 +581,22 @@ function TaskDetail({ id, lists, onClose, onChanged, onDeleted }: { id: string; 
         />
       </div>
 
+      <button
+        type="button"
+        data-todo-myday
+        onClick={() => void patch({ myDay: t.my_day !== todayYmd() })}
+        className={cn(
+          "mb-3 flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-theme-sm",
+          t.my_day === todayYmd()
+            ? "border-brand-200 bg-brand-25 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300"
+            : "border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/5",
+        )}
+      >
+        <Sun size={16} />
+        <span className="flex-1">{t.my_day === todayYmd() ? "Adicionada a Meu Dia" : "Adicionar a Meu Dia"}</span>
+        {t.my_day === todayYmd() && <X size={14} aria-label="Tirar de Meu Dia" />}
+      </button>
+
       <div className="space-y-3 border-t border-gray-100 pt-3 dark:border-gray-800">
         <label className="block text-theme-xs font-medium text-gray-600 dark:text-gray-400">
           Data de vencimento
@@ -591,6 +667,154 @@ function TaskDetail({ id, lists, onClose, onChanged, onDeleted }: { id: string; 
           <Trash2 size={16} />
         </button>
       </div>
+    </aside>
+  );
+}
+
+/**
+ * Meu Dia: as atividades do CRM de hoje (começam ou terminam hoje, sem as
+ * atrasadas — a mesma regra do filtro "Hoje" de Atividades). Concluir e abrir
+ * agem na própria atividade; nada é copiado para o To Do.
+ */
+function CrmToday() {
+  const { user } = useSession();
+  const [items, setItems] = useState<ActivityListItem[]>([]);
+  const [open, setOpen] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState(() => readPref("conectcrm-todo-crm-closed", false));
+  const load = useCallback(async () => {
+    const t = new Date();
+    t.setHours(0, 0, 0, 0);
+    const from = t.toISOString();
+    const to = new Date(t.getTime() + 86400_000).toISOString();
+    setItems(await call("activities.list", { from, to, dayOnly: true, ownerIds: [user.id], limit: 200 }));
+  }, [user.id]);
+  useEffect(() => {
+    void load();
+    const on = () => void load();
+    window.addEventListener(DATA_CHANGED_EVENT, on);
+    return () => window.removeEventListener(DATA_CHANGED_EVENT, on);
+  }, [load]);
+  if (!items.length) return null;
+  const pending = items.filter((a) => !a.done).length;
+  const time = (iso: string) => new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return (
+    <div className="mt-5 border-t border-gray-200 pt-4 dark:border-gray-800" data-todo-crm>
+      <button
+        type="button"
+        aria-expanded={!collapsed}
+        onClick={() => {
+          setCollapsed(!collapsed);
+          writePref("conectcrm-todo-crm-closed", !collapsed);
+        }}
+        className="mb-1.5 flex items-center gap-1.5 rounded px-1 text-theme-sm font-semibold text-gray-700 hover:bg-white dark:text-gray-300 dark:hover:bg-white/5"
+      >
+        <ChevronDown size={16} className={cn("transition-transform", collapsed && "-rotate-90")} />
+        Atividades do CRM hoje <span className="font-normal text-gray-500">{pending}</span>
+      </button>
+      {!collapsed && (
+        <ul className="space-y-1.5">
+          {items.map((a) => (
+            <li key={a.id} data-todo-crm-item={a.title} className="flex items-center gap-3 rounded-lg bg-white px-3 py-2 shadow-theme-xs dark:bg-gray-900">
+              <button
+                type="button"
+                title={a.done ? "Reabrir a atividade" : "Concluir a atividade"}
+                onClick={async () => {
+                  await call("activities.setDone", { id: a.id, done: !a.done });
+                  await load();
+                }}
+                className={cn(
+                  "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2",
+                  a.done ? "border-success-500 bg-success-500 text-white" : "border-gray-400 text-transparent hover:text-gray-400",
+                )}
+              >
+                <Check size={12} strokeWidth={3} />
+              </button>
+              <span className="text-brand-500">
+                <ActivityIcon name={a.type_icon} />
+              </span>
+              <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setOpen(a.id)} title="Abrir a atividade">
+                <span className={cn("block truncate text-theme-sm", a.done ? "text-gray-400 line-through" : "text-gray-800 dark:text-white/90")}>{a.title}</span>
+                <span className="block truncate text-theme-xs text-gray-500">
+                  {time(a.due_at)} · {a.type_name}
+                  {a.deal_title ? ` · ${a.deal_title}` : a.person_name ? ` · ${a.person_name}` : ""}
+                </span>
+              </button>
+              <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase text-gray-500 dark:bg-white/5">CRM</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {open && (
+        <TaskModal
+          request={{ id: open }}
+          onClose={() => setOpen(null)}
+          onSaved={() => {
+            setOpen(null);
+            void load();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Lâmpada do Meu Dia: o que ficou de dias anteriores, o que vence e as importantes. */
+function SuggestionsPanel({ onClose, onAdd, refreshKey }: { onClose: () => void; onAdd: (id: string) => void; refreshKey: number }) {
+  const [s, setS] = useState<TodoSuggestions | null>(null);
+  useEffect(() => {
+    void call("todo.suggestions").then(setS);
+  }, [refreshKey]);
+  const groups: [string, TodoTask[]][] = s
+    ? [
+        ["De dias anteriores", s.earlier],
+        ["Vencem hoje ou atrasadas", s.due],
+        ["Importantes", s.important],
+      ]
+    : [];
+  const empty = s && !s.earlier.length && !s.due.length && !s.important.length;
+  return (
+    <aside data-todo-suggestions className="w-[340px] shrink-0 self-start rounded-2xl border border-gray-200 bg-white p-4 shadow-theme-xs dark:border-gray-800 dark:bg-gray-900">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="flex items-center gap-2 text-base font-semibold text-gray-800 dark:text-white/90">
+          <Lightbulb size={18} className="text-warning-500" /> Sugestões
+        </h2>
+        <button type="button" title="Fechar" onClick={onClose} className="rounded p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5">
+          <X size={16} />
+        </button>
+      </div>
+      {empty && <p className="text-theme-sm text-gray-500">Nada para sugerir agora. Tarefas antigas do Meu Dia, as que vencem e as importantes aparecem aqui.</p>}
+      {groups
+        .filter(([, l]) => l.length)
+        .map(([g, l]) => (
+          <div key={g} className="mb-3">
+            <h3 className="mb-1 text-theme-xs font-semibold uppercase text-gray-500">{g}</h3>
+            <ul className="space-y-1">
+              {l.map((t) => {
+                const due = t.due_date ? dueLabel(t.due_date) : null;
+                return (
+                  <li key={t.id} data-todo-suggestion={t.title} className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-gray-50 dark:hover:bg-white/5">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-theme-sm text-gray-800 dark:text-white/90">{t.title}</span>
+                      <span className="block truncate text-theme-xs text-gray-500">
+                        {t.list_name ?? "Tarefas"}
+                        {due && <span className={due.tone === "danger" ? "text-error-600" : ""}> · {due.text}</span>}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      title="Adicionar a Meu Dia"
+                      aria-label="Adicionar a Meu Dia"
+                      onClick={() => onAdd(t.id)}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-500/15"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
     </aside>
   );
 }
