@@ -2,7 +2,7 @@
 // digitado/alterado pergunta antes de descartar. Também registra o rascunho,
 // então trocar de tela ou fechar o navegador avisa. (O botão Cancelar é uma
 // escolha deliberada e continua descartando na hora.)
-import { useEffect, useState, type ComponentProps } from "react";
+import { startTransition, useEffect, useState, type ComponentProps } from "react";
 import { TaModal } from "@tailadmin";
 import { UnsavedDialog, useDraft } from "./unsaved";
 
@@ -14,6 +14,10 @@ type Props = ComponentProps<typeof TaModal> & {
 export function GuardedModal({ onClose, children, label, ...rest }: Props) {
   const [touched, setTouched] = useState(false);
   const [asking, setAsking] = useState(false);
+  // Fora do evento de digitação: atualizar o aviso de rascunho no meio dele fazia o campo perder a primeira tecla.
+  const markTouched = () => {
+    if (!touched) startTransition(() => setTouched(true));
+  };
   // Janela que fica montada e só fecha (isOpen = false): começa limpa na próxima abertura.
   useEffect(() => {
     if (!rest.isOpen) {
@@ -26,7 +30,7 @@ export function GuardedModal({ onClose, children, label, ...rest }: Props) {
   return (
     <>
       <TaModal {...rest} onClose={() => (touched ? setAsking(true) : onClose())}>
-        <div onInputCapture={() => setTouched(true)} onChangeCapture={() => setTouched(true)}>
+        <div onInputCapture={markTouched} onChangeCapture={markTouched}>
           {children}
         </div>
       </TaModal>

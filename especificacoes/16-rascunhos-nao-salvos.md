@@ -36,3 +36,14 @@ aberta; para sair é preciso **salvar no banco ou descartar de propósito**.
 - Em `GuardedModal`, "alterado" = qualquer digitação/seleção na janela (mesmo que
   volte ao valor original).
 - Título e descrição do cartão se salvam ao sair do campo; não são rascunho.
+
+## Ajustes ao entrar no main (0.2.90)
+
+- Mesclado depois do To Do (0.2.84–0.2.88) e das atividades 0.2.75–0.2.89;
+  versão 0.2.90.
+- Digitar a primeira tecla numa atividade (nova, edição ou cópia) ou numa
+  janela de formulário (contato, organização…) não se perde mais: o aviso de
+  "algo digitado" passou a ser marcado fora do evento de digitação
+  (`startTransition`).
+- O formulário da atividade não recarrega por cima do que já foi digitado
+  (ex.: a cópia de "Duplicar" que ainda estava carregando).

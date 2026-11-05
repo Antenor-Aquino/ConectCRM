@@ -30,7 +30,7 @@ Modal largo em **duas colunas**, botão ✕ no canto.
 | **Tipo** | Lista com ícone e busca (com botão de limpar). Padrão: **Tarefa** |
 | **Responsável** | Avatar + nome. O usuário atual aparece como **"Antenor (Você)"**; os demais com o tipo: "Maria (vendedor)". Padrão: o usuário atual |
 | **Início** | Texto por extenso: **"16 de outubro às 18:25"**. Padrão: o momento do cadastro; pode ser alterado e pode ser futuro. Abre o painel da seção 2 |
-| **Finalização** (opcional) | Data/hora de entrega. Vazio = "Sem finalização (opcional)"; ao abrir, sugere o dia seguinte ao início às 18:00. Nunca antes do início. Sem finalização, fica atrasada quando o início é de um dia que já passou |
+| **Finalização** (opcional) | Data/hora de entrega. Vazio = "Sem finalização (opcional)"; ao clicar, sugere o mesmo dia, 5 min depois do início (0.2.80; perto da meia-noite, 23:59). Nunca antes do início. Sem finalização, fica atrasada quando o início é de um dia que já passou |
 | **Vinculado a** (opcional) | Busca um **negócio, ticket ou etapa de projeto**. Pode ficar vazio (atividade avulsa). Com vínculo, a atividade herda contato e organização do cartão |
 | **Tags** | Tags próprias de atividade (Configurações → Tags → Atividade) |
 | **Campos personalizados** | Os criados em Configurações → Campos personalizados → Atividade |
@@ -144,3 +144,52 @@ contando da conclusão, na hora do início. A frase da regra aparece embaixo
 - Atividade comum que passa a repetir vira a 1ª ocorrência da série.
 - Ícone ↻ nas listas (atividades, cartão, contato/organização). Em reuniões
   recorrentes o evento não é criado no Google Agenda/Outlook.
+
+## Duplicar e excluir pela lista (0.2.75; telas: 0.2.76)
+
+- **Duplicar** abre uma atividade **nova** ("Nova atividade (cópia)") preenchida
+  com tudo o que está salvo na origem: nome, tipo, responsável, início,
+  finalização, duração, descrição, lembretes, tags, campos personalizados,
+  convidados, link da reunião, vínculo (cartão, ou contato e organização) e o
+  lembrete para o contato por WhatsApp (como novo, a enviar). O usuário ajusta
+  o que quiser e salva; nada é gravado antes disso.
+  - Não vão junto: a recorrência (a cópia é avulsa; dá para ligar em Repetir),
+    os anexos, a situação concluída e o histórico de avisos enviados.
+  - Onde: nas listas de atividades — do cartão, da tela principal de
+    Atividades (modo Lista) e das fichas de contato e de organização — e no
+    rodapé da janela "Editar atividade" (a cópia parte do que está salvo).
+    Componente único: `dashboard/tasks/TaskRowActions.tsx`.
+- **Lixeira** nas mesmas listas: pede confirmação e manda para a
+  lixeira, com o aviso "Restaurar / Ver lixeira" (spec 11). Atividade
+  recorrente pergunta o alcance (só esta, esta e as próximas, toda a série).
+
+## Vincular a atividade a um contato (0.2.78; cadastro pelo nome: 0.2.79)
+
+- **Vinculado a** busca cartões (negócio, ticket, etapa de projeto) **e
+  contatos**; cada item mostra se é cartão ou "Contato".
+- Contato que não existe: **Cadastrar contato "…"** cria na hora (com o aviso
+  de nome parecido já cadastrado) e já deixa a atividade vinculada a ele.
+- Vinculada a um contato, a atividade grava o contato e a organização
+  principal dele (aparece nas fichas dos dois); o lembrete pelo WhatsApp usa
+  esse contato. Vinculada a um cartão, continua herdando contato e
+  organização do cartão.
+- Aberta na ficha do contato, já vem vinculada a ele. Na edição, a atividade
+  sem cartão mostra o contato no campo; tirar o vínculo tira o contato.
+- **Completar o cadastro sem sair da atividade (0.2.79):** o nome do contato
+  no campo é um link que abre "Editar contato" por cima da atividade (celular,
+  e-mail, organização…). Contato sem celular: o lembrete pelo WhatsApp mostra
+  "Cadastrar o celular de …", que abre o mesmo cadastro. Ao salvar, os dados
+  já valem na atividade aberta: o nome no campo, o celular em "Para" (o
+  lembrete fica disponível) e o e-mail como convidado da reunião.
+
+
+## Grupos recolhíveis e filtro Hoje (0.2.82)
+
+- Na tela de Atividades (modo Lista), clicar no nome do grupo (Atrasadas, Em
+  andamento, Hoje, Amanhã, "Qui, 06/11"…) **recolhe ou mostra** as atividades
+  dele, como uma cortina; a seta indica o estado e a contagem continua
+  visível. A escolha fica lembrada neste computador.
+- **Hoje** e **Amanhã** trazem só as atividades do dia — que começam ou
+  terminam nele —, sem as atrasadas nem as em andamento de dias anteriores
+  (mesma regra do cartão "Para hoje"; filtro `dayOnly`). Semana, mês, todas e
+  personalizado continuam mostrando também o que está em aberto no período.

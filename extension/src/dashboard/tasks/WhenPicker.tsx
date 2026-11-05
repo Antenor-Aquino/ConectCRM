@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, HelpCircle, X } from "lucide-react";
 import { cn } from "@tailadmin";
 import { Popover } from "../ui/Popover";
 import { inputClass } from "../ui/form";
+import { suggestedEnd } from "../../lib/taskTiming";
 
 const MONTHS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const MONTHS_LONG = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
@@ -154,9 +155,7 @@ export function EndPicker({ value, start, onChange }: { value: Date | null; star
         type="button"
         className={cn(inputClass, "text-left text-gray-400")}
         onClick={() => {
-          // Sugestão: o dia seguinte ao início, às 18h.
-          const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1, 18, 0);
-          onChange(d);
+          onChange(suggestedEnd(start));
         }}
       >
         Sem finalização (opcional)

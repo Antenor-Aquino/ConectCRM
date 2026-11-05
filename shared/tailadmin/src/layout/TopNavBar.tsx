@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Leaf, MoreHorizontal } from "lucide-react";
 import { cn } from "../utils/cn";
 
@@ -6,6 +6,17 @@ export interface TopNavItem {
   id: string;
   label: string;
   icon: ReactNode;
+  /** Contador ao lado do nome (some quando 0). */
+  badge?: number;
+}
+
+function NavBadge({ n }: { n?: number }) {
+  if (!n) return null;
+  return (
+    <span data-nav-badge className="min-w-[18px] rounded-full bg-brand-500 px-1.5 text-center text-[10.5px] font-semibold leading-[18px] text-white">
+      {n > 99 ? "99+" : n}
+    </span>
+  );
 }
 
 export function TopNavBar({
@@ -41,6 +52,36 @@ export function TopNavBar({
 }) {
   const active = [...items, ...overflowItems, ...actionItems].find((t) => t.id === activeId);
 
+  // Menu que se ajusta à largura: o que não cabe vai para "Mais" (na mesma ordem).
+  // Os itens são medidos numa fileira invisível; o "+" (beforeNavEnd) fica sempre à vista.
+  const navRef = useRef<HTMLElement>(null);
+  const measureRef = useRef<HTMLDivElement>(null);
+  const endRef = useRef<HTMLSpanElement>(null);
+  const [fit, setFit] = useState(items.length);
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    const measure = measureRef.current;
+    if (!nav || !measure) return;
+    const calc = () => {
+      const widths = [...measure.children].map((c) => (c as HTMLElement).offsetWidth + 2);
+      const end = endRef.current?.offsetWidth ?? 0;
+      const room = nav.clientWidth - end;
+      const total = widths.reduce((a, b) => a + b, 0);
+      if (total <= room && !overflowItems.length) return setFit(items.length);
+      const more = 90; // botão "Mais"
+      let used = 0;
+      let k = 0;
+      while (k < widths.length && used + widths[k]! <= room - more) used += widths[k++]!;
+      setFit(k);
+    };
+    calc();
+    const ro = new ResizeObserver(calc);
+    ro.observe(nav.parentElement ?? nav);
+    return () => ro.disconnect();
+  }, [items, overflowItems.length]);
+  const shown = items.slice(0, fit);
+  const moreItems = [...items.slice(fit), ...overflowItems];
+
   return (
     <header
       className={cn(
@@ -69,10 +110,21 @@ export function TopNavBar({
 
         {/* Menu principal — mesma linha que Guia/Ajuda */}
         <nav
-          className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto no-scrollbar"
+          ref={navRef}
+          className="relative flex min-w-0 flex-1 items-center gap-0.5"
           aria-label="Menu principal"
         >
-          {items.map((item) => {
+          {/* Fileira invisível só para medir a largura de cada item. */}
+          <div ref={measureRef} aria-hidden className="pointer-events-none invisible absolute left-0 top-0 flex gap-0.5">
+            {items.map((item) => (
+              <span key={item.id} className="flex shrink-0 items-center gap-1.5 px-2.5 py-1.5 text-[12.5px] font-medium md:px-3 md:py-2 md:text-theme-sm">
+                <span className="flex shrink-0 [&_svg]:size-4">{item.icon}</span>
+                <span className="whitespace-nowrap">{item.label}</span>
+                <NavBadge n={item.badge} />
+              </span>
+            ))}
+          </div>
+          {shown.map((item) => {
             const isActive = item.id === activeId;
             return (
               <button
@@ -88,19 +140,18 @@ export function TopNavBar({
               >
                 <span className="flex shrink-0 [&_svg]:size-4">{item.icon}</span>
                 <span className="whitespace-nowrap">{item.label}</span>
+                <NavBadge n={item.badge} />
               </button>
             );
           })}
-          {beforeNavEnd}
+          {moreItems.length > 0 && <TopNavOverflow items={moreItems} activeId={activeId} onSelect={onSelect} />}
+          <span ref={endRef} className="flex shrink-0 items-center">
+            {beforeNavEnd}
+          </span>
         </nav>
 
         {search}
 
-        {/* Fora do nav com overflow-x-auto: dentro dele o dropdown era
-         * recortado pela área rolável e parecia não abrir. */}
-        {overflowItems.length > 0 && (
-          <TopNavOverflow items={overflowItems} activeId={activeId} onSelect={onSelect} />
-        )}
 
         {/* Guia, Ajuda, ambiente, notificações */}
         <div className="flex shrink-0 items-center gap-1.5 border-l border-gray-200 pl-2 md:gap-2 md:pl-3 dark:border-gray-700">
@@ -159,7 +210,8 @@ function TopNavOverflow({
                 )}
               >
                 <span className="[&_svg]:size-4">{item.icon}</span>
-                {item.label}
+                <span className="flex-1">{item.label}</span>
+                <NavBadge n={item.badge} />
               </button>
             ))}
           </div>

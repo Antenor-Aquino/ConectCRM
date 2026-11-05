@@ -1,0 +1,238 @@
+// To Do (spec 15, fase 1): listas, tarefas, etapas, listas inteligentes,
+// concluídas, mover entre listas, lixeira (lista leva as tarefas junto) e
+// cada usuário vê só o que é dele.
+import { describe, expect, it } from "vitest";
+import * as todo from "../src/db/todo";
+import { listTrash, restoreTrashItem } from "../src/db/trash";
+import { createUser } from "../src/db/users";
+import { methods } from "../src/rpc/methods";
+import { freshDb } from "./helpers";
+import { createActivity } from "../src/db/activities";
+import { createPerson } from "../src/db/contacts";
+import { createCard } from "../src/db/deals";
+import { createPipeline } from "../src/db/pipelines";
+import { todayYmd } from "../src/lib/todo";
+
+const todayYmdOr = (d?: string) => d ?? todayYmd();
+
+async function setup() {
+  const { db, ctx: sys } = await freshDb();
+  const me = createUser(db, sys, { name: "Antenor", role: "admin" });
+  const ana = createUser(db, sys, { name: "Ana", role: "vendedor" });
+  return { db, ctx: { ...sys, userId: me }, ana: { ...sys, userId: ana } };
+}
+const titles = (r: { open: todo.TodoTask[]; done: todo.TodoTask[] }) => ({ open: r.open.map((t) => t.title), done: r.done.map((t) => t.title) });
+
+describe("To Do", () => {
+  it("listas com contagem; tarefa nova no topo; listas inteligentes", async () => {
+    const { db, ctx } = await setup();
+    const pessoal = todo.createTodoList(db, ctx, { name: "Pessoal" });
+    const perseus = todo.createTodoList(db, ctx, { name: "PERSEUS", color: "green" });
+    todo.createTodoTask(db, ctx, { title: "Oficina Voyage", listId: pessoal });
+    todo.createTodoTask(db, ctx, { title: "Teste", listId: pessoal, important: true, dueDate: "2026-11-26" });
+    todo.createTodoTask(db, ctx, { title: "Ligar contador" }); // sem lista = "Tarefas"
+    todo.createTodoTask(db, ctx, { title: "Revisar contrato", listId: perseus, dueDate: "2026-11-10" });
+
+    expect(todo.listTodoLists(db, ctx).map((l) => [l.name, l.pending])).toEqual([["Pessoal", 2], ["PERSEUS", 1]]);
+    expect(todo.todoCounts(db, ctx)).toEqual({ meudia: 0, importante: 1, planejado: 2, todas: 4, tarefas: 1 });
+    expect(titles(todo.listTodoTasks(db, ctx, { listId: pessoal })).open).toEqual(["Teste", "Oficina Voyage"]);
+    expect(titles(todo.listTodoTasks(db, ctx, { smart: "planejado" })).open).toEqual(["Revisar contrato", "Teste"]);
+    expect(titles(todo.listTodoTasks(db, ctx, { smart: "importante" })).open).toEqual(["Teste"]);
+    expect(titles(todo.listTodoTasks(db, ctx, { smart: "tarefas" })).open).toEqual(["Ligar contador"]);
+    expect(titles(todo.listTodoTasks(db, ctx, { smart: "todas" }, { search: "contra" })).open).toEqual(["Revisar contrato"]);
+    expect(() => todo.createTodoTask(db, ctx, { title: "x", dueDate: "26/11/2026" })).toThrow(/inválida/);
+  });
+
+  it("concluir, etapas, mover entre listas", async () => {
+    const { db, ctx } = await setup();
+    const a = todo.createTodoList(db, ctx, { name: "A" });
+    const b = todo.createTodoList(db, ctx, { name: "B" });
+    const t = todo.createTodoTask(db, ctx, { title: "Agendar pagamentos", listId: a });
+    const s1 = todo.addTodoStep(db, ctx, t, "Separar boletos");
+    todo.addTodoStep(db, ctx, t, "Pagar no banco");
+    todo.updateTodoStep(db, ctx, s1, { done: true });
+    expect(todo.getTodoTask(db, ctx, t)).toMatchObject({ steps_total: 2, steps_done: 1 });
+    todo.updateTodoTask(db, ctx, t, { done: true });
+    expect(titles(todo.listTodoTasks(db, ctx, { listId: a }))).toEqual({ open: [], done: ["Agendar pagamentos"] });
+    expect(todo.listTodoLists(db, ctx).find((l) => l.id === a)!.pending).toBe(0);
+    todo.updateTodoTask(db, ctx, t, { done: false, listId: b, notes: "  ver PGR  " });
+    expect(todo.getTodoTask(db, ctx, t)).toMatchObject({ list_id: b, list_name: "B", done: 0, done_at: null, notes: "ver PGR" });
+  });
+
+  it("lixeira: tarefa e lista (com as tarefas) voltam ao restaurar", async () => {
+    const { db, ctx } = await setup();
+    const l = todo.createTodoList(db, ctx, { name: "POWERCUBUS" });
+    const t1 = todo.createTodoTask(db, ctx, { title: "Proposta", listId: l });
+    todo.addTodoStep(db, ctx, t1, "Planilha");
+    todo.createTodoTask(db, ctx, { title: "Reunião", listId: l });
+    todo.deleteTodoList(db, ctx, l);
+    expect(todo.listTodoLists(db, ctx)).toEqual([]);
+    expect(todo.todoCounts(db, ctx).todas).toBe(0);
+    const item = listTrash(db, null).find((i) => i.entity === "todo_list")!;
+    expect(item.title).toBe("POWERCUBUS");
+    restoreTrashItem(db, ctx, null, item.id);
+    expect(titles(todo.listTodoTasks(db, ctx, { listId: l })).open.sort()).toEqual(["Proposta", "Reunião"]);
+    expect(todo.getTodoTask(db, ctx, t1)!.steps.map((s) => s.title)).toEqual(["Planilha"]);
+  });
+
+  it("Meu Dia: vale só hoje (zera à meia-noite) e sugere o que ficou para trás", async () => {
+    const { db, ctx } = await setup();
+    const hoje = todo.createTodoTask(db, ctx, { title: "Responder Natália", myDay: true });
+    const ontem = todo.createTodoTask(db, ctx, { title: "Ligar contador", myDay: true });
+    db.exec(`UPDATE todo_task SET my_day = '2000-01-01' WHERE id = '${ontem}'`); // ficou em um Meu Dia antigo
+    const vence = todo.createTodoTask(db, ctx, { title: "Pagar boleto", dueDate: "2000-01-02" });
+    todo.createTodoTask(db, ctx, { title: "Revisar proposta", important: true });
+    todo.createTodoTask(db, ctx, { title: "Sem nada" });
+
+    expect(titles(todo.listTodoTasks(db, ctx, { smart: "meudia" })).open).toEqual(["Responder Natália"]);
+    expect(todo.todoCounts(db, ctx).meudia).toBe(1);
+    // No dia seguinte, o Meu Dia começa vazio.
+    const amanha = "2999-12-31";
+    expect(todo.listTodoTasks(db, ctx, { smart: "meudia" }, { today: amanha }).open).toEqual([]);
+    expect(todo.todoCounts(db, ctx, amanha).meudia).toBe(0);
+
+    const s = todo.todoSuggestions(db, ctx);
+    expect(s.earlier.map((t) => t.title)).toEqual(["Ligar contador"]);
+    expect(s.due.map((t) => t.title)).toEqual(["Pagar boleto"]);
+    expect(s.important.map((t) => t.title)).toEqual(["Revisar proposta"]);
+    // Aceitar a sugestão põe no Meu Dia de hoje; concluir mantém em "Concluída" do Meu Dia.
+    todo.updateTodoTask(db, ctx, ontem, { myDay: true });
+    todo.updateTodoTask(db, ctx, vence, { myDay: true, done: true });
+    expect(titles(todo.listTodoTasks(db, ctx, { smart: "meudia" }))).toEqual({ open: ["Ligar contador", "Responder Natália"], done: ["Pagar boleto"] });
+    todo.updateTodoTask(db, ctx, hoje, { myDay: false });
+    expect(todo.getTodoTask(db, ctx, hoje)!.my_day).toBeNull();
+  });
+
+  it("cada usuário vê só o que é dele", async () => {
+    const { db, ctx, ana } = await setup();
+    const minha = todo.createTodoList(db, ctx, { name: "Minha" });
+    const t = todo.createTodoTask(db, ctx, { title: "Só minha", listId: minha });
+    expect(todo.listTodoLists(db, ana)).toEqual([]);
+    expect(todo.listTodoTasks(db, ana, { smart: "todas" }).open).toEqual([]);
+    expect(() => todo.updateTodoTask(db, ana, t, { done: true })).toThrow(/não encontrada/);
+    expect(() => methods["todo.taskCreate"](db, ana, { title: "x", listId: minha })).toThrow(/Lista não encontrada/);
+  });
+  it("lembrete: avisa uma vez, adiar volta a valer, concluída não avisa; contador", async () => {
+    const { db, ctx, ana } = await setup();
+    const a = todo.createTodoTask(db, ctx, { title: "Pagar boleto", remindAt: "2026-11-05T12:00:00.000Z" });
+    const b = todo.createTodoTask(db, ctx, { title: "Feita", remindAt: "2026-11-05T11:00:00.000Z" });
+    todo.createTodoTask(db, ctx, { title: "Depois", remindAt: "2026-11-05T15:00:00.000Z" });
+    todo.updateTodoTask(db, ctx, b, { done: true });
+    expect(todo.todoDueReminders(db, ctx, "2026-11-05T11:59:00.000Z")).toEqual([]);
+    expect(todo.todoDueReminders(db, ctx, "2026-11-05T12:00:30.000Z").map((r) => r.title)).toEqual(["Pagar boleto"]);
+    expect(todo.todoDueReminders(db, ctx, "2026-11-05T12:01:30.000Z")).toEqual([]); // não repete
+    expect(todo.todoDueReminders(db, ana, "2026-11-05T23:00:00.000Z")).toEqual([]); // só do dono
+    todo.snoozeTodoReminder(db, ctx, a, 10);
+    const t = todo.getTodoTask(db, ctx, a)!;
+    expect(t.reminded_at).toBeNull();
+    expect(new Date(t.remind_at!).getTime()).toBeGreaterThan(Date.now() + 9 * 60_000);
+    // Mudar o lembrete zera o "já avisado".
+    todo.updateTodoTask(db, ctx, a, { remindAt: "2026-11-05T12:00:00.000Z" });
+    expect(todo.todoDueReminders(db, ctx, "2026-11-05T12:05:00.000Z").map((r) => r.title)).toEqual(["Pagar boleto"]);
+    expect(() => todo.updateTodoTask(db, ctx, a, { remindAt: "amanhã" })).toThrow(/inválid/);
+    // Contador: Meu Dia + vencidas/hoje + lembrete chegado (cada tarefa uma vez).
+    const today = "2026-11-05";
+    todo.createTodoTask(db, ctx, { title: "No meu dia", myDay: true, dueDate: "2026-11-01" });
+    todo.createTodoTask(db, ctx, { title: "Futura", dueDate: "2026-12-01" });
+    expect(todo.todoBadge(db, ctx, todayYmdOr(today), "2026-11-05T12:30:00.000Z")).toBe(2);
+  });
+
+  it("repetir: concluir cria a próxima com etapas desmarcadas e o lembrete na mesma hora", async () => {
+    const { db, ctx } = await setup();
+    const lista = todo.createTodoList(db, ctx, { name: "Casa" });
+    const id = todo.createTodoTask(db, ctx, { title: "Regar plantas", listId: lista, important: true, notes: "varanda", recurrence: { every: 1, unit: "week" }, dueDate: "2999-01-07", remindAt: "2999-01-07T11:30:00.000Z" });
+    todo.addTodoStep(db, ctx, id, "Vasos");
+    todo.updateTodoStep(db, ctx, todo.getTodoTask(db, ctx, id)!.steps[0]!.id, { done: true });
+    const next = todo.updateTodoTask(db, ctx, id, { done: true })!;
+    expect(next).toBeTruthy();
+    const n = todo.getTodoTask(db, ctx, next)!;
+    expect([n.title, n.list_id, n.important, n.notes, n.due_date, n.done]).toEqual(["Regar plantas", lista, 1, "varanda", "2999-01-14", 0]);
+    expect(JSON.parse(n.recurrence!)).toEqual({ every: 1, unit: "week" });
+    expect(new Date(n.remind_at!).getUTCHours()).toBe(new Date("2999-01-07T11:30:00.000Z").getUTCHours());
+    expect(n.steps.map((s) => [s.title, s.done])).toEqual([["Vasos", 0]]);
+    // A concluída deixa de repetir: reabrir e concluir de novo não cria outra.
+    expect(todo.getTodoTask(db, ctx, id)!.recurrence).toBeNull();
+    todo.updateTodoTask(db, ctx, id, { done: false });
+    expect(todo.updateTodoTask(db, ctx, id, { done: true })).toBeNull();
+    // Repetir sem vencimento: vence hoje.
+    const sem = todo.createTodoTask(db, ctx, { title: "Água" });
+    todo.updateTodoTask(db, ctx, sem, { recurrence: { every: 1, unit: "day" } });
+    expect(todo.getTodoTask(db, ctx, sem)!.due_date).toBe(todayYmdOr());
+    expect(() => todo.updateTodoTask(db, ctx, sem, { recurrence: { every: 1, unit: "hora" } as never })).toThrow(/inválida/);
+  });
+  it("grupos de listas, arrumação do menu e ordem manual das tarefas", async () => {
+    const { db, ctx, ana } = await setup();
+    const casa = todo.createTodoList(db, ctx, { name: "Casa" });
+    const carro = todo.createTodoList(db, ctx, { name: "Carro" });
+    const perseus = todo.createTodoList(db, ctx, { name: "PERSEUS" });
+    const g = todo.createTodoGroup(db, ctx, { name: "Pessoal", listIds: [carro, casa] });
+    const menu = () => {
+      const lists = todo.listTodoLists(db, ctx);
+      const top = [
+        ...lists.filter((l) => !l.group_id).map((l) => ({ p: l.position, s: l.name })),
+        ...todo.listTodoGroups(db, ctx).map((x) => ({ p: x.position, s: `${x.name}[${lists.filter((l) => l.group_id === x.id).map((l) => l.name).join(",")}]` })),
+      ].sort((a, b) => a.p - b.p);
+      return top.map((x) => x.s);
+    };
+    expect(menu()).toEqual(["PERSEUS", "Pessoal[Carro,Casa]"]);
+    const nova = todo.createTodoList(db, ctx, { name: "Nova" });
+    expect(menu()).toEqual(["PERSEUS", "Pessoal[Carro,Casa]", "Nova"]);
+    todo.arrangeTodoLists(db, ctx, [{ group: g, lists: [casa, nova, carro] }, { list: perseus }]);
+    expect(menu()).toEqual(["Pessoal[Casa,Nova,Carro]", "PERSEUS"]);
+    todo.renameTodoGroup(db, ctx, g, "Vida pessoal");
+    expect(() => todo.renameTodoGroup(db, ana, g, "x")).toThrow(/não encontrado/);
+    todo.deleteTodoGroup(db, ctx, g);
+    expect(menu()).toEqual(["Casa", "Nova", "Carro", "PERSEUS"]);
+    expect(todo.listTodoGroups(db, ctx)).toEqual([]);
+    expect(methods["todo.lists"](db, ctx).groups).toEqual([]);
+
+    const ids = ["A", "B", "C", "D"].map((t) => todo.createTodoTask(db, ctx, { title: t, listId: casa }));
+    const order = () => todo.listTodoTasks(db, ctx, { listId: casa }).open.map((t) => t.title);
+    expect(order()).toEqual(["D", "C", "B", "A"]);
+    // Arrastou "A" para o topo.
+    todo.reorderTodoTasks(db, ctx, [ids[0]!, ids[3]!, ids[2]!, ids[1]!]);
+    expect(order()).toEqual(["A", "D", "C", "B"]);
+    // Só um trecho (ex.: visão Importante): as outras não mudam de lugar.
+    todo.reorderTodoTasks(db, ctx, [ids[2]!, ids[3]!]);
+    expect(order()).toEqual(["A", "C", "D", "B"]);
+  });
+  it("integração com o CRM: do cartão, da atividade, criar atividade e concluir junto; Copiloto", async () => {
+    const { db, ctx } = await setup();
+    const pipelineId = createPipeline(db, ctx, { name: "Vendas", type: "comercial", stages: [{ name: "A" }] });
+    const person = createPerson(db, ctx, { name: "Fabiano" });
+    const deal = createCard(db, ctx, { pipelineId, title: "Proposta Stepple", personId: person });
+    // Do cartão: no Meu Dia, ligada ao cartão e ao contato.
+    const fromCard = todo.todoFromCard(db, ctx, deal);
+    const c = todo.getTodoTask(db, ctx, fromCard)!;
+    expect([c.title, c.deal_title, c.person_name, c.pipeline_id, c.my_day]).toEqual(["Proposta Stepple", "Proposta Stepple", "Fabiano", pipelineId, todayYmdOr()]);
+    expect(todo.todoForDeal(db, ctx, deal).map((t) => t.id)).toEqual([fromCard]);
+    // Da atividade: vence no dia dela; repetir o pedido devolve a mesma.
+    const act = createActivity(db, ctx, { title: "Ligar para o Fabiano", dueAt: "2999-03-10T13:00:00.000Z", dealId: deal, personId: person });
+    const r1 = todo.todoFromActivity(db, ctx, act);
+    expect(r1.created).toBe(true);
+    expect(todo.todoFromActivity(db, ctx, act)).toEqual({ id: r1.id, created: false });
+    const a = todo.getTodoTask(db, ctx, r1.id)!;
+    expect([a.title, a.due_date, a.my_day, a.activity_id, a.activity_done, a.deal_id]).toEqual(["Ligar para o Fabiano", "2999-03-10", null, act, 0, deal]);
+    // Concluir no To Do conclui a atividade (via RPC) e vice-versa.
+    methods["todo.taskUpdate"](db, ctx, { id: r1.id, patch: { done: true } });
+    expect(todo.getTodoTask(db, ctx, r1.id)!.activity_done).toBe(1);
+    methods["activities.setDone"](db, ctx, { id: act, done: false });
+    expect(todo.getTodoTask(db, ctx, r1.id)!.done).toBe(0);
+    methods["activities.setDone"](db, ctx, { id: act, done: true });
+    expect(todo.getTodoTask(db, ctx, r1.id)!.done).toBe(1);
+    // Vincular depois e desvincular.
+    const solta = todo.createTodoTask(db, ctx, { title: "Revisar contrato" });
+    todo.updateTodoTask(db, ctx, solta, { personId: person, activityId: act });
+    expect(todo.getTodoTask(db, ctx, solta)!.person_name).toBe("Fabiano");
+    todo.updateTodoTask(db, ctx, solta, { personId: null });
+    expect(todo.getTodoTask(db, ctx, solta)!.person_id).toBeNull();
+    expect(() => todo.updateTodoTask(db, ctx, solta, { dealId: "nao-existe" })).toThrow(/não encontrado/);
+    // Copiloto.
+    const meuDia = todo.todoForCopilot(db, ctx, { situacao: "meudia" });
+    expect("tarefas" in meuDia && meuDia.tarefas.map((t) => [t.titulo, t.negocio, t.contato])).toEqual([["Proposta Stepple", "Proposta Stepple", "Fabiano"]]);
+    todo.createTodoList(db, ctx, { name: "Casa" });
+    todo.createTodoList(db, ctx, { name: "Casa de praia" });
+    expect(todo.todoForCopilot(db, ctx, { lista: "casa" })).toMatchObject({ erro: "Mais de uma lista com esse nome.", opcoes: ["Casa", "Casa de praia"] });
+    expect(todo.todoForCopilot(db, ctx, { lista: "tarefas" })).toMatchObject({ total: 2 });
+  });
+});

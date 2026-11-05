@@ -4,16 +4,17 @@
 // Cada linha mostra tags, início/finalização com os dias que faltam, anexos
 // para baixar e atalhos clicáveis para o cartão, o contato e a organização.
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Building2, CalendarClock, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Circle, Download, Filter, List, Paperclip, Plus, Search, Sun, User, Video, Repeat } from "lucide-react";
+import { AlertTriangle, Building2, CalendarClock, CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Circle, Download, Filter, List, Paperclip, Plus, Search, Sun, User, Video, Repeat } from "lucide-react";
 import { TaButton, TaSelect, badgePalette, cn, type BadgeColor } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { ActivityListItem, ActivityType } from "../../db/activities";
 import { ActivityIcon } from "../../lib/activityIcons";
 import { downloadVersion } from "../../lib/documentFiles";
-import { taskTiming } from "../../lib/taskTiming";
+import { isOverdue as isOverdueRule, taskTiming } from "../../lib/taskTiming";
 import { useSession } from "../session";
 import { Avatar } from "../ui/Avatar";
 import { TaskModal, type TaskRequest } from "./TaskModal";
+import { TaskRowActions } from "./TaskRowActions";
 import { errorText } from "../../lib/errors";
 
 type Period = "hoje" | "amanha" | "semana" | "mes" | "todas" | "personalizado" | "atrasadas" | "proximos7";
@@ -44,15 +45,16 @@ const pad = (n: number) => String(n).padStart(2, "0");
 const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 
-function range(p: Period, custom?: CustomRange): { from?: string; to?: string; overdue?: boolean } {
+function range(p: Period, custom?: CustomRange): { from?: string; to?: string; overdue?: boolean; dayOnly?: boolean } {
   const t = dayStart(new Date());
   switch (p) {
     case "personalizado":
       return custom?.start && custom.end ? { from: parseYmd(custom.start).toISOString(), to: addDays(parseYmd(custom.end), 1).toISOString() } : {};
+    // Hoje / Amanhã: só as do dia (começam ou terminam nele), sem as atrasadas nem as em andamento de dias anteriores.
     case "hoje":
-      return { from: t.toISOString(), to: addDays(t, 1).toISOString() };
+      return { from: t.toISOString(), to: addDays(t, 1).toISOString(), dayOnly: true };
     case "amanha":
-      return { from: addDays(t, 1).toISOString(), to: addDays(t, 2).toISOString() };
+      return { from: addDays(t, 1).toISOString(), to: addDays(t, 2).toISOString(), dayOnly: true };
     case "semana":
       return { from: addDays(t, -t.getDay()).toISOString(), to: addDays(t, 7 - t.getDay()).toISOString() };
     case "mes":
@@ -74,6 +76,8 @@ function groupLabel(d: Date, overdue: boolean): string {
   if (diff === 1) return "Amanhã";
   return `${WEEKDAYS[d.getDay()]}, ${pad(d.getDate())}/${pad(d.getMonth() + 1)}${d.getFullYear() !== t.getFullYear() ? `/${d.getFullYear()}` : ""}`;
 }
+
+const GROUPS_KEY = "conectcrm-activity-groups-closed";
 
 export interface TaskLinks {
   onOpenCard: (pipelineId: string, cardId: string) => void;
@@ -97,6 +101,26 @@ export function TasksView({
   const { user, users } = useSession();
   const [mode, setMode] = useState<"lista" | "calendario">(initialMode ?? "lista");
   const [period, setPeriod] = useState<Period>("semana");
+  // Grupos recolhidos pelo nome (Atrasadas, Em andamento, Hoje, Amanhã, "Qui, 06/11"…): lembra a escolha.
+  const [closedGroups, setClosedGroups] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(GROUPS_KEY) ?? "[]") as string[]);
+    } catch {
+      return new Set();
+    }
+  });
+  const toggleGroup = (label: string) =>
+    setClosedGroups((cur) => {
+      const next = new Set(cur);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      try {
+        localStorage.setItem(GROUPS_KEY, JSON.stringify([...next]));
+      } catch {
+        /* preferência só desta tela */
+      }
+      return next;
+    });
   const [custom, setCustom] = useState<CustomRange>(() => {
     const t = new Date();
     return { start: ymd(new Date(t.getFullYear(), t.getMonth(), 1)), end: ymd(new Date(t.getFullYear(), t.getMonth() + 1, 0)) };
@@ -156,12 +180,13 @@ export function TasksView({
     setReload((n) => n + 1);
   };
 
-  const now = Date.now();
-  const isOverdue = (a: ActivityListItem) => !a.done && !!a.end_at && new Date(a.end_at).getTime() < now;
+  // Mesma regra do contador "Atrasadas": finalização vencida ou, sem finalização, início antes de hoje.
+  const isOverdue = (a: ActivityListItem) => isOverdueRule(a);
   const groups = useMemo(() => {
     const map = new Map<string, ActivityListItem[]>();
     const todayStart = dayStart(new Date()).getTime();
-    // Ordem fixa dos grupos: atrasadas, em andamento e depois por dia de início.
+    // Ordem fixa dos grupos: atrasadas, em andamento (começou antes de hoje e a
+    // finalização ainda não chegou) e depois por dia de início.
     map.set("Atrasadas", []);
     map.set("Em andamento", []);
     for (const a of rows) {
@@ -266,6 +291,7 @@ export function TasksView({
           </span>
         </div>
         {a.owner_name && <Avatar name={a.owner_name} size={24} title={`Responsável: ${a.owner_name}`} />}
+        <TaskRowActions task={a} onDuplicate={() => setModal({ copyFrom: a.id })} onDeleted={() => setReload((n) => n + 1)} />
       </li>
     );
   };
@@ -396,14 +422,30 @@ export function TasksView({
           groups.length === 0 ? (
             <p className="py-10 text-center text-theme-sm text-gray-500">Nenhuma atividade neste período.</p>
           ) : (
-            groups.map(([label, items]) => (
-              <section key={label} className="mb-4 last:mb-0">
-                <h3 className={cn("mb-1 px-2 text-theme-xs font-semibold uppercase", label === "Atrasadas" ? "text-error-600" : label === "Em andamento" ? "text-brand-600" : "text-gray-500")}>
-                  {label} <span className="font-normal">({items.length})</span>
-                </h3>
-                <ul className="divide-y divide-gray-100 dark:divide-gray-800">{items.map(row)}</ul>
-              </section>
-            ))
+            groups.map(([label, items]) => {
+              const closed = closedGroups.has(label);
+              return (
+                <section key={label} className="mb-4 last:mb-0" data-task-group={label}>
+                  {/* Clicar no nome do grupo recolhe ou mostra as atividades dele (como uma cortina). */}
+                  <h3 className="mb-1">
+                    <button
+                      type="button"
+                      aria-expanded={!closed}
+                      title={closed ? "Mostrar as atividades" : "Ocultar as atividades"}
+                      onClick={() => toggleGroup(label)}
+                      className={cn(
+                        "flex items-center gap-1 rounded px-2 py-0.5 text-theme-xs font-semibold uppercase hover:bg-gray-50 dark:hover:bg-white/5",
+                        label === "Atrasadas" ? "text-error-600" : label === "Em andamento" ? "text-brand-600" : "text-gray-500",
+                      )}
+                    >
+                      <ChevronDown size={14} className={cn("transition-transform", closed && "-rotate-90")} />
+                      {label} <span className="font-normal">({items.length})</span>
+                    </button>
+                  </h3>
+                  {!closed && <ul className="divide-y divide-gray-100 dark:divide-gray-800">{items.map(row)}</ul>}
+                </section>
+              );
+            })
           )
         ) : (
           <>

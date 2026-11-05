@@ -25,6 +25,11 @@ import migration0022 from "./migrations/0022_ged_pastas.sql?raw";
 import migration0023 from "./migrations/0023_atividades_recorrentes.sql?raw";
 import migration0024 from "./migrations/0024_lembrete_contato.sql?raw";
 import migration0025 from "./migrations/0025_cartao_sem_financeiro.sql?raw";
+import migration0026 from "./migrations/0026_primeiro_nome.sql?raw";
+import migration0027 from "./migrations/0027_todo.sql?raw";
+import migration0028 from "./migrations/0028_todo_lembretes.sql?raw";
+import migration0029 from "./migrations/0029_todo_grupos.sql?raw";
+import migration0030 from "./migrations/0030_todo_vinculos.sql?raw";
 
 export const MIGRATIONS: { name: string; sql: string }[] = [
   { name: "0000_init.sql", sql: migration0000 },
@@ -53,6 +58,11 @@ export const MIGRATIONS: { name: string; sql: string }[] = [
   { name: "0023_atividades_recorrentes.sql", sql: migration0023 },
   { name: "0024_lembrete_contato.sql", sql: migration0024 },
   { name: "0025_cartao_sem_financeiro.sql", sql: migration0025 },
+  { name: "0026_primeiro_nome.sql", sql: migration0026 },
+  { name: "0027_todo.sql", sql: migration0027 },
+  { name: "0028_todo_lembretes.sql", sql: migration0028 },
+  { name: "0029_todo_grupos.sql", sql: migration0029 },
+  { name: "0030_todo_vinculos.sql", sql: migration0030 },
 ];
 
 /** Aplica as migrations pendentes; devolve quantas rodaram. */

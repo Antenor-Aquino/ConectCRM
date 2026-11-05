@@ -10,7 +10,9 @@ import { createCard } from "../src/db/deals";
 import { listNotes } from "../src/db/notes";
 import { createPipeline, updatePipeline } from "../src/db/pipelines";
 import { createUser } from "../src/db/users";
-import { CONTACT_TEMPLATE_DEFAULT, renderContactMessage, whenText } from "../src/lib/notify/contactMessage";
+import { CONTACT_TEMPLATE_DEFAULT, CONTACT_TEMPLATE_DEFAULT_V1, renderContactMessage, whenText } from "../src/lib/notify/contactMessage";
+import { withDefaults } from "../src/lib/notify/settings";
+import migration0026 from "../src/db/migrations/0026_primeiro_nome.sql?raw";
 import { freshDb } from "./helpers";
 
 const base = { personName: "Maria José da Silva", start: new Date("2026-10-22T10:00:00"), activityTitle: "Apresentação", myName: "Antenor" };
@@ -30,6 +32,17 @@ describe("modelo da mensagem", () => {
     expect(t.endsWith("\nAntenor")).toBe(true);
     expect(renderContactMessage("Aqui é {meu_nome} da {minha_empresa}.", { ...base, link: null, company: "" })).toBe("Aqui é Antenor.");
     expect(renderContactMessage("Aqui é {meu_nome} da {minha_empresa}.", { ...base, link: null, company: "AEB" })).toBe("Aqui é Antenor da AEB.");
+  });
+
+  it("{primeiro_nome} é o primeiro nome; {nome} (e o antigo {nome_completo}) o nome completo", () => {
+    const vars = { ...base, link: null, company: null };
+    expect(renderContactMessage("{primeiro_nome}|{nome}|{nome_completo}", vars)).toBe("Maria|Maria José da Silva|Maria José da Silva");
+    expect(CONTACT_TEMPLATE_DEFAULT.startsWith("Olá, {primeiro_nome}!")).toBe(true);
+  });
+
+  it("modelo salvo igual ao padrão antigo vira o padrão novo; modelo próprio fica como está", () => {
+    expect(withDefaults({ contact: { template: CONTACT_TEMPLATE_DEFAULT_V1, minutes: 30, senderId: null } }).contact).toMatchObject({ template: CONTACT_TEMPLATE_DEFAULT, minutes: 30 });
+    expect(withDefaults({ contact: { template: "Oi {nome}!", minutes: 30, senderId: null } }).contact.template).toBe("Oi {nome}!");
   });
 
   it("quando: hoje, amanhã ou o dia da semana", () => {
@@ -91,7 +104,7 @@ describe("lembrete do contato no banco", () => {
     const { db, ctx, maria } = await setup();
     const a = createActivity(db, ctx, { title: "Call", dueAt: "2026-10-22T10:00:00", personId: maria });
     cm.setContactMessage(db, ctx, a, msg(maria));
-    cm.setContactMessage(db, ctx, a, msg(maria, { minutesBefore: 30, template: "Oi {nome}, até {hora}!" }));
+    cm.setContactMessage(db, ctx, a, msg(maria, { minutesBefore: 30, template: "Oi {primeiro_nome}, até {hora}!" }));
     updateActivity(db, ctx, a, { dueAt: "2026-10-22T15:00:00" });
     expect(cm.dueContactMessages(db, ctx, new Date("2026-10-22T14:29:00")).jobs).toHaveLength(0);
     expect(cm.dueContactMessages(db, ctx, new Date("2026-10-22T14:30:00")).jobs[0]!.text).toBe("Oi Maria, até 15:00!");
@@ -122,6 +135,29 @@ describe("lembrete do contato no banco", () => {
     setActivityDone(db, ctx, a, true);
     expect(cm.dueContactMessages(db, ctx, new Date("2026-10-22T09:30:00")).jobs).toHaveLength(0);
     expect(cm.getContactMessage(db, a)!.status).toBe("canceled");
+  });
+
+  it("migração 0026: lembretes pendentes com a saudação padrão antiga cumprimentam pelo primeiro nome", async () => {
+    const { db, ctx, maria } = await setup();
+    const a = createActivity(db, ctx, { title: "Call", dueAt: "2026-10-22T10:00:00", personId: maria });
+    const b = createActivity(db, ctx, { title: "Visita", dueAt: "2026-10-22T11:00:00", personId: maria });
+    cm.setContactMessage(db, ctx, a, msg(maria, { template: CONTACT_TEMPLATE_DEFAULT_V1 }));
+    cm.setContactMessage(db, ctx, b, msg(maria, { template: "Prezado(a) {nome}, até {hora}." }));
+    db.exec(migration0026);
+    expect(cm.getContactMessage(db, a)!.template.startsWith("Olá, {primeiro_nome}! 👋\nPassando")).toBe(true);
+    expect(cm.getContactMessage(db, b)!.template).toBe("Prezado(a) {nome}, até {hora}.");
+    expect(cm.contactMessagePreview(db, a)!.preview.startsWith("Olá, Maria! 👋")).toBe(true);
+    expect(cm.contactMessagePreview(db, b)!.preview).toBe("Prezado(a) Maria José, até 11:00.");
+    // Série: o modelo guardado na atividade-modelo também passa
+    const { seriesId } = series.createSeries(
+      db,
+      ctx,
+      { title: "Semanal", dueAt: "2026-10-23T10:00:00", personId: maria, recurrence: { freq: "weekly", interval: 1, end: { type: "count", count: 2 } }, contactMessage: msg(maria, { template: CONTACT_TEMPLATE_DEFAULT_V1 }) },
+      new Date("2026-10-22T08:00:00"),
+    );
+    db.exec(migration0026);
+    const tpl = String(db.exec(`SELECT template FROM activity_series WHERE id = '${seriesId}'`)[0]!.values[0]![0]);
+    expect(JSON.parse(tpl).contactMessage.template.startsWith("Olá, {primeiro_nome}! 👋")).toBe(true);
   });
 
   it("recorrente: cada ocorrência leva o seu lembrete", async () => {

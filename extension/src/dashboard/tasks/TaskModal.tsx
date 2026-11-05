@@ -2,9 +2,9 @@
 // campos personalizados e anexos; direita = Tipo, Responsável, Início
 // (duração/lembrete), Finalização (opcional), Vinculado a e Tags.
 // Tipos de reunião podem criar o evento no Google Agenda / Outlook.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, Circle, Link2, MessageCircle, Minus, Paperclip, Pencil, Trash2, Video, X } from "lucide-react";
+import { Briefcase, Check, ChevronDown, Circle, Copy, Link2, MessageCircle, Minus, Paperclip, Pencil, Trash2, User, Video, X } from "lucide-react";
 import { TaButton, TaInput, TaModal, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { Activity, ActivityType } from "../../db/activities";
@@ -15,6 +15,8 @@ import { isValidEmail } from "../../lib/validate";
 import { useSession } from "../session";
 import { Avatar } from "../ui/Avatar";
 import { Combobox, type ComboItem } from "../ui/Combobox";
+import { createPersonQuick, searchPersons } from "../cards/searchers";
+import { PersonFormModal } from "../contacts/PersonFormModal";
 import { CustomFieldsForm } from "../ui/CustomFieldsForm";
 import { ErrorText, Field } from "../ui/form";
 import { Popover } from "../ui/Popover";
@@ -35,7 +37,8 @@ import { loadSenders, type WhatsAppSender } from "../../lib/whatsappSenders";
 import { LinkedTextarea } from "../ui/LinkedTextarea";
 import { RecurrenceEditor, ScopeDialog, type Scope } from "./RecurrenceEditor";
 import { describeRule, type RecurrenceRule } from "../../lib/recurrence";
-import { Repeat } from "lucide-react";
+import { ListTodo, Repeat } from "lucide-react";
+import { TODO_CHANGED_EVENT } from "../todo/useTodoBadge";
 
 const KIND_LABEL = { deal: "Negócio", ticket: "Ticket", project: "Projeto" } as const;
 
@@ -47,11 +50,34 @@ export interface TaskRequest {
   organizationId?: string;
   /** Já abre como reunião (popup do WhatsApp → "Agendar reunião"). */
   meeting?: boolean;
+  /** Duplicar: abre uma atividade nova preenchida com tudo desta (sem repetir, sem anexos). */
+  copyFrom?: string;
+  /** Vem de uma tarefa do To Do ("Criar atividade no CRM"): título, descrição e dia já preenchidos. */
+  fromTodo?: { title: string; description?: string | null; dueDate?: string | null };
 }
 
-async function searchCards(text: string): Promise<ComboItem[]> {
-  const list = await call("cards.search", { search: text });
-  return list.map((c) => ({ id: c.id, label: c.title, sublabel: `${KIND_LABEL[c.kind]} · ${c.pipeline_name}${c.person_name ? ` · ${c.person_name}` : ""}` }));
+// "Vinculado a": cartão (negócio, ticket, etapa de projeto) ou contato. O id
+// leva o tipo na frente ("deal:…" / "person:…").
+const dealItem = (id: string, label: string, sublabel?: string | null): ComboItem => ({ id: `deal:${id}`, label, sublabel, icon: <Briefcase size={14} className="shrink-0 text-gray-400" /> });
+const personItem = (id: string, label: string, sublabel?: string | null): ComboItem => ({
+  id: `person:${id}`,
+  label,
+  sublabel: sublabel ? `Contato · ${sublabel}` : "Contato",
+  icon: <User size={14} className="shrink-0 text-gray-400" />,
+});
+
+export async function searchLinks(text: string): Promise<ComboItem[]> {
+  const [cards, persons] = await Promise.all([call("cards.search", { search: text }), searchPersons(text)]);
+  return [
+    ...cards.map((c) => dealItem(c.id, c.title, `${KIND_LABEL[c.kind]} · ${c.pipeline_name}${c.person_name ? ` · ${c.person_name}` : ""}`)),
+    ...persons.map((p) => personItem(p.id, p.label, p.sublabel)),
+  ];
+}
+
+/** Contato novo pelo próprio campo (com o aviso de nome parecido já cadastrado). */
+async function createLinkPerson(name: string): Promise<ComboItem> {
+  const p = await createPersonQuick(name);
+  return personItem(p.id, p.label);
 }
 
 function TypePicker({ types, value, onChange }: { types: ActivityType[]; value: string; onChange: (id: string) => void }) {
@@ -134,12 +160,15 @@ export function TaskModal({
   request,
   onClose,
   onSaved,
+  onCreated,
   minimized = false,
   onMinimizedChange,
 }: {
   request: TaskRequest;
   onClose: () => void;
   onSaved: () => void;
+  /** Atividade nova salva (devolve o id) — usado pelo To Do para ligar a tarefa. */
+  onCreated?: (id: string) => void;
   /** Minimizada: some da frente (para consultar o cartão) mas o que foi digitado continua aqui. */
   minimized?: boolean;
   /** Se informado, mostra o botão Minimizar. */
@@ -147,16 +176,33 @@ export function TaskModal({
 }) {
   const { user, users, label } = useSession();
   const [types, setTypes] = useState<ActivityType[]>([]);
-  const [loaded, setLoaded] = useState(!request.id);
+  // Duplicar: a atividade de origem (o que está salvo nela).
+  const sourceId = request.id ?? request.copyFrom;
+  const copying = !request.id && !!request.copyFrom;
+  const [loaded, setLoaded] = useState(!sourceId);
+  /** Contato e organização da origem (cópia sem cartão vinculado). */
+  const [copyLinks, setCopyLinks] = useState<{ personId: string | null; organizationId: string | null }>({ personId: null, organizationId: null });
+  /** Na tela de edição: abre a cópia no lugar. */
+  const [duplicating, setDuplicating] = useState(false);
   const [existing, setExisting] = useState<Activity | null>(null);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
+  const [title, setTitle] = useState(request.fromTodo?.title ?? "");
+  const [description, setDescription] = useState(request.fromTodo?.description ?? "");
+  const [inTodo, setInTodo] = useState<string | null>(null);
+  /** Já digitou algo: o carregamento (que pode chegar depois) não apaga o título/descrição. */
+  const typed = useRef(false);
   const [done, setDone] = useState(false);
   const [typeId, setTypeId] = useState("");
   const [ownerId, setOwnerId] = useState<string | null>(user.id);
   const [when, setWhen] = useState(() => {
     const d = new Date();
     d.setSeconds(0, 0);
+    // Da tarefa do To Do com vencimento em outro dia: começa às 09:00 desse dia.
+    const due = request.fromTodo?.dueDate;
+    if (due && /^\d{4}-\d{2}-\d{2}$/.test(due)) {
+      const [y, m, dd] = due.split("-").map(Number);
+      const day = new Date(y!, m! - 1, dd!, 9, 0, 0, 0);
+      if (day.toDateString() !== d.toDateString()) return day;
+    }
     return d;
   });
   const [endAt, setEndAt] = useState<Date | null>(null);
@@ -202,6 +248,9 @@ export function TaskModal({
   });
   const [contactCtx, setContactCtx] = useState<Awaited<ReturnType<typeof call<"contactMessages.context">>> | null>(null);
   const [autoSenders, setAutoSenders] = useState<WhatsAppSender[]>([]);
+  // Cadastro do contato aberto daqui (completar celular, e-mail…); ao salvar, os dados entram na atividade.
+  const [editPersonId, setEditPersonId] = useState<string | null>(null);
+  const [contactRev, setContactRev] = useState(0);
 
   useEffect(() => {
     void call("activityTypes.list", {}).then((list) => {
@@ -220,20 +269,26 @@ export function TaskModal({
     void call("customFields.list", { entity: "activity" }).then(setFields);
     void loadNotifySettings(user.id).then((n) => {
       setNotify(activeSettings(n));
-      if (!request.id) setReminders(n.defaults);
+      if (!sourceId) setReminders(n.defaults);
       setContact((c) => (c.template ? c : { ...c, template: n.contact.template, minutesBefore: n.contact.minutes, senderId: n.contact.senderId }));
     });
     void loadSenders(user.id).then((r) => setAutoSenders(r.senders.filter((x) => x.via === "zapi" || x.via === "web")));
     if (request.dealId) {
-      void call("cards.get", { id: request.dealId }).then((c) => c && setLink({ id: c.id, label: c.title }));
+      void call("cards.get", { id: request.dealId }).then((c) => c && setLink(dealItem(c.id, c.title)));
+    } else if (request.personId && !sourceId) {
+      // Aberta na ficha do contato: já vem vinculada a ele.
+      void call("persons.get", { id: request.personId }).then((p) => p && setLink(personItem(p.id, p.name)));
     }
-    if (!request.id) return;
-    void call("activities.get", { id: request.id }).then(async (a) => {
+    if (!sourceId) return;
+    void call("activities.get", { id: sourceId }).then(async (a) => {
       if (!a) return;
-      setExisting(a);
-      setTitle(a.title);
-      setDescription(a.description ?? "");
-      setDone(!!a.done);
+      if (copying) setCopyLinks({ personId: a.person_id, organizationId: a.organization_id });
+      else setExisting(a);
+      if (!typed.current) {
+        setTitle(a.title);
+        setDescription(a.description ?? "");
+      }
+      setDone(copying ? false : !!a.done);
       setTypeId(a.type_id);
       setOwnerId(a.owner_id);
       setWhen(new Date(a.due_at));
@@ -241,8 +296,9 @@ export function TaskModal({
       setTagIds(a.tagIds);
       setDuration(a.duration_min);
       setReminders(a.reminders);
-      void call("notifications.forActivity", { id: a.id }).then(setDeliveries);
-      if (a.series_id) {
+      if (!copying) void call("notifications.forActivity", { id: a.id }).then(setDeliveries);
+      // A cópia é avulsa: a recorrência da origem não vai junto (dá para ligar em Repetir).
+      if (a.series_id && !copying) {
         const s = await call("activities.series", { id: a.id });
         if (s) {
           setSeries({ id: s.id, rule: s.rule, startAt: s.startAt, index: s.index });
@@ -254,18 +310,23 @@ export function TaskModal({
       setMeetingUrl(a.meeting_url ?? "");
       if (a.deal_id) {
         const c = await call("cards.get", { id: a.deal_id });
-        if (c) setLink({ id: c.id, label: c.title });
+        if (c) setLink(dealItem(c.id, c.title));
+      } else if (a.person_id) {
+        const p = await call("persons.get", { id: a.person_id });
+        if (p) setLink(personItem(p.id, p.name));
       }
       setLoaded(true);
     });
-  }, [request]);
+    // Só recarrega quando muda a atividade/vínculo pedido: quem abre a janela costuma
+    // passar o pedido como objeto novo a cada redesenho, e recarregar apagaria o que foi digitado.
+  }, [request.id, request.copyFrom, request.dealId, request.personId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const type = types.find((t) => t.id === typeId);
   // Tarefa nova: o nome começa com o tipo ("Reunião ") para o usuário completar.
   // Trocar o tipo troca só esse começo; nome reescrito pelo usuário não muda.
   const titlePrefix = useRef("");
   useEffect(() => {
-    if (request.id || !type) return;
+    if (sourceId || !type) return;
     const next = `${type.name} `;
     const prev = titlePrefix.current;
     setTitle((cur) => {
@@ -274,7 +335,7 @@ export function TaskModal({
       return cur;
     });
     titlePrefix.current = next;
-  }, [type, request.id]);
+  }, [type, sourceId]);
   const isMeeting = !!type?.is_meeting && !existing?.external_event_id;
 
   useEffect(() => {
@@ -289,21 +350,26 @@ export function TaskModal({
   // Convidado sugerido: e-mail do contato do cartão vinculado.
   useEffect(() => {
     if (!isMeeting || !link || guests.length) return;
-    void call("cards.get", { id: link.id }).then(async (c) => {
-      if (!c?.person_id) return;
-      const p = await call("persons.get", { id: c.person_id });
+    void (async () => {
+      const personId = linkPersonId ?? (linkDealId ? (await call("cards.get", { id: linkDealId }))?.person_id : null);
+      if (!personId) return;
+      const p = await call("persons.get", { id: personId });
       if (p?.email) setGuests((g) => (g.length ? g : [p.email!]));
-    });
+    })();
   }, [isMeeting, link]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const linkDealId = link?.id.startsWith("deal:") ? link.id.slice(5) : null;
+  const linkPersonId = link?.id.startsWith("person:") ? link.id.slice(7) : null;
 
   const owner = useMemo(() => users.find((u) => u.id === ownerId), [users, ownerId]);
 
   // Quem pode receber o lembrete (contato da atividade e do cartão), empresa do funil e o lembrete salvo.
-  const personForContact = request.personId ?? existing?.person_id ?? null;
+  const personForContact = linkPersonId ?? request.personId ?? existing?.person_id ?? copyLinks.personId ?? null;
   useEffect(() => {
     if (!loaded) return;
-    void call("contactMessages.context", { activityId: request.id ?? null, personId: personForContact, dealId: link?.id ?? null }).then((c) => {
-      setContactCtx(c);
+    void call("contactMessages.context", { activityId: sourceId ?? null, personId: personForContact, dealId: linkDealId }).then((c) => {
+      // Cópia: o lembrete da origem vem preenchido, mas como novo (nunca "já enviado").
+      setContactCtx(copying ? { ...c, current: null } : c);
       if (c.current) {
         setContactOn(true);
         setContact({ personId: c.current.person_id, minutesBefore: c.current.minutes_before, template: c.current.template, senderId: c.current.sender_id });
@@ -311,7 +377,7 @@ export function TaskModal({
         setContact((x) => (x.personId && c.recipients.some((r) => r.id === x.personId) ? x : { ...x, personId: c.recipients.find((r) => r.phone)?.id ?? c.recipients[0]?.id ?? "" }));
       }
     });
-  }, [loaded, link?.id, personForContact, request.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loaded, link?.id, personForContact, sourceId, contactRev]); // eslint-disable-line react-hooks/exhaustive-deps
   const contactSent = contactCtx?.current?.status === "sent";
   const recipient = contactCtx?.recipients.find((r) => r.id === contact.personId) ?? null;
   const withPhone = contactCtx?.recipients.filter((r) => r.phone) ?? [];
@@ -346,6 +412,12 @@ export function TaskModal({
   ]);
   const [baseline, setBaseline] = useState<string | null>(null);
   const [touched, setTouched] = useState(false);
+  // Marca "mexeu" fora do evento de digitação: atualizar o aviso de rascunho no meio
+  // do evento fazia o campo perder a primeira tecla digitada.
+  const markTouched = () => {
+    typed.current = true;
+    if (!touched) startTransition(() => setTouched(true));
+  };
   const [confirmClose, setConfirmClose] = useState(false);
   useEffect(() => {
     if (baseline !== null || !loaded || !types.length || !notify) return;
@@ -359,6 +431,28 @@ export function TaskModal({
 
   const ruleChanged = !!series && JSON.stringify(recurrence) !== JSON.stringify(series.rule);
   const dateChanged = !!existing && new Date(existing.due_at).getTime() !== when.getTime();
+
+  /** Contato e organização a gravar conforme o "Vinculado a". */
+  async function linkPeople(): Promise<{ personId?: string | null; organizationId?: string | null }> {
+    // Cartão: o contato e a organização vêm dele (o banco herda).
+    if (linkDealId) return {};
+    // Contato: ele e a organização principal dele.
+    if (linkPersonId) {
+      // Mesmo contato da atividade (ou da original, na cópia): a organização dela fica.
+      if (linkPersonId === existing?.person_id && !existing.deal_id) return { personId: linkPersonId };
+      if (copying && linkPersonId === copyLinks.personId) return { personId: linkPersonId, organizationId: request.organizationId ?? copyLinks.organizationId };
+      const p = await call("persons.get", { id: linkPersonId });
+      const org = p?.organizations.find((o) => o.is_primary) ?? p?.organizations[0];
+      return { personId: linkPersonId, organizationId: request.organizationId ?? org?.id ?? null };
+    }
+    // Sem vínculo: aberta na ficha da organização (ou cópia de uma) continua nela;
+    // contato tirado do campo sai da atividade.
+    const orgId = request.organizationId ?? copyLinks.organizationId;
+    return {
+      ...(existing?.person_id && !existing.deal_id ? { personId: null } : {}),
+      ...(orgId ? { organizationId: orgId } : {}),
+    };
+  }
 
   async function save(scope?: Scope) {
     // Ocorrência de série: pergunta antes se vale para esta, as próximas ou todas.
@@ -384,9 +478,8 @@ export function TaskModal({
       durationMin: duration,
       reminders,
       done,
-      dealId: link?.id ?? null,
-      ...(request.personId && !link ? { personId: request.personId } : {}),
-      ...(request.organizationId && !link ? { organizationId: request.organizationId } : {}),
+      dealId: linkDealId,
+      ...(await linkPeople()),
       customValues: values,
       meetingUrl: meetingUrl.trim() || null,
     };
@@ -417,7 +510,10 @@ export function TaskModal({
           ...(contactMessage !== undefined ? { contactMessage } : {}),
           ...(series ? { scope: scope ?? "this", ...(ruleChanged ? { recurrence } : {}) } : recurrence ? { recurrence } : {}),
         });
-      } else id = await call("activities.create", { ...input, recurrence, ...(contactMessage ? { contactMessage } : {}) });
+      } else {
+        id = await call("activities.create", { ...input, recurrence, ...(contactMessage ? { contactMessage } : {}) });
+        onCreated?.(id);
+      }
     } catch (e) {
       setError(errorText(e));
       setSaving(false);
@@ -449,6 +545,26 @@ export function TaskModal({
     else onSaved();
   }
 
+  if (duplicating && request.id) {
+    return <TaskModal request={{ copyFrom: request.id }} onClose={onClose} onSaved={onSaved} />;
+  }
+
+  const personEditor = editPersonId && (
+    <PersonFormModal
+      personId={editPersonId}
+      onClose={() => setEditPersonId(null)}
+      onSaved={async (id) => {
+        setEditPersonId(null);
+        // Nome e celular atualizados já valem aqui: no campo e no lembrete pelo WhatsApp.
+        if (id === linkPersonId) {
+          const p = await call("persons.get", { id });
+          if (p) setLink(personItem(p.id, p.name));
+        }
+        setContactRev((n) => n + 1);
+      }}
+    />
+  );
+
   if (uploadAfter) {
     return <UploadModal files={uploadAfter.files} context={{ type: "activity", id: uploadAfter.taskId }} onClose={onSaved} onSaved={onSaved} />;
   }
@@ -458,7 +574,7 @@ export function TaskModal({
     <TaModal
       isOpen={!minimized}
       onClose={requestClose}
-      title={request.id ? (series ? "Editar atividade recorrente" : "Editar atividade") : "Nova atividade"}
+      title={request.id ? (series ? "Editar atividade recorrente" : "Editar atividade") : copying ? "Nova atividade (cópia)" : "Nova atividade"}
       width="max-w-3xl"
       headerExtra={
         onMinimizedChange && (
@@ -475,7 +591,11 @@ export function TaskModal({
         )
       }
     >
-      <div onInputCapture={() => setTouched(true)} onChangeCapture={() => setTouched(true)}>
+      {personEditor}
+      <div
+        onInputCapture={markTouched}
+        onChangeCapture={markTouched}
+      >
       {askScope && (
         <ScopeDialog
           action={askScope}
@@ -738,13 +858,32 @@ export function TaskModal({
                       </span>
                     </span>
                   </label>
+                  {!contactSent && !withPhone.length && !!contactCtx?.recipients.length && (
+                    <button
+                      type="button"
+                      data-contact-add-phone
+                      onClick={() => setEditPersonId(contactCtx.recipients[0]!.id)}
+                      className="mt-1.5 ml-12 text-theme-xs font-medium text-brand-600 hover:underline"
+                    >
+                      Cadastrar o celular de {contactCtx.recipients[0]!.name.split(/\s+/)[0]}
+                    </button>
+                  )}
                 </div>
               </Field>
               <Field label="Finalização" hint="Opcional. Sem finalização, a atividade nunca fica atrasada.">
                 <EndPicker value={endAt} start={when} onChange={setEndAt} />
               </Field>
-              <Field label="Vinculado a" hint="Opcional: negócio, ticket ou etapa de projeto.">
-                <Combobox value={link} onChange={setLink} search={searchCards} placeholder="Buscar negócio, ticket ou projeto" />
+              <Field label="Vinculado a" hint="Opcional: negócio, ticket, etapa de projeto ou contato. Contato que não existe pode ser cadastrado aqui.">
+                <Combobox
+                  value={link}
+                  onChange={setLink}
+                  search={searchLinks}
+                  placeholder="Buscar negócio, ticket, projeto ou contato"
+                  onCreate={createLinkPerson}
+                  createLabel="Cadastrar contato"
+                  onOpenValue={linkPersonId ? () => setEditPersonId(linkPersonId) : undefined}
+                  openTitle="Abrir o cadastro do contato (celular, e-mail…)"
+                />
               </Field>
               <Field label="Tags">
                 <TagPicker entity="activity" value={tagIds} onChange={setTagIds} />
@@ -828,7 +967,8 @@ export function TaskModal({
               )}
               {link && (
                 <p className="mt-1 flex items-center gap-1 text-theme-xs text-gray-500">
-                  <Link2 size={12} /> Contato e organização vêm do cartão vinculado.
+                  <Link2 size={12} />{" "}
+                  {linkDealId ? "Contato e organização vêm do cartão vinculado." : "Vinculada ao contato (e à organização principal dele). Clique no nome para completar o cadastro."}
                 </p>
               )}
             </div>
@@ -845,6 +985,37 @@ export function TaskModal({
               <TaButton
                 variant="ghost"
                 className="ml-auto"
+                startIcon={inTodo ? <Check size={15} /> : <ListTodo size={15} />}
+                title="Põe esta atividade na sua lista do To Do (concluir num lado conclui no outro)"
+                data-task-to-todo
+                disabled={!!inTodo}
+                onClick={async () => {
+                  try {
+                    const r = await call("todo.fromActivity", { id: request.id! });
+                    setInTodo(r.created ? "Adicionada ao To Do" : "Já está no To Do");
+                    window.dispatchEvent(new Event(TODO_CHANGED_EVENT));
+                  } catch (e) {
+                    setError(errorText(e));
+                  }
+                }}
+              >
+                {inTodo ?? "Adicionar ao To Do"}
+              </TaButton>
+            )}
+            {request.id && (
+              <TaButton
+                variant="ghost"
+                startIcon={<Copy size={15} />}
+                title="Abre uma atividade nova igual a esta (como está salva), para você ajustar"
+                data-task-duplicate
+                onClick={() => setDuplicating(true)}
+              >
+                Duplicar
+              </TaButton>
+            )}
+            {request.id && (
+              <TaButton
+                variant="ghost"
                 startIcon={<Trash2 size={15} />}
                 onClick={async () => {
                   if (series) return setAskScope("delete");

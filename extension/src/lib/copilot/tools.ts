@@ -75,6 +75,19 @@ export const DATA_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "listar_todo",
+    description:
+      "Tarefas pessoais do To Do do usuário (lista de afazeres, separada das atividades do CRM): título, lista, vencimento, importante, se está no Meu Dia, lembrete, etapas " +
+      "e negócio/contato ligados. Use quando o usuário falar em To Do, 'minhas tarefas pessoais', 'meu dia', 'minha lista X'.",
+    parameters: {
+      type: "object",
+      properties: {
+        situacao: str("Recorte; padrão: pendentes", { enum: ["meudia", "hoje", "atrasadas", "importantes", "pendentes"] }),
+        lista: str("Nome (ou parte) de uma lista do To Do; 'Tarefas' = sem lista (opcional)"),
+      },
+    },
+  },
+  {
     name: "negocios_parados",
     description:
       "Cartões abertos sem movimento (mudança de etapa, atividade concluída ou nota) há muitos dias. Sem 'dias', usa o limite 'parado após' de cada etapa (ou 14 dias). " +
@@ -141,7 +154,7 @@ export const DATA_TOOLS: ToolDef[] = [
 // ---------- Card de resposta ----------
 
 export type Tom = "alerta" | "positivo" | "neutro";
-export type ActionType = "criar_tarefa" | "adicionar_nota" | "abrir_cartao" | "criar_cartao";
+export type ActionType = "criar_tarefa" | "adicionar_nota" | "abrir_cartao" | "criar_cartao" | "adicionar_todo";
 
 export interface CopilotAction {
   tipo: ActionType;
@@ -213,13 +226,13 @@ export const RESPOND_TOOL: ToolDef = {
         items: {
           type: "object",
           properties: {
-            tipo: str("Tipo da ação", { enum: ["criar_tarefa", "adicionar_nota", "abrir_cartao", "criar_cartao"] }),
+            tipo: str("Tipo da ação", { enum: ["criar_tarefa", "adicionar_nota", "abrir_cartao", "criar_cartao", "adicionar_todo"] }),
             rotulo: str("Texto do botão, no imperativo (ex.: 'Criar cartão \"Conserto Gaveta Miguel\" em Casa › A fazer')"),
-            cartaoId: str("Id do cartão; em criar_cartao, string vazia"),
-            titulo: str("criar_tarefa: título da atividade; criar_cartao: título do cartão; senão null", { nullable: true }),
+            cartaoId: str("Id do cartão; em criar_cartao, string vazia; em adicionar_todo, o cartão ligado ou string vazia"),
+            titulo: str("criar_tarefa: título da atividade; criar_cartao: título do cartão; adicionar_todo: título da tarefa do To Do; senão null", { nullable: true }),
             funilId: str("criar_cartao: id do funil (de estrutura_do_crm); senão null", { nullable: true }),
             etapaId: str("criar_cartao: id da etapa (de estrutura_do_crm; null = primeira etapa); senão null", { nullable: true }),
-            quando: str("criar_tarefa: data e hora local AAAA-MM-DDTHH:MM; senão null", { nullable: true }),
+            quando: str("criar_tarefa: data e hora local AAAA-MM-DDTHH:MM; adicionar_todo: vencimento AAAA-MM-DD (ou null = Meu Dia de hoje); senão null", { nullable: true }),
             texto: str("adicionar_nota: texto da nota; senão null", { nullable: true }),
           },
           required: ["tipo", "rotulo", "cartaoId", "titulo", "funilId", "etapaId", "quando", "texto"],
@@ -236,7 +249,9 @@ export const RESPOND_TOOL: ToolDef = {
 };
 
 const TOMS: Tom[] = ["alerta", "positivo", "neutro"];
-const ACTIONS: ActionType[] = ["criar_tarefa", "adicionar_nota", "abrir_cartao", "criar_cartao"];
+const ACTIONS: ActionType[] = ["criar_tarefa", "adicionar_nota", "abrir_cartao", "criar_cartao", "adicionar_todo"];
+/** Ações que não precisam de cartão (criar_cartao cria um; adicionar_todo pode ou não ligar a um). */
+const NO_CARD: ActionType[] = ["criar_cartao", "adicionar_todo"];
 
 /** Normaliza o que veio da IA (campos faltando, tipos trocados, excesso de itens). */
 /** `cardId` = cartão em que o Copiloto foi aberto: vale para ações sem cartaoId. */
@@ -264,7 +279,7 @@ export function normalizeCard(raw: unknown, cardId?: string | null): CopilotCard
       .map((i: any) => ({ texto: String(i.texto), tom: (TOMS.includes(i.tom) ? i.tom : "neutro") as Tom })),
     acoes: (Array.isArray(r.acoes) ? r.acoes : [])
       .map((a: any) => (a && a.tipo !== "criar_cartao" && !a.cartaoId && cardId ? { ...a, cartaoId: cardId } : a))
-      .filter((a: any) => ACTIONS.includes(a?.tipo) && a?.rotulo && (a.tipo === "criar_cartao" ? a.funilId && a.titulo : a.cartaoId))
+      .filter((a: any) => ACTIONS.includes(a?.tipo) && a?.rotulo && (a.tipo === "criar_cartao" ? a.funilId && a.titulo : NO_CARD.includes(a.tipo) ? a.titulo : a.cartaoId))
       .filter((a: any) => a.tipo !== "criar_tarefa" || a.titulo)
       .filter((a: any) => a.tipo !== "adicionar_nota" || a.texto)
       .slice(0, 3)

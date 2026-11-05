@@ -21,6 +21,7 @@ import * as deals from "../db/deals";
 import * as docs from "../db/documents";
 import * as docBackup from "../db/documentBackup";
 import * as installation from "../db/installation";
+import * as todo from "../db/todo";
 import * as folders from "../db/documentFolders";
 import * as series from "../db/activitySeries";
 import * as contactMsg from "../db/contactMessages";
@@ -587,6 +588,51 @@ export const methods = {
     docs.setBlobLocation(db, ctx, p.blobId, p.location, p.path),
   "files.all": (db: DatabaseSync) => docs.allBlobs(db),
   "files.locateList": (db: DatabaseSync) => docs.locateBlobs(db),
+  // To Do (spec 15): sempre do usuário da sessão.
+  "todo.lists": (db: DatabaseSync, ctx: DbContext) => ({ lists: todo.listTodoLists(db, ctx), groups: todo.listTodoGroups(db, ctx), counts: todo.todoCounts(db, ctx) }),
+  "todo.groupCreate": (db: DatabaseSync, ctx: DbContext, p: { name: string; listIds?: string[] }) => todo.createTodoGroup(db, ctx, p),
+  "todo.groupRename": (db: DatabaseSync, ctx: DbContext, p: Id & { name: string }) => todo.renameTodoGroup(db, ctx, p.id, p.name),
+  "todo.groupDelete": (db: DatabaseSync, ctx: DbContext, p: Id) => todo.deleteTodoGroup(db, ctx, p.id),
+  "todo.arrange": (db: DatabaseSync, ctx: DbContext, p: { items: todo.TodoArrangeItem[] }) => todo.arrangeTodoLists(db, ctx, p.items),
+  "todo.taskReorder": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => todo.reorderTodoTasks(db, ctx, p.ids),
+  "todo.listCreate": (db: DatabaseSync, ctx: DbContext, p: { name: string; color?: string }) => todo.createTodoList(db, ctx, p),
+  "todo.listUpdate": (db: DatabaseSync, ctx: DbContext, p: Id & { name?: string; color?: string }) => todo.updateTodoList(db, ctx, p.id, p),
+  "todo.listReorder": (db: DatabaseSync, ctx: DbContext, p: { ids: string[] }) => todo.reorderTodoLists(db, ctx, p.ids),
+  "todo.listDelete": (db: DatabaseSync, ctx: DbContext, p: Id) => todo.deleteTodoList(db, ctx, p.id),
+  "todo.tasks": (db: DatabaseSync, ctx: DbContext, p: { view: todo.TodoView; search?: string }) => todo.listTodoTasks(db, ctx, p.view, { search: p.search }),
+  "todo.task": (db: DatabaseSync, ctx: DbContext, p: Id) => todo.getTodoTask(db, ctx, p.id),
+  "todo.suggestions": (db: DatabaseSync, ctx: DbContext) => todo.todoSuggestions(db, ctx),
+  "todo.dueReminders": (db: DatabaseSync, ctx: DbContext) => todo.todoDueReminders(db, ctx),
+  "todo.snooze": (db: DatabaseSync, ctx: DbContext, p: Id & { minutes?: number }) => todo.snoozeTodoReminder(db, ctx, p.id, p.minutes),
+  "todo.badge": (db: DatabaseSync, ctx: DbContext) => todo.todoBadge(db, ctx),
+  "todo.taskCreate": (db: DatabaseSync, ctx: DbContext, p: todo.TodoTaskInput) => todo.createTodoTask(db, ctx, p),
+  "todo.taskUpdate": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Partial<todo.TodoTaskInput> & { done?: boolean } }) => {
+    const next = todo.updateTodoTask(db, ctx, p.id, p.patch);
+    // Tarefa ligada a uma atividade do CRM: concluir/reabrir aqui vale lá também.
+    if (p.patch.done !== undefined) {
+      const t = todo.getTodoTask(db, ctx, p.id);
+      if (t?.activity_id && t.activity_done !== null && !!t.activity_done !== p.patch.done) {
+        try {
+          assertActivityAccess(db, ctx, t.activity_id);
+          activities.setActivityDone(db, ctx, t.activity_id, p.patch.done);
+          if (p.patch.done) series.afterOccurrenceDone(db, ctx, t.activity_id);
+        } catch {
+          // Sem acesso à atividade (de outro usuário): só o To Do muda.
+        }
+      }
+    }
+    return next;
+  },
+  "todo.fromActivity": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    assertActivityAccess(db, ctx, p.id);
+    return todo.todoFromActivity(db, ctx, p.id);
+  },
+  "todo.fromCard": (db: DatabaseSync, ctx: DbContext, p: Id & { title?: string }) => todo.todoFromCard(db, ctx, p.id, p.title),
+  "todo.forDeal": (db: DatabaseSync, ctx: DbContext, p: Id) => todo.todoForDeal(db, ctx, p.id),
+  "todo.taskDelete": (db: DatabaseSync, ctx: DbContext, p: Id) => todo.deleteTodoTask(db, ctx, p.id),
+  "todo.stepAdd": (db: DatabaseSync, ctx: DbContext, p: { taskId: string; title: string }) => todo.addTodoStep(db, ctx, p.taskId, p.title),
+  "todo.stepUpdate": (db: DatabaseSync, ctx: DbContext, p: Id & { title?: string; done?: boolean }) => todo.updateTodoStep(db, ctx, p.id, p),
+  "todo.stepDelete": (db: DatabaseSync, ctx: DbContext, p: Id) => todo.deleteTodoStep(db, ctx, p.id),
   // Mudança de instalação (outra pasta, outro computador): assistente.
   "installation.check": (db: DatabaseSync, ctx: DbContext, p: { extensionId: string }) => installation.checkInstallation(db, ctx, p.extensionId),
   "installation.mark": (db: DatabaseSync, ctx: DbContext, p: { extensionId: string }) => {
@@ -682,10 +728,12 @@ export const methods = {
       series.makeRecurring(db, ctx, p.id, p.recurrence);
     } else activities.updateActivity(db, ctx, p.id, p.patch);
     if (p.patch.done) series.afterOccurrenceDone(db, ctx, p.id);
+    if (p.patch.done !== undefined) todo.syncTodoWithActivity(db, ctx, p.id, p.patch.done);
   },
   "activities.setDone": (db: DatabaseSync, ctx: DbContext, p: Id & { done: boolean }) => {
     assertActivityAccess(db, ctx, p.id);
     activities.setActivityDone(db, ctx, p.id, p.done);
+    todo.syncTodoWithActivity(db, ctx, p.id, p.done);
     if (p.done) series.afterOccurrenceDone(db, ctx, p.id);
   },
   /** Ocorrência de série: `scope` "this" (padrão), "following" ou "all". */
@@ -738,6 +786,7 @@ export const methods = {
   "copilot.finance": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof copilot.financeSummaryForCopilot>[2]) => copilot.financeSummaryForCopilot(db, viewer(db, ctx), p),
   "copilot.financeAlerts": (db: DatabaseSync, ctx: DbContext, p: { responsavel?: string }) => copilot.financeAlertsForCopilot(db, viewer(db, ctx), p),
   "copilot.stale": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof copilot.staleDeals>[2]) => copilot.staleDeals(db, viewer(db, ctx), p),
+  "copilot.todo": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof todo.todoForCopilot>[2]) => todo.todoForCopilot(db, ctx, p),
   "copilot.tasks": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof copilot.tasksForCopilot>[2]) => copilot.tasksForCopilot(db, viewer(db, ctx), p),
   "copilot.contacts": (db: DatabaseSync, ctx: DbContext, p: { texto: string }) => copilot.contactsForCopilot(db, viewer(db, ctx), p.texto),
   /** GED para o Copiloto: busca por texto e/ou pasta (com subpastas); sem nada, as pastas. */
