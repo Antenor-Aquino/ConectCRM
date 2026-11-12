@@ -4,14 +4,19 @@
 // tarefas abertas e "Concluída" — no Meu Dia, também as atividades do CRM de
 // hoje; direita: detalhes da tarefa ou as sugestões do Meu Dia.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, Bell, Briefcase, CheckSquare, User, CalendarDays, Check, ChevronDown, Folder, FolderPlus, GripVertical, Home, Infinity as InfinityIcon, Lightbulb, ListTodo, MoreHorizontal, NotebookPen, Plus, Repeat, Search, Star, Sun, Trash2, X } from "lucide-react";
-import { TaInput, cn } from "@tailadmin";
+import { ArrowDown, ArrowUp, ArrowUpDown, Bell, Paperclip, Pencil, Briefcase, CheckSquare, User, CalendarDays, Check, ChevronDown, Folder, FolderPlus, GripVertical, Home, Infinity as InfinityIcon, Lightbulb, ListTodo, MoreHorizontal, NotebookPen, Plus, Repeat, Search, Star, Sun, Trash2, X } from "lucide-react";
+import { TaButton, TaInput, TaModal, cn } from "@tailadmin";
 import { call, DATA_CHANGED_EVENT } from "../../rpc/client";
 import type { TodoArrangeItem, TodoGroup, TodoList, TodoSmart, TodoStep, TodoSuggestions, TodoTask, TodoView as View } from "../../db/todo";
 import type { ActivityListItem } from "../../db/activities";
 import { ActivityIcon } from "../../lib/activityIcons";
 import { useSession } from "../session";
 import { searchLinks, TaskModal } from "../tasks/TaskModal";
+import { useDraft } from "../ui/unsaved";
+import { NoteBody, NoteEditor } from "../ui/NotesPanel";
+import { DocumentsPanel } from "../documents/DocumentsPanel";
+import { DocumentViewer } from "../documents/DocumentViewer";
+import type { DocumentListItem } from "../../db/documents";
 import { Combobox } from "../ui/Combobox";
 import { useDocumentNav } from "../documents/docUi";
 import { dueLabel, parseRecurrence, PLANNED_GROUPS, plannedGroup, recurrenceLabel, sortTasks, TODO_SORTS, todayYmd, type Recurrence, type TodoSortBy } from "../../lib/todo";
@@ -75,9 +80,13 @@ export function TodoView({ openId, onOpened }: { openId?: string | null; onOpene
   const [selected, setSelectedState] = useState<string | null>(null);
   // Painel da direita: detalhes da tarefa ou sugestões do Meu Dia (um de cada vez).
   const [suggest, setSuggest] = useState(false);
-  const setSelected = (id: string | null) => {
+  // Painel aberto com algo não salvo (título, etapa, observações): trocar de tarefa ou de lista pergunta antes.
+  const detailPending = useRef<(() => boolean) | null>(null);
+  const setSelected = (id: string | null, force = false) => {
+    if (!force && id !== selected && detailPending.current?.() && !confirm("A tarefa aberta tem alterações não salvas. Sair sem salvar?")) return false;
     setSelectedState(id);
     if (id) setSuggest(false);
+    return true;
   };
   const [search, setSearch] = useState("");
   const [newTitle, setNewTitle] = useState("");
@@ -86,8 +95,8 @@ export function TodoView({ openId, onOpened }: { openId?: string | null; onOpene
   const [error, setError] = useState<string | null>(null);
 
   const setView = (v: View) => {
+    if (!setSelected(null)) return;
     setViewState(v);
-    setSelected(null);
     setSuggest(false);
     writePref(VIEW_KEY, v);
   };
@@ -336,7 +345,7 @@ export function TodoView({ openId, onOpened }: { openId?: string | null; onOpene
         </button>
         <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setSelected(t.id)}>
           <span className={cn("block truncate text-theme-sm", t.done ? "text-gray-400 line-through" : "text-gray-800 dark:text-white/90")}>{t.title}</span>
-          {(showList || due || t.steps_total > 0 || t.notes || t.my_day === today || t.remind_at || t.recurrence || crmLabel(t)) && (
+          {(showList || due || t.steps_total > 0 || t.notes || t.my_day === today || t.remind_at || t.recurrence || crmLabel(t) || t.docs > 0) && (
             <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-theme-xs text-gray-500">
               {!isMyDay && t.my_day === today && (
                 <span className="flex items-center gap-1 text-brand-600">
@@ -366,6 +375,11 @@ export function TodoView({ openId, onOpened }: { openId?: string | null; onOpene
                 </span>
               )}
               {t.notes && <NotebookPen size={12} aria-label="Tem observações" />}
+              {t.docs > 0 && (
+                <span className="flex items-center gap-0.5" title="Arquivos no GED">
+                  <Paperclip size={12} /> {t.docs}
+                </span>
+              )}
             </span>
           )}
         </button>
@@ -545,8 +559,8 @@ export function TodoView({ openId, onOpened }: { openId?: string | null; onOpene
               type="button"
               data-todo-suggest
               onClick={() => {
+                if (!setSelected(null)) return;
                 setSuggest(!suggest);
-                setSelectedState(null);
               }}
               className={cn(
                 "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-theme-sm font-medium",
@@ -661,10 +675,11 @@ export function TodoView({ openId, onOpened }: { openId?: string | null; onOpene
           key={selected}
           id={selected}
           lists={lists}
-          onClose={() => setSelected(null)}
+          pendingRef={detailPending}
+          onClose={() => setSelected(null, true)}
           onChanged={() => void reload()}
           onDeleted={() => {
-            setSelected(null);
+            setSelected(null, true);
             void reload();
           }}
         />
@@ -972,20 +987,36 @@ function ListMenu({
 type Detail = TodoTask & { steps: TodoStep[] };
 
 /** Painel da direita: etapas, vencimento, lista, observações. Salva ao sair de cada campo. */
-function TaskDetail({ id, lists, onClose, onChanged, onDeleted }: { id: string; lists: TodoList[]; onClose: () => void; onChanged: () => void; onDeleted: () => void }) {
+function TaskDetail({
+  id,
+  lists,
+  pendingRef,
+  onClose,
+  onChanged,
+  onDeleted,
+}: {
+  id: string;
+  lists: TodoList[];
+  pendingRef: { current: (() => boolean) | null };
+  onClose: () => void;
+  onChanged: () => void;
+  onDeleted: () => void;
+}) {
   const [t, setT] = useState<Detail | null>(null);
   const [title, setTitle] = useState("");
-  const [notes, setNotes] = useState("");
   const [step, setStep] = useState("");
   const [error, setError] = useState<string | null>(null);
   const stepInput = useRef<HTMLInputElement>(null);
+  // Observações em edição (o editor informa se há algo digitado e salva por fora).
+  const notesCtl = useRef<{ dirty: boolean; save: () => Promise<boolean> } | null>(null);
+  const [askClose, setAskClose] = useState(false);
+  const [closing, setClosing] = useState(false);
 
   const load = useCallback(async () => {
     const d = await call("todo.task", { id });
     setT(d);
     if (d) {
       setTitle(d.title);
-      setNotes(d.notes ?? "");
     }
   }, [id]);
   useEffect(() => {
@@ -1003,6 +1034,39 @@ function TaskDetail({ id, lists, onClose, onChanged, onDeleted }: { id: string; 
     onChanged();
   };
   const patch = (p: Record<string, unknown>) => save(() => call("todo.taskUpdate", { id, patch: p }));
+
+  /** Algo digitado e ainda não salvo: título, etapa por adicionar ou observações em edição. */
+  const pending = () => !!t && (title.trim() !== t.title || !!step.trim() || !!notesCtl.current?.dirty);
+  /** ✓: salva o que estiver pendente e fecha (fica aberta se algo falhar). */
+  const saveAndClose = async () => {
+    if (!t) return;
+    setClosing(true);
+    try {
+      setError(null);
+      if (title.trim() && title.trim() !== t.title) await call("todo.taskUpdate", { id, patch: { title } });
+      if (step.trim()) {
+        await call("todo.stepAdd", { taskId: id, title: step });
+        setStep("");
+      }
+      if (notesCtl.current?.dirty && !(await notesCtl.current.save())) return;
+      onChanged();
+      onClose();
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setClosing(false);
+    }
+  };
+
+  pendingRef.current = pending;
+  useEffect(
+    () => () => {
+      pendingRef.current = null;
+    },
+    [pendingRef],
+  );
+  // Trocar de tela (menu) ou fechar o navegador com o título/etapa digitados avisa.
+  useDraft(`Tarefa “${t?.title ?? ""}”`, !!t && (title.trim() !== t.title || !!step.trim()));
 
   if (!t) return null;
   return (
@@ -1028,7 +1092,6 @@ function TaskDetail({ id, lists, onClose, onChanged, onDeleted }: { id: string; 
           className={cn("flex-1 resize-none bg-transparent text-base font-semibold text-gray-800 outline-none dark:text-white/90", t.done && "line-through")}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          onBlur={() => title.trim() !== t.title && void patch({ title })}
         />
         <button type="button" title="Importante" onClick={() => void patch({ important: !t.important })} className={t.important ? "text-brand-500" : "text-gray-300 hover:text-brand-400"}>
           <Star size={18} fill={t.important ? "currentColor" : "none"} />
@@ -1121,27 +1184,35 @@ function TaskDetail({ id, lists, onClose, onChanged, onDeleted }: { id: string; 
             ))}
           </select>
         </label>
-        <label className="block text-theme-xs font-medium text-gray-600 dark:text-gray-400">
-          Observações
-          <textarea
-            data-todo-notes
-            rows={5}
-            className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-theme-sm text-gray-800 outline-none focus:border-brand-300 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
-            placeholder="Adicionar observação"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            onBlur={() => notes !== (t.notes ?? "") && void patch({ notes })}
-          />
-        </label>
+        <TodoNotesAndFiles t={t} notesCtl={notesCtl} onSaveNotes={(v) => patch({ notes: v })} onFilesChanged={onChanged} />
       </div>
 
       {error && <p className="mt-2 rounded-lg bg-error-50 px-3 py-2 text-theme-xs text-error-700">{error}</p>}
 
-      <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3 text-theme-xs text-gray-500 dark:border-gray-800">
-        <button type="button" title="Fechar" onClick={onClose} className="rounded p-1 hover:bg-gray-100 dark:hover:bg-white/5">
-          <X size={16} />
+      <div className="mt-4 flex items-center gap-2 border-t border-gray-100 pt-3 text-theme-xs text-gray-500 dark:border-gray-800">
+        <button
+          type="button"
+          title="Fechar (pergunta se houver algo não salvo)"
+          aria-label="Fechar"
+          data-todo-cancel
+          disabled={closing}
+          onClick={() => (pending() ? setAskClose(true) : onClose())}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-error-500 text-white shadow-theme-xs hover:bg-error-600 disabled:opacity-50"
+        >
+          <X size={18} strokeWidth={3} />
         </button>
-        <span>
+        <button
+          type="button"
+          title="Salvar as alterações e fechar"
+          aria-label="Salvar e fechar"
+          data-todo-save
+          disabled={closing}
+          onClick={() => void saveAndClose()}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-success-500 text-white shadow-theme-xs hover:bg-success-600 disabled:opacity-50"
+        >
+          <Check size={18} strokeWidth={3} />
+        </button>
+        <span className="min-w-0 flex-1 text-center">
           Criada em {formatDate(t.created_at)}
           {!!t.done && t.done_at && ` · concluída em ${formatDate(t.done_at)}`}
         </span>
@@ -1163,6 +1234,32 @@ function TaskDetail({ id, lists, onClose, onChanged, onDeleted }: { id: string; 
           <Trash2 size={16} />
         </button>
       </div>
+      {askClose && (
+        <TaModal isOpen onClose={() => setAskClose(false)} title="Alterações não salvas" width="max-w-lg">
+          <div data-todo-ask-close className="space-y-4 text-theme-sm text-gray-600 dark:text-gray-400">
+            <p>Há alterações nesta tarefa que ainda não foram salvas. Deseja salvar antes de fechar?</p>
+            <div className="flex flex-wrap justify-end gap-2">
+              <TaButton size="sm" variant="ghost" onClick={() => setAskClose(false)}>
+                Continuar editando
+              </TaButton>
+              <TaButton size="sm" variant="ghost" className="text-error-600" data-todo-discard onClick={onClose}>
+                Fechar sem salvar
+              </TaButton>
+              <TaButton
+                size="sm"
+                variant="primary"
+                data-todo-save-close
+                onClick={() => {
+                  setAskClose(false);
+                  void saveAndClose();
+                }}
+              >
+                Salvar e fechar
+              </TaButton>
+            </div>
+          </div>
+        </TaModal>
+      )}
     </aside>
   );
 }
@@ -1606,7 +1703,7 @@ function CrmLinks({ t, onPatch }: { t: Detail; onPatch: (p: Record<string, unkno
       )}
       {modal === "new" && (
         <TaskModal
-          request={{ fromTodo: { title: t.title, description: t.notes, dueDate: t.due_date }, dealId: t.deal_id ?? undefined, personId: t.person_id ?? undefined }}
+          request={{ fromTodo: { title: t.title, description: t.notes?.replace(/\[imagem:[\w-]+\]\n?/g, "").trim() || null, dueDate: t.due_date }, dealId: t.deal_id ?? undefined, personId: t.person_id ?? undefined }}
           onClose={() => setModal(null)}
           onCreated={(id) => onPatch({ activityId: id })}
           onSaved={() => setModal(null)}
@@ -1630,4 +1727,102 @@ function CrmLinks({ t, onPatch }: { t: Detail; onPatch: (p: Record<string, unkno
 function crmLabel(t: TodoTask): string | null {
   if (t.deal_title && t.deal_title !== t.title) return t.deal_title;
   return t.person_name;
+}
+
+// ---------- Observações com imagens e anexos (GED) ----------
+
+/**
+ * Observações: imagens coladas (Ctrl+V) ou arrastadas vão para o GED, vinculadas
+ * à tarefa (e ao cartão/contato dela), e aparecem no lugar onde foram coladas —
+ * o mesmo editor das notas. Abaixo, os arquivos da tarefa no GED (anexar, abrir).
+ */
+function TodoNotesAndFiles({
+  t,
+  notesCtl,
+  onSaveNotes,
+  onFilesChanged,
+}: {
+  t: Detail;
+  notesCtl: { current: { dirty: boolean; save: () => Promise<boolean> } | null };
+  onSaveNotes: (v: string) => Promise<void>;
+  onFilesChanged: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [docs, setDocs] = useState<DocumentListItem[]>([]);
+  const [open, setOpen] = useState<string | null>(null);
+  const [rev, setRev] = useState(0);
+  const loadDocs = useCallback(() => call("documents.forEntity", { type: "todo", id: t.id }).then(setDocs).catch(() => setDocs([])), [t.id]);
+  useEffect(() => {
+    void loadDocs();
+  }, [loadDocs, rev]);
+  const noteDocs = docs.map((d) => ({ id: d.id, version_id: d.version_id, name: d.name, filename: d.filename, mime: d.mime }));
+  return (
+    <>
+      <div className="block text-theme-xs font-medium text-gray-600 dark:text-gray-400" data-todo-notes-box>
+        <div className="mb-1 flex items-center justify-between">
+          Observações
+          {!editing && t.notes && (
+            <button type="button" title="Editar as observações" data-todo-notes-edit onClick={() => setEditing(true)} className="rounded p-0.5 text-gray-400 hover:text-brand-600">
+              <Pencil size={13} />
+            </button>
+          )}
+        </div>
+        {editing ? (
+          <NoteEditor
+            key={t.id}
+            entityType="todo"
+            entityId={t.id}
+            initial={t.notes ?? ""}
+            docs={noteDocs}
+            autoFocus
+            saveLabel="Salvar observações"
+            placeholder="Adicionar observação… (cole ou arraste imagens aqui)"
+            imageName="Imagem da tarefa"
+            draftLabel={`Observações da tarefa “${t.title}”`}
+            controlRef={notesCtl}
+            onSave={async (body) => {
+              await onSaveNotes(body);
+              setEditing(false);
+              setRev((r) => r + 1);
+              onFilesChanged();
+            }}
+            onCancel={() => setEditing(false)}
+          />
+        ) : t.notes ? (
+          <div
+            role="button"
+            tabIndex={0}
+            data-todo-notes
+            title="Clique para editar"
+            onClick={(e) => !(e.target as HTMLElement).closest("button, a") && setEditing(true)}
+            className="cursor-text rounded-lg border border-gray-200 px-3 py-2 font-normal hover:border-brand-300 dark:border-gray-700"
+          >
+            <NoteBody note={{ body: t.notes, documents: noteDocs }} onOpenDoc={setOpen} />
+          </div>
+        ) : (
+          <button
+            type="button"
+            data-todo-notes
+            onClick={() => setEditing(true)}
+            className="w-full rounded-lg border border-dashed border-gray-300 px-3 py-3 text-left font-normal text-gray-400 hover:border-brand-300 hover:text-brand-600 dark:border-gray-700"
+          >
+            Adicionar observação (pode colar ou arrastar imagens)
+          </button>
+        )}
+      </div>
+      <div className="text-theme-xs font-medium text-gray-600 dark:text-gray-400" data-todo-files>
+        <DocumentsPanel
+          key={rev}
+          type="todo"
+          id={t.id}
+          compact
+          onChanged={() => {
+            setRev((r) => r + 1);
+            onFilesChanged();
+          }}
+        />
+      </div>
+      {open && <DocumentViewer documentId={open} onClose={() => setOpen(null)} />}
+    </>
+  );
 }

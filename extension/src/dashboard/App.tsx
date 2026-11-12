@@ -309,6 +309,7 @@ function Main() {
       setOrgOpen(id);
     },
     openTask: setTaskOpen,
+    openTodo: (id: string) => setTodoFromUrl(id),
   };
 
   const iconButton = "flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/5";

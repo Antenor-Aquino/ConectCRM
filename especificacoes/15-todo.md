@@ -140,3 +140,38 @@ Em 1745 px cabem todos os itens.
 - Banco: `deal_id`, `person_id`, `activity_id` em `todo_task` (migração
   0030); RPC `todo.fromCard`, `todo.fromActivity`, `todo.forDeal`,
   `copilot.todo`.
+
+## Observações com imagens e arquivos da tarefa no GED (0.2.91)
+
+- **Observações** usam o mesmo editor das notas: dá para **colar (Ctrl+V) ou
+  arrastar imagens**; ao salvar ("Salvar observações"), cada imagem vai para o
+  GED (tipo "Foto/imagem", nome "Imagem da tarefa - data") vinculada à tarefa
+  e aparece dentro das observações, no lugar onde foi colada (clique abre no
+  GED). Clicar no texto ou no lápis edita; editar com algo não salvo avisa
+  antes de sair da tela.
+- **Arquivos (GED)** no painel da tarefa: "Anexar documentos" (ou arrastar)
+  abre a janela Novo documento já vinculada à tarefa — e, se a tarefa estiver
+  ligada a um cartão/contato, a eles também. Lista com ver, baixar, enviar
+  pelo WhatsApp (contato da tarefa/cartão), desvincular e lixeira.
+- A linha da tarefa mostra 📎 com a quantidade de arquivos.
+- **No GED:** novo vínculo "Tarefa do To Do" (etiqueta, filtro "Vinculado a",
+  busca pelo título, auditoria "Vinculou à tarefa do To Do…"); clicar no
+  vínculo abre o To Do na tarefa. Documento vinculado só a uma tarefa do To Do
+  é visto só pelo dono da tarefa (e por quem enviou / administrador).
+- Ao "Criar atividade no CRM", as imagens das observações não vão para a
+  descrição da atividade (só o texto).
+- Banco: `document_link.entity_type` aceita `'todo'` (migração 0031, refaz a
+  tabela por causa do CHECK).
+
+## Botões ✓ e ✗ no painel da tarefa (0.2.92)
+
+- No rodapé do painel: **✓ verde** salva o que estiver pendente (título,
+  etapa digitada e ainda não adicionada, observações em edição — com as
+  imagens) e fecha; **✗ vermelho** fecha. Se houver algo não salvo, o ✗
+  pergunta: **Continuar editando**, **Fechar sem salvar** ou **Salvar e
+  fechar**. O X antigo saiu; a lixeira continua.
+- O título deixou de se salvar sozinho ao sair do campo: agora é pelo ✓.
+  Estrela, Meu Dia, concluir, vencimento, lista, lembrete, repetir, vínculos,
+  marcar etapa e anexos continuam valendo na hora (são ações, não texto).
+- Com algo não salvo, trocar de tarefa, de lista ou abrir Sugestões pergunta
+  antes; trocar de tela no menu também avisa.

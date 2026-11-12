@@ -30,6 +30,7 @@ import migration0027 from "./migrations/0027_todo.sql?raw";
 import migration0028 from "./migrations/0028_todo_lembretes.sql?raw";
 import migration0029 from "./migrations/0029_todo_grupos.sql?raw";
 import migration0030 from "./migrations/0030_todo_vinculos.sql?raw";
+import migration0031 from "./migrations/0031_ged_todo.sql?raw";
 
 export const MIGRATIONS: { name: string; sql: string }[] = [
   { name: "0000_init.sql", sql: migration0000 },
@@ -63,6 +64,7 @@ export const MIGRATIONS: { name: string; sql: string }[] = [
   { name: "0028_todo_lembretes.sql", sql: migration0028 },
   { name: "0029_todo_grupos.sql", sql: migration0029 },
   { name: "0030_todo_vinculos.sql", sql: migration0030 },
+  { name: "0031_ged_todo.sql", sql: migration0031 },
 ];
 
 /** Aplica as migrations pendentes; devolve quantas rodaram. */
