@@ -56,7 +56,7 @@ function NoteImage({ doc, onOpen }: { doc: NoteDoc; onOpen: () => void }) {
 }
 
 /** Texto da nota com links clicáveis e as imagens no lugar dos marcadores. */
-function NoteBody({ note, onOpenDoc }: { note: Note; onOpenDoc: (id: string) => void }) {
+export function NoteBody({ note, onOpenDoc }: { note: Pick<Note, "body" | "documents">; onOpenDoc: (id: string) => void }) {
   const docs = new Map(note.documents.map((d) => [d.id, d]));
   return (
     <div className="whitespace-pre-wrap break-words text-theme-sm text-gray-800 dark:text-white/90" data-note-body>
@@ -87,7 +87,7 @@ function NoteBody({ note, onOpenDoc }: { note: Note; onOpenDoc: (id: string) => 
  * marcador "[imagem N]" no texto; ao salvar, as novas vão para o GED e o
  * marcador vira "[imagem:<documento>]". Devolve o texto e as imagens usadas.
  */
-function NoteEditor({
+export function NoteEditor({
   entityType,
   entityId,
   initial = "",
@@ -96,8 +96,20 @@ function NoteEditor({
   autoFocus,
   onSave,
   onCancel,
+  placeholder = "Escreva uma nota… (cole ou arraste imagens aqui)",
+  imageName = "Imagem da nota",
+  draftLabel,
+  controlRef,
 }: {
-  entityType: NoteEntity;
+  /** Quem está em volta pode saber se há algo digitado e salvar de fora (ex.: botão ✓ do To Do). */
+  controlRef?: { current: { dirty: boolean; save: () => Promise<boolean> } | null };
+  placeholder?: string;
+  /** Começo do nome da imagem no GED. */
+  imageName?: string;
+  /** Texto do aviso de "não salvo" (padrão: nota). */
+  draftLabel?: string;
+  /** Onde as imagens coladas ficam vinculadas no GED (a tarefa do To Do também). */
+  entityType: NoteEntity | "todo";
   entityId: string;
   initial?: string;
   docs?: NoteDoc[];
@@ -126,7 +138,7 @@ function NoteEditor({
   const [error, setError] = useState<string | null>(null);
   // Texto ou imagem ainda não salvos: avisa antes de fechar o cartão (a aba pode ser trocada sem perder).
   const dirty = body !== startBody || images.length !== startImages.length;
-  useDraft(onCancel ? "Edição de nota" : "Nota nova", dirty, "notas");
+  useDraft(draftLabel ?? (onCancel ? "Edição de nota" : "Nota nova"), dirty, "notas");
 
   // Miniaturas das imagens que já estavam no GED.
   useEffect(() => {
@@ -172,7 +184,7 @@ function NoteEditor({
     setBody((b) => b.replace(`${pendingMarker(img.n)}\n`, "").replace(pendingMarker(img.n), ""));
   };
 
-  const save = async () => {
+  const save = async (): Promise<boolean> => {
     setSaving(true);
     setError(null);
     try {
@@ -190,7 +202,7 @@ function NoteEditor({
       for (const p of used) {
         let docId = p.docId;
         if (!docId && p.file) {
-          const name = `Imagem da nota - ${stamp}${fresh.length > 1 ? ` (${fresh.indexOf(p) + 1})` : ""}`;
+          const name = `${imageName} - ${stamp}${fresh.length > 1 ? ` (${fresh.indexOf(p) + 1})` : ""}`;
           const ext = (p.file.type.split("/")[1] || "png").replace("jpeg", "jpg").replace("svg+xml", "svg");
           const file = new File([p.file], `${name.replace(/[\\/:*?"<>|]/g, "-")}.${ext}`, { type: p.file.type });
           docId = (await createDocumentsFrom([{ file, name }], typeId!, { type: entityType, id: entityId })).ids[0];
@@ -203,12 +215,21 @@ function NoteEditor({
       images.forEach((p) => p.file && p.url && URL.revokeObjectURL(p.url));
       setImages([]);
       setBody("");
+      return true;
     } catch (e) {
       setError(errorText(e));
+      return false;
     } finally {
       setSaving(false);
     }
   };
+  if (controlRef) controlRef.current = { dirty, save };
+  useEffect(() => {
+    if (!controlRef) return;
+    return () => {
+      controlRef.current = null;
+    };
+  }, [controlRef]);
 
   return (
     <div data-note-editor>
@@ -217,7 +238,7 @@ function NoteEditor({
         rows={3}
         autoFocus={autoFocus}
         className="w-full rounded-lg border border-warning-200 bg-warning-25 px-4 py-2.5 text-theme-sm text-gray-800 shadow-theme-xs outline-none placeholder:text-gray-400 focus:border-brand-300 focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
-        placeholder="Escreva uma nota… (cole ou arraste imagens aqui)"
+        placeholder={placeholder}
         value={body}
         onChange={(e) => setBody(e.target.value)}
         onPaste={(e: ClipboardEvent<HTMLTextAreaElement>) => addImages([...e.clipboardData.files]) && e.preventDefault()}

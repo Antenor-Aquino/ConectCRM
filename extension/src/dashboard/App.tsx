@@ -3,6 +3,8 @@ import { Building2, Sparkles, CalendarDays, Trash2, CircleCheck, Filter, ListTod
 import { AppLayout, TopNavBar, cn, type TopNavItem } from "@tailadmin";
 import { call, DATA_CHANGED_EVENT, exportDatabase, systemCall, TRASH_EVENT } from "../rpc/client";
 import { checkAutoBackup, type AutoBackupCheck } from "../lib/autoBackup";
+import { checkBackupCleanup, type CleanupCheck } from "../lib/backupCleanup";
+import { BackupCleanupModal } from "./components/BackupCleanupModal";
 import { checkDocumentExpiry, deleteOrphans } from "../lib/documentFiles";
 import { checkDocBackup, type DocBackupCheck } from "../lib/docBackup";
 import type { OpenCardMessage } from "../rpc/protocol";
@@ -180,10 +182,20 @@ function Main() {
   const [backupPending, setBackupPending] = useState<Extract<AutoBackupCheck, { status: "needs-permission" }> | null>(null);
   const [docBackupPending, setDocBackupPending] = useState<Extract<DocBackupCheck, { status: "needs-permission" }> | null>(null);
   // Backup dos documentos: depois do backup do banco (que pode ter acabado de receber a autorização da mesma pasta).
-  const runDocBackupCheck = () =>
+  const runDocBackupCheck = () => {
     void checkDocBackup()
       .then((r) => r.status === "needs-permission" && setDocBackupPending(r))
       .catch(() => {});
+    runCleanupCheck();
+  };
+  // Limpeza semanal dos backups antigos (pergunta antes; só o administrador).
+  const [cleanup, setCleanup] = useState<Extract<CleanupCheck, { status: "ask" }> | null>(null);
+  const runCleanupCheck = () => {
+    if (user.role !== "admin") return;
+    void checkBackupCleanup()
+      .then((r) => r.status === "ask" && setCleanup(r))
+      .catch(() => {});
+  };
   // Assistente de mudança: banco vindo de outra instalação (ou aberto em Configurações → Backup).
   const [move, setMove] = useState<{ previousId: string | null; open: boolean } | null>(null);
   useEffect(() => {
@@ -297,6 +309,7 @@ function Main() {
       setOrgOpen(id);
     },
     openTask: setTaskOpen,
+    openTodo: (id: string) => setTodoFromUrl(id),
   };
 
   const iconButton = "flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/5";
@@ -497,6 +510,9 @@ function Main() {
               setTab("configuracoes");
             }}
           />
+        )}
+        {cleanup && !backupPending && !docBackupPending && !move?.open && (
+          <BackupCleanupModal handle={cleanup.handle} files={cleanup.files} onClose={() => setCleanup(null)} />
         )}
         {docBackupPending && !backupPending && !move?.open && (
           <DocBackupPermissionModal handle={docBackupPending.handle} settings={docBackupPending.settings} onClose={() => setDocBackupPending(null)} />

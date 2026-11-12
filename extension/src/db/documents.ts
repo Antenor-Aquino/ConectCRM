@@ -14,8 +14,8 @@ import { many, one, run, withTransaction, type DatabaseSync, type SqlValue } fro
 import { getEntityTags, setEntityTags } from "./tags";
 import type { Viewer } from "./users";
 
-export type DocLinkType = "person" | "organization" | "deal" | "activity";
-export const DOC_LINK_TYPES: DocLinkType[] = ["deal", "activity", "person", "organization"];
+export type DocLinkType = "person" | "organization" | "deal" | "activity" | "todo";
+export const DOC_LINK_TYPES: DocLinkType[] = ["deal", "activity", "person", "organization", "todo"];
 
 export interface DocLinkRef {
   type: DocLinkType;
@@ -198,6 +198,11 @@ export function contextLinks(db: DatabaseSync, type: DocLinkType, id: string): D
     add("deal", a?.deal_id);
     add("person", a?.person_id ?? a?.dp);
     add("organization", a?.organization_id ?? a?.dorg);
+  } else if (type === "todo") {
+    // Tarefa do To Do ligada ao CRM: o arquivo vai também para o cartão/contato dela.
+    const t = one<{ deal_id: string | null; person_id: string | null }>(db, "SELECT deal_id, person_id FROM todo_task WHERE id = ?", id);
+    add("deal", t?.deal_id);
+    add("person", t?.person_id);
   } else if (type === "deal") {
     const d = one<{ person_id: string | null; organization_id: string | null }>(db, "SELECT person_id, organization_id FROM deal WHERE id = ?", id);
     add("person", d?.person_id);
@@ -214,7 +219,7 @@ export function contextLinks(db: DatabaseSync, type: DocLinkType, id: string): D
   return out;
 }
 
-const LINK_TABLE: Record<DocLinkType, string> = { person: "person", organization: "organization", deal: "deal", activity: "activity" };
+const LINK_TABLE: Record<DocLinkType, string> = { person: "person", organization: "organization", deal: "deal", activity: "activity", todo: "todo_task" };
 
 function checkLinkTarget(db: DatabaseSync, l: DocLinkRef): void {
   if (!DOC_LINK_TYPES.includes(l.type)) throw new ValidationError("Tipo de vínculo inválido.");
@@ -252,7 +257,7 @@ export function documentLinks(db: DatabaseSync, documentIds: string[]): Map<stri
   const rows = many<{ document_id: string; type: DocLinkType; id: string; auto: number; label: string | null; pipeline_id: string | null; sub: string | null }>(
     db,
     `SELECT l.document_id, l.entity_type AS type, l.entity_id AS id, l.auto,
-       CASE l.entity_type WHEN 'deal' THEN d.title WHEN 'activity' THEN a.title WHEN 'person' THEN p.name ELSE o.name END AS label,
+       CASE l.entity_type WHEN 'deal' THEN d.title WHEN 'activity' THEN a.title WHEN 'person' THEN p.name WHEN 'todo' THEN td.title ELSE o.name END AS label,
        d.pipeline_id, CASE l.entity_type WHEN 'deal' THEN pl.name END AS sub
      FROM document_link l
      LEFT JOIN deal d ON l.entity_type = 'deal' AND d.id = l.entity_id
@@ -260,9 +265,10 @@ export function documentLinks(db: DatabaseSync, documentIds: string[]): Map<stri
      LEFT JOIN activity a ON l.entity_type = 'activity' AND a.id = l.entity_id
      LEFT JOIN person p ON l.entity_type = 'person' AND p.id = l.entity_id
      LEFT JOIN organization o ON l.entity_type = 'organization' AND o.id = l.entity_id
+     LEFT JOIN todo_task td ON l.entity_type = 'todo' AND td.id = l.entity_id
      WHERE l.document_id IN (${marks}) AND l.deleted_at IS NULL
-       AND COALESCE(d.deleted_at, a.deleted_at, p.deleted_at, o.deleted_at) IS NULL
-     ORDER BY CASE l.entity_type WHEN 'deal' THEN 0 WHEN 'activity' THEN 1 WHEN 'person' THEN 2 ELSE 3 END, label`,
+       AND COALESCE(d.deleted_at, a.deleted_at, p.deleted_at, o.deleted_at, td.deleted_at) IS NULL
+     ORDER BY CASE l.entity_type WHEN 'deal' THEN 0 WHEN 'activity' THEN 1 WHEN 'todo' THEN 2 WHEN 'person' THEN 3 ELSE 4 END, label`,
     ...documentIds,
   );
   for (const r of rows) {
@@ -441,8 +447,9 @@ export function documentScope(db: DatabaseSync, viewer: Viewer | null | undefine
         OR EXISTS (SELECT 1 FROM document_link l WHERE ${live} AND l.entity_type IN ('person', 'organization'))
         OR EXISTS (SELECT 1 FROM document_link l JOIN deal x ON x.id = l.entity_id AND l.entity_type = 'deal' AND x.deleted_at IS NULL WHERE ${live}${cs.sql})
         OR EXISTS (SELECT 1 FROM document_link l JOIN activity a ON a.id = l.entity_id AND l.entity_type = 'activity' AND a.deleted_at IS NULL WHERE ${live}${as.sql ? ` AND ${as.sql}` : ""})
+        OR EXISTS (SELECT 1 FROM document_link l JOIN todo_task td ON td.id = l.entity_id AND l.entity_type = 'todo' WHERE ${live} AND td.owner_id = ?)
       )))`,
-    params: [viewer.id, viewer.id, ...cs.params, ...as.params],
+    params: [viewer.id, viewer.id, ...cs.params, ...as.params, viewer.id],
   };
 }
 
@@ -533,6 +540,10 @@ export function whatsappRecipients(db: DatabaseSync, type: DocLinkType, id: stri
       id,
     ))
       person(r.person_id, "Contato da organização");
+  } else if (type === "todo") {
+    const t = one<{ deal_id: string | null; person_id: string | null }>(db, "SELECT deal_id, person_id FROM todo_task WHERE id = ?", id);
+    if (t?.deal_id) card(t.deal_id);
+    person(t?.person_id ?? null, "Contato da tarefa");
   } else {
     const a = one<{ deal_id: string | null; person_id: string | null; organization_id: string | null }>(
       db,
@@ -568,6 +579,8 @@ export interface DocumentFilter {
   activityId?: string;
   personId?: string;
   organizationId?: string;
+  /** Tarefa do To Do (fase 6). */
+  todoId?: string;
   uploadedBy?: string;
   /** Envio: AAAA-MM-DD (inclusive). */
   from?: string;
@@ -644,6 +657,7 @@ const HAYSTACK = `ged_norm(
      SELECT x.title || ' ' || COALESCE(pl.name, '') AS n FROM document_link l JOIN deal x ON x.id = l.entity_id LEFT JOIN pipeline pl ON pl.id = x.pipeline_id
        WHERE l.document_id = d.id AND l.deleted_at IS NULL AND l.entity_type = 'deal'
      UNION ALL SELECT a.title FROM document_link l JOIN activity a ON a.id = l.entity_id WHERE l.document_id = d.id AND l.deleted_at IS NULL AND l.entity_type = 'activity'
+     UNION ALL SELECT td.title FROM document_link l JOIN todo_task td ON td.id = l.entity_id WHERE l.document_id = d.id AND l.deleted_at IS NULL AND l.entity_type = 'todo'
      UNION ALL SELECT p.name || ' ' || COALESCE(p.email, '') FROM document_link l JOIN person p ON p.id = l.entity_id WHERE l.document_id = d.id AND l.deleted_at IS NULL AND l.entity_type = 'person'
      UNION ALL SELECT o.name || ' ' || COALESCE(o.cnpj, '') FROM document_link l JOIN organization o ON o.id = l.entity_id WHERE l.document_id = d.id AND l.deleted_at IS NULL AND l.entity_type = 'organization'
   )), '') || ' ' ||
@@ -670,6 +684,7 @@ function documentWhere(db: DatabaseSync, f: DocumentFilter): { sql: string; para
   if (f.activityId) linked("activity", f.activityId);
   if (f.personId) linked("person", f.personId);
   if (f.organizationId) linked("organization", f.organizationId);
+  if (f.todoId) linked("todo", f.todoId);
   if (f.pipelineId) {
     add(
       "EXISTS (SELECT 1 FROM document_link l JOIN deal x ON x.id = l.entity_id WHERE l.document_id = d.id AND l.deleted_at IS NULL AND l.entity_type = 'deal' AND x.pipeline_id = ?)",
@@ -753,7 +768,7 @@ export function listDocuments(db: DatabaseSync, f: DocumentFilter = {}): { items
 
 /** Documentos de um cadastro (abas Documentos). */
 export function documentsFor(db: DatabaseSync, type: DocLinkType, id: string, viewer?: Viewer | null): DocumentListItem[] {
-  const key = { deal: "dealId", activity: "activityId", person: "personId", organization: "organizationId" }[type] as "dealId";
+  const key = { deal: "dealId", activity: "activityId", person: "personId", organization: "organizationId", todo: "todoId" }[type] as "dealId";
   return listDocuments(db, { [key]: id, viewer, limit: 500, sort: "created_at" }).items;
 }
 
@@ -958,6 +973,7 @@ const LINK_LABEL: Record<DocLinkType, { to: string; from: string }> = {
   activity: { to: "à atividade", from: "da atividade" },
   person: { to: "ao contato", from: "do contato" },
   organization: { to: "à organização", from: "da organização" },
+  todo: { to: "à tarefa do To Do", from: "da tarefa do To Do" },
 };
 const FIELD_LABEL: Record<string, string> = {
   name: "Nome",
@@ -983,7 +999,7 @@ export function documentAudit(db: DatabaseSync, id: string): AuditEntry[] {
     v ? `“${one<{ name: string }>(db, "SELECT name FROM document_folder WHERE id = ?", String(v))?.name ?? "pasta excluída"}”` : "Sem pasta";
   const linkLabel = (type: DocLinkType, eid: string, dir: "to" | "from") => {
     const table = LINK_TABLE[type];
-    const col = type === "deal" || type === "activity" ? "title" : "name";
+    const col = type === "deal" || type === "activity" || type === "todo" ? "title" : "name";
     return `${LINK_LABEL[type][dir]} ${one<{ n: string }>(db, `SELECT ${col} AS n FROM ${table} WHERE id = ?`, eid)?.n ?? "(excluído)"}`;
   };
   const out: AuditEntry[] = [];
@@ -1170,7 +1186,7 @@ export function describeLinks(db: DatabaseSync, refs: DocLinkRef[]): DocLink[] {
       );
       return d ? [{ ...r, label: d.title, pipeline_id: d.pipeline_id, sub: d.sub }] : [];
     }
-    const col = r.type === "activity" ? "title" : "name";
+    const col = r.type === "activity" || r.type === "todo" ? "title" : "name";
     const row = one<{ n: string }>(db, `SELECT ${col} AS n FROM ${LINK_TABLE[r.type]} WHERE id = ? AND deleted_at IS NULL`, r.id);
     return row ? [{ ...r, label: row.n, pipeline_id: null, sub: null }] : [];
   });

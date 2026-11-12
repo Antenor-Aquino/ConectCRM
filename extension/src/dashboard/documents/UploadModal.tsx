@@ -37,7 +37,7 @@ interface Row {
 
 /** Onde fica a nota da transcrição: a tela de origem ou o 1º vínculo (cartão primeiro). */
 const NOTE_ORDER: DocLinkType[] = ["deal", "activity", "person", "organization"];
-const NOTE_PLACE: Record<DocLinkType, string> = { deal: "no cartão", activity: "na atividade", person: "no contato", organization: "na organização" };
+const NOTE_PLACE: Record<DocLinkType, string> = { deal: "no cartão", activity: "na atividade", person: "no contato", organization: "na organização", todo: "na tarefa" };
 
 const baseName = (filename: string) =>
   filename
@@ -133,7 +133,8 @@ export function UploadModal({
       void checkTranscription(r.prepared, ai).then((check) => setRows((x) => x.map((y) => (y.key === r.key ? { ...y, check } : y))));
     }
   }, [rows, ai]);
-  const noteTarget = context ?? NOTE_ORDER.flatMap((t) => links.filter((l) => l.type === t)).map(({ type, id }) => ({ type, id }))[0] ?? null;
+  // Tarefa do To Do não tem notas: a transcrição vai para o 1º vínculo do CRM.
+  const noteTarget = (context && context.type !== "todo" ? context : null) ?? NOTE_ORDER.flatMap((t) => links.filter((l) => l.type === t)).map(({ type, id }) => ({ type, id }))[0] ?? null;
 
   const update = (key: string, patch: Partial<Row>) => setRows((r) => r.map((x) => (x.key === key ? { ...x, ...patch } : x)));
 
@@ -174,7 +175,7 @@ export function UploadModal({
         const note = async (docId: string, docName: string) => {
           if (transcript && noteTarget)
             await call("notes.add", {
-              entityType: noteTarget.type,
+              entityType: noteTarget.type as Exclude<DocLinkType, "todo">,
               entityId: noteTarget.id,
               body: transcriptionNote(docName, r.check!, transcript),
               documentIds: [docId],
