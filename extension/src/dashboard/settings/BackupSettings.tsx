@@ -4,7 +4,7 @@
 // download de uma cópia (.zip com os documentos), restauração e ambiente de
 // teste.
 import { useEffect, useRef, useState } from "react";
-import { DatabaseBackup, Download, FileDown, FileUp, FolderOpen, RefreshCw, Truck, Upload } from "lucide-react";
+import { DatabaseBackup, Download, Eraser, FileDown, FileUp, FolderOpen, RefreshCw, Truck, Upload } from "lucide-react";
 import { TaButton, TaPanel, TaSelect } from "@tailadmin";
 import { exportDatabase, restoreDatabase, systemCall } from "../../rpc/client";
 import {
@@ -16,6 +16,7 @@ import {
   type BackupFrequency,
 } from "../../lib/autoBackup";
 import { loadBackupFolderHandle, pickBackupFolder } from "../../lib/backupFolder";
+import { BACKUP_MAX_AGE_DAYS, deleteBackups, listBackupFiles, loadCleanupState, oldBackups, saveCleanupState, type BackupCleanupState } from "../../lib/backupCleanup";
 import { buildBackupZip, readBackupZip, restoreDocumentFiles, saveBlobAs } from "../../lib/documentFiles";
 import { recoverFromBackups } from "../../lib/locateDocuments";
 import { call } from "../../rpc/client";
@@ -128,8 +129,8 @@ export function BackupSettings({ env }: { env: DbEnv }) {
           ))}
         </div>
         <p className="mt-3 text-theme-xs text-gray-500">
-          Os backups automáticos além do limite são apagados da pasta a cada novo backup; os feitos em "Fazer backup agora" nunca são apagados. Os documentos têm
-          backup próprio, abaixo.
+          Os backups automáticos além do limite são apagados da pasta a cada novo backup. Além disso, uma vez por semana o CRM oferece apagar todos os backups com
+          mais de 7 dias (veja "Limpeza de backups antigos"). Os documentos têm backup próprio, abaixo.
         </p>
         <p className="mt-3 text-theme-xs text-gray-500">
           Último backup: {settings.lastRunAt ? formatDateTime(settings.lastRunAt) : "nunca"}. O Chrome pede a autorização da pasta de novo sempre que é reiniciado; o CRM
@@ -154,6 +155,8 @@ export function BackupSettings({ env }: { env: DbEnv }) {
           Fazer backup agora
         </TaButton>
       </TaPanel>
+
+      <BackupCleanupPanel folderName={settings.folderName} isAdmin={isAdmin} />
 
       <DocBackupPanel env={env} dbFolder={settings.folderName} />
 
@@ -304,5 +307,59 @@ export function BackupSettings({ env }: { env: DbEnv }) {
 
       {msg && <p className={`rounded-lg px-3 py-2 text-theme-sm ${msg.kind === "ok" ? "bg-success-50 text-success-700" : "bg-error-50 text-error-700"}`}>{msg.text}</p>}
     </>
+  );
+}
+
+/** Limpeza de backups antigos: mostra a última e permite rodar agora. */
+function BackupCleanupPanel({ folderName, isAdmin }: { folderName: string | null; isAdmin: boolean }) {
+  const [state, setState] = useState<BackupCleanupState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<Msg>(null);
+  useEffect(() => {
+    void loadCleanupState().then(setState);
+  }, []);
+  return (
+    <TaPanel
+      title="Limpeza de backups antigos"
+      subtitle={`Exclui da pasta de backup os backups do banco com mais de ${BACKUP_MAX_AGE_DAYS} dias (automáticos e manuais). O mais recente é sempre mantido.`}
+    >
+      <div data-backup-cleanup-panel className="space-y-3 text-theme-sm">
+        <p className="text-theme-xs text-gray-500">
+          Roda uma vez por semana ao abrir o CRM, com confirmação. Última limpeza: {state?.lastRunAt ? formatDateTime(state.lastRunAt) : "nunca"}.
+        </p>
+        <TaButton
+          disabled={busy || !isAdmin || !folderName}
+          startIcon={<Eraser size={15} />}
+          data-cleanup-now
+          onClick={async () => {
+            setBusy(true);
+            setMsg(null);
+            try {
+              const handle = await loadBackupFolderHandle();
+              if (!handle) throw new Error("Escolha a pasta do backup primeiro.");
+              if ((await handle.requestPermission({ mode: "readwrite" })) !== "granted") throw new Error("Permissão da pasta não concedida.");
+              const files = oldBackups(await listBackupFiles(handle));
+              if (!files.length) {
+                setState(await saveCleanupState({ lastRunAt: new Date(Date.now()).toISOString() }));
+                setMsg({ text: `Nenhum backup com mais de ${BACKUP_MAX_AGE_DAYS} dias na pasta “${handle.name}”.`, kind: "ok" });
+                return;
+              }
+              const total = files.reduce((n, f) => n + f.size, 0);
+              if (!confirm(`Excluir ${files.length} backup(s) com mais de ${BACKUP_MAX_AGE_DAYS} dias (${formatBytes(total)}) da pasta “${handle.name}”? O mais recente é mantido.`)) return;
+              const n = await deleteBackups(handle, files);
+              setState(await loadCleanupState());
+              setMsg({ text: `${n} backup(s) antigo(s) excluído(s).`, kind: "ok" });
+            } catch (e) {
+              setMsg({ text: errorText(e), kind: "err" });
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Limpar backups antigos
+        </TaButton>
+        {msg && <p className={`rounded-lg px-3 py-2 ${msg.kind === "ok" ? "bg-success-50 text-success-700" : "bg-error-50 text-error-700"}`}>{msg.text}</p>}
+      </div>
+    </TaPanel>
   );
 }

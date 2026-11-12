@@ -353,3 +353,25 @@ Rotina separada do backup do banco, em Configurações → Backup e ambiente →
 Backup do banco ganhou **retenção**: manter os N diários / N semanais
 automáticos mais recentes (padrão: todos). Os de "Fazer backup agora" nunca
 são apagados.
+
+## Limpeza semanal dos backups antigos (0.2.93)
+
+- Apaga da pasta de backup do banco os backups com **mais de 7 dias** de
+  gerados (data do arquivo): automáticos diários e semanais e os de "Fazer
+  backup agora". O **mais recente é sempre mantido**. A cópia das
+  configurações, outros arquivos da pasta e o backup dos documentos do GED
+  não entram.
+- **Na abertura do CRM** (Produção, administrador), no máximo uma vez por
+  semana, depois do backup automático: se houver backups antigos, pergunta
+  "Deseja excluí-los agora?" com a quantidade, a data do mais antigo e o
+  tamanho. **Sim** exclui e informa quantos saíram. **Não** mantém e avisa que
+  a limpeza pode ser feita a qualquer momento em **Configurações → Backup →
+  Limpar backups antigos**; a pergunta volta na semana seguinte. Sem pasta
+  escolhida ou sem autorização da pasta, fica para a próxima abertura.
+- **Configurações → Backup → Limpeza de backups antigos:** mostra a data da
+  última limpeza e o botão "Limpar backups antigos" (pede a autorização da
+  pasta, confirma e exclui).
+- A retenção por quantidade ("Backups diários/semanais a manter") continua
+  valendo a cada novo backup.
+- Código: `lib/backupCleanup.ts` (regras em `oldBackups` e `isCleanupDue`),
+  `components/BackupCleanupModal.tsx`; teste `tests/backupLimpeza.test.ts`.
