@@ -23,7 +23,8 @@ import {
   Trash2,
   Trophy,
   X,
-  XCircle, Repeat, ListTodo } from "lucide-react";
+  XCircle, Repeat, ListTodo, GitMerge } from "lucide-react";
+import { MergeDialog } from "../ui/MergeDialog";
 import { TODO_CHANGED_EVENT } from "../todo/useTodoBadge";
 import { TaBadge, TaButton, TaInput, TaModal, TaTextarea, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
@@ -141,6 +142,7 @@ function CardDetailInner({
   const [lostOpen, setLostOpen] = useState(false);
   const [deleteBlock, setDeleteBlock] = useState<DeleteCheck | null>(null);
   const [pipelineAction, setPipelineAction] = useState<"move" | "clone" | null>(null);
+  const [merging, setMerging] = useState(false);
   // Quantidades nas abas (balão verde) e atividades atrasadas (balão vermelho).
   const [counts, setCounts] = useState<CardCounts | null>(null);
   // Resultado financeiro (cópia dos lançamentos da Gestão Financeira).
@@ -332,6 +334,9 @@ function CardDetailInner({
           Perguntar ao Copiloto
         </TaButton>
         <AddToTodo cardId={cardId} />
+        <TaButton variant="ghost" startIcon={<GitMerge size={15} />} data-card-merge title={`Juntar este ${text.noun} com outro duplicado`} onClick={() => setMerging(true)}>
+          Mesclar
+        </TaButton>
         {onGoToCard && (
           <TaButton variant="ghost" startIcon={<Copy size={15} />} onClick={() => setPipelineAction("clone")}>
             Clonar
@@ -734,6 +739,27 @@ function CardDetailInner({
       )}
       {docOpen && <DocumentViewer documentId={docOpen} onClose={() => setDocOpen(null)} />}
       {leaveDialog}
+      {merging && (
+        <MergeDialog
+          entity="deal"
+          aId={cardId}
+          search={async (t) =>
+            (await call("cards.search", { search: t }))
+              .filter((c) => c.kind === card.kind && c.id !== cardId)
+              .map((c) => ({ id: c.id, label: c.title, sublabel: `${c.pipeline_name}${c.person_name ? ` · ${c.person_name}` : ""}` }))
+          }
+          onClose={() => setMerging(false)}
+          onMerged={(keepId) => {
+            setMerging(false);
+            onChanged();
+            // Ficou o outro cartão: este deixou de existir; abre o que ficou.
+            if (keepId !== cardId) {
+              if (onGoToCardRaw) void call("cards.get", { id: keepId }).then((c) => c && onGoToCardRaw(c.pipeline_id, keepId));
+              else onCloseRaw();
+            } else void load();
+          }}
+        />
+      )}
       {deleteBlock && (
         <DeleteBlockedDialog
           items={deleteBlock.blocked.map((b) => ({ ...b, title: card.title, archived: !!card.archived_at }))}

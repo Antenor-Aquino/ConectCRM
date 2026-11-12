@@ -14,6 +14,7 @@ import * as notify from "../db/notifications";
 import type { NotifySettings } from "../lib/notify/settings";
 import * as ext from "../db/externalImport";
 import * as merge from "../db/merge";
+import * as mergeRecords from "../db/mergeRecords";
 import * as contacts from "../db/contacts";
 import * as copilot from "../db/copilot";
 import * as cf from "../db/customFields";
@@ -76,6 +77,15 @@ function assertActivityAccess(db: DatabaseSync, ctx: DbContext, id: string): voi
   const scope = activities.activityScope(db, viewer(db, ctx));
   const ok = one(db, `SELECT 1 FROM activity a WHERE a.id = ? AND a.deleted_at IS NULL${scope.sql ? ` AND ${scope.sql}` : ""}`, id, ...scope.params);
   if (!ok) throw new ValidationError("Atividade não encontrada ou sem permissão de acesso.");
+}
+
+/** Mesclar: quem mescla precisa enxergar os dois registros. */
+function assertMergeAccess(db: DatabaseSync, ctx: DbContext, entity: mergeRecords.MergeEntity, ids: string[]): void {
+  const v = viewer(db, ctx);
+  for (const id of ids) {
+    if (entity === "deal") deals.assertCardAccess(db, v, id);
+    else if (entity === "person" && !contacts.getPerson(db, id, v)) throw new ValidationError("Contato não encontrado ou sem permissão de acesso.");
+  }
 }
 
 /** Cadastro onde se anexa ou a que se vincula um documento: segue a permissão dele. */
@@ -384,6 +394,20 @@ export const methods = {
 
   "persons.count": (db: DatabaseSync, ctx: DbContext, p: Omit<contacts.PersonFilter, "viewer"> = {}) =>
     contacts.countPersons(db, { ...p, viewer: viewer(db, ctx) }),
+  "merge.preview": (db: DatabaseSync, ctx: DbContext, p: { entity: mergeRecords.MergeEntity; a: string; b: string }) => {
+    assertMergeAccess(db, ctx, p.entity, [p.a, p.b]);
+    const preview = mergeRecords.mergePreview(db, p.entity, p.a, p.b);
+    const keep = preview.suggestedKeep ?? p.a;
+    return { ...preview, defaults: mergeRecords.defaultChoices(db, p.entity, keep, keep === p.a ? p.b : p.a) };
+  },
+  "merge.defaults": (db: DatabaseSync, ctx: DbContext, p: { entity: mergeRecords.MergeEntity; keepId: string; removeId: string }) => {
+    assertMergeAccess(db, ctx, p.entity, [p.keepId, p.removeId]);
+    return mergeRecords.defaultChoices(db, p.entity, p.keepId, p.removeId);
+  },
+  "merge.run": (db: DatabaseSync, ctx: DbContext, p: mergeRecords.MergeInput) => {
+    assertMergeAccess(db, ctx, p.entity, [p.keepId, p.removeId]);
+    return mergeRecords.mergeRecords(db, ctx, p);
+  },
   "persons.merge": (db: DatabaseSync, ctx: DbContext, p: { keepId: string; removeId: string }) => merge.mergePersons(db, ctx, p.keepId, p.removeId),
   "persons.import": (db: DatabaseSync, ctx: DbContext, p: { rows: importer.PersonImportRow[] }) => importer.importPersons(db, ctx, p.rows),
   "organizations.count": (db: DatabaseSync, _c: DbContext, p: contacts.OrganizationFilter = {}) => contacts.countOrganizations(db, p),

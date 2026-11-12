@@ -19,7 +19,7 @@ import { DocumentsPanel } from "../documents/DocumentsPanel";
 import { ClientFinancePanel } from "./ClientFinancePanel";
 import { GfContactButton } from "./GfContactButton";
 import { ChangeLogList, CustomValuesView, DrawerShell, InfoRow, RelatedCards, RelatedTasks, Tabs } from "./detailParts";
-import { MergeModal } from "./MergeModal";
+import { MergeDialog } from "../ui/MergeDialog";
 import { OrganizationFormModal } from "./OrganizationFormModal";
 import { errorText } from "../../lib/errors";
 import { EmailLink, PhoneLink } from "../ui/ContactLinks";
@@ -207,16 +207,18 @@ export function OrganizationDetail({
         />
       )}
       {merging && (
-        <MergeModal
-          keepId={o.id}
-          keepName={o.name}
-          noun="organização"
+        <MergeDialog
+          entity="organization"
+          aId={o.id}
           search={searchOrganizations}
           onClose={() => setMerging(false)}
-          onMerge={async (removeId) => {
-            await call("organizations.merge", { keepId: o.id, removeId });
+          onMerged={async (keepId) => {
             setMerging(false);
-            await after();
+            // Ficou o outro registro: este deixou de existir.
+            if (keepId !== o.id) {
+              onChanged();
+              onClose();
+            } else await after();
           }}
         />
       )}
