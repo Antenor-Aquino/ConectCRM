@@ -190,7 +190,7 @@ export type { ContentRef };
 export async function createDocumentsFrom(
   items: { file: File; name: string }[],
   typeId: string,
-  context: { type: "deal" | "activity" | "person" | "organization"; id: string },
+  context: { type: "deal" | "activity" | "person" | "organization" | "todo"; id: string },
 ): Promise<{ created: number; linked: number; ids: string[] }> {
   const links = (await call("documents.contextLinks", context)).map(({ type, id, auto }) => ({ type, id, auto }));
   let created = 0;

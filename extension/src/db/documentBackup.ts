@@ -30,7 +30,7 @@ export interface BackupEntry {
 
 export const OLD_VERSIONS_DIR = "_versões anteriores";
 
-const LINK_WORD: Record<DocLinkType, string> = { deal: "Cartão", activity: "Atividade", person: "Contato", organization: "Organização" };
+const LINK_WORD: Record<DocLinkType, string> = { deal: "Cartão", activity: "Atividade", person: "Contato", organization: "Organização", todo: "Tarefa do To Do" };
 
 /** Nome que serve em qualquer sistema de arquivos (Windows incluído). */
 export function safeSegment(s: string): string {
