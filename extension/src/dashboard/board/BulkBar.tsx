@@ -5,6 +5,7 @@
 // exportar, arquivar e excluir.
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
+  GitMerge,
   Archive,
   ArchiveRestore,
   ArrowLeftRight,
@@ -37,6 +38,7 @@ import { Combobox, type ComboItem } from "../ui/Combobox";
 import { FieldInput } from "../ui/CustomFieldsForm";
 import { Field } from "../ui/form";
 import { Popover } from "../ui/Popover";
+import { MergeDialog } from "../ui/MergeDialog";
 import { TagPicker } from "../ui/TagPicker";
 import { RemindersEditor } from "../ui/RemindersEditor";
 import { loadNotifySettings, type ReminderRule } from "../../lib/notify/settings";
@@ -45,7 +47,7 @@ import { StagePill } from "../ui/StageSelect";
 import { DeleteBlockedDialog } from "../cards/DeleteBlockedDialog";
 import { checkCardsForDelete, type DeleteCheck } from "../../lib/finance/deleteGuard";
 
-type Dialog = "pipeline" | "lost" | "addTags" | "removeTags" | "field" | "contact" | "activity" | null;
+type Dialog = "pipeline" | "lost" | "addTags" | "removeTags" | "field" | "contact" | "activity" | "merge" | null;
 
 export function BulkBar({
   pipeline,
@@ -206,6 +208,11 @@ export function BulkBar({
           <RotateCcw size={15} /> Reabrir
         </button>
       )}
+      {n === 2 && (
+        <button type="button" className={btn} disabled={busy} data-bulk-merge title={`Juntar os 2 ${text.noun}s em um só`} onClick={() => setDialog("merge")}>
+          <GitMerge size={15} /> Mesclar
+        </button>
+      )}
       <div className="relative">
         <button type="button" className={btn} disabled={busy} onClick={() => setMenu(menu === "more" ? null : "more")}>
           <MoreHorizontal size={15} /> Mais <ChevronDown size={14} />
@@ -289,6 +296,18 @@ export function BulkBar({
       )}
       {dialog === "pipeline" && (
         <PipelineDialog pipeline={pipeline} cards={chosen.map((x) => x.card)} busy={busy} onClose={() => setDialog(null)} onApply={apply} />
+      )}
+      {dialog === "merge" && n === 2 && (
+        <MergeDialog
+          entity="deal"
+          aId={chosen[0]!.card.id}
+          bId={chosen[1]!.card.id}
+          onClose={() => setDialog(null)}
+          onMerged={() => {
+            setDialog(null);
+            onDone(`2 ${text.noun}s mesclados em um.`, []);
+          }}
+        />
       )}
       {dialog === "lost" && <LostDialog pipeline={pipeline} n={n} busy={busy} onClose={() => setDialog(null)} onApply={apply} />}
       {(dialog === "addTags" || dialog === "removeTags") && (

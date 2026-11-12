@@ -69,7 +69,10 @@ describe("mesclar duplicados", () => {
     expect(p.customValues[cargo]).toBe("Diretora");
     expect(getCard(db, deal)!.person_id).toBe(keep);
     expect(listActivities(db, { personId: keep })).toHaveLength(1);
-    expect(listNotes(db, "person", keep)).toHaveLength(1);
+    // A nota antiga veio junto; a mesclagem deixa uma nota registrando o que aconteceu.
+    const notes = listNotes(db, "person", keep).map((n) => n.body);
+    expect(notes).toHaveLength(2);
+    expect(notes).toEqual(expect.arrayContaining(["Nota antiga", expect.stringContaining("Mesclado com “Dalliane S.”")]));
     expect(getPerson(db, dup)).toBeUndefined();
   });
 
