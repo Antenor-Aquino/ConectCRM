@@ -10,7 +10,7 @@ import { call } from "../../rpc/client";
 import type { Activity, ActivityType } from "../../db/activities";
 import type { CustomField, CustomValue } from "../../db/customFields";
 import { ActivityIcon } from "../../lib/activityIcons";
-import { busyRanges, calendarConnected, computeFreeSlots, connectCalendar, createCalendarEvent, PROVIDER_LABEL, type CalendarProvider } from "../../lib/calendar";
+import { busyRanges, calendarConnected, computeFreeSlots, connectCalendar, createCalendarEvent, googleClientConfigured, listCalendars, PROVIDER_LABEL, type CalendarInfo, type CalendarProvider } from "../../lib/calendar";
 import { isValidEmail } from "../../lib/validate";
 import { useSession } from "../session";
 import { Avatar } from "../ui/Avatar";
@@ -337,15 +337,46 @@ export function TaskModal({
     titlePrefix.current = next;
   }, [type, sourceId]);
   const isMeeting = !!type?.is_meeting && !existing?.external_event_id;
+  // "Adicionar à agenda" vale para qualquer atividade ainda sem evento (reunião já vem ligada).
+  const canCalendar = !existing?.external_event_id && loaded;
+  const googleReady = googleClientConfigured();
 
   useEffect(() => {
-    if (!isMeeting) return;
+    if (!canCalendar) return;
+    if (provider === "google" && !googleReady) {
+      setConnected(false);
+      setMakeEvent(false);
+      return;
+    }
     void calendarConnected(provider).then((c) => {
       setConnected(c);
-      setMakeEvent(c);
+      setMakeEvent(c && isMeeting);
     });
     setSlots(null);
-  }, [isMeeting, provider]);
+  }, [canCalendar, isMeeting, provider]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Agendas da conta (a principal, as próprias e as compartilhadas com edição); lembra a última escolhida.
+  const [calendars, setCalendars] = useState<CalendarInfo[] | null>(null);
+  const [calendarId, setCalendarId] = useState<string>("");
+  useEffect(() => {
+    if (!connected || !makeEvent) return;
+    setCalendars(null);
+    void listCalendars(provider)
+      .then((list) => {
+        setCalendars(list);
+        let saved = "";
+        try {
+          saved = localStorage.getItem(`conectcrm-calendar-id-${provider}`) ?? "";
+        } catch {
+          /* preferência opcional */
+        }
+        setCalendarId(list.some((c) => c.id === saved) ? saved : (list.find((c) => c.primary) ?? list[0])?.id ?? "");
+      })
+      .catch((e) => {
+        setCalendars([]);
+        setCalMsg(`Não foi possível listar as agendas: ${errorText(e)}`);
+      });
+  }, [connected, makeEvent, provider]);
 
   // Convidado sugerido: e-mail do contato do cartão vinculado.
   useEffect(() => {
@@ -519,19 +550,20 @@ export function TaskModal({
       setSaving(false);
       return;
     }
-    if (isMeeting && makeEvent && !recurrence) {
+    if (canCalendar && makeEvent && connected && !recurrence) {
       try {
         const ev = await createCalendarEvent(provider, {
           title,
           description,
           start: when,
           end: new Date(when.getTime() + Math.max(duration, 15) * 60_000),
-          guests,
-          online,
+          guests: isMeeting ? guests : [],
+          online: isMeeting && online,
+          calendarId: calendarId || null,
           reminderMin: popupLead(reminders),
           emailReminders: notify?.calendarEmailBackup ? reminders.filter((r) => r.channels.includes("email")).map((r) => r.minutesBefore) : [],
         });
-        await call("activities.setExternalEvent", { id, provider, eventId: ev.id, meetingUrl: ev.link, guests });
+        await call("activities.setExternalEvent", { id, provider, eventId: ev.id, meetingUrl: ev.link, guests: isMeeting ? guests : [] });
       } catch (e) {
         setSaving(false);
         setError(`Atividade salva, mas o evento não foi criado na agenda: ${errorText(e)}`);
@@ -830,8 +862,8 @@ export function TaskModal({
                     Encerrar série…
                   </button>
                 )}
-                {recurrence && isMeeting && (
-                  <p className="mt-1 text-theme-xs text-gray-500">Em reuniões recorrentes o evento não é criado no Google Agenda/Outlook.</p>
+                {recurrence && makeEvent && (
+                  <p className="mt-1 text-theme-xs text-gray-500">Em atividades recorrentes o evento não é criado no Google Agenda/Outlook.</p>
                 )}
               </Field>
               <Field label="Lembretes" hint="Quanto tempo antes do início e por onde avisar.">
@@ -842,6 +874,116 @@ export function TaskModal({
                   ready={notify ? (Object.fromEntries(ACTIVE_CHANNELS.map((c) => [c, channelReady(notify, c)])) as Record<Channel, boolean>) : undefined}
                 />
                 {deliveries.length > 0 && <DeliveryLog list={deliveries} />}
+                {canCalendar && (
+                  <div className="mt-3 rounded-lg border border-gray-200 p-2.5 dark:border-gray-800" data-add-to-calendar>
+                    <div className="mb-2 flex items-center gap-3">
+                      <Switch checked={makeEvent} disabled={!connected} onChange={setMakeEvent} />
+                      <span className="text-theme-sm font-medium text-gray-800 dark:text-white/90">
+                        Adicionar à agenda
+                        <span className="block text-theme-xs font-normal text-gray-500">Cria o evento no Google Agenda ou no Outlook; aparece também na Agenda Unificada.</span>
+                      </span>
+                    </div>
+                    <div className="mb-2 flex items-center gap-2">
+                      <select
+                        className="h-9 rounded-lg border border-gray-300 bg-white px-2 text-theme-sm dark:border-gray-700 dark:bg-gray-900"
+                        value={provider}
+                        onChange={(e) => {
+                          setProvider(e.target.value as CalendarProvider);
+                          try {
+                            localStorage.setItem("conectcrm-calendar", e.target.value);
+                          } catch {
+                            /* preferência opcional */
+                          }
+                        }}
+                      >
+                        <option value="google">Google Agenda</option>
+                        <option value="microsoft">Outlook</option>
+                      </select>
+                      {provider === "google" && !googleReady ? (
+                        <span className="text-theme-xs text-warning-700" data-google-not-configured>
+                          Google Agenda ainda não configurado nesta instalação (falta o Client ID do Google).
+                        </span>
+                      ) : connected ? (
+                        <span className="text-theme-xs text-success-600">Conectado</span>
+                      ) : (
+                        <TaButton
+                          size="sm"
+                          onClick={async () => {
+                            setCalMsg(null);
+                            try {
+                              await connectCalendar(provider);
+                              setConnected(true);
+                              setMakeEvent(true);
+                            } catch (e) {
+                              setCalMsg(errorText(e));
+                            }
+                          }}
+                        >
+                          Conectar
+                        </TaButton>
+                      )}
+                    </div>
+                    {makeEvent && connected && (
+                      <label className="mb-2 block text-theme-xs font-medium text-gray-600 dark:text-gray-400">
+                        Agenda
+                        <select
+                          data-calendar-select
+                          className="mt-1 h-9 w-full rounded-lg border border-gray-300 bg-white px-2 text-theme-sm text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                          value={calendarId}
+                          disabled={!calendars?.length}
+                          onChange={(e) => {
+                            setCalendarId(e.target.value);
+                            try {
+                              localStorage.setItem(`conectcrm-calendar-id-${provider}`, e.target.value);
+                            } catch {
+                              /* preferência opcional */
+                            }
+                          }}
+                        >
+                          {calendars === null && <option>Carregando agendas…</option>}
+                          {calendars?.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                              {c.primary ? " (principal)" : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                    {isMeeting && makeEvent && connected && (
+                      <>
+                        <span className="mb-1 block text-theme-xs font-medium text-gray-600 dark:text-gray-400">Convidados</span>
+                        <GuestsInput value={guests} onChange={setGuests} />
+                        <label className="mt-2 flex items-center gap-2 text-theme-sm text-gray-700 dark:text-gray-300">
+                          <input type="checkbox" checked={online} onChange={(e) => setOnline(e.target.checked)} />
+                          Criar link do {provider === "google" ? "Google Meet" : "Teams"}
+                        </label>
+                        <button type="button" className="mt-2 text-theme-sm font-medium text-brand-600 hover:underline" onClick={() => void findSlots()}>
+                          Ver horários livres no dia
+                        </button>
+                        {slots && (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {slots.length === 0 && <span className="text-theme-xs text-gray-500">Nenhum horário livre (8h–19h).</span>}
+                            {slots.map((s) => (
+                              <button
+                                key={s.toISOString()}
+                                type="button"
+                                onClick={() => setWhen(s)}
+                                className={cn(
+                                  "rounded-md border px-2 py-1 text-theme-xs",
+                                  s.getTime() === when.getTime() ? "border-brand-500 bg-brand-500 text-white" : "border-gray-200 text-gray-700 hover:border-brand-300 dark:border-gray-700 dark:text-gray-300",
+                                )}
+                              >
+                                {String(s.getHours()).padStart(2, "0")}:{String(s.getMinutes()).padStart(2, "0")}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+                    {calMsg && <p className="mt-2 text-theme-xs text-error-600">{calMsg}</p>}
+                  </div>
+                )}
                 <div className="mt-3 rounded-lg border border-gray-200 p-2.5 dark:border-gray-800" data-contact-toggle>
                   <label className={cn("flex items-start gap-2.5 text-theme-sm text-gray-700 dark:text-gray-300", !withPhone.length && !contactOn && "opacity-60")}>
                     <Switch checked={contactOn} disabled={(!withPhone.length && !contactOn) || contactSent} onChange={setContactOn} />
@@ -889,82 +1031,6 @@ export function TaskModal({
                 <TagPicker entity="activity" value={tagIds} onChange={setTagIds} />
               </Field>
 
-              {isMeeting && (
-                <div className="rounded-xl border border-gray-200 p-3 dark:border-gray-800">
-                  <label className="mb-2 flex items-center gap-2 text-theme-sm font-medium text-gray-800 dark:text-white/90">
-                    <input type="checkbox" checked={makeEvent} onChange={(e) => setMakeEvent(e.target.checked)} />
-                    Criar evento na agenda
-                  </label>
-                  <div className="mb-2 flex items-center gap-2">
-                    <select
-                      className="h-9 rounded-lg border border-gray-300 bg-white px-2 text-theme-sm dark:border-gray-700 dark:bg-gray-900"
-                      value={provider}
-                      onChange={(e) => {
-                        setProvider(e.target.value as CalendarProvider);
-                        try {
-                          localStorage.setItem("conectcrm-calendar", e.target.value);
-                        } catch {
-                          /* preferência opcional */
-                        }
-                      }}
-                    >
-                      <option value="google">Google Agenda</option>
-                      <option value="microsoft">Outlook</option>
-                    </select>
-                    {connected ? (
-                      <span className="text-theme-xs text-success-600">Conectado</span>
-                    ) : (
-                      <TaButton
-                        size="sm"
-                        onClick={async () => {
-                          setCalMsg(null);
-                          try {
-                            await connectCalendar(provider);
-                            setConnected(true);
-                            setMakeEvent(true);
-                          } catch (e) {
-                            setCalMsg(errorText(e));
-                          }
-                        }}
-                      >
-                        Conectar
-                      </TaButton>
-                    )}
-                  </div>
-                  {makeEvent && connected && (
-                    <>
-                      <span className="mb-1 block text-theme-xs font-medium text-gray-600 dark:text-gray-400">Convidados</span>
-                      <GuestsInput value={guests} onChange={setGuests} />
-                      <label className="mt-2 flex items-center gap-2 text-theme-sm text-gray-700 dark:text-gray-300">
-                        <input type="checkbox" checked={online} onChange={(e) => setOnline(e.target.checked)} />
-                        Criar link do {provider === "google" ? "Google Meet" : "Teams"}
-                      </label>
-                      <button type="button" className="mt-2 text-theme-sm font-medium text-brand-600 hover:underline" onClick={() => void findSlots()}>
-                        Ver horários livres no dia
-                      </button>
-                      {slots && (
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {slots.length === 0 && <span className="text-theme-xs text-gray-500">Nenhum horário livre (8h–19h).</span>}
-                          {slots.map((s) => (
-                            <button
-                              key={s.toISOString()}
-                              type="button"
-                              onClick={() => setWhen(s)}
-                              className={cn(
-                                "rounded-md border px-2 py-1 text-theme-xs",
-                                s.getTime() === when.getTime() ? "border-brand-500 bg-brand-500 text-white" : "border-gray-200 text-gray-700 hover:border-brand-300 dark:border-gray-700 dark:text-gray-300",
-                              )}
-                            >
-                              {String(s.getHours()).padStart(2, "0")}:{String(s.getMinutes()).padStart(2, "0")}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  )}
-                  {calMsg && <p className="mt-2 text-theme-xs text-error-600">{calMsg}</p>}
-                </div>
-              )}
               {link && (
                 <p className="mt-1 flex items-center gap-1 text-theme-xs text-gray-500">
                   <Link2 size={12} />{" "}
