@@ -10,22 +10,8 @@ import { call } from "../../rpc/client";
 import type { Activity, ActivityType } from "../../db/activities";
 import type { CustomField, CustomValue } from "../../db/customFields";
 import { ActivityIcon } from "../../lib/activityIcons";
-import {
-  busyRanges,
-  calendarConnected,
-  computeFreeSlots,
-  connectCalendar,
-  createCalendarEvent,
-  googleCalendarConfigured,
-  googleMultiConfigured,
-  listCalendars,
-  listGoogleAccounts,
-  removeGoogleAccount,
-  PROVIDER_LABEL,
-  type CalendarInfo,
-  type CalendarProvider,
-} from "../../lib/calendar";
-import { isValidEmail } from "../../lib/validate";
+import { PROVIDER_LABEL } from "../../lib/calendar";
+import { accountForPipeline, bookingLink, loadCalendly, type CalendlySettings } from "../../lib/calendly";
 import { useSession } from "../session";
 import { Avatar } from "../ui/Avatar";
 import { Combobox, type ComboItem } from "../ui/Combobox";
@@ -135,41 +121,6 @@ function TypePicker({ types, value, onChange }: { types: ActivityType[]; value: 
   );
 }
 
-function GuestsInput({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
-  const [text, setText] = useState("");
-  const add = () => {
-    const parts = text.split(/[,;\s]+/).map((s) => s.trim().toLowerCase()).filter(Boolean);
-    const valid = parts.filter(isValidEmail);
-    if (valid.length) onChange([...new Set([...value, ...valid])]);
-    setText(parts.filter((p) => !isValidEmail(p)).join(" "));
-  };
-  return (
-    <div className="flex min-h-10 flex-wrap items-center gap-1.5 rounded-lg border border-gray-300 px-2 py-1.5 dark:border-gray-700">
-      {value.map((g) => (
-        <span key={g} className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-theme-xs text-brand-700">
-          {g}
-          <button type="button" onClick={() => onChange(value.filter((x) => x !== g))}>
-            <X size={11} />
-          </button>
-        </span>
-      ))}
-      <input
-        className="min-w-[160px] flex-1 border-none bg-transparent text-theme-sm outline-none"
-        placeholder="e-mail do convidado"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={add}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === ",") {
-            e.preventDefault();
-            add();
-          }
-        }}
-      />
-    </div>
-  );
-}
-
 export function TaskModal({
   request,
   onClose,
@@ -231,20 +182,12 @@ export function TaskModal({
   const [link, setLink] = useState<ComboItem | null>(null);
   const [fields, setFields] = useState<CustomField[]>([]);
   const [values, setValues] = useState<Record<string, CustomValue>>({});
-  // Reunião
-  const [makeEvent, setMakeEvent] = useState(false);
-  const [provider, setProvider] = useState<CalendarProvider>(() => {
-    try {
-      return (localStorage.getItem("conectcrm-calendar") as CalendarProvider | null) ?? "google";
-    } catch {
-      return "google";
-    }
-  });
-  const [connected, setConnected] = useState(false);
-  const [guests, setGuests] = useState<string[]>([]);
-  const [online, setOnline] = useState(true);
-  const [slots, setSlots] = useState<Date[] | null>(null);
-  const [calMsg, setCalMsg] = useState<string | null>(null);
+  // Agendamento pelo Calendly (spec 18): o contato escolhe o horário e a reunião volta para esta atividade.
+  const [calendly, setCalendly] = useState<CalendlySettings | null>(null);
+  const [calOn, setCalOn] = useState(false);
+  const [calAccount, setCalAccount] = useState("");
+  const [calType, setCalType] = useState("");
+  const [fromCalendly, setFromCalendly] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   // Recorrência: a regra (null = não repete), a série da atividade aberta e a pergunta "só esta / próximas / todas".
@@ -320,7 +263,6 @@ export function TaskModal({
         }
       }
       setValues(a.customValues);
-      setGuests(a.guests ? (JSON.parse(a.guests) as string[]) : []);
       setMeetingUrl(a.meeting_url ?? "");
       if (a.deal_id) {
         const c = await call("cards.get", { id: a.deal_id });
@@ -350,69 +292,6 @@ export function TaskModal({
     });
     titlePrefix.current = next;
   }, [type, sourceId]);
-  const isMeeting = !!type?.is_meeting && !existing?.external_event_id;
-  // "Adicionar à agenda" vale para qualquer atividade ainda sem evento (reunião já vem ligada).
-  const canCalendar = !existing?.external_event_id && loaded;
-  const googleReady = googleCalendarConfigured();
-  // Google com várias contas (Stepple, PowerCubus…): cada uma conectada pelo seu login.
-  const googleMulti = provider === "google" && googleMultiConfigured();
-  const [googleAccounts, setGoogleAccounts] = useState<string[]>([]);
-  const [calRev, setCalRev] = useState(0);
-  useEffect(() => {
-    if (googleMulti) void listGoogleAccounts().then(setGoogleAccounts);
-  }, [googleMulti, calRev]);
-  /** Valor da lista de agendas: conta + agenda (a mesma agenda pode existir em duas contas). */
-  const calKey = (c: CalendarInfo) => `${c.account ?? ""}|${c.id}`;
-
-  useEffect(() => {
-    if (!canCalendar) return;
-    if (provider === "google" && !googleReady) {
-      setConnected(false);
-      setMakeEvent(false);
-      return;
-    }
-    void calendarConnected(provider).then((c) => {
-      setConnected(c);
-      setMakeEvent(c && isMeeting);
-    });
-    setSlots(null);
-  }, [canCalendar, isMeeting, provider, calRev]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Agendas da conta (a principal, as próprias e as compartilhadas com edição); lembra a última escolhida.
-  const [calendars, setCalendars] = useState<CalendarInfo[] | null>(null);
-  const [calendarId, setCalendarId] = useState<string>("");
-  useEffect(() => {
-    if (!connected || !makeEvent) return;
-    setCalendars(null);
-    void listCalendars(provider)
-      .then((list) => {
-        setCalendars(list);
-        let saved = "";
-        try {
-          saved = localStorage.getItem(`conectcrm-calendar-id-${provider}`) ?? "";
-        } catch {
-          /* preferência opcional */
-        }
-        const first = list.find((c) => c.primary) ?? list[0];
-        setCalendarId(list.some((c) => calKey(c) === saved) ? saved : first ? calKey(first) : "");
-      })
-      .catch((e) => {
-        setCalendars([]);
-        setCalMsg(`Não foi possível listar as agendas: ${errorText(e)}`);
-      });
-  }, [connected, makeEvent, provider, calRev]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Convidado sugerido: e-mail do contato do cartão vinculado.
-  useEffect(() => {
-    if (!isMeeting || !link || guests.length) return;
-    void (async () => {
-      const personId = linkPersonId ?? (linkDealId ? (await call("cards.get", { id: linkDealId }))?.person_id : null);
-      if (!personId) return;
-      const p = await call("persons.get", { id: personId });
-      if (p?.email) setGuests((g) => (g.length ? g : [p.email!]));
-    })();
-  }, [isMeeting, link]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const linkDealId = link?.id.startsWith("deal:") ? link.id.slice(5) : null;
   const linkPersonId = link?.id.startsWith("person:") ? link.id.slice(7) : null;
 
@@ -420,6 +299,35 @@ export function TaskModal({
 
   // Quem pode receber o lembrete (contato da atividade e do cartão), empresa do funil e o lembrete salvo.
   const personForContact = linkPersonId ?? request.personId ?? existing?.person_id ?? copyLinks.personId ?? null;
+
+  // Calendly: toggle + link; vale para atividade que ainda não veio de um agendamento do Calendly.
+  useEffect(() => {
+    void loadCalendly().then(setCalendly);
+  }, []);
+  useEffect(() => {
+    if (!request.id) return;
+    void call("integrations.refsOf", { id: request.id }).then((refs) => setFromCalendly(refs.some((r) => String(r.provider) === "calendly")));
+  }, [request.id]);
+  // Conta do funil do cartão vinculado (escolhida em Integrações → Calendly); senão a primeira.
+  useEffect(() => {
+    if (!calendly?.accounts.length) return;
+    void (async () => {
+      const pipelineId = linkDealId ? ((await call("cards.get", { id: linkDealId }))?.pipeline_id ?? null) : null;
+      const acc = accountForPipeline(calendly, pipelineId)!;
+      setCalAccount(acc.email);
+      setCalType(acc.eventTypeUri ?? acc.eventTypes[0]?.uri ?? "");
+    })();
+  }, [calendly, linkDealId]);
+  const canCalendly = loaded && !fromCalendly && !!calendly?.accounts.length;
+  const calAcc = calendly?.accounts.find((a) => a.email === calAccount);
+  const calLink = calAcc?.eventTypes.find((t) => t.uri === calType) ?? calAcc?.eventTypes[0] ?? null;
+  /** Lead que vai preenchido no Calendly: o contato da atividade ou o do cartão. */
+  async function calendlyPerson(): Promise<{ name: string; email: string | null } | null> {
+    const pid = personForContact ?? (linkDealId ? ((await call("cards.get", { id: linkDealId }))?.person_id ?? null) : null);
+    if (!pid) return null;
+    const p = await call("persons.get", { id: pid });
+    return p ? { name: p.name, email: p.email ?? null } : null;
+  }
   useEffect(() => {
     if (!loaded) return;
     void call("contactMessages.context", { activityId: sourceId ?? null, personId: personForContact, dealId: linkDealId }).then((c) => {
@@ -436,16 +344,6 @@ export function TaskModal({
   const contactSent = contactCtx?.current?.status === "sent";
   const recipient = contactCtx?.recipients.find((r) => r.id === contact.personId) ?? null;
   const withPhone = contactCtx?.recipients.filter((r) => r.phone) ?? [];
-
-  async function findSlots() {
-    setCalMsg(null);
-    try {
-      const { dayStart, dayEnd, busy } = await busyRanges(provider, when, calendarId ? calendarId.slice(0, calendarId.indexOf("|")) || null : null);
-      setSlots(computeFreeSlots(dayStart, dayEnd, busy, Math.max(duration, 15)));
-    } catch (e) {
-      setCalMsg(errorText(e));
-    }
-  }
 
   // Rascunho: o que o usuário mexeu e ainda não salvou. Compara com o estado já carregado (sem contar o
   // que a tela preenche sozinha) e também registra qualquer digitação/seleção feita no formulário.
@@ -574,26 +472,10 @@ export function TaskModal({
       setSaving(false);
       return;
     }
-    if (canCalendar && makeEvent && connected && !recurrence) {
-      try {
-        const ev = await createCalendarEvent(provider, {
-          title,
-          description,
-          start: when,
-          end: new Date(when.getTime() + Math.max(duration, 15) * 60_000),
-          guests: isMeeting ? guests : [],
-          online: isMeeting && online,
-          calendarId: calendarId ? calendarId.slice(calendarId.indexOf("|") + 1) : null,
-          account: calendarId ? calendarId.slice(0, calendarId.indexOf("|")) || null : null,
-          reminderMin: popupLead(reminders),
-          emailReminders: notify?.calendarEmailBackup ? reminders.filter((r) => r.channels.includes("email")).map((r) => r.minutesBefore) : [],
-        });
-        await call("activities.setExternalEvent", { id, provider, eventId: ev.id, meetingUrl: ev.link, guests: isMeeting ? guests : [] });
-      } catch (e) {
-        setSaving(false);
-        setError(`Atividade salva, mas o evento não foi criado na agenda: ${errorText(e)}`);
-        return;
-      }
+    if (canCalendly && calOn && calLink) {
+      // Abre o Calendly com o contato preenchido; o horário escolhido lá volta para esta atividade.
+      const person = await calendlyPerson();
+      void chrome.tabs.create({ url: bookingLink(calLink.url, { name: person?.name, email: person?.email, dealId: linkDealId, activityId: id }) });
     }
     setSaving(false);
     // Arquivos escolhidos na tarefa nova: a janela Novo documento abre agora,
@@ -857,7 +739,6 @@ export function TaskModal({
                   onChange={(v) => {
                     setWhen(v.when);
                     setDuration(v.duration);
-                    setSlots(null);
                   }}
                 />
               </Field>
@@ -887,9 +768,6 @@ export function TaskModal({
                     Encerrar série…
                   </button>
                 )}
-                {recurrence && makeEvent && (
-                  <p className="mt-1 text-theme-xs text-gray-500">Em atividades recorrentes o evento não é criado no Google Agenda/Outlook.</p>
-                )}
               </Field>
               <Field label="Lembretes" hint="Quanto tempo antes do início e por onde avisar.">
                 <RemindersEditor
@@ -899,165 +777,52 @@ export function TaskModal({
                   ready={notify ? (Object.fromEntries(ACTIVE_CHANNELS.map((c) => [c, channelReady(notify, c)])) as Record<Channel, boolean>) : undefined}
                 />
                 {deliveries.length > 0 && <DeliveryLog list={deliveries} />}
-                {canCalendar && (
-                  <div className="mt-3 rounded-lg border border-gray-200 p-2.5 dark:border-gray-800" data-add-to-calendar>
-                    <div className="mb-2 flex items-center gap-3">
-                      <Switch checked={makeEvent} disabled={!connected} onChange={setMakeEvent} />
-                      <span className="text-theme-sm font-medium text-gray-800 dark:text-white/90">
-                        Adicionar à agenda
-                        <span className="block text-theme-xs font-normal text-gray-500">Cria o evento no Google Agenda ou no Outlook; aparece também na Agenda Unificada.</span>
-                      </span>
-                    </div>
-                    <div className="mb-2 flex items-center gap-2">
-                      <select
-                        className="h-9 rounded-lg border border-gray-300 bg-white px-2 text-theme-sm dark:border-gray-700 dark:bg-gray-900"
-                        value={provider}
-                        onChange={(e) => {
-                          setProvider(e.target.value as CalendarProvider);
-                          try {
-                            localStorage.setItem("conectcrm-calendar", e.target.value);
-                          } catch {
-                            /* preferência opcional */
-                          }
-                        }}
-                      >
-                        <option value="google">Google Agenda</option>
-                        <option value="microsoft">Outlook</option>
-                      </select>
-                      {provider === "google" && !googleReady ? (
-                        <span className="text-theme-xs text-warning-700" data-google-not-configured>
-                          Google Agenda ainda não configurado nesta instalação (falta o Client ID do Google).
+                {canCalendly && (
+                  <div className="mt-3 rounded-lg border border-gray-200 p-2.5 dark:border-gray-800" data-calendly-toggle>
+                    <label className="flex items-start gap-2.5 text-theme-sm text-gray-700 dark:text-gray-300">
+                      <Switch checked={calOn} onChange={setCalOn} />
+                      <span>
+                        Agendar pelo Calendly
+                        <span className="block text-theme-xs text-gray-500">
+                          Ao salvar, o Calendly abre com o nome e o e-mail do lead preenchidos. O horário marcado lá atualiza esta atividade.
                         </span>
-                      ) : googleMulti ? (
-                        <TaButton
-                          size="sm"
-                          data-google-add-account
-                          title="Conectar mais uma conta Google (ex.: Stepple e PowerCubus)"
-                          onClick={async () => {
-                            setCalMsg(null);
-                            try {
-                              await connectCalendar("google");
-                              setMakeEvent(true);
-                              setCalRev((r) => r + 1);
-                            } catch (e) {
-                              setCalMsg(errorText(e));
-                            }
-                          }}
+                      </span>
+                    </label>
+                    {calOn && calendly && (
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                        {calendly.accounts.length > 1 && (
+                          <select
+                            data-calendly-account
+                            className="h-9 rounded-lg border border-gray-300 bg-white px-2 text-theme-sm dark:border-gray-700 dark:bg-gray-900"
+                            value={calAccount}
+                            onChange={(e) => {
+                              const a = calendly.accounts.find((x) => x.email === e.target.value)!;
+                              setCalAccount(a.email);
+                              setCalType(a.eventTypeUri ?? a.eventTypes[0]?.uri ?? "");
+                            }}
+                          >
+                            {calendly.accounts.map((a) => (
+                              <option key={a.email} value={a.email}>
+                                {a.email}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        <select
+                          data-calendly-type
+                          className={cn("h-9 rounded-lg border border-gray-300 bg-white px-2 text-theme-sm dark:border-gray-700 dark:bg-gray-900", calendly.accounts.length > 1 ? "" : "sm:col-span-2")}
+                          value={calLink?.uri ?? ""}
+                          onChange={(e) => setCalType(e.target.value)}
                         >
-                          {googleAccounts.length ? "+ Conta Google" : "Conectar"}
-                        </TaButton>
-                      ) : connected ? (
-                        <span className="text-theme-xs text-success-600">Conectado</span>
-                      ) : (
-                        <TaButton
-                          size="sm"
-                          onClick={async () => {
-                            setCalMsg(null);
-                            try {
-                              await connectCalendar(provider);
-                              setConnected(true);
-                              setMakeEvent(true);
-                            } catch (e) {
-                              setCalMsg(errorText(e));
-                            }
-                          }}
-                        >
-                          Conectar
-                        </TaButton>
-                      )}
-                    </div>
-                    {googleMulti && googleAccounts.length > 0 && (
-                      <div className="mb-2 flex flex-wrap gap-1.5" data-google-accounts>
-                        {googleAccounts.map((email) => (
-                          <span key={email} className="flex items-center gap-1 rounded-full bg-success-50 px-2.5 py-1 text-theme-xs text-success-700 dark:bg-success-500/10" data-google-account={email}>
-                            {email}
-                            <button
-                              type="button"
-                              title={`Desconectar ${email}`}
-                              onClick={async () => {
-                                if (!confirm(`Desconectar a conta ${email} do ConectCRM?`)) return;
-                                await removeGoogleAccount(email);
-                                setCalRev((r) => r + 1);
-                              }}
-                              className="text-success-600 hover:text-error-600"
-                            >
-                              <X size={12} />
-                            </button>
-                          </span>
-                        ))}
+                          {!calAcc?.eventTypes.length && <option value="">Nenhum link ativo nesta conta</option>}
+                          {calAcc?.eventTypes.map((t) => (
+                            <option key={t.uri} value={t.uri}>
+                              {t.name} ({t.duration} min)
+                            </option>
+                          ))}
+                        </select>
                       </div>
                     )}
-                    {makeEvent && connected && (
-                      <label className="mb-2 block text-theme-xs font-medium text-gray-600 dark:text-gray-400">
-                        Agenda
-                        <select
-                          data-calendar-select
-                          className="mt-1 h-9 w-full rounded-lg border border-gray-300 bg-white px-2 text-theme-sm text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
-                          value={calendarId}
-                          disabled={!calendars?.length}
-                          onChange={(e) => {
-                            setCalendarId(e.target.value);
-                            try {
-                              localStorage.setItem(`conectcrm-calendar-id-${provider}`, e.target.value);
-                            } catch {
-                              /* preferência opcional */
-                            }
-                          }}
-                        >
-                          {calendars === null && <option>Carregando agendas…</option>}
-                          {calendars &&
-                            [...new Set(calendars.map((c) => c.account ?? ""))].map((acc) => {
-                              const opts = calendars
-                                .filter((c) => (c.account ?? "") === acc)
-                                .map((c) => (
-                                  <option key={calKey(c)} value={calKey(c)}>
-                                    {c.primary && c.name === c.account ? "Agenda principal" : `${c.name}${c.primary ? " (principal)" : ""}`}
-                                  </option>
-                                ));
-                              // Várias contas Google: as agendas agrupadas pela conta.
-                              return acc && googleAccounts.length > 1 ? (
-                                <optgroup key={acc} label={acc}>
-                                  {opts}
-                                </optgroup>
-                              ) : (
-                                opts
-                              );
-                            })}
-                        </select>
-                      </label>
-                    )}
-                    {isMeeting && makeEvent && connected && (
-                      <>
-                        <span className="mb-1 block text-theme-xs font-medium text-gray-600 dark:text-gray-400">Convidados</span>
-                        <GuestsInput value={guests} onChange={setGuests} />
-                        <label className="mt-2 flex items-center gap-2 text-theme-sm text-gray-700 dark:text-gray-300">
-                          <input type="checkbox" checked={online} onChange={(e) => setOnline(e.target.checked)} />
-                          Criar link do {provider === "google" ? "Google Meet" : "Teams"}
-                        </label>
-                        <button type="button" className="mt-2 text-theme-sm font-medium text-brand-600 hover:underline" onClick={() => void findSlots()}>
-                          Ver horários livres no dia
-                        </button>
-                        {slots && (
-                          <div className="mt-2 flex flex-wrap gap-1">
-                            {slots.length === 0 && <span className="text-theme-xs text-gray-500">Nenhum horário livre (8h–19h).</span>}
-                            {slots.map((s) => (
-                              <button
-                                key={s.toISOString()}
-                                type="button"
-                                onClick={() => setWhen(s)}
-                                className={cn(
-                                  "rounded-md border px-2 py-1 text-theme-xs",
-                                  s.getTime() === when.getTime() ? "border-brand-500 bg-brand-500 text-white" : "border-gray-200 text-gray-700 hover:border-brand-300 dark:border-gray-700 dark:text-gray-300",
-                                )}
-                              >
-                                {String(s.getHours()).padStart(2, "0")}:{String(s.getMinutes()).padStart(2, "0")}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </>
-                    )}
-                    {calMsg && <p className="mt-2 text-theme-xs text-error-600">{calMsg}</p>}
                   </div>
                 )}
                 <div className="mt-3 rounded-lg border border-gray-200 p-2.5 dark:border-gray-800" data-contact-toggle>
@@ -1117,8 +882,8 @@ export function TaskModal({
           </div>
           <ErrorText>{error}</ErrorText>
           <div className="mt-6 flex items-center gap-2 border-t border-gray-100 pt-4 dark:border-gray-800">
-            <TaButton variant="primary" size="md" disabled={saving || !title.trim()} onClick={() => void save()}>
-              Salvar
+            <TaButton variant="primary" size="md" disabled={saving || !title.trim()} onClick={() => void save()} data-task-save>
+              {canCalendly && calOn && calLink ? "Salvar e abrir o Calendly" : "Salvar"}
             </TaButton>
             <TaButton size="md" onClick={requestClose}>
               Cancelar
@@ -1215,12 +980,6 @@ export function TaskModal({
     )}
     </>
   );
-}
-
-/** Lembrete da própria agenda (popup): o menor com Chrome, senão o menor de todos. */
-function popupLead(rules: ReminderRule[]): number | null {
-  const pick = (list: ReminderRule[]) => (list.length ? Math.min(...list.map((r) => r.minutesBefore)) : null);
-  return pick(rules.filter((r) => r.channels.includes("chrome"))) ?? pick(rules.filter((r) => r.channels.length));
 }
 
 const KIND_TEXT = { reminder: "Lembrete", overdue: "Atraso", digest: "Resumo", missed: "Resumo" } as const;

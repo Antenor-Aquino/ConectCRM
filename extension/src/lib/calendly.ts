@@ -85,14 +85,14 @@ export function accountForPipeline(s: CalendlySettings, pipelineId: string | nul
 }
 
 /** Link de agendamento já preenchido com o contato e a marca do cartão. */
-export function bookingLink(url: string, opts: { name?: string | null; email?: string | null; dealId?: string | null }): string {
+export function bookingLink(url: string, opts: { name?: string | null; email?: string | null; dealId?: string | null; activityId?: string | null }): string {
   const u = new URL(url);
   if (opts.name) u.searchParams.set("name", opts.name);
   if (opts.email) u.searchParams.set("email", opts.email);
-  if (opts.dealId) {
-    u.searchParams.set("utm_source", "conectcrm");
-    u.searchParams.set("utm_content", opts.dealId);
-  }
+  if (opts.dealId || opts.activityId) u.searchParams.set("utm_source", "conectcrm");
+  if (opts.dealId) u.searchParams.set("utm_content", opts.dealId);
+  // Atividade criada no CRM: o horário marcado volta para ela (sem duplicar).
+  if (opts.activityId) u.searchParams.set("utm_term", opts.activityId);
   return u.toString();
 }
 
@@ -114,7 +114,7 @@ interface ApiInvitee {
   rescheduled?: boolean;
   text_reminder_number?: string | null;
   questions_and_answers?: { question: string; answer: string }[];
-  tracking?: { utm_source?: string | null; utm_content?: string | null } | null;
+  tracking?: { utm_source?: string | null; utm_content?: string | null; utm_term?: string | null } | null;
   cancellation?: { reason?: string | null } | null;
 }
 
@@ -137,6 +137,7 @@ export function toBooking(account: string, ev: ApiEvent, inv: ApiInvitee): Calen
       email: inv.email,
       phone,
       dealId: inv.tracking?.utm_source === "conectcrm" ? (inv.tracking.utm_content ?? null) : null,
+      activityId: inv.tracking?.utm_source === "conectcrm" ? (inv.tracking.utm_term ?? null) : null,
       answers,
       rescheduled: !!inv.rescheduled,
       cancelReason: inv.cancellation?.reason ?? null,

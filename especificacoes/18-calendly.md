@@ -57,3 +57,21 @@ sozinha no cartão certo do CRM, sem digitar nada.
 ## Testes
 - `extension/tests/calendly.test.ts`: importação, sem duplicar,
   contato/negócio, remarcação, cancelamento, link e conversão.
+
+## Agendar pela atividade (0.2.99)
+- O bloco "Adicionar à agenda" (Google Agenda/Outlook direto) saiu da janela da
+  atividade. O agendamento passa a ser pelo Calendly.
+- No lugar dele entram:
+  - o toggle **Agendar pelo Calendly**;
+  - o seletor do link, e também da conta, quando houver mais de uma. A conta
+    sugerida é a do funil do cartão.
+- Com o toggle ligado, o botão vira "Salvar e abrir o Calendly":
+  1. a atividade é salva;
+  2. o Calendly abre com o nome e o e-mail do lead (o contato da atividade ou o
+     do cartão), mais `utm_content=<cartão>` e `utm_term=<atividade>`.
+- O agendamento com `utm_term` atualiza essa mesma atividade, sem criar outra:
+  - recebe o horário, a duração e o link da videochamada;
+  - a descrição fica com o texto da atividade e as respostas do formulário.
+  Cancelar ou remarcar segue as regras de cima.
+- O toggle não aparece em atividade que já veio do Calendly, nem quando não há
+  conta do Calendly conectada.
