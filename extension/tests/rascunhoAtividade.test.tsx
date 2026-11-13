@@ -34,6 +34,10 @@ vi.mock("../src/lib/calendar", () => ({
   connectCalendar: vi.fn(),
   createCalendarEvent: vi.fn(),
   googleClientConfigured: () => false,
+  googleCalendarConfigured: () => false,
+  googleMultiConfigured: () => false,
+  listGoogleAccounts: async () => [],
+  removeGoogleAccount: async () => undefined,
   listCalendars: async () => [],
   PROVIDER_LABEL: { google: "Google Agenda", outlook: "Outlook" },
 }));
