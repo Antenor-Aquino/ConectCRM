@@ -136,3 +136,19 @@ describe("Calendly — celular preenchido", async () => {
     expect(new URL(bookingLink("https://calendly.com/a/1h", { phone: "31999990000", phoneParam: null })).searchParams.has("a1")).toBe(false);
   });
 });
+
+describe("Calendly — agendado pela janela e ligado ao salvar", () => {
+  it("liga a atividade ao evento achado; a leitura depois não duplica e completa o link da reunião", async () => {
+    const { createActivity } = await import("../src/db/activities");
+    const { linkCalendlyEvent } = await import("../src/db/calendly");
+    const { db, ctx, pid } = await setup();
+    const deal = createCard(db, ctx, { pipelineId: pid, title: "IED" });
+    const act = createActivity(db, ctx, { title: "Reunião on-line", dueAt: "2026-11-20T13:00:00.000Z", durationMin: 60, dealId: deal, ownerId: ctx.userId });
+    linkCalendlyEvent(db, ctx, act, "https://api.calendly.com/scheduled_events/E1");
+    linkCalendlyEvent(db, ctx, act, "https://api.calendly.com/scheduled_events/E1"); // repetir não duplica
+    const r = importCalendlyBookings(db, ctx, [booking({ joinUrl: "https://teams.microsoft.com/l/x", invitee: { dealId: deal, activityId: null } })]);
+    expect(r.created).toBe(0);
+    expect(listActivities(db, { dealId: deal })).toHaveLength(1);
+    expect(getActivity(db, act)!.meeting_url).toBe("https://teams.microsoft.com/l/x");
+  });
+});

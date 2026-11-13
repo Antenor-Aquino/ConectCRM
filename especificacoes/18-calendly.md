@@ -86,3 +86,32 @@ sozinha no cartão certo do CRM, sem digitar nada.
   "· preenche o celular".
 - Contas conectadas antes desta versão são atualizadas sozinhas na próxima
   leitura.
+
+## Fluxo: agendar primeiro no Calendly (0.2.101)
+- O bloco **Agendar pelo Calendly** fica logo abaixo de "Responsável". Ele tem
+  o toggle, o seletor do link (e da conta) e o botão **Abrir Calendly**.
+- "Abrir Calendly" abre o link com nome, e-mail e celular do lead e
+  `utm_term` = chave provisória (`d-…`).
+  - Se o link ainda não tiver a posição do celular (conta conectada antes da
+    0.2.100), ela é descoberta na hora.
+  - O botão do cartão faz o mesmo ao abrir a janela.
+- A janela procura o agendamento por essa chave a cada 5 s, e ao voltar para
+  a aba, por até 30 min. Quando acha, preenche:
+  - o início e a duração;
+  - o link da reunião (Meet/Zoom/Teams). É ele que vai no lembrete do contato
+    pelo WhatsApp (`{link}`);
+  - o título, se estiver vazio.
+- O botão volta a ser só **Salvar**:
+  - se o agendamento já foi achado, a atividade fica ligada ao evento
+    (`calendly.link`);
+  - se não, a chave fica guardada (`conectcrm-calendly-drafts`) e a leitura
+    em segundo plano liga a atividade quando o lead marcar.
+- A leitura em segundo plano deixa para depois os agendamentos com chave
+  provisória ainda não salva, por até 30 min, para não duplicar com a janela
+  aberta.
+- O link da reunião que o Calendly gera depois é completado na leitura.
+- **Excluir** uma atividade ligada ao Calendly, na janela ou na lista:
+  - o CRM pergunta e cancela o evento no Calendly pela API
+    (`POST /scheduled_events/{uuid}/cancellation`), e o convidado recebe o
+    aviso;
+  - se o Calendly recusar, avisa que o evento precisa ser cancelado lá.

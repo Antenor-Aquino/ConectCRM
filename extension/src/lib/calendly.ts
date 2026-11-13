@@ -137,12 +137,14 @@ interface ApiEvent {
   start_time: string;
   end_time: string;
   updated_at: string;
+  created_at?: string;
   location?: { join_url?: string; location?: string } | null;
 }
 interface ApiInvitee {
   name: string;
   email: string;
   status: string;
+  created_at?: string;
   rescheduled?: boolean;
   text_reminder_number?: string | null;
   questions_and_answers?: { question: string; answer: string }[];
@@ -183,6 +185,7 @@ export function toBooking(account: string, ev: ApiEvent, inv: ApiInvitee): Calen
 export async function fetchCalendlyBookings(s: CalendlySettings): Promise<{ bookings: CalendlyBooking[]; seen: Record<string, string> }> {
   const seen = ((await chrome.storage.local.get(SEEN_KEY))[SEEN_KEY] as Record<string, string> | undefined) ?? {};
   const bookings: CalendlyBooking[] = [];
+  const drafts = await loadDrafts();
   const min = new Date(Date.now() - 2 * 86_400_000).toISOString();
   for (const acc of s.accounts) {
     if (!acc.token) continue; // configurações importadas sem as credenciais
@@ -192,7 +195,16 @@ export async function fetchCalendlyBookings(s: CalendlySettings): Promise<{ book
       for (const ev of r.collection) {
         if (seen[ev.uri] === ev.updated_at) continue;
         const inv = await api<{ collection: ApiInvitee[] }>(acc.token, `${ev.uri}/invitees?count=10`);
-        for (const i of inv.collection) bookings.push(toBooking(acc.email, ev, i));
+        // Agendado pela janela da atividade ainda aberta (sem salvar): ela mesma liga. Fica para depois.
+        const waiting = inv.collection.some(
+          (i) => isDraftKey(i.tracking?.utm_term) && !drafts[i.tracking!.utm_term!] && Date.now() - new Date(i.created_at ?? ev.updated_at).getTime() < DRAFT_GRACE_MS,
+        );
+        if (waiting) continue;
+        for (const i of inv.collection) {
+          const b = toBooking(acc.email, ev, i);
+          if (isDraftKey(b.invitee.activityId)) b.invitee.activityId = drafts[b.invitee.activityId!] ?? null;
+          bookings.push(b);
+        }
         seen[ev.uri] = ev.updated_at;
       }
       next = r.pagination?.next_page ?? null;
@@ -206,4 +218,60 @@ export async function markCalendlySeen(seen: Record<string, string>): Promise<vo
   // Não cresce para sempre: guarda os 2000 mais recentes.
   const entries = Object.entries(seen).slice(-2000);
   await chrome.storage.local.set({ [SEEN_KEY]: Object.fromEntries(entries) });
+}
+
+// ---------- Agendar pela janela da atividade ----------
+// O Calendly abre com utm_term = chave provisória ("d-…"); a janela procura o
+// agendamento por ela e traz início, duração e link da reunião. Salva a
+// atividade antes de o lead marcar, a chave fica guardada → atividade.
+
+const DRAFTS_KEY = "conectcrm-calendly-drafts";
+const DRAFT_GRACE_MS = 30 * 60_000;
+
+export const isDraftKey = (v: string | null | undefined): v is string => !!v && v.startsWith("d-");
+export const newDraftKey = () => `d-${crypto.randomUUID()}`;
+
+async function loadDrafts(): Promise<Record<string, string>> {
+  return ((await chrome.storage.local.get(DRAFTS_KEY))[DRAFTS_KEY] as Record<string, string> | undefined) ?? {};
+}
+
+/** Atividade salva antes do agendamento: a leitura do Calendly liga pela chave. */
+export async function rememberCalendlyDraft(key: string, activityId: string): Promise<void> {
+  const d = await loadDrafts();
+  const entries = Object.entries({ ...d, [key]: activityId }).slice(-500);
+  await chrome.storage.local.set({ [DRAFTS_KEY]: Object.fromEntries(entries) });
+}
+
+/** Agendamento feito pelo link com esta chave (eventos criados desde `since`). */
+export async function findDraftBooking(acc: CalendlyAccount, key: string, since: string): Promise<CalendlyBooking | null> {
+  const from = new Date(new Date(since).getTime() - 2 * 60_000);
+  const r = await api<{ collection: ApiEvent[] }>(
+    acc.token,
+    `/scheduled_events?${new URLSearchParams({ user: acc.userUri, min_start_time: new Date(Date.now() - 3600_000).toISOString(), count: "100", sort: "start_time:asc" })}`,
+  );
+  for (const ev of r.collection) {
+    if (ev.created_at && new Date(ev.created_at) < from) continue;
+    const inv = await api<{ collection: ApiInvitee[] }>(acc.token, `${ev.uri}/invitees?count=10`);
+    const i = inv.collection.find((x) => x.tracking?.utm_term === key);
+    if (i) return toBooking(acc.email, ev, i);
+  }
+  return null;
+}
+
+/** Cancela o evento no Calendly (o convidado recebe o aviso). Tenta as contas conectadas. */
+export async function cancelCalendlyEvent(eventUri: string, reason = "Cancelado pelo ConectCRM"): Promise<void> {
+  const s = await loadCalendly();
+  let last = "Nenhuma conta do Calendly conectada neste computador.";
+  for (const acc of s.accounts.filter((a) => a.token)) {
+    const res = await fetch(`${eventUri}/cancellation`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${acc.token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+    });
+    if (res.ok) return;
+    const j = (await res.json().catch(() => ({}))) as { message?: string };
+    if (/already canceled|já cancelado/i.test(j.message ?? "")) return;
+    last = j.message ? `${j.message} (HTTP ${res.status})` : `HTTP ${res.status}`;
+  }
+  throw new Error(last);
 }
