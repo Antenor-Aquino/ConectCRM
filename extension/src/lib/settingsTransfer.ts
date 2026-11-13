@@ -65,6 +65,16 @@ const SPECS: Spec[] = [
       isObj(v) && isObj(v.pipedrive) && !v.pipedrive.token && isObj(cur) && isObj(cur.pipedrive) ? { ...v, pipedrive: { ...v.pipedrive, token: cur.pipedrive.token } } : v,
   },
   { key: "conectcrm-pipedrive-mappings", label: "De-para do Pipedrive" },
+  {
+    key: "conectcrm-calendly",
+    label: "Calendly (contas, links e conta de cada funil)",
+    strip: (v) => (isObj(v) && Array.isArray(v.accounts) ? { ...v, accounts: v.accounts.map((a: Obj) => ({ ...a, token: "" })) } : v),
+    keep: (v, cur) => {
+      if (!isObj(v) || !Array.isArray(v.accounts)) return v;
+      const old = isObj(cur) && Array.isArray(cur.accounts) ? (cur.accounts as Obj[]) : [];
+      return { ...v, accounts: v.accounts.map((a: Obj) => (a.token ? a : { ...a, token: old.find((o) => o.email === a.email)?.token ?? "" })) };
+    },
+  },
   { key: "conectcrm-auto-backup", label: "Backup do banco (frequência e retenção)" },
   { key: "conectcrm-doc-backup", label: "Backup dos documentos" },
   { key: "conectcrm-license", label: "Licença", secretOnly: true },
