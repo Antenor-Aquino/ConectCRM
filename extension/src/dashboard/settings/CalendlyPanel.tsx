@@ -148,7 +148,7 @@ export function CalendlyPanel() {
                     {!a.eventTypes.length && <option value="">Nenhum link ativo nesta conta</option>}
                     {a.eventTypes.map((t) => (
                       <option key={t.uri} value={t.uri}>
-                        {t.name} ({t.duration} min) — {t.url}
+                        {t.name} ({t.duration} min) — {t.url}{t.phoneParam ? " · preenche o celular" : ""}
                       </option>
                     ))}
                   </TaSelect>

@@ -75,3 +75,14 @@ sozinha no cartão certo do CRM, sem digitar nada.
   Cancelar ou remarcar segue as regras de cima.
 - O toggle não aparece em atividade que já veio do Calendly, nem quando não há
   conta do Calendly conectada.
+
+## Celular preenchido (0.2.100)
+- Ao conectar ou atualizar os links, o CRM lê as perguntas personalizadas de
+  cada link (`custom_questions`) e acha a de telefone: tipo `phone_number` ou
+  nome com telefone/celular/WhatsApp.
+- O Calendly preenche essas perguntas pela ordem (`a1`, `a2`…). O celular do
+  lead vai nesse parâmetro, no formato `+55…` (o número sem DDI ganha o 55).
+- Na tela de Integrações, o link que preenche o celular mostra
+  "· preenche o celular".
+- Contas conectadas antes desta versão são atualizadas sozinhas na próxima
+  leitura.

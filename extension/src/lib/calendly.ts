@@ -7,12 +7,15 @@ export const CALENDLY_ORIGIN = "https://api.calendly.com/*";
 const API = "https://api.calendly.com";
 const KEY = "conectcrm-calendly";
 const SEEN_KEY = "conectcrm-calendly-seen";
+const PHONE_Q = /telefone|whats|celular|fone|phone/i;
 
 export interface CalendlyEventType {
   uri: string;
   name: string;
   url: string;
   duration: number;
+  /** Parâmetro da pergunta de telefone do formulário (ex.: "a1"); null = não tem. */
+  phoneParam?: string | null;
 }
 
 export interface CalendlyAccount {
@@ -64,12 +67,36 @@ export async function connectCalendly(token: string): Promise<CalendlyAccount> {
   const t = token.trim();
   if (!t) throw new Error("Cole o token pessoal do Calendly.");
   const me = await api<{ resource: { uri: string; name: string; email: string } }>(t, "/users/me");
-  const types = await api<{ collection: { uri: string; name: string; scheduling_url: string; duration: number; active: boolean }[] }>(
+  const types = await api<{ collection: (ApiEventType & { uri: string; name: string; scheduling_url: string; duration: number; active: boolean })[] }>(
     t,
     `/event_types?${new URLSearchParams({ user: me.resource.uri, active: "true", count: "100" })}`,
   );
-  const eventTypes = types.collection.filter((e) => e.active !== false).map((e) => ({ uri: e.uri, name: e.name, url: e.scheduling_url, duration: e.duration }));
+  const eventTypes = types.collection
+    .filter((e) => e.active !== false)
+    .map((e) => ({ uri: e.uri, name: e.name, url: e.scheduling_url, duration: e.duration, phoneParam: phoneParam(e) }));
   return { token: t, email: me.resource.email, name: me.resource.name, userUri: me.resource.uri, eventTypes, eventTypeUri: eventTypes[0]?.uri ?? null };
+}
+
+interface ApiEventType {
+  custom_questions?: { name: string; type: string; position: number; enabled: boolean }[];
+}
+
+/**
+ * Pergunta de telefone do formulário do link: o Calendly preenche as perguntas
+ * personalizadas pela ordem (a1, a2…). Tipo "phone_number" ou nome com telefone/celular/WhatsApp.
+ */
+export function phoneParam(e: ApiEventType): string | null {
+  const qs = [...(e.custom_questions ?? [])].sort((a, b) => a.position - b.position);
+  const i = qs.findIndex((q) => q.enabled !== false && (q.type === "phone_number" || PHONE_Q.test(q.name)));
+  return i >= 0 && i < 10 ? `a${i + 1}` : null;
+}
+
+/** Celular no formato do Calendly (+55…); números brasileiros sem DDI ganham o 55. */
+export function calendlyPhone(phone: string | null | undefined): string | null {
+  let d = (phone ?? "").replace(/\D/g, "");
+  if (!d) return null;
+  if (!phone!.trim().startsWith("+") && (d.length === 10 || d.length === 11)) d = `55${d}`;
+  return `+${d}`;
 }
 
 /** Atualiza os links (tipos de evento) de uma conta já conectada. */
@@ -85,10 +112,15 @@ export function accountForPipeline(s: CalendlySettings, pipelineId: string | nul
 }
 
 /** Link de agendamento já preenchido com o contato e a marca do cartão. */
-export function bookingLink(url: string, opts: { name?: string | null; email?: string | null; dealId?: string | null; activityId?: string | null }): string {
+export function bookingLink(
+  url: string,
+  opts: { name?: string | null; email?: string | null; phone?: string | null; phoneParam?: string | null; dealId?: string | null; activityId?: string | null },
+): string {
   const u = new URL(url);
   if (opts.name) u.searchParams.set("name", opts.name);
   if (opts.email) u.searchParams.set("email", opts.email);
+  const phone = calendlyPhone(opts.phone);
+  if (phone && opts.phoneParam) u.searchParams.set(opts.phoneParam, phone);
   if (opts.dealId || opts.activityId) u.searchParams.set("utm_source", "conectcrm");
   if (opts.dealId) u.searchParams.set("utm_content", opts.dealId);
   // Atividade criada no CRM: o horário marcado volta para ela (sem duplicar).
@@ -118,7 +150,6 @@ interface ApiInvitee {
   cancellation?: { reason?: string | null } | null;
 }
 
-const PHONE_Q = /telefone|whats|celular|fone|phone/i;
 
 /** Agendamento do Calendly no formato que o banco importa. */
 export function toBooking(account: string, ev: ApiEvent, inv: ApiInvitee): CalendlyBooking {

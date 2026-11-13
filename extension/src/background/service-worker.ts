@@ -12,7 +12,7 @@ import { addNotification } from "../lib/notifications";
 import { loadSoundSettings, soundFor, type PlaySoundMessage, type SoundCategory } from "../lib/notify/sounds";
 import { ALERTS_KEY, ALERT_PAGE, ALERT_WINDOW_KEY, type AlertActionMessage, type AlertItem } from "../lib/notify/alerts";
 import { runClip, type ClipStartMessage } from "./clip";
-import { fetchCalendlyBookings, loadCalendly, markCalendlySeen, saveCalendly } from "../lib/calendly";
+import { fetchCalendlyBookings, loadCalendly, markCalendlySeen, refreshCalendlyAccount, saveCalendly } from "../lib/calendly";
 import type { CalendlyImportResult } from "../db/calendly";
 import { OFFSCREEN_PATH, type EnsureOffscreenMessage, type RpcRequest, type RpcResponse } from "../rpc/protocol";
 
@@ -296,6 +296,11 @@ async function syncCalendly(userId: string | null, force = false): Promise<Calen
   }
   await chrome.storage.local.set({ [CALENDLY_SYNC_KEY]: Date.now() });
   try {
+    // Contas conectadas antes da 0.2.100: descobre a pergunta de telefone de cada link.
+    if (s.accounts.some((a) => a.token && a.eventTypes.some((t) => t.phoneParam === undefined))) {
+      const accounts = await Promise.all(s.accounts.map((a) => (a.token && a.eventTypes.some((t) => t.phoneParam === undefined) ? refreshCalendlyAccount(a).catch(() => a) : a)));
+      await saveCalendly({ ...(await loadCalendly()), accounts });
+    }
     const { bookings, seen } = await fetchCalendlyBookings(s);
     const r = bookings.length ? await rpc<CalendlyImportResult>("calendly.import", { bookings }, userId) : { created: 0, updated: 0, canceled: 0, items: [] };
     await markCalendlySeen(seen);
