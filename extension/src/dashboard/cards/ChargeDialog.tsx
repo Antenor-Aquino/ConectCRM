@@ -53,6 +53,7 @@ export function ChargeDialog({
   const [customer, setCustomer] = useState({ name: "", email: "", phone: "" });
   const [dueDate, setDueDate] = useState(today());
   const [handle, setHandle] = useState("");
+  const [company, setCompany] = useState("");
   const [editHandle, setEditHandle] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +75,10 @@ export function ChargeDialog({
   };
   useEffect(() => {
     void load(true);
-    void loadInfinitePay().then((s) => setHandle(s.handle));
+    void loadInfinitePay().then((s) => {
+      setHandle(s.handle);
+      setCompany(s.company);
+    });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const total = chargeTotal(items);
@@ -106,7 +110,7 @@ export function ChargeDialog({
     if (!confirm(`Gerar a cobrança de ${formatCents(total)} na InfinitePay ($${normalizeHandle(handle)})?`)) return;
     setBusy(true);
     try {
-      await saveInfinitePay({ handle });
+      await saveInfinitePay({ handle, company });
       const orderNsu = await call("charges.newOrderNsu", { id: cardId });
       const clean = items.map((i) => ({ ...i, description: i.description.trim() }));
       const payload = buildLinkPayload(handle, orderNsu, clean, {
@@ -116,7 +120,7 @@ export function ChargeDialog({
       });
       const { url } = await createPaymentLink(payload);
       const description = `Cobrança InfinitePay — ${draft.cardTitle}`.slice(0, 200);
-      await call("charges.save", { id: cardId, handle: payload.handle, orderNsu, url, items: clean, description, dueDate });
+      await call("charges.save", { id: cardId, handle: payload.handle, orderNsu, url, items: clean, description, dueDate, company });
       const preset: LaunchPreset = { description, amountCents: total, notes: chargeNotes({ url, orderNsu, items: clean }), dueDate, requestId: orderNsu };
       setCreated({ url, preset });
       await load(false);
@@ -288,6 +292,9 @@ export function ChargeDialog({
                     </button>
                   </p>
                 )}
+              </Field>
+              <Field label="Empresa (aparece na nota da cobrança)">
+                <TaInput value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Claudia Tecnologia" maxLength={80} data-charge-company />
               </Field>
             </section>
 

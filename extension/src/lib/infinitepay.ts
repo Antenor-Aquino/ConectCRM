@@ -15,18 +15,22 @@ export const DEFAULT_HANDLE = "claudiatech";
 export interface InfinitePaySettings {
   /** InfiniteTag sem o "$". */
   handle: string;
+  /** Nome da empresa na nota da cobrança ("Cobrança Claudia Tecnologia gerada"). */
+  company: string;
 }
+
+export const DEFAULT_COMPANY = "Claudia Tecnologia";
 
 /** "$ClaudiaTech " → "ClaudiaTech" (a InfinitePay pede exatamente a tag, sem "$" e sem espaços). */
 export const normalizeHandle = (v: string) => v.trim().replace(/^\$/, "").replace(/\s+/g, "");
 
 export async function loadInfinitePay(): Promise<InfinitePaySettings> {
   const v = (await chrome.storage.local.get(STORAGE_KEY))[STORAGE_KEY] as Partial<InfinitePaySettings> | undefined;
-  return { handle: normalizeHandle(v?.handle || DEFAULT_HANDLE) };
+  return { handle: normalizeHandle(v?.handle || DEFAULT_HANDLE), company: v?.company?.trim() || DEFAULT_COMPANY };
 }
 
 export async function saveInfinitePay(s: InfinitePaySettings): Promise<void> {
-  await chrome.storage.local.set({ [STORAGE_KEY]: { handle: normalizeHandle(s.handle) } });
+  await chrome.storage.local.set({ [STORAGE_KEY]: { handle: normalizeHandle(s.handle), company: s.company.trim() || DEFAULT_COMPANY } });
 }
 
 /**

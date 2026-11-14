@@ -40,6 +40,22 @@ cartão e já lança a **receita** correspondente na Gestão Financeira.
 4. Lista de cobranças do cartão: copiar link, "Marcar como paga", "Cancelar",
    "Reabrir".
 
+## Nota da cobrança e botão copiar (0.2.120)
+Nota no cartão, pronta para mandar ao cliente:
+```
+Cobrança Claudia Tecnologia gerada:
+Valor: R$ 52,00
+Vencimento 14/11/2026
+Item: Certificado A3 - 24 meses
+Link de pagamento: https://checkout.infinitepay.io/claudiatech?lenc=…
+Pedido: crm-0ef2b6bc-261114222659
+```
+O nome da empresa é configurável na janela da cobrança (padrão "Claudia
+Tecnologia", guardado com a conta InfinitePay). Mais de um item: "Itens:" e
+uma linha por item ("2 × descrição" quando a quantidade passa de 1). Toda nota
+(de qualquer cartão/contato) ganhou o botão **copiar**, que copia o texto
+inteiro.
+
 ## Cancelar e reabrir (0.2.119 / GF 0.0.49)
 - A receita lançada pela cobrança leva o pedido (`LaunchRequest.requestId` =
   `order_nsu`), gravado na GF em `origin_request`.

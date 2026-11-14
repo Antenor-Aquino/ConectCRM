@@ -129,12 +129,31 @@ export function newOrderNsu(cardId: string, now = new Date()): string {
   return `crm-${cardId.replace(/[^0-9a-zA-Z]/g, "").slice(0, 8)}-${stamp}`;
 }
 
+/**
+ * Texto da nota da cobrança no cartão (pronto para copiar e mandar ao cliente):
+ *   Cobrança Claudia Tecnologia gerada:
+ *   Valor: R$ 52,00
+ *   Vencimento 14/11/2026
+ *   Item: Certificado A3 - 24 meses
+ *   Link de pagamento: https://…
+ *   Pedido: crm-…
+ */
+export function chargeNoteText(c: { company?: string | null; amountCents: number; dueDate?: string | null; items: ChargeItem[]; url: string; orderNsu: string }): string {
+  const item = (i: ChargeItem) => (i.quantity > 1 ? `${i.quantity} × ${i.description}` : i.description);
+  const lines = [`Cobrança ${c.company?.trim() || "InfinitePay"} gerada:`, `Valor: ${brl(c.amountCents)}`];
+  if (c.dueDate) lines.push(`Vencimento ${c.dueDate.split("-").reverse().join("/")}`);
+  if (c.items.length === 1) lines.push(`Item: ${item(c.items[0]!)}`);
+  else lines.push("Itens:", ...c.items.map((i) => `- ${item(i)}`));
+  lines.push(`Link de pagamento: ${c.url}`, `Pedido: ${c.orderNsu}`);
+  return lines.join("\n");
+}
+
 /** Grava a cobrança criada na InfinitePay e deixa uma nota no cartão. */
 export function saveCharge(
   db: DatabaseSync,
   ctx: DbContext,
   cardId: string,
-  input: { handle: string; orderNsu: string; url: string; items: ChargeItem[]; description: string; dueDate?: string | null },
+  input: { handle: string; orderNsu: string; url: string; items: ChargeItem[]; description: string; dueDate?: string | null; company?: string | null },
 ): string {
   if (!/^https:\/\//.test(input.url)) throw new ValidationError("Link de pagamento inválido.");
   if (!input.items.length) throw new ValidationError("A cobrança precisa de pelo menos um item.");
@@ -156,11 +175,10 @@ export function saveCharge(
       due_date: due,
       status: "open",
     });
-    const valor = brl(amount);
     insertRow(db, ctx, "note", {
       entity_type: "deal",
       entity_id: cardId,
-      body: `Cobrança InfinitePay gerada: ${valor}${due ? ` (vencimento ${due.split("-").reverse().join("/")})` : ""}.\nLink de pagamento: ${input.url}\nPedido: ${input.orderNsu}`,
+      body: chargeNoteText({ company: input.company, amountCents: amount, dueDate: due, items: input.items, url: input.url, orderNsu: input.orderNsu }),
       document_ids: null,
     });
     return id;

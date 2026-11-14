@@ -949,7 +949,7 @@ export const methods = {
   "charges.save": (
     db: DatabaseSync,
     ctx: DbContext,
-    p: Id & { handle: string; orderNsu: string; url: string; items: charges.ChargeItem[]; description: string; dueDate?: string | null },
+    p: Id & { handle: string; orderNsu: string; url: string; items: charges.ChargeItem[]; description: string; dueDate?: string | null; company?: string | null },
   ) => {
     if (!deals.getCard(db, p.id, viewer(db, ctx))) throw new ValidationError("Cartão não encontrado.");
     return charges.saveCharge(db, ctx, p.id, p);

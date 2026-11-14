@@ -113,14 +113,35 @@ describe("Cobrança — registro no CRM", () => {
     const [c] = listCharges(db, card);
     expect(c).toMatchObject({ id, amount_cents: 5200, status: "open", due_date: "2026-11-20", items });
     const note = many<{ body: string }>(db, "SELECT body FROM note WHERE entity_id = ? ORDER BY created_at", card).at(-1)!.body;
-    expect(note).toContain("Cobrança InfinitePay gerada: R$ 52,00 (vencimento 20/11/2026)");
-    expect(note).toContain("https://checkout.infinitepay.io/claudiatech/xyz");
+    expect(note).toBe(
+      `Cobrança InfinitePay gerada:\nValor: R$ 52,00\nVencimento 20/11/2026\nItem: 2 × Certificado digital A1\nLink de pagamento: https://checkout.infinitepay.io/claudiatech/xyz\nPedido: ${nsu}`,
+    );
     setChargeStatus(db, ctx, id, "paid");
     expect(listCharges(db, card)[0]).toMatchObject({ status: "paid" });
     expect(listCharges(db, card)[0]!.paid_at).not.toBeNull();
     setChargeStatus(db, ctx, id, "open");
     expect(listCharges(db, card)[0]).toMatchObject({ status: "open", paid_at: null });
     expect(chargeDraftForCard(db, card).charges).toHaveLength(1);
+  });
+
+  it("texto da nota no formato pedido (empresa, valor, vencimento, item, link, pedido)", async () => {
+    const { chargeNoteText } = await import("../src/db/charges");
+    expect(
+      chargeNoteText({
+        company: "Claudia Tecnologia",
+        amountCents: 5200,
+        dueDate: "2026-11-14",
+        items: [{ description: "Certificado A3 - 24 meses", quantity: 1, priceCents: 5200 }],
+        url: "https://checkout.infinitepay.io/claudiatech?lenc=abc",
+        orderNsu: "crm-0ef2b6bc-261114222659",
+      }),
+    ).toBe(
+      "Cobrança Claudia Tecnologia gerada:\nValor: R$ 52,00\nVencimento 14/11/2026\nItem: Certificado A3 - 24 meses\nLink de pagamento: https://checkout.infinitepay.io/claudiatech?lenc=abc\nPedido: crm-0ef2b6bc-261114222659",
+    );
+    // Vários itens e sem vencimento.
+    expect(
+      chargeNoteText({ company: "Claudia Tecnologia", amountCents: 7000, items: [{ description: "A", quantity: 2, priceCents: 2500 }, { description: "B", quantity: 1, priceCents: 2000 }], url: "https://l", orderNsu: "n" }),
+    ).toBe("Cobrança Claudia Tecnologia gerada:\nValor: R$ 70,00\nItens:\n- 2 × A\n- B\nLink de pagamento: https://l\nPedido: n");
   });
 
   it("observações da receita na Gestão Financeira", () => {
