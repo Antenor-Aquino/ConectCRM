@@ -1,6 +1,6 @@
 // Configurações → Integrações (spec 09): uma entrada por integração, com os
 // parâmetros de cada uma: Pipedrive (chave da API, endereço da conta e o
-// botão para importar) e Gestão Financeira (spec 13). Só administradores.
+// botão para importar), Gestão Financeira (spec 13) e Calendly (spec 18). Só administradores.
 import { useEffect, useState } from "react";
 import { CheckCircle2, Download, Eye, EyeOff, Plug, Unplug } from "lucide-react";
 import { TaBadge, TaButton, TaInput, TaPanel, cn } from "@tailadmin";
@@ -19,12 +19,14 @@ import { useSession } from "../session";
 import { Field } from "../ui/form";
 import { PipedriveImportModal } from "./PipedriveImportModal";
 import { GestaoFinanceiraPanel } from "./GestaoFinanceiraPanel";
+import { CalendlyPanel } from "./CalendlyPanel";
 
 type Msg = { text: string; kind: "ok" | "err" } | null;
 
 const INTEGRATIONS = [
   { id: "pipedrive", name: "Pipedrive", description: "Importar leads, contatos e organizações, com de-para dos campos.", logo: "p", bg: "bg-[#1a1a1a]" },
   { id: "gestao", name: "Gestão Financeira", description: "Receitas e despesas dos cartões na extensão Gestão Financeira deste Chrome.", logo: "$", bg: "bg-success-600" },
+  { id: "calendly", name: "Calendly", description: "Link de agendamento nos cartões; as reuniões marcadas entram sozinhas no CRM.", logo: "C", bg: "bg-[#006bff]" },
 ] as const;
 type IntegrationId = (typeof INTEGRATIONS)[number]["id"];
 
@@ -77,6 +79,7 @@ export function IntegrationsSettings() {
       </TaPanel>
       {selected === "pipedrive" && <PipedrivePanel settings={s} onChange={setS} />}
       {selected === "gestao" && <GestaoFinanceiraPanel />}
+      {selected === "calendly" && <CalendlyPanel />}
     </>
   );
 }

@@ -2,6 +2,7 @@
 // contato e organização): Duplicar (abre uma atividade nova igual, para
 // ajustar) e Lixeira (vai para a lixeira, com Restaurar; recorrente pergunta
 // o alcance).
+import { confirmActivityDelete } from "./confirmDelete";
 import { useState } from "react";
 import { Copy, Trash2 } from "lucide-react";
 import { call } from "../../rpc/client";
@@ -37,7 +38,7 @@ export function TaskRowActions({
         data-task-delete={task.id}
         onClick={async () => {
           if (task.series_id) return setAskScope(true);
-          if (!confirm("Excluir esta atividade? Vai para a lixeira, de onde pode ser restaurado.")) return;
+          if (!(await confirmActivityDelete(task.id))) return;
           await call("activities.delete", { id: task.id });
           onDeleted();
         }}

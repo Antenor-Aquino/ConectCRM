@@ -12,6 +12,8 @@ import { addNotification } from "../lib/notifications";
 import { loadSoundSettings, soundFor, type PlaySoundMessage, type SoundCategory } from "../lib/notify/sounds";
 import { ALERTS_KEY, ALERT_PAGE, ALERT_WINDOW_KEY, type AlertActionMessage, type AlertItem } from "../lib/notify/alerts";
 import { runClip, type ClipStartMessage } from "./clip";
+import { fetchCalendlyBookings, loadCalendly, markCalendlySeen, refreshCalendlyAccount, saveCalendly } from "../lib/calendly";
+import type { CalendlyImportResult } from "../db/calendly";
 import { OFFSCREEN_PATH, type EnsureOffscreenMessage, type RpcRequest, type RpcResponse } from "../rpc/protocol";
 
 let creating: Promise<void> | null = null;
@@ -49,6 +51,15 @@ chrome.runtime.onMessage.addListener((msg: EnsureOffscreenMessage, _sender, send
 chrome.runtime.onMessage.addListener((msg: ClipStartMessage, _sender, sendResponse) => {
   if (msg?.target !== "background" || msg.kind !== "clip-start") return false;
   void runClip().then(sendResponse);
+  return true;
+});
+
+// "Sincronizar agora" do Calendly (Configurações → Integrações).
+chrome.runtime.onMessage.addListener((msg: { target?: string; kind?: string; userId?: string | null }, _sender, sendResponse) => {
+  if (msg?.target !== "background" || msg.kind !== "calendly-sync") return false;
+  syncCalendly(msg.userId ?? null, true)
+    .then((r) => sendResponse({ ok: true, result: r }))
+    .catch((err: unknown) => sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) }));
   return true;
 });
 
@@ -272,6 +283,43 @@ async function runTodoReminders(userId: string | null): Promise<void> {
   }
 }
 
+// Calendly (spec 18): sem webhook (plano gratuito), lê os agendamentos a cada
+// 5 min e os transforma em reuniões no CRM. Erro fica guardado para a tela.
+const CALENDLY_SYNC_KEY = "conectcrm-calendly-bg-sync";
+async function syncCalendly(userId: string | null, force = false): Promise<CalendlyImportResult | null> {
+  if (!userId) return null;
+  const s = await loadCalendly();
+  if (!s.accounts.length) return null;
+  if (!force) {
+    const last = (await chrome.storage.local.get(CALENDLY_SYNC_KEY))[CALENDLY_SYNC_KEY] as number | undefined;
+    if (last && Date.now() - last < 5 * 60_000) return null;
+  }
+  await chrome.storage.local.set({ [CALENDLY_SYNC_KEY]: Date.now() });
+  try {
+    // Contas conectadas antes da 0.2.100: descobre a pergunta de telefone de cada link.
+    if (s.accounts.some((a) => a.token && a.eventTypes.some((t) => t.phoneParam === undefined))) {
+      const accounts = await Promise.all(s.accounts.map((a) => (a.token && a.eventTypes.some((t) => t.phoneParam === undefined) ? refreshCalendlyAccount(a).catch(() => a) : a)));
+      await saveCalendly({ ...(await loadCalendly()), accounts });
+    }
+    const { bookings, seen } = await fetchCalendlyBookings(s);
+    const r = bookings.length ? await rpc<CalendlyImportResult>("calendly.import", { bookings }, userId) : { created: 0, updated: 0, canceled: 0, items: [] };
+    await markCalendlySeen(seen);
+    await saveCalendly({ ...(await loadCalendly()), lastSyncAt: new Date().toISOString(), lastError: null });
+    for (const it of r.items) {
+      const when = new Date(it.when).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+      const title = it.kind === "created" ? "Nova reunião pelo Calendly" : it.kind === "updated" ? "Reunião remarcada no Calendly" : "Reunião cancelada no Calendly";
+      chromeNotify(`notify:calendly-${Date.now()}-${Math.random()}`, title, `${it.title} · ${when}`, false);
+      await addNotification({ kind: "info", title, message: `${it.title} · ${when}` });
+    }
+    return r;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    await saveCalendly({ ...(await loadCalendly()), lastError: msg });
+    if (force) throw e;
+    return null;
+  }
+}
+
 async function runNotifications(): Promise<void> {
   if (running) return;
   running = true;
@@ -287,6 +335,7 @@ async function runNotifications(): Promise<void> {
     await runTodoReminders(userId).catch((e) => console.warn("Lembrete do To Do:", e));
     await runContactMessages(userId).catch((e) => console.warn("Lembrete do contato:", e));
     await refreshFinanceCopy(userId);
+    await syncCalendly(userId).catch((e) => console.warn("Calendly:", e));
     const settings = Object.fromEntries(Object.entries(await loadAllNotifySettings()).map(([id, x]) => [id, activeSettings(x)]));
     // Alertas financeiros do resumo diário só com a integração com a Gestão Financeira ativada.
     const finance = gfIntegrationActive(await loadGfSettings());
