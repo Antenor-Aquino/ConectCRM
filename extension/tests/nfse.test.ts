@@ -163,4 +163,15 @@ describe("NFS-e — rascunho e pendências", () => {
     expect(d2.texts.source.notes).toBe("last-taker");
     expect(d2.texts.saved).toBe(false);
   });
+
+  it("reaplicar texto padrão: ignora os textos salvos e usa o nº do pedido digitado", async () => {
+    const { db, ctx, pc } = await setup();
+    const a = createIssuer(db, ctx, { cnpj: "68.153.622/0001-93", legalName: "A", cityIbge: "3106200", descriptionTemplate: "Pedido {pedido}: {itens}" });
+    const card = createCard(db, ctx, { pipelineId: pc, title: "Suporte" });
+    saveNfseDraft(db, ctx, card, { issuerId: a, description: "Texto antigo", notes: "Obs antiga", orderNumber: "1" });
+    const d = nfseDraftForCard(db, card, { fromTemplate: true, orderNumber: "999" });
+    expect(d.texts).toMatchObject({ description: "Pedido 999: Suporte", notes: "", orderNumber: "999", source: { description: "template" } });
+    expect(nfseDraftForCard(db, card).texts.description).toBe("Texto antigo"); // nada mudou até salvar
+  });
 });
+

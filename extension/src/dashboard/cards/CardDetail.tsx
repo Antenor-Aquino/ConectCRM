@@ -1,6 +1,7 @@
 // Detalhe do cartão (Fase 4): dados editáveis, etapas, desfecho (ganho/perdido,
 // resolvido/não resolvido, concluído/não concluído conforme o tipo),
 // notas, tarefas e histórico de alterações.
+import { NfseDialog } from "./NfseDialog";
 import { useGfActive } from "../useGfActive";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -23,7 +24,7 @@ import {
   Trash2,
   Trophy,
   X,
-  XCircle, Repeat, ListTodo, GitMerge, CalendarDays } from "lucide-react";
+  XCircle, Repeat, ListTodo, GitMerge, CalendarDays, Receipt } from "lucide-react";
 import { openUnifiedAgenda } from "../../lib/unifiedAgenda";
 import { CalendlyLinkButton } from "./CalendlyLinkButton";
 import { MergeDialog } from "../ui/MergeDialog";
@@ -145,6 +146,7 @@ function CardDetailInner({
   const [deleteBlock, setDeleteBlock] = useState<DeleteCheck | null>(null);
   const [pipelineAction, setPipelineAction] = useState<"move" | "clone" | null>(null);
   const [merging, setMerging] = useState(false);
+  const [nfseOpen, setNfseOpen] = useState(false);
   // Quantidades nas abas (balão verde) e atividades atrasadas (balão vermelho).
   const [counts, setCounts] = useState<CardCounts | null>(null);
   // Resultado financeiro (cópia dos lançamentos da Gestão Financeira).
@@ -344,6 +346,9 @@ function CardDetailInner({
           Perguntar ao Copiloto
         </TaButton>
         <AddToTodo cardId={cardId} />
+        <TaButton variant="ghost" startIcon={<Receipt size={15} />} data-card-nfse title="Preparar a nota fiscal de serviço deste cartão" onClick={() => setNfseOpen(true)}>
+          Nota fiscal
+        </TaButton>
         <CalendlyLinkButton cardId={cardId} pipelineId={card.pipeline_id} personId={card.person_id ?? null} />
         <TaButton variant="ghost" startIcon={<GitMerge size={15} />} data-card-merge title={`Juntar este ${text.noun} com outro duplicado`} onClick={() => setMerging(true)}>
           Mesclar
@@ -751,6 +756,7 @@ function CardDetailInner({
       )}
       {docOpen && <DocumentViewer documentId={docOpen} onClose={() => setDocOpen(null)} />}
       {leaveDialog}
+      {nfseOpen && <NfseDialog cardId={cardId} onClose={() => setNfseOpen(false)} />}
       {merging && (
         <MergeDialog
           entity="deal"

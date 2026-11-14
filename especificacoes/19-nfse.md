@@ -151,3 +151,35 @@ A empresa escolhida também fica salva no rascunho.
   - código IBGE pela cidade e UF;
   - rascunho a partir do cartão;
   - pendências.
+
+## Fase 2 — botão "Nota fiscal" no cartão (0.2.105)
+O botão **Nota fiscal** fica na barra de ações do cartão e abre a janela da nota
+(`NfseDialog`) já preenchida.
+
+**Partes da janela**
+- **Pendências no topo:**
+  - vermelho impede a emissão; amarelo só avisa;
+  - sem pendências, aparece "Tudo preenchido: a nota está pronta para emitir";
+  - as pendências dos textos são calculadas ao vivo, enquanto o usuário digita.
+- **Emitir por:** um cartão para cada empresa ativa. Com uma só, ela já vem
+  escolhida. A escolha fica salva no rascunho.
+- **Tomador:** nome, CNPJ/CPF, endereço e código IBGE. O link **Corrigir
+  cadastro** abre a organização ou o contato e, ao salvar, a janela relê os
+  dados sem perder os textos.
+- **Serviço:** código e descrição da lista nacional, valor, competência e local
+  da prestação (o município da empresa).
+- **Textos desta nota**, em destaque:
+  - nº do pedido / processo de compra;
+  - discriminação (contador 0/1000) e observação (contador 0/2000);
+  - a origem de cada texto: salvo no cartão, da última nota do cliente ou do
+    texto padrão;
+  - **Reaplicar texto padrão** troca os textos pelo modelo da empresa, já com o
+    nº do pedido digitado (`nfse.draft { fromTemplate, orderNumber }`).
+
+**Botões**
+- **Atualizar dados:** relê o cartão depois de corrigir produtos ou cadastro.
+- **Salvar rascunho:** grava os textos e a empresa no cartão.
+- **Emitir no Emissor Nacional:** só habilita sem pendências e com os textos
+  salvos. Nesta versão, avisa que o preenchimento do portal chega na fase 3.
+
+Ao fechar com textos alterados e não salvos, a janela pede confirmação.
