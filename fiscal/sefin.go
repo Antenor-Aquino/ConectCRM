@@ -78,6 +78,9 @@ func httpClient(id Identity) (*http.Client, error) {
 		MaxVersion:   tls.VersionTLS12,
 		Certificates: []tls.Certificate{cert},
 		RootCAs:      rootsForTest(),
+		// A Sefin Nacional (IIS) abre a conexão sem pedir o certificado e só o
+		// pede depois, renegociando o TLS 1.2. Sem isto: "tls: no renegotiation".
+		Renegotiation: tls.RenegotiateFreelyAsClient,
 	}
 	return &http.Client{Timeout: 90 * time.Second, Transport: &http.Transport{TLSClientConfig: cfg, Proxy: http.ProxyFromEnvironment}}, nil
 }
@@ -141,9 +144,9 @@ func doJSON(c *http.Client, method, u string, payload any) (*SefinResult, error)
 	if json.Valid(b) {
 		out.Body = b
 		var r struct {
-			ChaveAcesso                   string `json:"chaveAcesso"`
-			NfseXmlGZipB64                string `json:"nfseXmlGZipB64"`
-			EventoXmlGZipB64              string `json:"eventoXmlGZipB64"`
+			ChaveAcesso      string `json:"chaveAcesso"`
+			NfseXmlGZipB64   string `json:"nfseXmlGZipB64"`
+			EventoXmlGZipB64 string `json:"eventoXmlGZipB64"`
 		}
 		_ = json.Unmarshal(b, &r)
 		out.AccessKey = r.ChaveAcesso

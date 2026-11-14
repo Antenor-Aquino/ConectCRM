@@ -282,3 +282,13 @@ dono do projeto no Windows, seguindo o roteiro entregue em PDF
 
 **Pendente (depende do teste no Windows):** resultado com A1 e A3, ajustes
 pelos códigos de erro reais, e só então liberar Produção.
+
+**Primeiro resultado real (produção, só o teste de conexão, A1):** a Sefin
+respondeu com `tls: no renegotiation`. O servidor (IIS) abre o TLS 1.2 sem
+pedir o certificado e só o pede numa renegociação, que o Go recusa por padrão.
+**ConectCRM Fiscal 1.0.3** aceita a renegociação (`tls.RenegotiateFreelyAsClient`).
+Reproduzido com um servidor de testes que renegocia pedindo o certificado:
+a 1.0.2 falha com o mesmo erro e a 1.0.3 conecta e envia o certificado.
+O programa passa a ser entregue dentro de .zip (o download direto de .exe é
+bloqueado pelo navegador/app).
+

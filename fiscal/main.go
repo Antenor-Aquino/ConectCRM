@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	version   = "1.0.2"
+	version   = "1.0.3"
 	hostName  = "com.conectcrm.fiscal"
 	extOrigin = "chrome-extension://fabjbdmhpofceejnkeffkkiomoeifedj/"
 )
