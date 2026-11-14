@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Building2, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { TaBadge, TaButton, TaInput, TaPanel, TaSelect, TaTextarea } from "@tailadmin";
 import { call } from "../../rpc/client";
-import { ACCESS_LABEL, DEFAULT_DESCRIPTION_TEMPLATE, NFSE_LIMITS, NFSE_TEMPLATE_VARS, SIMPLES_LABEL, SPECIAL_REGIME_LABEL, type Issuer, type IssuerAccess, type SimplesOption } from "../../db/nfse";
+import { ACCESS_LABEL, SIMPLES_REGIME_LABEL, DEFAULT_DESCRIPTION_TEMPLATE, NFSE_LIMITS, NFSE_TEMPLATE_VARS, SIMPLES_LABEL, SPECIAL_REGIME_LABEL, type Issuer, type IssuerAccess, type SimplesOption } from "../../db/nfse";
 import { formatCnpj, formatCnpjInput, lookupCnpj } from "../../lib/cnpj";
 import { errorText } from "../../lib/errors";
 import { buscarMunicipios, municipioPorIbge, municipioPorNome } from "../../lib/nfse/tabelas";
@@ -130,6 +130,11 @@ function IssuerModal({
   const [simples, setSimples] = useState<SimplesOption>(issuer?.simples ?? 3);
   const [regime, setRegime] = useState(issuer?.special_regime ?? 0);
   const [active, setActive] = useState(issuer ? !!issuer.active : true);
+  const [simplesRate, setSimplesRate] = useState(issuer?.simples_rate != null ? String(issuer.simples_rate).replace(".", ",") : "");
+  const [simplesRegime, setSimplesRegime] = useState<1 | 2 | 3>(issuer?.simples_regime ?? 1);
+  const [issRate, setIssRate] = useState(issuer?.iss_rate != null ? String(issuer.iss_rate).replace(".", ",") : "");
+  const [dpsSeries, setDpsSeries] = useState(issuer?.dps_series ?? "1");
+  const [dpsNext, setDpsNext] = useState(String(issuer?.dps_next ?? 1));
   const [descTpl, setDescTpl] = useState(issuer?.description_template ?? DEFAULT_DESCRIPTION_TEMPLATE);
   const [notesTpl, setNotesTpl] = useState(issuer?.notes_template ?? "");
   /** Último modelo em que o usuário clicou: os botões de campo inserem nele. */
@@ -173,7 +178,12 @@ function IssuerModal({
   const save = async () => {
     setError(null);
     if (!city) return setError("Informe o município da empresa (é o local da prestação padrão nas notas).");
-    const input = { cnpj, legalName, municipalReg, cityIbge: city?.id ?? null, access, simples, specialRegime: regime, active, descriptionTemplate: descTpl, notesTemplate: notesTpl };
+    const input = { cnpj, legalName, municipalReg, cityIbge: city?.id ?? null, access, simples, specialRegime: regime, active, descriptionTemplate: descTpl, notesTemplate: notesTpl,
+      simplesRate: simplesRate.trim() ? Number(simplesRate.replace(",", ".")) : null,
+      simplesRegime,
+      issRate: issRate.trim() ? Number(issRate.replace(",", ".")) : null,
+      dpsSeries,
+      dpsNext: Number(dpsNext) };
     try {
       if (issuer) await call("nfse.updateIssuer", { id: issuer.id, patch: input });
       else await call("nfse.createIssuer", input);
@@ -237,6 +247,39 @@ function IssuerModal({
               ))}
             </TaSelect>
           </Field>
+        </div>
+        <div className="mb-4 rounded-xl border border-gray-200 p-3 dark:border-gray-800" data-nfse-api-fields>
+          <p className="text-theme-sm font-medium text-gray-800 dark:text-white/90">Dados para emitir pela API</p>
+          <p className="mb-3 text-theme-xs text-gray-500">Vão na nota enviada direto à Receita (sem abrir o portal). Confira com a contabilidade.</p>
+          <div className="grid grid-cols-2 gap-3">
+            {simples === 3 && (
+              <>
+                <Field label="Alíquota do Simples Nacional (%)" required hint="Alíquota da faixa do Simples (ex.: 6,00). Obrigatória para ME/EPP.">
+                  <TaInput value={simplesRate} onChange={(e) => setSimplesRate(e.target.value)} placeholder="6,00" inputMode="decimal" data-nfse-simples-rate />
+                </Field>
+                <Field label="Regime de apuração no Simples">
+                  <TaSelect value={simplesRegime} onChange={(e) => setSimplesRegime(Number(e.target.value) as 1 | 2 | 3)}>
+                    {([1, 2, 3] as const).map((v) => (
+                      <option key={v} value={v}>
+                        {SIMPLES_REGIME_LABEL[v]}
+                      </option>
+                    ))}
+                  </TaSelect>
+                </Field>
+              </>
+            )}
+            <Field label="Alíquota do ISS (%)" hint="Opcional. Até 5%; em branco, a Receita usa a do município.">
+              <TaInput value={issRate} onChange={(e) => setIssRate(e.target.value)} placeholder="ex.: 2,00" inputMode="decimal" />
+            </Field>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Série da DPS" hint="1 a 49999.">
+                <TaInput value={dpsSeries} onChange={(e) => setDpsSeries(e.target.value.replace(/\D/g, ""))} inputMode="numeric" />
+              </Field>
+              <Field label="Próximo nº da DPS" hint="Sequência desta série.">
+                <TaInput value={dpsNext} onChange={(e) => setDpsNext(e.target.value.replace(/\D/g, ""))} inputMode="numeric" />
+              </Field>
+            </div>
+          </div>
         </div>
         <div className="mb-4 rounded-xl border border-gray-200 p-3 dark:border-gray-800" data-nfse-templates>
           <p className="text-theme-sm font-medium text-gray-800 dark:text-white/90">Textos padrão das notas desta empresa</p>
