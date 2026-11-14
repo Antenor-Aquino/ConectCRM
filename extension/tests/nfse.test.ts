@@ -60,7 +60,7 @@ describe("NFS-e — empresas emissoras", () => {
 describe("NFS-e — rascunho e pendências", () => {
   it("cartão completo: tomador da organização, serviços dos itens, sem pendências", async () => {
     const { db, ctx, pc } = await setup();
-    createIssuer(db, ctx, { cnpj: "28.288.572/0001-37", legalName: "Empresa A", cityIbge: "3106200" });
+    createIssuer(db, ctx, { cnpj: "28.288.572/0001-37", legalName: "Empresa A", cityIbge: "3106200", simplesRate: 6 });
     const org = createOrganization(db, ctx, {
       name: "IED",
       legalName: "Instituto de Ensino LTDA",
@@ -117,7 +117,7 @@ describe("NFS-e — rascunho e pendências", () => {
 
   it("sem organização: o contato é o tomador (CPF); sem itens, vale o valor do cartão", async () => {
     const { db, ctx, pc } = await setup();
-    createIssuer(db, ctx, { cnpj: "28.288.572/0001-37", legalName: "A", cityIbge: "3106200" });
+    createIssuer(db, ctx, { cnpj: "28.288.572/0001-37", legalName: "A", cityIbge: "3106200", simplesRate: 6 });
     const p = createPerson(db, ctx, { name: "Cristiane", cpf: "529.982.247-25" });
     const card = createCard(db, ctx, { pipelineId: pc, title: "Treinamento", personId: p, valueCents: 120000 });
     const d = nfseDraftForCard(db, card);
