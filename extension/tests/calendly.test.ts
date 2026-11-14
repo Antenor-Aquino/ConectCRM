@@ -115,3 +115,24 @@ describe("Calendly — agendar pela atividade", () => {
     expect(getActivity(db, act)!.title).toBe("Cancelada: Apresentação");
   });
 });
+
+describe("Calendly — celular preenchido", async () => {
+  const { bookingLink, phoneParam, calendlyPhone } = await import("../src/lib/calendly");
+  it("acha a pergunta de telefone pela ordem do formulário", () => {
+    expect(phoneParam({ custom_questions: [
+      { name: "Por favor, compartilhe qualquer coisa", type: "text", position: 1, enabled: true },
+      { name: "Celular", type: "phone_number", position: 0, enabled: true },
+    ] })).toBe("a1");
+    expect(phoneParam({ custom_questions: [{ name: "Empresa", type: "string", position: 0, enabled: true }, { name: "Seu WhatsApp", type: "string", position: 1, enabled: true }] })).toBe("a2");
+    expect(phoneParam({ custom_questions: [{ name: "Empresa", type: "string", position: 0, enabled: true }] })).toBeNull();
+    expect(phoneParam({})).toBeNull();
+  });
+  it("celular no formato +55 e no parâmetro certo do link", () => {
+    expect(calendlyPhone("(33) 98405-9659")).toBe("+5533984059659");
+    expect(calendlyPhone("+55 33 98405-9659")).toBe("+5533984059659");
+    expect(calendlyPhone("")).toBeNull();
+    const u = new URL(bookingLink("https://calendly.com/a/1h", { name: "Cristiane", email: "c@x", phone: "(31) 99999-0000", phoneParam: "a1" }));
+    expect(u.searchParams.get("a1")).toBe("+5531999990000");
+    expect(new URL(bookingLink("https://calendly.com/a/1h", { phone: "31999990000", phoneParam: null })).searchParams.has("a1")).toBe(false);
+  });
+});

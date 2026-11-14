@@ -33,7 +33,7 @@ export function CalendlyLinkButton({ cardId, pipelineId, personId }: { cardId: s
   };
   const acc = s.accounts.find((a) => a.email === account);
   const type = acc?.eventTypes.find((t) => t.uri === typeUri) ?? acc?.eventTypes[0];
-  const link = type ? bookingLink(type.url, { name: person?.name, email: person?.email, dealId: cardId }) : null;
+  const link = type ? bookingLink(type.url, { name: person?.name, email: person?.email, phone: person?.phone, phoneParam: type.phoneParam, dealId: cardId }) : null;
   const firstName = person?.name.split(/\s+/)[0];
   const message = link ? `Olá${firstName ? `, ${firstName}` : ""}! Escolha o melhor horário para conversarmos: ${link}` : "";
   const digits = person?.phone?.replace(/\D/g, "") ?? "";
@@ -77,7 +77,7 @@ export function CalendlyLinkButton({ cardId, pipelineId, personId }: { cardId: s
               <>
                 <textarea readOnly value={message} rows={4} className="w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-theme-xs dark:border-gray-700 dark:bg-white/5" data-calendly-link-text />
                 <p className="text-theme-xs text-gray-500">
-                  {person ? `Já vai com o nome${person.email ? " e o e-mail" : ""} de ${person.name}. ` : "Cartão sem contato: o convidado preenche nome e e-mail. "}A reunião marcada por este link entra neste cartão.
+                  {person ? `Já vai com o nome${person.email ? ", o e-mail" : ""}${person.phone && type?.phoneParam ? " e o celular" : ""} de ${person.name}. ` : "Cartão sem contato: o convidado preenche nome e e-mail. "}A reunião marcada por este link entra neste cartão.
                 </p>
               </>
             )}

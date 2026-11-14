@@ -322,11 +322,11 @@ export function TaskModal({
   const calAcc = calendly?.accounts.find((a) => a.email === calAccount);
   const calLink = calAcc?.eventTypes.find((t) => t.uri === calType) ?? calAcc?.eventTypes[0] ?? null;
   /** Lead que vai preenchido no Calendly: o contato da atividade ou o do cartão. */
-  async function calendlyPerson(): Promise<{ name: string; email: string | null } | null> {
+  async function calendlyPerson(): Promise<{ name: string; email: string | null; phone: string | null } | null> {
     const pid = personForContact ?? (linkDealId ? ((await call("cards.get", { id: linkDealId }))?.person_id ?? null) : null);
     if (!pid) return null;
     const p = await call("persons.get", { id: pid });
-    return p ? { name: p.name, email: p.email ?? null } : null;
+    return p ? { name: p.name, email: p.email ?? null, phone: p.phone ?? null } : null;
   }
   useEffect(() => {
     if (!loaded) return;
@@ -475,7 +475,7 @@ export function TaskModal({
     if (canCalendly && calOn && calLink) {
       // Abre o Calendly com o contato preenchido; o horário escolhido lá volta para esta atividade.
       const person = await calendlyPerson();
-      void chrome.tabs.create({ url: bookingLink(calLink.url, { name: person?.name, email: person?.email, dealId: linkDealId, activityId: id }) });
+      void chrome.tabs.create({ url: bookingLink(calLink.url, { name: person?.name, email: person?.email, phone: person?.phone, phoneParam: calLink.phoneParam, dealId: linkDealId, activityId: id }) });
     }
     setSaving(false);
     // Arquivos escolhidos na tarefa nova: a janela Novo documento abre agora,
@@ -784,7 +784,7 @@ export function TaskModal({
                       <span>
                         Agendar pelo Calendly
                         <span className="block text-theme-xs text-gray-500">
-                          Ao salvar, o Calendly abre com o nome e o e-mail do lead preenchidos. O horário marcado lá atualiza esta atividade.
+                          Ao salvar, o Calendly abre com o nome, o e-mail e o celular do lead preenchidos. O horário marcado lá atualiza esta atividade.
                         </span>
                       </span>
                     </label>
