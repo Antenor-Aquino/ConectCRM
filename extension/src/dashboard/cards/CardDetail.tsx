@@ -228,7 +228,15 @@ function CardDetailInner({
 
   const outcome = OUTCOME_TEXT[pipeline.type];
   const status = card.status === "open" ? null : { color: card.status === "won" ? ("green" as const) : ("red" as const), label: outcome[card.status] };
-  const person: ComboItem | null = card.person_id ? { id: card.person_id, label: card.person_name ?? "" } : null;
+  const primaryContact = card.contacts.find((c) => c.is_primary);
+  // Telefone e e-mail do contato principal, embaixo do nome.
+  const person: ComboItem | null = card.person_id
+    ? {
+        id: card.person_id,
+        label: card.person_name ?? "",
+        sublabel: [formatPhone(primaryContact?.phone), primaryContact?.email].filter(Boolean).join(" · ") || null,
+      }
+    : null;
   const others = card.contacts.filter((c) => !c.is_primary);
   const primary = card.contacts.find((c) => c.is_primary);
   const org: ComboItem | null = card.organization_id ? { id: card.organization_id, label: card.organization_name ?? "" } : null;
@@ -479,6 +487,7 @@ function CardDetailInner({
               createLabel="Criar contato"
               onOpenValue={(i) => setEditing({ kind: "person", id: i.id })}
               openTitle="Editar o cadastro do contato"
+              sublabelBelow
               valueActions={
                 primary && (primary.phone || primary.email) ? (
                   <span className="flex items-center gap-2.5 pr-1" data-primary-contact-actions>
