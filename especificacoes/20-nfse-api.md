@@ -301,3 +301,12 @@ certificado A1 importado num provedor antigo do Windows ou de driver de token).
 montado pelo programa e (2) CryptoAPI, reabrindo a chave pelo certificado; o
 `fiscal.log` registra qual caminho assinou. Só compila e testa em Windows real
 (não há como reproduzir o provedor do cliente aqui).
+
+**Terceiro resultado real:** com a 1.0.4 a extensão mostrou "não está
+instalado" — na verdade o Chrome avisou que o programa fechou sozinho ("Native
+host has exited") durante a assinatura (o driver/provedor da chave derrubou o
+processo numa das tentativas). **ConectCRM Fiscal 1.0.5 / extensão 0.2.113**:
+CryptoAPI passa a ser a 1ª reserva (mais compatível com provedores antigos e
+tokens); cada tentativa é registrada no `fiscal.log` antes de rodar; pane em Go
+vira erro com a pilha no log; a extensão distingue "não instalado" de "fechou
+sozinho"; o instalador renomeia o programa antigo se ele estiver em uso.

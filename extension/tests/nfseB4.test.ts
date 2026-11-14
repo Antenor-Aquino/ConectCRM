@@ -256,3 +256,26 @@ describe("NFS-e B5 — teste de conexão", () => {
     expect(classifyProbe({ httpStatus: 503, text: "fora" }).ok).toBe(false);
   });
 });
+
+describe("NFS-e B5 — mensagens do Native Messaging", () => {
+  it("programa ausente × programa que fechou sozinho", async () => {
+    const mod = await import("../src/lib/nfse/fiscal");
+    const send = (msg: string) => {
+      (globalThis as unknown as { chrome: unknown }).chrome = {
+        runtime: {
+          lastError: undefined as unknown,
+          sendNativeMessage(_h: string, _m: unknown, cb: (r: unknown) => void) {
+            (this as { lastError: unknown }).lastError = { message: msg };
+            cb(undefined);
+          },
+        },
+      };
+      return mod.fiscalCall({ cmd: "ping" });
+    };
+    await expect(send("Specified native messaging host not found.")).rejects.toBeInstanceOf(mod.FiscalNotInstalled);
+    const e = await send("Native host has exited.").catch((x) => x);
+    expect(e).toBeInstanceOf(mod.FiscalCrashed);
+    expect(e.message).toContain("fechou sozinho");
+    expect(e.message).toContain("%LOCALAPPDATA%\\ConectCRM\\Fiscal");
+  });
+});

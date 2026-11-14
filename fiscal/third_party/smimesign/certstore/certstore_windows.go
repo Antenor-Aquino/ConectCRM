@@ -369,8 +369,11 @@ func (wpk *winPrivateKey) Public() crypto.PublicKey {
 // ConectCRM: alguns provedores (certificado A1 importado num provedor antigo do
 // Windows, drivers de token A3) recusam a assinatura pelo caminho normal do CNG
 // (ex.: NTE_INTERNAL_ERROR 0x8009002D com SHA-1). Antes de desistir, tenta:
-//  1. CNG com o DigestInfo (identificação do hash) montado aqui;
-//  2. CryptoAPI (CAPI), reabrindo a chave pelo certificado.
+//  1. CryptoAPI (CAPI), reabrindo a chave pelo certificado;
+//  2. CNG com o DigestInfo (identificação do hash) montado aqui.
+//
+// Cada tentativa vai para o fiscal.log antes de rodar (se o driver derrubar o
+// programa, o log mostra onde).
 func (wpk *winPrivateKey) Sign(rand io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
 	hash := opts.HashFunc()
 	if wpk.capiProv != 0 {
@@ -379,29 +382,33 @@ func (wpk *winPrivateKey) Sign(rand io.Reader, digest []byte, opts crypto.Signer
 	if wpk.cngHandle == 0 {
 		return nil, errors.New("bad private key")
 	}
+	log.Printf("assinatura: CNG (%v)", hash)
 	sig, err := wpk.cngSignHash(hash, digest)
 	if err == nil {
 		return sig, nil
 	}
 	errs := []string{"CNG: " + err.Error()}
 	if _, isRSA := wpk.publicKey.(*rsa.PublicKey); isRSA {
-		if prefix, ok := digestInfoPrefix[hash]; ok && len(digest) == hash.Size() {
-			sig2, err2 := wpk.cngSignRawPKCS1(append(append([]byte{}, prefix...), digest...))
-			if err2 == nil {
-				log.Printf("assinatura: CNG recusou (%v); feita pelo CNG com DigestInfo", err)
-				return sig2, nil
-			}
-			errs = append(errs, "CNG (DigestInfo): "+err2.Error())
-		}
 		if wpk.certCtx != nil {
+			log.Printf("assinatura: CNG recusou (%v); tentando CryptoAPI", err)
 			sig3, err3 := wpk.capiFallback(hash, digest)
 			if err3 == nil {
-				log.Printf("assinatura: CNG recusou (%v); feita pela CryptoAPI", err)
+				log.Printf("assinatura: feita pela CryptoAPI")
 				return sig3, nil
 			}
 			errs = append(errs, "CryptoAPI: "+err3.Error())
 		}
+		if prefix, ok := digestInfoPrefix[hash]; ok && len(digest) == hash.Size() {
+			log.Printf("assinatura: tentando CNG com DigestInfo")
+			sig2, err2 := wpk.cngSignRawPKCS1(append(append([]byte{}, prefix...), digest...))
+			if err2 == nil {
+				log.Printf("assinatura: feita pelo CNG com DigestInfo")
+				return sig2, nil
+			}
+			errs = append(errs, "CNG (DigestInfo): "+err2.Error())
+		}
 	}
+	log.Printf("assinatura: todas as tentativas falharam: %s", strings.Join(errs, " | "))
 	return nil, errors.New(strings.Join(errs, " | "))
 }
 

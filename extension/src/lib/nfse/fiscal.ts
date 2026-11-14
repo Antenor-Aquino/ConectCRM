@@ -34,11 +34,17 @@ interface FiscalResponse {
 }
 
 export class FiscalNotInstalled extends Error {}
+/** O programa abriu, mas fechou sozinho (travou) antes de responder. */
+export class FiscalCrashed extends Error {}
 
 /** Mensagens do Chrome quando o programa não está instalado/registrado. */
 function friendly(message: string): Error {
-  if (/not found|forbidden|has exited|Error when communicating/i.test(message))
+  if (/not found|forbidden/i.test(message))
     return new FiscalNotInstalled("O ConectCRM Fiscal não está instalado neste computador (ou foi removido). Instale o ConectCRMFiscal.exe e reabra o Chrome.");
+  if (/has exited|Error when communicating/i.test(message))
+    return new FiscalCrashed(
+      "O ConectCRM Fiscal fechou sozinho no meio da operação (em geral, o programa do certificado ou do token travou). Tente de novo; se repetir, envie o arquivo fiscal.log da pasta %LOCALAPPDATA%\\ConectCRM\\Fiscal.",
+    );
   return new Error(`ConectCRM Fiscal: ${message}`);
 }
 

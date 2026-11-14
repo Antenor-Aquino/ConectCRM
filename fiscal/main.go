@@ -20,11 +20,12 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"runtime/debug"
 	"strings"
 )
 
 const (
-	version   = "1.0.4"
+	version   = "1.0.5"
 	hostName  = "com.conectcrm.fiscal"
 	extOrigin = "chrome-extension://fabjbdmhpofceejnkeffkkiomoeifedj/"
 )
@@ -72,8 +73,14 @@ func withIdentity(thumb string, fn func(Identity) error) error {
 	return fmt.Errorf("certificado não encontrado neste computador (se for A3, conecte o token)")
 }
 
-func handle(req request) response {
+func handle(req request) (out response) {
 	res := response{ID: req.ID}
+	defer func() {
+		if p := recover(); p != nil {
+			log.Printf("%s: pane: %v\n%s", req.Cmd, p, debug.Stack())
+			out = response{ID: req.ID, Error: fmt.Sprintf("erro interno no ConectCRM Fiscal: %v", p)}
+		}
+	}()
 	fail := func(err error) response {
 		res.Error = err.Error()
 		log.Printf("%s: erro: %v", req.Cmd, err)
