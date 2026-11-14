@@ -364,3 +364,17 @@ restrita → reforma (NT 009). Testes validam cada um contra o esquema do seu
 ambiente (`fixtures/nfse-xsd-producao` = fev/2026; `fixtures/nfse-xsd` =
 20/10/2026). Quando a Receita levar o leiaute novo para produção, basta mudar
 `dpsLayoutFor`.
+
+## DANFSe nos documentos do cartão (0.2.117)
+
+- Nome do documento e do arquivo: `<nome do cliente no CRM> - <valor> -
+  DANFSe-NFS-e-<nº>` (ex.: "Caixa Escolar Prof. Hildebrando Pontes - 52,00 -
+  DANFSe-NFS-e-1.pdf"). O nome do cliente é o nome curto do cadastro
+  (organização ou pessoa), não a razão social.
+- O PDF é guardado no GED com o tipo "Nota fiscal" (criado se não existir),
+  ligado ao cartão e ao cliente, data = data da emissão, descrição com o nº e a
+  chave. Acontece sozinho depois de emitir pela API e ao clicar em "Baixar
+  DANFSe (PDF)" (para notas já emitidas antes desta versão).
+- Sem duplicar: o documento fica em `nfse_draft.danfse_doc_id` (migration
+  0039). Cancelada a nota, o mesmo documento ganha uma nova versão com a marca
+  "CANCELADA" (`danfse_canceled`), uma vez só.

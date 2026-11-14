@@ -10,7 +10,7 @@ import { createIssuer, markNfseCanceled, markNfseIssued, nfseDraftForCard, nfseP
 import { createPipeline } from "../src/db/pipelines";
 import { createProduct } from "../src/db/products";
 import { createUser } from "../src/db/users";
-import { many } from "../src/db/sql";
+import { many, one } from "../src/db/sql";
 import { buildDpsXml } from "../src/lib/nfse/dps";
 import { buildCancelEventXml, cancelEventId, cancelInputError } from "../src/lib/nfse/evento";
 import { brDate, brDoc, brMoney, buildDanfsePdf, danfseData, danfseFileName, parseXml, xtext } from "../src/lib/nfse/danfse";
@@ -277,5 +277,37 @@ describe("NFS-e B5 — mensagens do Native Messaging", () => {
     expect(e).toBeInstanceOf(mod.FiscalCrashed);
     expect(e.message).toContain("fechou sozinho");
     expect(e.message).toContain("%LOCALAPPDATA%\\ConectCRM\\Fiscal");
+  });
+});
+
+describe("NFS-e — DANFSe guardado no cartão (GED)", () => {
+  it("nome, tipo Nota fiscal, vínculos, sem duplicar e nova versão quando cancelada", async () => {
+    const { danfseDocumentName, saveNfseDanfse } = await import("../src/db/nfse");
+    const { db, ctx, card } = await issuedNfse();
+    const d = nfseDraftForCard(db, card);
+    expect(d.taker.shortName).toBe("Caixa Escolar");
+    const name = danfseDocumentName("Caixa Escolar Prof. Hildebrando Pontes", 5200, "1", KEY);
+    expect(name).toBe("Caixa Escolar Prof. Hildebrando Pontes - 52,00 - DANFSe-NFS-e-1");
+    expect(danfseDocumentName("A/B", 123456, null, KEY)).toBe(`A_B - 1.234,56 - DANFSe-NFS-e-${KEY}`);
+    const file = (n: string) => ({ sha256: n.repeat(64), mime: "application/pdf", size: 1000, filename: `${name}.pdf`, location: "browser" as const });
+    const docId = saveNfseDanfse(db, ctx, card, { file: file("a"), name, canceled: false });
+    expect(saveNfseDanfse(db, ctx, card, { file: file("b"), name, canceled: false })).toBe(docId); // não duplica
+    const doc = one<{ name: string; tipo: string; doc_date: string }>(db, "SELECT d.name, t.name AS tipo, d.doc_date FROM document d JOIN document_type t ON t.id = d.type_id WHERE d.id = ?", docId)!;
+    expect(doc).toMatchObject({ name, tipo: "Nota fiscal" });
+    const links = many<{ entity_type: string }>(db, "SELECT entity_type FROM document_link WHERE document_id = ? AND deleted_at IS NULL ORDER BY entity_type", docId).map((l) => l.entity_type);
+    expect(links).toEqual(["deal", "organization"]);
+    expect(nfseDraftForCard(db, card).issued?.danfse).toEqual({ documentId: docId, canceled: false });
+    // Cancelada depois: nova versão (com a marca), uma vez só.
+    markNfseCanceled(db, ctx, card, { accessKey: KEY, code: 1, reason: "Valor do serviço informado errado", eventXml: "<evento/>" });
+    expect(saveNfseDanfse(db, ctx, card, { file: file("c"), name, canceled: true })).toBe(docId);
+    saveNfseDanfse(db, ctx, card, { file: file("d"), name, canceled: true });
+    expect(one<{ n: number }>(db, "SELECT COUNT(*) AS n FROM document_version WHERE document_id = ?", docId)!.n).toBe(2);
+    expect(nfseDraftForCard(db, card).issued?.danfse).toEqual({ documentId: docId, canceled: true });
+  });
+
+  it("sem nota emitida, não guarda", async () => {
+    const { saveNfseDanfse } = await import("../src/db/nfse");
+    const { db, ctx, card } = await setup();
+    expect(() => saveNfseDanfse(db, ctx, card, { file: { sha256: "a".repeat(64), mime: "application/pdf", size: 1, filename: "x.pdf", location: "browser" }, name: "x", canceled: false })).toThrow(/não tem NFS-e/);
   });
 });

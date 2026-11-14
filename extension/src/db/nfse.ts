@@ -5,6 +5,7 @@ import { insertRow, softDelete, updateRow, type DbContext } from "./repo";
 import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
 import { isValidCnpj, isValidCpf, normalizeCnpj, optionalText, requireText, ValidationError } from "../lib/validate";
 import { municipioPorIbge, municipioPorNome, servicoNacional } from "../lib/nfse/tabelas";
+import { addDocumentVersion, contextLinks, createDocument, type FileRef } from "./documents";
 
 export type IssuerAccess = "a1" | "a3" | "govbr";
 /** Situação perante o Simples Nacional (opSimpNac): 1 não optante, 2 MEI, 3 ME/EPP. */
@@ -190,6 +191,8 @@ export interface NfseDraft {
     id: string | null;
     document: string | null;
     name: string | null;
+    /** Nome curto do cadastro no CRM (nome do arquivo do DANFSe). */
+    shortName: string | null;
     email: string | null;
     address: NfseAddress | null;
   };
@@ -217,6 +220,8 @@ export interface NfseIssued {
   xml: string | null;
   /** Cancelamento registrado (B4); null enquanto a nota vale. */
   canceled: NfseCanceled | null;
+  /** DANFSe guardado no GED (documento do cartão) e se a versão salva já mostra "CANCELADA". */
+  danfse: { documentId: string; canceled: boolean } | null;
 }
 
 export interface NfseCanceled {
@@ -307,16 +312,19 @@ export function nfseDraftForCard(
     cancel_code: number | null;
     cancel_reason: string | null;
     cancel_event_xml: string | null;
+    danfse_doc_id: string | null;
+    danfse_canceled: number;
   }>(
     db,
-    "SELECT issuer_id, description, notes, order_number, status, access_key, nfse_number, environment, issued_at, nfse_xml, canceled_at, cancel_code, cancel_reason, cancel_event_xml FROM nfse_draft WHERE card_id = ? AND deleted_at IS NULL",
+    `SELECT issuer_id, description, notes, order_number, status, access_key, nfse_number, environment, issued_at, nfse_xml, canceled_at, cancel_code, cancel_reason, cancel_event_xml,
+            danfse_doc_id, danfse_canceled FROM nfse_draft WHERE card_id = ? AND deleted_at IS NULL`,
     cardId,
   );
   if (opts.issuerId === undefined && saved?.issuer_id && issuers.some((i) => i.id === saved.issuer_id)) opts = { ...opts, issuerId: saved.issuer_id };
   const issuer = opts.issuerId ? (issuers.find((i) => i.id === opts.issuerId) ?? null) : issuers.length === 1 ? issuers[0]! : null;
   if (opts.issuerId && !issuer) throw new ValidationError("Empresa emissora não encontrada ou inativa.");
 
-  let taker: NfseDraft["taker"] = { kind: null, id: null, document: null, name: null, email: null, address: null };
+  let taker: NfseDraft["taker"] = { kind: null, id: null, document: null, name: null, shortName: null, email: null, address: null };
   if (card.organization_id) {
     const o = one<{ id: string; name: string; legal_name: string | null; cnpj: string | null; email: string | null; cep: string | null; street: string | null; number: string | null; complement: string | null; district: string | null; city: string | null; state: string | null }>(
       db,
@@ -330,6 +338,7 @@ export function nfseDraftForCard(
         id: o.id,
         document: o.cnpj,
         name: o.legal_name || o.name,
+        shortName: o.name,
         email: o.email,
         address: hasAddress
           ? { cep: o.cep, street: o.street, number: o.number, complement: o.complement, district: o.district, city: o.city, uf: o.state, cityIbge: municipioPorNome(o.city, o.state)?.ibge ?? null }
@@ -339,7 +348,7 @@ export function nfseDraftForCard(
   }
   if (!taker.kind && card.person_id) {
     const p = one<{ id: string; name: string; cpf: string | null; email: string | null }>(db, "SELECT id, name, cpf, email FROM person WHERE id = ? AND deleted_at IS NULL", card.person_id);
-    if (p) taker = { kind: "person", id: p.id, document: p.cpf, name: p.name, email: p.email, address: null };
+    if (p) taker = { kind: "person", id: p.id, document: p.cpf, name: p.name, shortName: p.name, email: p.email, address: null };
   }
 
   const items = many<{ id: string; description: string; quantity: number; total_cents: number; kind: string | null; trib: string | null; nbs: string | null; pdesc: string | null; pname: string | null }>(
@@ -423,6 +432,10 @@ export function nfseDraftForCard(
             canceled: saved.canceled_at
               ? { at: saved.canceled_at, code: saved.cancel_code, reason: saved.cancel_reason, via: saved.cancel_event_xml ? "api" : "portal" }
               : null,
+            danfse:
+              saved.danfse_doc_id && one(db, "SELECT 1 FROM document WHERE id = ? AND deleted_at IS NULL", saved.danfse_doc_id)
+                ? { documentId: saved.danfse_doc_id, canceled: !!saved.danfse_canceled }
+                : null,
           }
         : null,
   };
@@ -510,6 +523,53 @@ export function markNfseCanceled(
       body: `NFS-e${row.nfse_number ? ` nº ${row.nfse_number}` : ""} cancelada ${viaApi ? "pela API do Emissor Nacional (ConectCRM Fiscal)" : "no Emissor Nacional (registrado no ConectCRM)"}.${motivo}\nChave de acesso: ${key}`,
       document_ids: null,
     });
+  });
+}
+
+/** "Caixa Escolar Prof. Hildebrando Pontes - 52,00 - DANFSe-NFS-e-1" (nome do documento e do arquivo). */
+export function danfseDocumentName(takerShortName: string | null, totalCents: number, number: string | null, accessKey: string): string {
+  const valor = (totalCents / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const parts = [takerShortName?.trim(), valor, `DANFSe-NFS-e-${number ?? accessKey}`].filter(Boolean);
+  return parts.join(" - ").replace(/[\\/:*?"<>|]/g, "_");
+}
+
+/**
+ * Guarda o DANFSe (PDF) no GED, ligado ao cartão (e ao cliente), com o tipo
+ * "Nota fiscal". Já guardado: nada muda, a não ser que a nota tenha sido
+ * cancelada depois — aí entra uma nova versão (com a marca CANCELADA).
+ */
+export function saveNfseDanfse(db: DatabaseSync, ctx: DbContext, cardId: string, input: { file: FileRef; name: string; canceled: boolean }): string {
+  return withTransaction(db, () => {
+    const row = one<{ id: string; status: string; nfse_number: string | null; access_key: string | null; issued_at: string | null; danfse_doc_id: string | null; danfse_canceled: number }>(
+      db,
+      "SELECT id, status, nfse_number, access_key, issued_at, danfse_doc_id, danfse_canceled FROM nfse_draft WHERE card_id = ? AND deleted_at IS NULL",
+      cardId,
+    );
+    if (!row || row.status !== "issued") throw new ValidationError("Este cartão não tem NFS-e emitida.");
+    if (input.file.mime !== "application/pdf") throw new ValidationError("O DANFSe precisa ser um PDF.");
+    const existing = row.danfse_doc_id && one(db, "SELECT 1 FROM document WHERE id = ? AND deleted_at IS NULL", row.danfse_doc_id) ? row.danfse_doc_id : null;
+    if (existing) {
+      if (input.canceled && !row.danfse_canceled) {
+        addDocumentVersion(db, ctx, existing, input.file);
+        updateRow(db, ctx, "nfse_draft", row.id, { danfse_canceled: 1 });
+      }
+      return existing;
+    }
+    let typeId = one<{ id: string }>(db, "SELECT id FROM document_type WHERE name = 'Nota fiscal' COLLATE NOCASE AND deleted_at IS NULL")?.id;
+    if (!typeId) {
+      const pos = one<{ p: number | null }>(db, "SELECT MAX(position) AS p FROM document_type WHERE deleted_at IS NULL")?.p ?? -1;
+      typeId = insertRow(db, ctx, "document_type", { name: "Nota fiscal", color: "amber", valid_days: null, position: pos + 1 });
+    } else updateRow(db, ctx, "document_type", typeId, { active: 1 });
+    const docId = createDocument(db, ctx, {
+      name: input.name,
+      typeId,
+      docDate: row.issued_at ? row.issued_at.slice(0, 10) : null,
+      description: `DANFSe da NFS-e${row.nfse_number ? ` nº ${row.nfse_number}` : ""}. Chave de acesso: ${row.access_key ?? "-"}`,
+      links: contextLinks(db, "deal", cardId),
+      file: input.file,
+    });
+    updateRow(db, ctx, "nfse_draft", row.id, { danfse_doc_id: docId, danfse_canceled: input.canceled ? 1 : 0 });
+    return docId;
   });
 }
 
