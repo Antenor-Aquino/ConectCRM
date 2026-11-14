@@ -310,3 +310,17 @@ CryptoAPI passa a ser a 1ª reserva (mais compatível com provedores antigos e
 tokens); cada tentativa é registrada no `fiscal.log` antes de rodar; pane em Go
 vira erro com a pilha no log; a extensão distingue "não instalado" de "fechou
 sozinho"; o instalador renomeia o programa antigo se ele estiver em uso.
+
+**Quarto resultado real (token A3, CLAUDIA):** o `fiscal.log` mostrou que o
+token assina SHA-256 (o teste de conexão passou: HTTP 404 E2401) mas recusa
+SHA-1 por todos os caminhos (CNG: 0x8009002D; CryptoAPI também recusou); a
+tentativa de CNG sem identificar o hash derrubou o driver. Os testes rodaram
+em **produção** (nenhuma nota saiu).
+**ConectCRM Fiscal 1.0.6 / extensão 0.2.114:** se a assinatura SHA-1 falhar,
+a DPS/evento é assinada com **RSA-SHA256** (`xmldsig-more#rsa-sha256`, digest
+`xmlenc#sha256`) — o `xmldsig-core-schema` do leiaute 1.01 não fixa mais o
+algoritmo (o 1.00 fixava SHA-1); a tentativa que derrubava o driver foi
+retirada. Na extensão, emitir ou cancelar em produção exige digitar
+"PRODUÇÃO", e a janela da nota mostra um aviso vermelho quando o ambiente é
+produção. Falta confirmar na Receita (produção restrita) que a assinatura
+SHA-256 é aceita.

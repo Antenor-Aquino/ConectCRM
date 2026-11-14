@@ -1,12 +1,16 @@
 // Assinatura XMLDSig da DPS (infDPS) e do pedido de evento (infPedReg), como a
-// Sefin Nacional exige: enveloped + C14N 1.0, RSA-SHA1, digest SHA1, sem prefixo
-// de namespace, <Signature> logo depois do elemento assinado.
+// Sefin Nacional exige: enveloped + C14N 1.0, sem prefixo de namespace,
+// <Signature> logo depois do elemento assinado. Algoritmo: RSA-SHA1 (o usual);
+// se o certificado recusar SHA-1 (tokens A3 que só assinam SHA-256), RSA-SHA256
+// — o xmldsig-core-schema do leiaute 1.01 não fixa mais o algoritmo (o 1.00 fixava SHA-1).
 package main
 
 import (
 	"crypto"
 	"crypto/x509"
 	"fmt"
+	"log"
+	"strings"
 
 	"github.com/beevik/etree"
 	dsig "github.com/russellhaering/goxmldsig"
@@ -26,6 +30,20 @@ func inScopeDefaultNS(el *etree.Element) string {
 
 // signElement assina o primeiro elemento `tag` do XML e devolve o XML com a assinatura.
 func signElement(xml string, tag string, signer crypto.Signer, cert *x509.Certificate) (string, error) {
+	out, err := signElementHash(xml, tag, signer, cert, crypto.SHA1)
+	if err == nil || !strings.HasPrefix(err.Error(), "falha ao assinar") {
+		return out, err
+	}
+	log.Printf("assinatura: SHA-1 recusado pelo certificado (%v); assinando com SHA-256", err)
+	out2, err2 := signElementHash(xml, tag, signer, cert, crypto.SHA256)
+	if err2 != nil {
+		return "", fmt.Errorf("%v | com SHA-256: %v", err, err2)
+	}
+	return out2, nil
+}
+
+// signElementHash assina com o hash dado (SHA-1 ou SHA-256).
+func signElementHash(xml string, tag string, signer crypto.Signer, cert *x509.Certificate, hash crypto.Hash) (string, error) {
 	doc := etree.NewDocument()
 	doc.WriteSettings.CanonicalEndTags = true
 	if err := doc.ReadFromString(xml); err != nil {
@@ -59,11 +77,15 @@ func signElement(xml string, tag string, signer crypto.Signer, cert *x509.Certif
 	if err != nil {
 		return "", err
 	}
-	ctx.Hash = crypto.SHA1
+	ctx.Hash = hash
 	ctx.Canonicalizer = dsig.MakeC14N10RecCanonicalizer()
 	ctx.Prefix = ""
 	ctx.IdAttribute = "Id"
-	if err := ctx.SetSignatureMethod(dsig.RSASHA1SignatureMethod); err != nil {
+	method := dsig.RSASHA1SignatureMethod
+	if hash == crypto.SHA256 {
+		method = dsig.RSASHA256SignatureMethod
+	}
+	if err := ctx.SetSignatureMethod(method); err != nil {
 		return "", err
 	}
 	sig, err := ctx.ConstructSignature(cp, true)

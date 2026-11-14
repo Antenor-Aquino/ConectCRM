@@ -369,8 +369,9 @@ func (wpk *winPrivateKey) Public() crypto.PublicKey {
 // ConectCRM: alguns provedores (certificado A1 importado num provedor antigo do
 // Windows, drivers de token A3) recusam a assinatura pelo caminho normal do CNG
 // (ex.: NTE_INTERNAL_ERROR 0x8009002D com SHA-1). Antes de desistir, tenta:
-//  1. CryptoAPI (CAPI), reabrindo a chave pelo certificado;
-//  2. CNG com o DigestInfo (identificação do hash) montado aqui.
+//
+//	CryptoAPI (CAPI), reabrindo a chave pelo certificado. (A tentativa de CNG
+//	sem identificar o hash foi retirada: derrubou o driver de um token A3.)
 //
 // Cada tentativa vai para o fiscal.log antes de rodar (se o driver derrubar o
 // programa, o log mostra onde).
@@ -396,47 +397,12 @@ func (wpk *winPrivateKey) Sign(rand io.Reader, digest []byte, opts crypto.Signer
 				log.Printf("assinatura: feita pela CryptoAPI")
 				return sig3, nil
 			}
+			log.Printf("assinatura: CryptoAPI recusou (%v)", err3)
 			errs = append(errs, "CryptoAPI: "+err3.Error())
-		}
-		if prefix, ok := digestInfoPrefix[hash]; ok && len(digest) == hash.Size() {
-			log.Printf("assinatura: tentando CNG com DigestInfo")
-			sig2, err2 := wpk.cngSignRawPKCS1(append(append([]byte{}, prefix...), digest...))
-			if err2 == nil {
-				log.Printf("assinatura: feita pelo CNG com DigestInfo")
-				return sig2, nil
-			}
-			errs = append(errs, "CNG (DigestInfo): "+err2.Error())
 		}
 	}
 	log.Printf("assinatura: todas as tentativas falharam: %s", strings.Join(errs, " | "))
 	return nil, errors.New(strings.Join(errs, " | "))
-}
-
-// DigestInfo (DER) que precede o hash numa assinatura PKCS#1 v1.5.
-var digestInfoPrefix = map[crypto.Hash][]byte{
-	crypto.SHA1:   {0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x0e, 0x03, 0x02, 0x1a, 0x05, 0x00, 0x04, 0x14},
-	crypto.SHA256: {0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05, 0x00, 0x04, 0x20},
-}
-
-// cngSignRawPKCS1 assina com PKCS#1 v1.5 sem informar o algoritmo ao provedor
-// (o DigestInfo já vem no dado).
-func (wpk *winPrivateKey) cngSignRawPKCS1(data []byte) ([]byte, error) {
-	var (
-		padInfo = C.BCRYPT_PKCS1_PADDING_INFO{}
-		padPtr  = unsafe.Pointer(&padInfo)
-		dataPtr = (*C.BYTE)(&data[0])
-		dataLen = C.DWORD(len(data))
-		flags   = C.DWORD(C.BCRYPT_PAD_PKCS1)
-		sigLen  = C.DWORD(0)
-	)
-	if err := checkStatus(C.NCryptSignHash(wpk.cngHandle, padPtr, dataPtr, dataLen, nil, 0, &sigLen, flags)); err != nil {
-		return nil, errors.Wrap(err, "failed to get signature length")
-	}
-	sig := make([]byte, sigLen)
-	if err := checkStatus(C.NCryptSignHash(wpk.cngHandle, padPtr, dataPtr, dataLen, (*C.BYTE)(&sig[0]), sigLen, &sigLen, flags)); err != nil {
-		return nil, errors.Wrap(err, "failed to sign digest")
-	}
-	return sig[:sigLen], nil
 }
 
 // capiFallback reabre a chave do certificado só pela CryptoAPI e assina.

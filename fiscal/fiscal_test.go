@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -10,6 +11,7 @@ import (
 	"encoding/asn1"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"math/big"
 	"net/http"
@@ -214,5 +216,47 @@ func TestErrorCodes(t *testing.T) {
 	got := errorCodes([]byte(`{"erros":[{"Codigo":"E0712","Descricao":"x"},{"codigo":"E1235"}]}`))
 	if len(got) != 2 || got[0] != "E0712" || got[1] != "E1235" {
 		t.Fatalf("códigos: %v", got)
+	}
+}
+
+// semSHA1 imita um token A3 que só assina SHA-256 (recusa SHA-1).
+type semSHA1 struct{ k crypto.Signer }
+
+func (s semSHA1) Public() crypto.PublicKey { return s.k.Public() }
+func (s semSHA1) Sign(r io.Reader, d []byte, o crypto.SignerOpts) ([]byte, error) {
+	if o.HashFunc() == crypto.SHA1 {
+		return nil, fmt.Errorf("SECURITY_STATUS -2146893779")
+	}
+	return s.k.Sign(r, d, o)
+}
+
+func TestTokenSemSHA1AssinaComSHA256(t *testing.T) {
+	c, key, cp, _ := testCert(t)
+	dps, _ := os.ReadFile("testdata/dps.xml")
+	signed, err := signElement(string(dps), "infDPS", semSHA1{key}, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, must := range []string{
+		`<SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"`,
+		`<DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"`,
+		`</Signature></DPS>`,
+	} {
+		if !strings.Contains(signed, must) {
+			t.Fatalf("faltou %s em\n%s", must, signed)
+		}
+	}
+	if _, err := exec.LookPath("xmlsec1"); err != nil {
+		t.Skip("xmlsec1 não instalado")
+	}
+	f := filepath.Join(t.TempDir(), "assinado256.xml")
+	_ = os.WriteFile(f, []byte(signed), 0o600)
+	out, err := exec.Command("xmlsec1", "--verify", "--insecure", "--id-attr:Id", "http://www.sped.fazenda.gov.br/nfse:infDPS", "--pubkey-cert-pem", cp, f).CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "OK") {
+		t.Fatalf("xmlsec1 recusou a assinatura SHA-256: %v\n%s", err, out)
+	}
+	// Erro que não é de assinatura não dispara a 2ª tentativa.
+	if _, err := signElement("<x/>", "infDPS", semSHA1{key}, c); err == nil || strings.Contains(err.Error(), "SHA-256") {
+		t.Fatalf("erro inesperado: %v", err)
 	}
 }
