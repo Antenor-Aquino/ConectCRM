@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Ban, CheckCircle2, Download, ExternalLink, FilePlus2, FileText, Pencil, RefreshCw, RotateCcw, Save, Send, XCircle } from "lucide-react";
 import { TaButton, TaInput, TaModal, TaSelect, TaTextarea, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
-import { NFSE_LIMITS, unresolvedFields, type NfseDraft, type NfsePending } from "../../db/nfse";
+import { danfseDocumentName, NFSE_LIMITS, unresolvedFields, type NfseDraft, type NfsePending } from "../../db/nfse";
 import { formatCnpj } from "../../lib/cnpj";
 import { errorText } from "../../lib/errors";
 import { formatCents } from "../../lib/format";
@@ -18,7 +18,8 @@ import { buildPortalPayload } from "../../lib/nfse/portalSteps";
 import { buildDpsXml } from "../../lib/nfse/dps";
 import { emitViaFiscal, eventViaFiscal, nfseNumberFromXml, sefinErrors } from "../../lib/nfse/fiscal";
 import { buildCancelEventXml, CANCEL_REASON_LABEL, CANCEL_REASONS, CANCEL_TEXT_MAX, cancelInputError, type CancelReasonCode } from "../../lib/nfse/evento";
-import { buildDanfsePdf, danfseFileName } from "../../lib/nfse/danfse";
+import { buildDanfsePdf } from "../../lib/nfse/danfse";
+import { prepareFile, saveContent } from "../../lib/documentFiles";
 import { PORTAL_BASE } from "../../lib/nfse/portalSteps";
 import { OrganizationFormModal } from "../contacts/OrganizationFormModal";
 import { PersonFormModal } from "../contacts/PersonFormModal";
@@ -143,6 +144,7 @@ export function NfseDialog({ cardId, onClose, onChanged }: { cardId: string; onC
         await call("nfse.markIssued", { id: cardId, accessKey: r.accessKey, number: nfseNumberFromXml(r.nfseXml), environment: env, nfseXml: r.nfseXml ?? null, via: "api" });
         await load({ keepTexts: true });
         setMsg({ kind: "ok", text: "NFS-e emitida pela Receita e registrada no cartão." });
+        void autoStoreDanfse("NFS-e emitida pela Receita e registrada no cartão.");
         onChanged?.();
       } else {
         setApiErrors(sefinErrors(r));
@@ -167,18 +169,57 @@ export function NfseDialog({ cardId, onClose, onChanged }: { cardId: string; onC
   };
 
   /** DANFSe (PDF) gerado aqui a partir do XML da nota (NT 008). */
+  /** Gera o PDF e o nome "Cliente - 52,00 - DANFSe-NFS-e-1". */
+  const makeDanfse = async (d: NfseDraft) => {
+    const issued = d.issued!;
+    const logo = await fetch(chrome.runtime.getURL("nfse-logo.png"))
+      .then((r) => (r.ok ? r.arrayBuffer() : null))
+      .catch(() => null);
+    const pdf = await buildDanfsePdf(issued.xml!, { logoPng: logo, canceled: !!issued.canceled });
+    const total = d.services.reduce((n, x) => n + x.valueCents, 0);
+    return { pdf: pdf as Uint8Array<ArrayBuffer>, name: danfseDocumentName(d.taker.shortName ?? d.taker.name, total, issued.number, issued.accessKey) };
+  };
+
+  /**
+   * Guarda o DANFSe nos documentos do cartão (GED), se ainda não estiver lá —
+   * ou nova versão quando a nota foi cancelada depois. Devolve true se guardou agora.
+   */
+  const storeDanfse = async (made?: { pdf: Uint8Array<ArrayBuffer>; name: string }): Promise<boolean> => {
+    const { draft: d } = await call("nfse.draft", { id: cardId });
+    const issued = d.issued;
+    if (!issued?.xml) return false;
+    if (issued.danfse && (issued.danfse.canceled || !issued.canceled)) return false;
+    const { pdf, name } = made ?? (await makeDanfse(d));
+    const prepared = await prepareFile(new File([pdf], `${name}.pdf`, { type: "application/pdf" }));
+    const file = await saveContent(prepared, name);
+    await call("nfse.saveDanfse", { id: cardId, file, name, canceled: !!issued.canceled });
+    onChanged?.();
+    return true;
+  };
+
   const downloadDanfse = async () => {
-    const issued = draft?.issued;
-    if (!issued?.xml) return;
+    if (!draft?.issued?.xml) return;
     setMsg(null);
     try {
-      const logo = await fetch(chrome.runtime.getURL("nfse-logo.png"))
-        .then((r) => (r.ok ? r.arrayBuffer() : null))
-        .catch(() => null);
-      const pdf = await buildDanfsePdf(issued.xml, { logoPng: logo, canceled: !!issued.canceled });
-      saveFile(pdf as Uint8Array<ArrayBuffer>, "application/pdf", danfseFileName(issued.number, issued.accessKey));
+      const made = await makeDanfse(draft);
+      saveFile(made.pdf, "application/pdf", `${made.name}.pdf`);
+      if (await storeDanfse(made)) {
+        await load({ keepTexts: true });
+        setMsg({ kind: "ok", text: "DANFSe baixado e guardado nos documentos do cartão." });
+      }
     } catch (e) {
-      setMsg({ kind: "err", text: `Não foi possível gerar o DANFSe: ${errorText(e)}` });
+      setMsg({ kind: "err", text: `Não foi possível gerar ou guardar o DANFSe: ${errorText(e)}` });
+    }
+  };
+
+  /** Depois de emitir/cancelar: guarda o DANFSe sem travar a mensagem principal. */
+  const autoStoreDanfse = async (okText: string) => {
+    try {
+      const saved = await storeDanfse();
+      await load({ keepTexts: true });
+      setMsg({ kind: "ok", text: saved ? `${okText} DANFSe guardado nos documentos do cartão.` : okText });
+    } catch (e) {
+      setMsg({ kind: "err", text: `${okText} Mas não foi possível guardar o DANFSe: ${errorText(e)}` });
     }
   };
 
@@ -211,6 +252,7 @@ export function NfseDialog({ cardId, onClose, onChanged }: { cardId: string; onC
         setCancelOpen(false);
         await load({ keepTexts: true });
         setMsg({ kind: "ok", text: "NFS-e cancelada na Receita. O registro está nas notas do cartão." });
+        void autoStoreDanfse("NFS-e cancelada na Receita. O registro está nas notas do cartão.");
         onChanged?.();
       } else {
         setApiErrors(sefinErrors(result));

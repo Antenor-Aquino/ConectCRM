@@ -937,6 +937,10 @@ export const methods = {
     if (!deals.getCard(db, p.id, viewer(db, ctx))) throw new ValidationError("Cartão não encontrado.");
     nfse.markNfseCanceled(db, ctx, p.id, p);
   },
+  "nfse.saveDanfse": (db: DatabaseSync, ctx: DbContext, p: Id & { file: docs.FileRef; name: string; canceled: boolean }) => {
+    if (!deals.getCard(db, p.id, viewer(db, ctx))) throw new ValidationError("Cartão não encontrado.");
+    return nfse.saveNfseDanfse(db, ctx, p.id, p);
+  },
   "nfse.reopen": (db: DatabaseSync, ctx: DbContext, p: Id) => {
     if (!deals.getCard(db, p.id, viewer(db, ctx))) throw new ValidationError("Cartão não encontrado.");
     nfse.reopenNfseDraft(db, ctx, p.id);
