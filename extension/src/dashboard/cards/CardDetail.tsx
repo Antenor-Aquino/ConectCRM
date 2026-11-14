@@ -25,6 +25,9 @@ import {
   Trophy,
   X,
   XCircle, Repeat, ListTodo, GitMerge, Receipt } from "lucide-react";
+  XCircle, Repeat, ListTodo, GitMerge, CalendarDays } from "lucide-react";
+import { openUnifiedAgenda } from "../../lib/unifiedAgenda";
+import { CalendlyLinkButton } from "./CalendlyLinkButton";
 import { MergeDialog } from "../ui/MergeDialog";
 import { TODO_CHANGED_EVENT } from "../todo/useTodoBadge";
 import { TaBadge, TaButton, TaInput, TaModal, TaTextarea, cn } from "@tailadmin";
@@ -228,7 +231,15 @@ function CardDetailInner({
 
   const outcome = OUTCOME_TEXT[pipeline.type];
   const status = card.status === "open" ? null : { color: card.status === "won" ? ("green" as const) : ("red" as const), label: outcome[card.status] };
-  const person: ComboItem | null = card.person_id ? { id: card.person_id, label: card.person_name ?? "" } : null;
+  const primaryContact = card.contacts.find((c) => c.is_primary);
+  // Telefone e e-mail do contato principal, embaixo do nome.
+  const person: ComboItem | null = card.person_id
+    ? {
+        id: card.person_id,
+        label: card.person_name ?? "",
+        sublabel: [formatPhone(primaryContact?.phone), primaryContact?.email].filter(Boolean).join(" · ") || null,
+      }
+    : null;
   const others = card.contacts.filter((c) => !c.is_primary);
   const primary = card.contacts.find((c) => c.is_primary);
   const org: ComboItem | null = card.organization_id ? { id: card.organization_id, label: card.organization_name ?? "" } : null;
@@ -245,7 +256,7 @@ function CardDetailInner({
   return (
     <Shell onClose={onClose} mode={mode} onToggleMode={onToggleMode} ticketNumber={card.kind === "ticket" ? card.ticket_number : null} cardId={card.id}>
       {/* Cabeçalho */}
-      <div className={cn("flex items-start gap-3", onToggleMode ? "pr-20" : "pr-8")}>
+      <div className={cn("flex items-start gap-3", onToggleMode ? "pr-60" : "pr-48")}>
         <input
           className="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-theme-xl font-semibold text-gray-800 hover:border-gray-200 focus:border-brand-300 focus:outline-none dark:text-white/90"
           value={title}
@@ -339,6 +350,7 @@ function CardDetailInner({
         <TaButton variant="ghost" startIcon={<Receipt size={15} />} data-card-nfse title="Preparar a nota fiscal de serviço deste cartão" onClick={() => setNfseOpen(true)}>
           Nota fiscal
         </TaButton>
+        <CalendlyLinkButton cardId={cardId} pipelineId={card.pipeline_id} personId={card.person_id ?? null} />
         <TaButton variant="ghost" startIcon={<GitMerge size={15} />} data-card-merge title={`Juntar este ${text.noun} com outro duplicado`} onClick={() => setMerging(true)}>
           Mesclar
         </TaButton>
@@ -481,6 +493,7 @@ function CardDetailInner({
               createLabel="Criar contato"
               onOpenValue={(i) => setEditing({ kind: "person", id: i.id })}
               openTitle="Editar o cadastro do contato"
+              sublabelBelow
               valueActions={
                 primary && (primary.phone || primary.email) ? (
                   <span className="flex items-center gap-2.5 pr-1" data-primary-contact-actions>
@@ -944,6 +957,15 @@ function Shell({
   const buttons = (
     <div className="absolute right-5 top-5 flex flex-col items-end gap-1.5">
       <div className="flex gap-1.5">
+        <button
+          type="button"
+          onClick={() => void openUnifiedAgenda()}
+          title="Abrir a Agenda Unificada (Google e Outlook juntos)"
+          data-unified-agenda
+          className="flex h-8 items-center gap-1.5 rounded-lg bg-gray-100 px-2.5 text-theme-xs font-medium text-gray-600 hover:bg-gray-200 hover:text-brand-600 dark:bg-white/5 dark:text-gray-300"
+        >
+          <CalendarDays size={15} /> Agenda Unificada
+        </button>
         {onToggleMode && (
           <button
             type="button"

@@ -193,3 +193,38 @@ contando da conclusão, na hora do início. A frase da regra aparece embaixo
   terminam nele —, sem as atrasadas nem as em andamento de dias anteriores
   (mesma regra do cartão "Para hoje"; filtro `dayOnly`). Semana, mês, todas e
   personalizado continuam mostrando também o que está em aberto no período.
+
+## Agenda Unificada e "Adicionar à agenda" (0.2.96)
+
+- **Atalho "Agenda Unificada"** no cabeçalho do cartão: abre (ou foca) a
+  extensão Agenda Unificada (`chrome-extension://kliknamdgccgfoglbehcjmlpmdojcamm/dashboard.html`),
+  que mostra juntas as agendas do Google e do Outlook.
+- **"Adicionar à agenda"** (chave logo abaixo dos Lembretes) em **qualquer
+  atividade** (antes, só em reuniões): escolhe Google Agenda ou Outlook e a
+  **agenda** — a principal, as próprias e as **compartilhadas com permissão de
+  edição** (lembra a última escolhida). Ao salvar, o evento é criado nessa
+  agenda e aparece na Agenda Unificada. Reuniões continuam com convidados,
+  link do Meet/Teams e horários livres; nelas a chave já vem ligada quando a
+  conta está conectada. Atividades recorrentes não criam evento.
+- Google Agenda só funciona com o Client ID do Google configurado no
+  manifesto (`oauth2.client_id`); sem ele, a tela avisa. O Outlook já está
+  configurado.
+- Código: `lib/calendar.ts` (`listCalendars`, `calendarId` em
+  `createCalendarEvent`), `lib/unifiedAgenda.ts`, `TaskModal.tsx`.
+
+## Várias contas Google (0.2.97)
+
+- No "Adicionar à agenda" com **Google Agenda**: botão **"Conectar" / "+ Conta
+  Google"** — cada conta entra pela janela de login do Google (independente da
+  conta do Chrome). As contas conectadas aparecem como etiquetas (o ✕
+  desconecta). No campo **Agenda**, as agendas de todas as contas, agrupadas
+  pela conta (ex.: antenor@stepple.com.br › Agenda principal, Comercial;
+  antenor@powercubus.com.br › Agenda principal, Implantações). O evento vai
+  para a conta e a agenda escolhidas; "Ver horários livres" usa a conta da
+  agenda escolhida.
+- O acesso vale 1 hora e é renovado em silêncio; se o Google pedir, abre a
+  janela de login daquela conta ao salvar.
+- Configuração: OAuth Client do tipo **"Aplicativo da Web"** no Google Cloud,
+  com o redirect `https://fabjbdmhpofceejnkeffkkiomoeifedj.chromiumapp.org/google`;
+  o Client ID vai em `GOOGLE_WEB_CLIENT_ID` (`lib/calendar.ts`). Sem ele,
+  continua o modo antigo (conta do Chrome, Client ID do manifesto).

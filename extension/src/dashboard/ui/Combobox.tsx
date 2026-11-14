@@ -25,6 +25,7 @@ export function Combobox({
   onOpenValue,
   openTitle = "Abrir o cadastro",
   valueActions,
+  sublabelBelow,
 }: {
   value: ComboItem | null;
   onChange: (item: ComboItem | null) => void;
@@ -41,6 +42,8 @@ export function Combobox({
   openTitle?: string;
   /** Botões extras ao lado do valor escolhido (ex.: WhatsApp e e-mail do contato). */
   valueActions?: ReactNode;
+  /** Com valor: a linha secundária (ex.: telefone e e-mail do contato) fica embaixo do nome. */
+  sublabelBelow?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
@@ -66,18 +69,25 @@ export function Combobox({
   };
 
   const trigger = value ? (
-    <div className={cn(inputClass, "flex items-center gap-2")}>
+    <div className={cn(inputClass, "flex items-center gap-2", sublabelBelow && value.sublabel && "h-auto min-h-10 py-1.5")}>
       {value.icon}
       {onOpenValue ? (
         <>
           <button
             type="button"
             title={openTitle}
-            className="group flex min-w-0 flex-1 items-center gap-1.5 text-left text-brand-600 dark:text-brand-400"
+            className={cn(
+              "group flex min-w-0 flex-1 gap-1.5 text-left text-brand-600 dark:text-brand-400",
+              sublabelBelow && value.sublabel ? "flex-col items-start gap-0" : "items-center",
+            )}
             onClick={() => onOpenValue(value)}
           >
-            <span className="truncate group-hover:underline">{value.label}</span>
-            {value.sublabel && <span className="truncate text-theme-xs text-gray-400">{value.sublabel}</span>}
+            <span className={cn("truncate group-hover:underline", sublabelBelow && "max-w-full")}>{value.label}</span>
+            {value.sublabel && (
+              <span className={cn("truncate text-theme-xs", sublabelBelow ? "max-w-full text-gray-500 dark:text-gray-400" : "text-gray-400")} data-combo-sublabel title={value.sublabel}>
+                {value.sublabel}
+              </span>
+            )}
             <Pencil size={12} className="shrink-0 opacity-0 transition group-hover:opacity-70" />
           </button>
           {valueActions}
