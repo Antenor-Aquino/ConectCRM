@@ -97,7 +97,9 @@ export function importCalendlyBookings(db: DatabaseSync, ctx: DbContext, booking
         "SELECT id, local_id FROM external_ref WHERE provider = 'calendly' AND entity_type = 'activity' AND external_id = ? AND deleted_at IS NULL",
         b.eventUri,
       );
-      const act = ref ? one<{ id: string; title: string; due_at: string; done: number }>(db, "SELECT id, title, due_at, done FROM activity WHERE id = ? AND deleted_at IS NULL", ref.local_id) : undefined;
+      const act = ref
+        ? one<{ id: string; title: string; due_at: string; done: number; meeting_url: string | null }>(db, "SELECT id, title, due_at, done, meeting_url FROM activity WHERE id = ? AND deleted_at IS NULL", ref.local_id)
+        : undefined;
       if (b.status === "canceled") {
         // Cancelado antes de o CRM ver: nada a fazer.
         if (!act || act.title.startsWith(CANCELED_PREFIX) || act.title.startsWith(RESCHEDULED_PREFIX)) continue;
@@ -108,6 +110,8 @@ export function importCalendlyBookings(db: DatabaseSync, ctx: DbContext, booking
         continue;
       }
       if (act) {
+        // Link da reunião que o Calendly só gerou depois.
+        if (b.joinUrl && !act.meeting_url) updateActivity(db, ctx, act.id, { meetingUrl: b.joinUrl });
         if (act.due_at !== new Date(b.start).toISOString()) {
           updateActivity(db, ctx, act.id, { dueAt: b.start, durationMin: minutesBetween(b.start, b.end) });
           out.updated++;
@@ -173,4 +177,10 @@ export function importCalendlyBookings(db: DatabaseSync, ctx: DbContext, booking
     }
   });
   return out;
+}
+
+/** Liga a atividade salva na janela ao agendamento que ela achou (sem duplicar). */
+export function linkCalendlyEvent(db: DatabaseSync, ctx: DbContext, activityId: string, eventUri: string): void {
+  if (one(db, "SELECT 1 FROM external_ref WHERE provider = 'calendly' AND entity_type = 'activity' AND external_id = ? AND deleted_at IS NULL", eventUri)) return;
+  linkRef(db, ctx, eventUri, activityId);
 }

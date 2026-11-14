@@ -2,16 +2,28 @@
 // campos personalizados e anexos; direita = Tipo, Responsável, Início
 // (duração/lembrete), Finalização (opcional), Vinculado a e Tags.
 // Tipos de reunião podem criar o evento no Google Agenda / Outlook.
+import { confirmActivityDelete } from "./confirmDelete";
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Briefcase, Check, ChevronDown, Circle, Copy, Link2, MessageCircle, Minus, Paperclip, Pencil, Trash2, User, Video, X } from "lucide-react";
+import { Briefcase, Check, ChevronDown, Circle, Copy, ExternalLink, Link2, MessageCircle, Minus, Paperclip, Pencil, Trash2, User, Video, X } from "lucide-react";
 import { TaButton, TaInput, TaModal, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { Activity, ActivityType } from "../../db/activities";
 import type { CustomField, CustomValue } from "../../db/customFields";
 import { ActivityIcon } from "../../lib/activityIcons";
 import { PROVIDER_LABEL } from "../../lib/calendar";
-import { accountForPipeline, bookingLink, loadCalendly, type CalendlySettings } from "../../lib/calendly";
+import {
+  accountForPipeline,
+  bookingLink,
+  findDraftBooking,
+  loadCalendly,
+  newDraftKey,
+  refreshCalendlyAccount,
+  rememberCalendlyDraft,
+  saveCalendly,
+  type CalendlySettings,
+} from "../../lib/calendly";
+import type { CalendlyBooking } from "../../db/calendly";
 import { useSession } from "../session";
 import { Avatar } from "../ui/Avatar";
 import { Combobox, type ComboItem } from "../ui/Combobox";
@@ -188,6 +200,11 @@ export function TaskModal({
   const [calAccount, setCalAccount] = useState("");
   const [calType, setCalType] = useState("");
   const [fromCalendly, setFromCalendly] = useState(false);
+  /** Chave do link aberto, quando foi aberto e o agendamento achado. */
+  const [calDraft, setCalDraft] = useState<string | null>(null);
+  const [calSince, setCalSince] = useState("");
+  const [calBooking, setCalBooking] = useState<CalendlyBooking | null>(null);
+  const [calMsg, setCalMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   // Recorrência: a regra (null = não repete), a série da atividade aberta e a pergunta "só esta / próximas / todas".
@@ -328,6 +345,64 @@ export function TaskModal({
     const p = await call("persons.get", { id: pid });
     return p ? { name: p.name, email: p.email ?? null, phone: p.phone ?? null } : null;
   }
+
+  /** Abre o Calendly com o lead preenchido (nome, e-mail, celular) e passa a esperar o agendamento. */
+  async function openCalendly() {
+    if (!calendly || !calAcc || !calLink) return;
+    setCalMsg(null);
+    let link = calLink;
+    // Link sem a posição da pergunta de celular (conta conectada antes da 0.2.100): atualiza agora.
+    if (link.phoneParam === undefined) {
+      try {
+        const fresh = await refreshCalendlyAccount(calAcc);
+        const next = { ...calendly, accounts: calendly.accounts.map((a) => (a.email === fresh.email ? fresh : a)) };
+        await saveCalendly(next);
+        setCalendly(next);
+        link = fresh.eventTypes.find((t) => t.uri === link.uri) ?? link;
+      } catch {
+        /* abre sem o celular */
+      }
+    }
+    const key = calDraft ?? newDraftKey();
+    setCalDraft(key);
+    setCalSince(new Date().toISOString());
+    setCalBooking(null);
+    const person = await calendlyPerson();
+    void chrome.tabs.create({
+      url: bookingLink(link.url, { name: person?.name, email: person?.email, phone: person?.phone, phoneParam: link.phoneParam, dealId: linkDealId, activityId: key }),
+    });
+  }
+
+  // Espera o agendamento: a cada 5 s (e ao voltar para esta aba), por até 30 min.
+  // Achou: início, duração e link da reunião vêm para a atividade.
+  useEffect(() => {
+    if (!calOn || !calDraft || !calAcc) return;
+    if (calBooking?.joinUrl) return;
+    let stop = false;
+    const started = Date.now();
+    const look = async () => {
+      if (stop || Date.now() - started > 30 * 60_000) return;
+      try {
+        const b = await findDraftBooking(calAcc, calDraft, calSince);
+        if (!b || stop) return;
+        setCalBooking(b);
+        setWhen(new Date(b.start));
+        setDuration(Math.max(5, Math.round((new Date(b.end).getTime() - new Date(b.start).getTime()) / 60_000)));
+        if (b.joinUrl) setMeetingUrl(b.joinUrl);
+        setTitle((t) => t || `${b.eventName} — ${b.invitee.name}`);
+      } catch (e) {
+        setCalMsg(errorText(e));
+      }
+    };
+    void look();
+    const t = setInterval(() => void look(), 5000);
+    window.addEventListener("focus", look);
+    return () => {
+      stop = true;
+      clearInterval(t);
+      window.removeEventListener("focus", look);
+    };
+  }, [calOn, calDraft, calSince, calAccount, calBooking?.joinUrl]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!loaded) return;
     void call("contactMessages.context", { activityId: sourceId ?? null, personId: personForContact, dealId: linkDealId }).then((c) => {
@@ -472,10 +547,14 @@ export function TaskModal({
       setSaving(false);
       return;
     }
-    if (canCalendly && calOn && calLink) {
-      // Abre o Calendly com o contato preenchido; o horário escolhido lá volta para esta atividade.
-      const person = await calendlyPerson();
-      void chrome.tabs.create({ url: bookingLink(calLink.url, { name: person?.name, email: person?.email, phone: person?.phone, phoneParam: calLink.phoneParam, dealId: linkDealId, activityId: id }) });
+    // Calendly: liga ao agendamento achado; senão, guarda a chave para ligar quando o lead marcar.
+    if (canCalendly && calOn && calDraft && id) {
+      try {
+        if (calBooking) await call("calendly.link", { activityId: id, eventUri: calBooking.eventUri });
+        else await rememberCalendlyDraft(calDraft, id);
+      } catch {
+        /* a leitura do Calendly liga depois */
+      }
     }
     setSaving(false);
     // Arquivos escolhidos na tarefa nova: a janela Novo documento abre agora,
@@ -731,6 +810,69 @@ export function TaskModal({
                   <ChevronDown size={14} className="pointer-events-none absolute right-3 top-3 text-gray-400" />
                 </div>
               </Field>
+              {canCalendly && (
+                <div className="mb-4 rounded-lg border border-gray-200 p-2.5 dark:border-gray-800" data-calendly-toggle>
+                  <div className="flex items-center gap-2.5">
+                    <Switch checked={calOn} onChange={setCalOn} />
+                    <span className="min-w-0 flex-1 text-theme-sm font-medium text-gray-800 dark:text-white/90">Agendar pelo Calendly</span>
+                  </div>
+                  <p className="mt-1 text-theme-xs text-gray-500">Marque no Calendly; início, duração e link da reunião vêm para cá.</p>
+                  {calOn && calendly && (
+                    <div className="mt-2 space-y-2">
+                      {calendly.accounts.length > 1 && (
+                        <select
+                          data-calendly-account
+                          className="h-9 w-full rounded-lg border border-gray-300 bg-white px-2 text-theme-sm dark:border-gray-700 dark:bg-gray-900"
+                          value={calAccount}
+                          onChange={(e) => {
+                            const a = calendly.accounts.find((x) => x.email === e.target.value)!;
+                            setCalAccount(a.email);
+                            setCalType(a.eventTypeUri ?? a.eventTypes[0]?.uri ?? "");
+                          }}
+                        >
+                          {calendly.accounts.map((a) => (
+                            <option key={a.email} value={a.email}>
+                              {a.email}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      <div className="flex gap-2">
+                        <select
+                          data-calendly-type
+                          className="h-9 min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-2 text-theme-sm dark:border-gray-700 dark:bg-gray-900"
+                          value={calLink?.uri ?? ""}
+                          onChange={(e) => setCalType(e.target.value)}
+                        >
+                          {!calAcc?.eventTypes.length && <option value="">Nenhum link ativo nesta conta</option>}
+                          {calAcc?.eventTypes.map((t) => (
+                            <option key={t.uri} value={t.uri}>
+                              {t.name} ({t.duration} min)
+                            </option>
+                          ))}
+                        </select>
+                        <TaButton size="sm" variant="primary" className="whitespace-nowrap" startIcon={<ExternalLink size={14} />} disabled={!calLink} onClick={() => void openCalendly()} data-calendly-open>
+                          Abrir Calendly
+                        </TaButton>
+                      </div>
+                    </div>
+                  )}
+                  {calOn && calBooking && (
+                    <p className="mt-2 rounded-lg bg-success-50 px-2.5 py-1.5 text-theme-xs text-success-700 dark:bg-success-500/10" data-calendly-booked>
+                      Agendado no Calendly:{" "}
+                      {new Date(calBooking.start).toLocaleString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} ·{" "}
+                      {Math.round((new Date(calBooking.end).getTime() - new Date(calBooking.start).getTime()) / 60_000)} min
+                      {calBooking.joinUrl ? " · link da reunião preenchido" : " · link da reunião ainda não gerado (vem sozinho depois)"}. Clique em Salvar.
+                    </p>
+                  )}
+                  {calOn && calDraft && !calBooking && (
+                    <p className="mt-2 text-theme-xs text-gray-500" data-calendly-waiting>
+                      Aguardando o agendamento no Calendly… Pode salvar antes: quando o lead marcar, o horário vem para esta atividade.
+                    </p>
+                  )}
+                  {calMsg && <p className="mt-2 text-theme-xs text-error-600">{calMsg}</p>}
+                </div>
+              )}
               <Field label="Início" hint="Padrão: o momento do cadastro. Pode ser uma data futura.">
                 <WhenPicker
                   value={when}
@@ -777,54 +919,6 @@ export function TaskModal({
                   ready={notify ? (Object.fromEntries(ACTIVE_CHANNELS.map((c) => [c, channelReady(notify, c)])) as Record<Channel, boolean>) : undefined}
                 />
                 {deliveries.length > 0 && <DeliveryLog list={deliveries} />}
-                {canCalendly && (
-                  <div className="mt-3 rounded-lg border border-gray-200 p-2.5 dark:border-gray-800" data-calendly-toggle>
-                    <label className="flex items-start gap-2.5 text-theme-sm text-gray-700 dark:text-gray-300">
-                      <Switch checked={calOn} onChange={setCalOn} />
-                      <span>
-                        Agendar pelo Calendly
-                        <span className="block text-theme-xs text-gray-500">
-                          Ao salvar, o Calendly abre com o nome, o e-mail e o celular do lead preenchidos. O horário marcado lá atualiza esta atividade.
-                        </span>
-                      </span>
-                    </label>
-                    {calOn && calendly && (
-                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                        {calendly.accounts.length > 1 && (
-                          <select
-                            data-calendly-account
-                            className="h-9 rounded-lg border border-gray-300 bg-white px-2 text-theme-sm dark:border-gray-700 dark:bg-gray-900"
-                            value={calAccount}
-                            onChange={(e) => {
-                              const a = calendly.accounts.find((x) => x.email === e.target.value)!;
-                              setCalAccount(a.email);
-                              setCalType(a.eventTypeUri ?? a.eventTypes[0]?.uri ?? "");
-                            }}
-                          >
-                            {calendly.accounts.map((a) => (
-                              <option key={a.email} value={a.email}>
-                                {a.email}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                        <select
-                          data-calendly-type
-                          className={cn("h-9 rounded-lg border border-gray-300 bg-white px-2 text-theme-sm dark:border-gray-700 dark:bg-gray-900", calendly.accounts.length > 1 ? "" : "sm:col-span-2")}
-                          value={calLink?.uri ?? ""}
-                          onChange={(e) => setCalType(e.target.value)}
-                        >
-                          {!calAcc?.eventTypes.length && <option value="">Nenhum link ativo nesta conta</option>}
-                          {calAcc?.eventTypes.map((t) => (
-                            <option key={t.uri} value={t.uri}>
-                              {t.name} ({t.duration} min)
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-                  </div>
-                )}
                 <div className="mt-3 rounded-lg border border-gray-200 p-2.5 dark:border-gray-800" data-contact-toggle>
                   <label className={cn("flex items-start gap-2.5 text-theme-sm text-gray-700 dark:text-gray-300", !withPhone.length && !contactOn && "opacity-60")}>
                     <Switch checked={contactOn} disabled={(!withPhone.length && !contactOn) || contactSent} onChange={setContactOn} />
@@ -883,7 +977,7 @@ export function TaskModal({
           <ErrorText>{error}</ErrorText>
           <div className="mt-6 flex items-center gap-2 border-t border-gray-100 pt-4 dark:border-gray-800">
             <TaButton variant="primary" size="md" disabled={saving || !title.trim()} onClick={() => void save()} data-task-save>
-              {canCalendly && calOn && calLink ? "Salvar e abrir o Calendly" : "Salvar"}
+              Salvar
             </TaButton>
             <TaButton size="md" onClick={requestClose}>
               Cancelar
@@ -926,7 +1020,7 @@ export function TaskModal({
                 startIcon={<Trash2 size={15} />}
                 onClick={async () => {
                   if (series) return setAskScope("delete");
-                  if (!confirm("Excluir esta atividade? Vai para a lixeira, de onde pode ser restaurado.")) return;
+                  if (!(await confirmActivityDelete(request.id!))) return;
                   await call("activities.delete", { id: request.id! });
                   onSaved();
                 }}

@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { CalendarPlus, Check, Copy, MessageCircle } from "lucide-react";
 import { TaButton, TaModal, TaSelect } from "@tailadmin";
 import { call } from "../../rpc/client";
-import { accountForPipeline, bookingLink, loadCalendly, type CalendlySettings } from "../../lib/calendly";
+import { accountForPipeline, bookingLink, loadCalendly, refreshCalendlyAccount, saveCalendly, type CalendlySettings } from "../../lib/calendly";
 
 export function CalendlyLinkButton({ cardId, pipelineId, personId }: { cardId: string; pipelineId: string; personId: string | null }) {
   const [s, setS] = useState<CalendlySettings | null>(null);
@@ -30,6 +30,15 @@ export function CalendlyLinkButton({ cardId, pipelineId, personId }: { cardId: s
     setTypeUri(acc.eventTypeUri ?? acc.eventTypes[0]?.uri ?? "");
     setCopied(false);
     setOpen(true);
+    // Conta conectada antes da 0.2.100: descobre agora a pergunta de celular dos links.
+    if (acc.token && acc.eventTypes.some((t) => t.phoneParam === undefined))
+      void refreshCalendlyAccount(acc)
+        .then(async (fresh) => {
+          const next = { ...s, accounts: s.accounts.map((a) => (a.email === fresh.email ? fresh : a)) };
+          await saveCalendly(next);
+          setS(next);
+        })
+        .catch(() => undefined);
   };
   const acc = s.accounts.find((a) => a.email === account);
   const type = acc?.eventTypes.find((t) => t.uri === typeUri) ?? acc?.eventTypes[0];
