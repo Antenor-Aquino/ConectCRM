@@ -324,3 +324,12 @@ retirada. Na extensão, emitir ou cancelar em produção exige digitar
 "PRODUÇÃO", e a janela da nota mostra um aviso vermelho quando o ambiente é
 produção. Falta confirmar na Receita (produção restrita) que a assinatura
 SHA-256 é aceita.
+
+**Quinto resultado real (token A3, produção restrita):** SHA-256 também
+recusado (0x8009002D) na assinatura do XML — mas o mesmo token assina
+SHA-256 no TLS do teste de conexão. Diferença: o XML era assinado antes de
+qualquer conexão, na thread principal. **ConectCRM Fiscal 1.0.7:** emissão e
+cancelamento primeiro abrem a conexão com certificado (GET de uma chave
+inexistente — o token pede o PIN e abre a sessão), depois assinam o XML numa
+thread própria do sistema e enviam pela mesma conexão; o log registra a
+abertura da sessão e o tempo da assinatura.

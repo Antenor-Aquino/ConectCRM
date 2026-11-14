@@ -11,9 +11,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
+	"runtime"
+	"strings"
 	"time"
 )
 
@@ -168,19 +171,15 @@ func emitDPS(id Identity, env, dpsXML string) (*SefinResult, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	signer, err := id.Signer()
+	c, err := httpClient(id)
 	if err != nil {
 		return nil, "", err
 	}
-	signed, err := signElement(dpsXML, "infDPS", signer, id.Certificate())
+	signed, err := signAfterSession(c, base, id, dpsXML, "infDPS")
 	if err != nil {
 		return nil, "", err
 	}
 	payload, err := gzipB64(signed)
-	if err != nil {
-		return nil, "", err
-	}
-	c, err := httpClient(id)
 	if err != nil {
 		return nil, "", err
 	}
@@ -207,11 +206,11 @@ func sendEvent(id Identity, env, key, eventXML string) (*SefinResult, string, er
 	if err != nil {
 		return nil, "", err
 	}
-	signer, err := id.Signer()
+	c, err := httpClient(id)
 	if err != nil {
 		return nil, "", err
 	}
-	signed, err := signElement(eventXML, "infPedReg", signer, id.Certificate())
+	signed, err := signAfterSession(c, base, id, eventXML, "infPedReg")
 	if err != nil {
 		return nil, "", err
 	}
@@ -219,10 +218,44 @@ func sendEvent(id Identity, env, key, eventXML string) (*SefinResult, string, er
 	if err != nil {
 		return nil, "", err
 	}
-	c, err := httpClient(id)
-	if err != nil {
-		return nil, "", err
-	}
 	r, err := doJSON(c, http.MethodPost, base+"/nfse/"+url.PathEscape(key)+"/eventos", map[string]string{"pedidoRegistroEventoXmlGZipB64": payload})
 	return r, signed, err
+}
+
+// signAfterSession assina o XML do jeito que funcionou com o token A3 no teste
+// de conexão: primeiro abre a conexão com certificado (é aqui que o token pede o
+// PIN e abre a sessão), depois assina numa thread própria do sistema. Assinar
+// antes de qualquer conexão, na thread principal, foi recusado por um token
+// (NTE_INTERNAL_ERROR 0x8009002D) que assinava normalmente na conexão.
+func signAfterSession(c *http.Client, base string, id Identity, xml, tag string) (string, error) {
+	t0 := time.Now()
+	r, err := doJSON(c, http.MethodGet, base+"/nfse/"+strings.Repeat("0", 50), nil)
+	if err != nil {
+		return "", err
+	}
+	log.Printf("sessão com a Sefin aberta (HTTP %d, %v)", r.HTTPStatus, time.Since(t0).Round(time.Millisecond))
+	signer, err := id.Signer()
+	if err != nil {
+		return "", err
+	}
+	type result struct {
+		xml string
+		err error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+		defer func() {
+			if p := recover(); p != nil {
+				ch <- result{err: fmt.Errorf("erro interno ao assinar: %v", p)}
+			}
+		}()
+		t1 := time.Now()
+		out, err := signElement(xml, tag, signer, id.Certificate())
+		log.Printf("assinatura de %s: %v (%v)", tag, map[bool]string{true: "ok", false: "falhou"}[err == nil], time.Since(t1).Round(time.Millisecond))
+		ch <- result{out, err}
+	}()
+	res := <-ch
+	return res.xml, res.err
 }
