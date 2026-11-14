@@ -25,6 +25,8 @@ export interface LaunchPreset {
   amountCents: number;
   notes: string;
   dueDate: string | null;
+  /** Pedido do CRM (order_nsu da cobrança): vai no lançamento, para achá-lo depois. */
+  requestId?: string | null;
 }
 
 /** "aaaa-mm-dd" → "dd/mm/aaaa" (sem fuso: é data, não instante). */
@@ -172,6 +174,7 @@ export function FinanceTab({
         editTxId: edit?.id ?? null,
         notes: opts.preset?.notes ?? (mode === "income" && !edit ? itemsNotes(items ?? []) : null),
         dueDate: opts.preset?.dueDate ?? null,
+        requestId: opts.preset?.requestId ?? null,
       });
       if (!edit) setPending({ mode, before: (data?.entries ?? []).filter((e) => e.type === mode).length, closed: false });
     } catch (e) {

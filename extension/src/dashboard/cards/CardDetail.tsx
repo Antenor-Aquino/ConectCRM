@@ -126,6 +126,8 @@ function CardDetailInner({
   // Ao marcar como ganho: abrir já a receita na Gestão Financeira.
   const [launchIncome, setLaunchIncome] = useState<false | "card" | "custom" | LaunchPreset>(false);
   const [chargeOpen, setChargeOpen] = useState(false);
+  /** Muda quando uma cobrança mexe na Gestão Financeira: a aba Financeiro lê de novo. */
+  const [financeKey, setFinanceKey] = useState(0);
   // Ganhou/concluiu com valor: pergunta se registra no financeiro (pode não receber o valor todo).
   const [askFinance, setAskFinance] = useState(false);
   // Aba Financeiro e resultado só com a integração com a Gestão Financeira ativada.
@@ -712,6 +714,7 @@ function CardDetailInner({
           {tab === "documentos" && <DocumentsPanel type="deal" id={cardId} onChanged={recount} />}
           {gfActive && tab === "financeiro" && (
             <FinanceTab
+              key={financeKey}
               cardId={cardId}
               title={card.title}
               valueCents={card.value_cents}
@@ -770,6 +773,7 @@ function CardDetailInner({
           onChanged={() => {
             onChanged();
             recount();
+            if (tab === "financeiro") setFinanceKey((k) => k + 1);
           }}
           onLaunchFinance={(preset) => {
             setTab("financeiro");

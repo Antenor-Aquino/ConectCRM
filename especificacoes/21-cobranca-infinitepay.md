@@ -37,9 +37,24 @@ cartão e já lança a **receita** correspondente na Gestão Financeira.
    <título>", valor, vencimento, cliente e observações com link, pedido e
    itens. No modo pacote, vira um pedido de receita com os mesmos dados.
    O usuário confere categoria/conta e salva.
-4. Lista de cobranças do cartão: copiar link, "Marcar como paga", "Cancelar"
-   (só no CRM — o link continua ativo na InfinitePay), "Reabrir".
+4. Lista de cobranças do cartão: copiar link, "Marcar como paga", "Cancelar",
+   "Reabrir".
+
+## Cancelar e reabrir (0.2.119 / GF 0.0.49)
+- A receita lançada pela cobrança leva o pedido (`LaunchRequest.requestId` =
+  `order_nsu`), gravado na GF em `origin_request`.
+- **Cancelar**: o CRM pede à GF (`removeLaunch`) para excluir as receitas
+  ainda não recebidas daquele pedido — achadas por `origin_request` ou por
+  "Pedido: <order_nsu>" nas observações (receitas lançadas antes desta versão).
+  Receita já recebida não é excluída (o CRM avisa). O link continua ativo na
+  InfinitePay (a API não permite desativar); pagamento depois disso se estorna
+  pelo app.
+- **Reabrir** uma cobrança cancelada: se a receita não existe mais na GF
+  (`removeLaunch` com `dryRun`), abre a receita de novo, já preenchida; se
+  ainda existe, não duplica.
+- Sem a GF no mesmo Chrome (modo pacote), o CRM avisa para excluir lá.
 
 ## Protocolo CRM ↔ GF
-`LaunchRequest.dueDate` (opcional, aaaa-mm-dd) — arquivo `protocol.ts`
-idêntico nos dois repositórios; a GF usa o vencimento ao abrir o lançamento.
+`LaunchRequest.dueDate` (opcional, aaaa-mm-dd), `LaunchRequest.requestId` e a
+mensagem `removeLaunch {ref, requestId, dryRun?}` → `{removed, pending, paid}`
+— arquivo `protocol.ts` idêntico nos dois repositórios.

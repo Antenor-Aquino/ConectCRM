@@ -12,6 +12,7 @@ import { formatCents } from "../../lib/format";
 import { MoneyInput } from "../ui/MoneyInput";
 import { Field } from "../ui/form";
 import type { LaunchPreset } from "./FinanceTab";
+import { loadGfSettings, removeLaunch } from "../../lib/finance/gfBridge";
 
 const today = () => new Date().toLocaleDateString("sv-SE");
 const day = (d: string | null) => (d ? d.slice(0, 10).split("-").reverse().join("/") : "");
@@ -55,6 +56,7 @@ export function ChargeDialog({
   const [editHandle, setEditHandle] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [created, setCreated] = useState<{ url: string; preset: LaunchPreset } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -115,7 +117,7 @@ export function ChargeDialog({
       const { url } = await createPaymentLink(payload);
       const description = `Cobrança InfinitePay — ${draft.cardTitle}`.slice(0, 200);
       await call("charges.save", { id: cardId, handle: payload.handle, orderNsu, url, items: clean, description, dueDate });
-      const preset: LaunchPreset = { description, amountCents: total, notes: chargeNotes({ url, orderNsu, items: clean }), dueDate };
+      const preset: LaunchPreset = { description, amountCents: total, notes: chargeNotes({ url, orderNsu, items: clean }), dueDate, requestId: orderNsu };
       setCreated({ url, preset });
       await load(false);
       onChanged?.();
@@ -128,20 +130,70 @@ export function ChargeDialog({
     }
   };
 
+  /** Receita da cobrança (para lançar de novo ao reabrir). */
+  const presetOf = (c: Charge): LaunchPreset => ({
+    description: c.description,
+    amountCents: c.amount_cents,
+    notes: chargeNotes({ url: c.url, orderNsu: c.order_nsu, items: c.items }),
+    dueDate: c.due_date,
+    requestId: c.order_nsu,
+  });
+
   const setStatus = async (c: Charge, status: Charge["status"]) => {
     const q =
       status === "paid"
         ? `Marcar a cobrança de ${formatCents(c.amount_cents)} como paga?\n\nConfira o pagamento no app ou na Conta Web da InfinitePay (Suas vendas → Checkout integrado). Dê baixa também na receita da Gestão Financeira.`
         : status === "canceled"
-          ? `Cancelar a cobrança de ${formatCents(c.amount_cents)} no CRM?\n\nA InfinitePay não permite desativar um link já criado: se o cliente pagar mesmo assim, estorne pelo app ou pela Conta Web.`
-          : "Reabrir esta cobrança?";
+          ? `Cancelar a cobrança de ${formatCents(c.amount_cents)}?\n\nA receita dela na Gestão Financeira será excluída (se ainda não foi recebida).\nA InfinitePay não permite desativar um link já criado: se o cliente pagar mesmo assim, estorne pelo app ou pela Conta Web.`
+          : c.status === "canceled"
+            ? "Reabrir esta cobrança?\n\nA receita dela será lançada de novo na Gestão Financeira."
+            : "Reabrir esta cobrança?";
     if (!confirm(q)) return;
+    setError(null);
+    setInfo(null);
     try {
       await call("charges.setStatus", { id: c.id, status });
       await load(false);
       onChanged?.();
     } catch (e) {
       setError(errorText(e));
+      return;
+    }
+    const gf = await loadGfSettings().catch(() => null);
+    const direct = !!gf?.gfId && gf.direct;
+    if (status === "canceled") {
+      if (!direct) {
+        if (gfActive) setInfo("Cobrança cancelada. Sem a Gestão Financeira aberta neste Chrome, exclua a receita dela lá (o número do pedido está nas observações).");
+        return;
+      }
+      try {
+        const r = await removeLaunch(gf!.gfId!, cardId, c.order_nsu);
+        setInfo(
+          r.removed
+            ? `Cobrança cancelada e receita excluída da Gestão Financeira${r.paid ? ` (${r.paid} já recebida ficou lá: estorne/exclua manualmente)` : ""}.`
+            : r.paid
+              ? "Cobrança cancelada, mas a receita na Gestão Financeira já está como recebida: não foi excluída. Confira lá."
+              : "Cobrança cancelada. Não havia receita desta cobrança na Gestão Financeira.",
+        );
+        onChanged?.();
+      } catch (e) {
+        setError(`Cobrança cancelada no CRM, mas a receita não foi excluída na Gestão Financeira: ${errorText(e)}`);
+      }
+    } else if (status === "open" && c.status === "canceled" && gfActive) {
+      // Reaberta: a receita volta (se ainda não existir lá).
+      if (direct) {
+        try {
+          const r = await removeLaunch(gf!.gfId!, cardId, c.order_nsu, true);
+          if (r.pending || r.paid) {
+            setInfo("Cobrança reaberta. A receita dela continua na Gestão Financeira.");
+            return;
+          }
+        } catch {
+          // Gestão Financeira antiga: lança mesmo assim.
+        }
+      }
+      setInfo("Cobrança reaberta: confira e salve a receita na Gestão Financeira.");
+      onLaunchFinance(presetOf(c));
     }
   };
 
@@ -245,6 +297,11 @@ export function ChargeDialog({
                   <li key={p}>{p}</li>
                 ))}
               </ul>
+            )}
+            {info && (
+              <p className="rounded-lg bg-brand-25 px-3 py-2 text-brand-700 dark:bg-brand-500/10" data-charge-info>
+                {info}
+              </p>
             )}
             {error && (
               <p className="rounded-lg bg-error-50 px-3 py-2 text-error-700" data-charge-error>
