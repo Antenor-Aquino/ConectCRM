@@ -215,6 +215,17 @@ export interface NfseIssued {
   issuedAt: string;
   /** XML da NFS-e (emitida pela API); null quando veio do portal. */
   xml: string | null;
+  /** Cancelamento registrado (B4); null enquanto a nota vale. */
+  canceled: NfseCanceled | null;
+}
+
+export interface NfseCanceled {
+  at: string;
+  /** Código do motivo (1 erro na emissão, 2 serviço não prestado, 9 outros); null se só registrado (portal). */
+  code: number | null;
+  reason: string | null;
+  /** Cancelada pela API (pedido de evento guardado) ou só registrada após cancelar no portal. */
+  via: "api" | "portal";
 }
 
 export interface NfseTexts {
@@ -292,9 +303,13 @@ export function nfseDraftForCard(
     environment: string | null;
     issued_at: string | null;
     nfse_xml: string | null;
+    canceled_at: string | null;
+    cancel_code: number | null;
+    cancel_reason: string | null;
+    cancel_event_xml: string | null;
   }>(
     db,
-    "SELECT issuer_id, description, notes, order_number, status, access_key, nfse_number, environment, issued_at, nfse_xml FROM nfse_draft WHERE card_id = ? AND deleted_at IS NULL",
+    "SELECT issuer_id, description, notes, order_number, status, access_key, nfse_number, environment, issued_at, nfse_xml, canceled_at, cancel_code, cancel_reason, cancel_event_xml FROM nfse_draft WHERE card_id = ? AND deleted_at IS NULL",
     cardId,
   );
   if (opts.issuerId === undefined && saved?.issuer_id && issuers.some((i) => i.id === saved.issuer_id)) opts = { ...opts, issuerId: saved.issuer_id };
@@ -402,7 +417,13 @@ export function nfseDraftForCard(
     texts,
     issued:
       saved?.status === "issued" && saved.access_key
-        ? { number: saved.nfse_number, accessKey: saved.access_key, environment: (saved.environment as NfseEnvironment) ?? "producao", issuedAt: saved.issued_at ?? "", xml: saved.nfse_xml }
+        ? {
+            number: saved.nfse_number, accessKey: saved.access_key, environment: (saved.environment as NfseEnvironment) ?? "producao", issuedAt: saved.issued_at ?? "",
+            xml: saved.nfse_xml,
+            canceled: saved.canceled_at
+              ? { at: saved.canceled_at, code: saved.cancel_code, reason: saved.cancel_reason, via: saved.cancel_event_xml ? "api" : "portal" }
+              : null,
+          }
         : null,
   };
 }
@@ -451,6 +472,71 @@ export function markNfseIssued(
   });
 }
 
+const CANCEL_LABEL: Record<number, string> = { 1: "Erro na emissão", 2: "Serviço não prestado", 9: "Outros" };
+
+/**
+ * NFS-e cancelada (B4). Pela API: `code`, `reason` e o XML do evento devolvido
+ * pela Sefin. Nota emitida no portal: só registra que foi cancelada lá.
+ */
+export function markNfseCanceled(
+  db: DatabaseSync,
+  ctx: DbContext,
+  cardId: string,
+  input: { accessKey: string; code?: number | null; reason?: string | null; eventXml?: string | null },
+): void {
+  const key = normalizeAccessKey(input.accessKey);
+  const viaApi = !!input.eventXml;
+  if (viaApi && !CANCEL_LABEL[input.code ?? 0]) throw new ValidationError("Motivo do cancelamento inválido.");
+  withTransaction(db, () => {
+    const row = one<{ id: string; status: string; access_key: string | null; nfse_number: string | null; canceled_at: string | null }>(
+      db,
+      "SELECT id, status, access_key, nfse_number, canceled_at FROM nfse_draft WHERE card_id = ? AND deleted_at IS NULL",
+      cardId,
+    );
+    if (!row || row.status !== "issued") throw new ValidationError("Este cartão não tem NFS-e emitida.");
+    if (row.access_key !== key) throw new ValidationError("A chave de acesso não é a da nota deste cartão.");
+    if (row.canceled_at) return; // já registrado
+    const reason = optionalText(input.reason);
+    updateRow(db, ctx, "nfse_draft", row.id, {
+      canceled_at: new Date().toISOString(),
+      cancel_code: viaApi ? input.code! : null,
+      cancel_reason: reason,
+      cancel_event_xml: input.eventXml ?? null,
+    });
+    const motivo = viaApi ? `\nMotivo: ${CANCEL_LABEL[input.code!]}${reason ? ` — ${reason}` : ""}` : "";
+    insertRow(db, ctx, "note", {
+      entity_type: "deal",
+      entity_id: cardId,
+      body: `NFS-e${row.nfse_number ? ` nº ${row.nfse_number}` : ""} cancelada ${viaApi ? "pela API do Emissor Nacional (ConectCRM Fiscal)" : "no Emissor Nacional (registrado no ConectCRM)"}.${motivo}\nChave de acesso: ${key}`,
+      document_ids: null,
+    });
+  });
+}
+
+/**
+ * Depois de cancelar, prepara uma nota nova para o cartão: a cancelada fica
+ * guardada (fora do rascunho atual) e os textos e a empresa são reaproveitados.
+ */
+export function reopenNfseDraft(db: DatabaseSync, ctx: DbContext, cardId: string): void {
+  withTransaction(db, () => {
+    const row = one<{ id: string; status: string; canceled_at: string | null; issuer_id: string | null; taker_id: string | null; description: string | null; notes: string | null; order_number: string | null }>(
+      db,
+      "SELECT id, status, canceled_at, issuer_id, taker_id, description, notes, order_number FROM nfse_draft WHERE card_id = ? AND deleted_at IS NULL",
+      cardId,
+    );
+    if (!row || row.status !== "issued" || !row.canceled_at) throw new ValidationError("Só dá para preparar outra nota depois de cancelar a atual.");
+    softDelete(db, ctx, "nfse_draft", row.id);
+    insertRow(db, ctx, "nfse_draft", {
+      card_id: cardId,
+      issuer_id: row.issuer_id,
+      taker_id: row.taker_id,
+      description: row.description,
+      notes: row.notes,
+      order_number: row.order_number,
+    });
+  });
+}
+
 /** Salva (revisa) os textos e a empresa da nota deste cartão. */
 export function saveNfseDraft(
   db: DatabaseSync,
@@ -482,7 +568,16 @@ export function saveNfseDraft(
 /** O que falta (ou está errado) para emitir, conforme o leiaute da DPS. */
 export function nfsePending(d: NfseDraft): NfsePending[] {
   const out: NfsePending[] = [];
-  if (d.issued) return [{ field: "issued", message: `NFS-e já emitida para este cartão${d.issued.number ? ` (nº ${d.issued.number})` : ""}.`, level: "warning" }];
+  if (d.issued)
+    return [
+      {
+        field: "issued",
+        message: d.issued.canceled
+          ? `NFS-e${d.issued.number ? ` nº ${d.issued.number}` : ""} deste cartão foi cancelada.`
+          : `NFS-e já emitida para este cartão${d.issued.number ? ` (nº ${d.issued.number})` : ""}.`,
+        level: "warning",
+      },
+    ];
   const err = (field: string, message: string) => out.push({ field, message, level: "error" });
   const warn = (field: string, message: string) => out.push({ field, message, level: "warning" });
 

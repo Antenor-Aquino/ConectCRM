@@ -75,6 +75,13 @@ export async function emitViaFiscal(env: NfseEnvironment, thumbprint: string, dp
   return r.result;
 }
 
+/** Pedido de evento (cancelamento) assinado e enviado pelo ConectCRM Fiscal. */
+export async function eventViaFiscal(env: NfseEnvironment, thumbprint: string, accessKey: string, eventXml: string): Promise<{ result: SefinResult; signed: string }> {
+  const r = await fiscalCall({ cmd: "event", env, thumbprint, accessKey, xml: eventXml });
+  if (!r.result) throw new Error("ConectCRM Fiscal não devolveu a resposta da Receita.");
+  return { result: r.result, signed: r.signed ?? eventXml };
+}
+
 /** Número da NFS-e no XML devolvido pela Sefin. */
 export const nfseNumberFromXml = (xml: string | null | undefined) => xml?.match(/<nNFSe>(\d+)<\/nNFSe>/)?.[1] ?? null;
 

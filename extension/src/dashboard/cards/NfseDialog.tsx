@@ -5,8 +5,8 @@
 // Emissor Nacional" (fase 3) abre o portal com o painel do ConectCRM e espera a
 // nota emitida voltar (número e chave).
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Download, ExternalLink, FileText, Pencil, RefreshCw, RotateCcw, Save, Send } from "lucide-react";
-import { TaButton, TaInput, TaModal, TaTextarea, cn } from "@tailadmin";
+import { AlertTriangle, Ban, CheckCircle2, Download, ExternalLink, FilePlus2, FileText, Pencil, RefreshCw, RotateCcw, Save, Send, XCircle } from "lucide-react";
+import { TaButton, TaInput, TaModal, TaSelect, TaTextarea, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import { NFSE_LIMITS, unresolvedFields, type NfseDraft, type NfsePending } from "../../db/nfse";
 import { formatCnpj } from "../../lib/cnpj";
@@ -16,7 +16,10 @@ import { formatTribNac, municipioPorIbge, servicoNacional } from "../../lib/nfse
 import { loadNfseEnvironment, openPortalAssistant, requestPortalPermission } from "../../lib/nfse/portal";
 import { buildPortalPayload } from "../../lib/nfse/portalSteps";
 import { buildDpsXml } from "../../lib/nfse/dps";
-import { emitViaFiscal, nfseNumberFromXml, sefinErrors } from "../../lib/nfse/fiscal";
+import { emitViaFiscal, eventViaFiscal, nfseNumberFromXml, sefinErrors } from "../../lib/nfse/fiscal";
+import { buildCancelEventXml, CANCEL_REASON_LABEL, CANCEL_REASONS, CANCEL_TEXT_MAX, cancelInputError, type CancelReasonCode } from "../../lib/nfse/evento";
+import { buildDanfsePdf, danfseFileName } from "../../lib/nfse/danfse";
+import { PORTAL_BASE } from "../../lib/nfse/portalSteps";
 import { OrganizationFormModal } from "../contacts/OrganizationFormModal";
 import { PersonFormModal } from "../contacts/PersonFormModal";
 
@@ -43,6 +46,9 @@ export function NfseDialog({ cardId, onClose, onChanged }: { cardId: string; onC
   const [apiErrors, setApiErrors] = useState<string[] | null>(null);
   /** Ambiente lido ao abrir: o pedido de permissão precisa sair já no clique. */
   const [env, setEnv] = useState<"producao" | "producao_restrita">("producao_restrita");
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelCode, setCancelCode] = useState<CancelReasonCode>(1);
+  const [cancelText, setCancelText] = useState("");
 
   /** Recarrega o rascunho; os textos só são trocados quando não há edição pendente (ou quando pedido). */
   const load = useCallback(
@@ -147,13 +153,99 @@ export function NfseDialog({ cardId, onClose, onChanged }: { cardId: string; onC
     }
   };
 
-  const downloadXml = () => {
-    if (!draft?.issued?.xml) return;
+  const saveFile = (data: BlobPart, type: string, name: string) => {
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([draft.issued.xml], { type: "application/xml" }));
-    a.download = `NFSe-${draft.issued.number ?? draft.issued.accessKey}.xml`;
+    a.href = URL.createObjectURL(new Blob([data], { type }));
+    a.download = name;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  };
+  const downloadXml = () => {
+    if (!draft?.issued?.xml) return;
+    saveFile(draft.issued.xml, "application/xml", `NFSe-${draft.issued.number ?? draft.issued.accessKey}.xml`);
+  };
+
+  /** DANFSe (PDF) gerado aqui a partir do XML da nota (NT 008). */
+  const downloadDanfse = async () => {
+    const issued = draft?.issued;
+    if (!issued?.xml) return;
+    setMsg(null);
+    try {
+      const logo = await fetch(chrome.runtime.getURL("nfse-logo.png"))
+        .then((r) => (r.ok ? r.arrayBuffer() : null))
+        .catch(() => null);
+      const pdf = await buildDanfsePdf(issued.xml, { logoPng: logo, canceled: !!issued.canceled });
+      saveFile(pdf as Uint8Array<ArrayBuffer>, "application/pdf", danfseFileName(issued.number, issued.accessKey));
+    } catch (e) {
+      setMsg({ kind: "err", text: `Não foi possível gerar o DANFSe: ${errorText(e)}` });
+    }
+  };
+
+  /** Cancelamento pela API: pedido de evento e101101 assinado pelo ConectCRM Fiscal. */
+  const cancelApi = async () => {
+    const issued = draft?.issued;
+    const thumb = draft?.issuer?.cert_thumbprint;
+    if (!issued || !draft?.issuer || !thumb) return;
+    const err = cancelInputError(cancelCode, cancelText);
+    if (err) return setMsg({ kind: "err", text: err });
+    const amb = issued.environment === "producao_restrita" ? " (ambiente de testes)" : "";
+    if (!confirm(`Cancelar a NFS-e${issued.number ? ` nº ${issued.number}` : ""}${amb} na Receita?\n\nMotivo: ${CANCEL_REASON_LABEL[cancelCode]} — ${cancelText.trim()}\n\nO cancelamento não pode ser desfeito. Se o certificado for token (A3), o Windows vai pedir o PIN.`)) return;
+    setMsg(null);
+    setApiErrors(null);
+    setSending(true);
+    try {
+      const xml = buildCancelEventXml({
+        accessKey: issued.accessKey,
+        cnpj: draft.issuer.cnpj,
+        environment: issued.environment,
+        code: cancelCode,
+        reason: cancelText,
+        at: new Date(),
+        appVersion: `ConectCRM ${chrome.runtime.getManifest().version}`,
+      });
+      const { result, signed } = await eventViaFiscal(issued.environment, thumb, issued.accessKey, xml);
+      if (result.httpStatus >= 200 && result.httpStatus < 300) {
+        await call("nfse.markCanceled", { id: cardId, accessKey: issued.accessKey, code: cancelCode, reason: cancelText.trim(), eventXml: result.eventXml || signed });
+        setCancelOpen(false);
+        await load({ keepTexts: true });
+        setMsg({ kind: "ok", text: "NFS-e cancelada na Receita. O registro está nas notas do cartão." });
+        onChanged?.();
+      } else {
+        setApiErrors(sefinErrors(result));
+      }
+    } catch (e) {
+      setMsg({ kind: "err", text: errorText(e) });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  /** Nota emitida pelo portal: o cancelamento é feito lá; aqui só se registra. */
+  const markPortalCanceled = async () => {
+    const issued = draft?.issued;
+    if (!issued) return;
+    if (!confirm(`Confirma que a NFS-e${issued.number ? ` nº ${issued.number}` : ""} já foi cancelada no Emissor Nacional?`)) return;
+    try {
+      await call("nfse.markCanceled", { id: cardId, accessKey: issued.accessKey });
+      setCancelOpen(false);
+      await load({ keepTexts: true });
+      onChanged?.();
+    } catch (e) {
+      setMsg({ kind: "err", text: errorText(e) });
+    }
+  };
+
+  /** Depois de cancelar: rascunho novo com os mesmos textos e empresa. */
+  const reopen = async () => {
+    try {
+      await call("nfse.reopen", { id: cardId });
+      setApiErrors(null);
+      await load();
+      setMsg({ kind: "ok", text: "Nova nota preparada com os mesmos textos. Revise e emita." });
+      onChanged?.();
+    } catch (e) {
+      setMsg({ kind: "err", text: errorText(e) });
+    }
   };
 
   const setText = (k: keyof Texts, v: string) => {
@@ -213,17 +305,104 @@ export function NfseDialog({ cardId, onClose, onChanged }: { cardId: string; onC
     <TaModal isOpen onClose={requestClose} title="Nota fiscal de serviço (NFS-e)" width="max-w-3xl">
       <div className="space-y-4 text-theme-sm text-gray-700 dark:text-gray-300" data-nfse-dialog>
         {draft.issued && (
-          <div className="rounded-xl border border-success-200 bg-success-50 p-3 text-success-800 dark:bg-success-500/10" data-nfse-issued>
+          <div
+            className={cn(
+              "rounded-xl border p-3",
+              draft.issued.canceled ? "border-error-200 bg-error-50 text-error-800 dark:bg-error-500/10" : "border-success-200 bg-success-50 text-success-800 dark:bg-success-500/10",
+            )}
+            data-nfse-issued
+          >
             <p className="flex items-center gap-2 font-semibold">
-              <CheckCircle2 size={16} /> NFS-e{draft.issued.number ? ` nº ${draft.issued.number}` : ""} emitida
+              {draft.issued.canceled ? <XCircle size={16} /> : <CheckCircle2 size={16} />} NFS-e{draft.issued.number ? ` nº ${draft.issued.number}` : ""}{" "}
+              {draft.issued.canceled ? "cancelada" : "emitida"}
               {draft.issued.environment === "producao_restrita" && <span className="font-normal">(ambiente de testes, sem valor fiscal)</span>}
             </p>
             <p className="mt-1 break-all text-theme-xs">Chave de acesso: {draft.issued.accessKey}</p>
-            <p className="text-theme-xs">Em {new Date(draft.issued.issuedAt).toLocaleString("pt-BR")}. O registro também está nas notas do cartão.</p>
-            {draft.issued.xml && (
-              <TaButton size="sm" variant="outline" className="mt-2" startIcon={<Download size={14} />} onClick={downloadXml} data-nfse-download-xml>
-                Baixar XML da NFS-e
-              </TaButton>
+            <p className="text-theme-xs">Emitida em {new Date(draft.issued.issuedAt).toLocaleString("pt-BR")}. O registro também está nas notas do cartão.</p>
+            {draft.issued.canceled && (
+              <p className="text-theme-xs" data-nfse-canceled>
+                Cancelada em {new Date(draft.issued.canceled.at).toLocaleString("pt-BR")}
+                {draft.issued.canceled.via === "api"
+                  ? ` pela API. Motivo: ${CANCEL_REASON_LABEL[draft.issued.canceled.code ?? 0] ?? "-"}${draft.issued.canceled.reason ? ` — ${draft.issued.canceled.reason}` : ""}.`
+                  : " no Emissor Nacional (registrado aqui)."}
+              </p>
+            )}
+            <div className="mt-2 flex flex-wrap gap-2">
+              {draft.issued.xml && (
+                <TaButton size="sm" variant="outline" startIcon={<FileText size={14} />} onClick={() => void downloadDanfse()} data-nfse-download-pdf>
+                  Baixar DANFSe (PDF)
+                </TaButton>
+              )}
+              {draft.issued.xml && (
+                <TaButton size="sm" variant="outline" startIcon={<Download size={14} />} onClick={downloadXml} data-nfse-download-xml>
+                  Baixar XML da NFS-e
+                </TaButton>
+              )}
+              {!draft.issued.canceled && !cancelOpen && (
+                <TaButton size="sm" variant="outline" startIcon={<Ban size={14} />} onClick={() => setCancelOpen(true)} data-nfse-cancel-open>
+                  Cancelar NFS-e
+                </TaButton>
+              )}
+              {draft.issued.canceled && (
+                <TaButton size="sm" startIcon={<FilePlus2 size={14} />} onClick={() => void reopen()} data-nfse-reopen>
+                  Preparar nova nota
+                </TaButton>
+              )}
+            </div>
+            {cancelOpen && !draft.issued.canceled && (
+              <div className="mt-3 space-y-2 rounded-lg border border-gray-200 bg-white p-3 text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" data-nfse-cancel-form>
+                {draft.issued.xml && draft.issuer?.cert_thumbprint ? (
+                  <>
+                    <p className="font-medium">Cancelar na Receita (pela API)</p>
+                    <label className="block text-theme-xs">
+                      Motivo
+                      <TaSelect value={String(cancelCode)} onChange={(e) => setCancelCode(Number(e.target.value) as CancelReasonCode)} data-nfse-cancel-code>
+                        {CANCEL_REASONS.map((r) => (
+                          <option key={r.code} value={r.code}>
+                            {r.label}
+                          </option>
+                        ))}
+                      </TaSelect>
+                    </label>
+                    <label className="block text-theme-xs">
+                      Descrição do motivo (15 a {CANCEL_TEXT_MAX} caracteres)
+                      <TaTextarea rows={2} maxLength={CANCEL_TEXT_MAX} value={cancelText} onChange={(e) => setCancelText(e.target.value)} data-nfse-cancel-text />
+                    </label>
+                    <p className="text-theme-xs text-gray-500">
+                      O prazo e as regras de cancelamento são do município; fora do prazo, a Receita recusa e o pedido precisa ir para análise fiscal no portal.
+                    </p>
+                    <div className="flex gap-2">
+                      <TaButton size="sm" variant="danger" startIcon={sending ? <RefreshCw size={14} className="animate-spin" /> : <Ban size={14} />} disabled={sending || !!cancelInputError(cancelCode, cancelText)} onClick={() => void cancelApi()} data-nfse-cancel-confirm>
+                        Cancelar na Receita
+                      </TaButton>
+                      <TaButton size="sm" variant="outline" disabled={sending} onClick={() => setCancelOpen(false)}>
+                        Voltar
+                      </TaButton>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-medium">Cancelar no Emissor Nacional</p>
+                    <p className="text-theme-xs">
+                      {draft.issued.xml
+                        ? "A empresa emissora está sem certificado escolhido (Configurações → Nota fiscal), então o cancelamento pela API não está disponível."
+                        : "Esta nota foi emitida pelo portal: o cancelamento também é feito lá (consulte a nota em Notas emitidas e use Cancelar)."}{" "}
+                      Depois de cancelar, registre aqui.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <a className="inline-flex items-center gap-1 text-theme-xs font-medium text-brand-600 hover:underline" href={PORTAL_BASE[draft.issued.environment]} target="_blank" rel="noreferrer">
+                        <ExternalLink size={13} /> Abrir o Emissor Nacional
+                      </a>
+                      <TaButton size="sm" variant="outline" onClick={() => void markPortalCanceled()} data-nfse-cancel-portal>
+                        Já cancelei no portal
+                      </TaButton>
+                      <TaButton size="sm" variant="outline" onClick={() => setCancelOpen(false)}>
+                        Voltar
+                      </TaButton>
+                    </div>
+                  </>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -234,13 +413,17 @@ export function NfseDialog({ cardId, onClose, onChanged }: { cardId: string; onC
         )}
         {apiErrors && (
           <div className="rounded-xl border border-error-200 bg-error-50 p-3 text-error-700 dark:bg-error-500/10" data-nfse-api-errors>
-            <p className="font-semibold">A Receita recusou a nota:</p>
+            <p className="font-semibold">{draft.issued ? "A Receita recusou o cancelamento:" : "A Receita recusou a nota:"}</p>
             <ul className="mt-1 list-disc pl-5 text-theme-xs">
               {apiErrors.map((e, i) => (
                 <li key={i}>{e}</li>
               ))}
             </ul>
-            <p className="mt-1 text-theme-xs">Corrija e clique em Emitir de novo (o número da DPS é o mesmo).</p>
+            <p className="mt-1 text-theme-xs">
+              {draft.issued
+                ? "A nota continua valendo. Se o prazo de cancelamento do município passou, peça o cancelamento por análise fiscal no Emissor Nacional."
+                : "Corrija e clique em Emitir de novo (o número da DPS é o mesmo)."}
+            </p>
           </div>
         )}
         {sending && (

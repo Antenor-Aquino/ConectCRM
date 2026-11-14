@@ -82,7 +82,7 @@ biblioteca aberta gildonei/nfse-nacional.
 | **B1** | Cadastro fiscal da API: alíquota do Simples, regime de apuração, alíquota do ISS (opcional), série e próximo número da DPS. Montagem do XML da DPS na extensão (`lib/nfse/dps.ts`) validada contra o XSD oficial nos testes. |
 | **B2** | ConectCRM Fiscal (Go, executável único para Windows): lista certificados, assina, envia, consulta e cancela. Instala sozinho para o usuário (sem administrador), registra o Native Messaging só para a extensão do ConectCRM e funciona em produção restrita e em produção. |
 | **B3** | Extensão: em cada empresa, escolha do certificado entre os listados pelo programa; botão "Emitir" na janela da nota; erros da Receita na janela; nota emitida no cartão com o XML no GED. |
-| **B4** | Cancelamento pelo cartão (evento) e DANFSe em PDF gerado a partir do XML. |
+| **B4** | Cancelamento pelo cartão (evento) e DANFSe em PDF gerado a partir do XML. (feito, 0.2.111) |
 | **B5** | Teste real em produção restrita com os dois certificados; depois, produção. |
 
 ## Segurança
@@ -208,3 +208,55 @@ teste)
   histórico.
 - As duas tentativas chegaram com o mesmo Id de DPS e a assinatura conferida
   pelo xmlsec1 (OK, referência 1/1). Uma cópia adulterada dá FAIL.
+
+## B4 — cancelamento e DANFSe em PDF (0.2.111; ConectCRM Fiscal sem mudança)
+
+**Cancelamento pelo cartão.** Na janela "Nota fiscal", nota emitida ganha
+"Cancelar NFS-e":
+
+- Nota emitida pela API (XML guardado e empresa com certificado): motivo
+  (1 Erro na emissão, 2 Serviço não prestado, 9 Outros) e descrição de 15 a 255
+  caracteres. `lib/nfse/evento.ts` monta o pedido `pedRegEvento` v1.01 com o
+  evento `e101101` (Id = "PRE" + chave + "101101", `dhEvento` no horário de
+  Brasília, `CNPJAutor` = CNPJ da empresa emissora), validado no XSD oficial
+  nos testes. O ConectCRM Fiscal (comando `event`, já existente) assina
+  `infPedReg` e envia `POST /nfse/{chave}/eventos`. Recusa da Receita (ex.:
+  prazo do município excedido) aparece na tela; a nota continua valendo.
+- Nota emitida pelo portal: o cancelamento é feito no Emissor Nacional; o CRM
+  só registra ("Já cancelei no portal").
+- Migration 0038: `canceled_at`, `cancel_code`, `cancel_reason`,
+  `cancel_event_xml` (resposta da Sefin, ou o pedido assinado) em `nfse_draft`.
+  RPC `nfse.markCanceled` (idempotente; exige a chave da nota do cartão) deixa
+  nota no histórico do cartão com o motivo.
+- "Preparar nova nota" (RPC `nfse.reopen`, só depois de cancelar): a nota
+  cancelada sai do rascunho atual mas fica guardada no banco; o novo rascunho
+  reaproveita empresa e textos e recebe um número de DPS novo ao emitir.
+
+**DANFSe (PDF).** A API de DANFSe do ADN foi suspensa (NT 008, 03/08/2026);
+`lib/nfse/danfse.ts` gera o PDF no navegador a partir do XML da NFS-e
+(pdf-lib + qrcode-generator), seguindo a NT 008 v1.02:
+
+- A4 retrato, uma página; grade de 4 colunas do item 2.4.5; linhas de 0,5 pt,
+  borda da página de 1 pt; cinza 5% no cabeçalho, títulos de bloco, "Emitente"
+  e "Valor Líquido + IBS/CBS"; rótulos 6/7 pt negrito, conteúdo 7 pt.
+- Cabeçalho com a logomarca oficial (`public/nfse-logo.png`), "DANFSe v2.0",
+  município / ambiente gerador / tipo de ambiente; produção restrita →
+  "NFS-e SEM VALIDADE JURÍDICA" em vermelho.
+- QR Code (≥ 1,52 cm, em X 17,48 / Y 1,67) para
+  `https://www.nfse.gov.br/ConsultaPublica/?tpc=1&chave=…`, com o texto de 3 linhas.
+- Blocos: identificação, prestador (dados do `emit` + Simples/regime da DPS),
+  tomador, destinatário/intermediário (supressão "NÃO IDENTIFICADO NA NFS-e"),
+  serviço, ISSQN (ou "OPERAÇÃO NÃO SUJEITA AO ISSQN"), federal (PIS/COFINS de
+  apuração própria até competência 2026), IBS/CBS (só quando a nota traz o
+  grupo), totais e informações complementares (pedido, observação, xOutInf,
+  substituída, obra/evento e totais aproximados da Lei 12.741 — no Simples,
+  "Simples Nacional: x%"). Campo vazio = "-"; texto longo é cortado com "...".
+- Nota cancelada: marca d'água diagonal "CANCELADA" (cinza K35).
+- Botão "Baixar DANFSe (PDF)" na janela da nota (arquivo `DANFSe-NFS-e-<nº>.pdf`).
+
+**Verificado:** testes (XSD do evento, banco, leitura do XML, PDF lido com
+pdf.js, QR Code decodificado) e Chrome com o programa Fiscal real registrado
+como Native Messaging e Sefin simulada exigindo certificado: emitir → baixar
+DANFSe → cancelamento recusado (E0840) → cancelado (evento assinado, conferido
+com xmlsec1) → DANFSe com "CANCELADA" → preparar nova nota.
+**Falta (B5):** cancelamento real em produção restrita com A1 e A3.

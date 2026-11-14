@@ -37,6 +37,7 @@ import migration0034 from "./migrations/0034_nfse_textos.sql?raw";
 import migration0035 from "./migrations/0035_nfse_emitida.sql?raw";
 import migration0036 from "./migrations/0036_nfse_api.sql?raw";
 import migration0037 from "./migrations/0037_nfse_xml.sql?raw";
+import migration0038 from "./migrations/0038_nfse_cancelamento.sql?raw";
 
 export const MIGRATIONS: { name: string; sql: string }[] = [
   { name: "0000_init.sql", sql: migration0000 },
@@ -77,6 +78,7 @@ export const MIGRATIONS: { name: string; sql: string }[] = [
   { name: "0035_nfse_emitida.sql", sql: migration0035 },
   { name: "0036_nfse_api.sql", sql: migration0036 },
   { name: "0037_nfse_xml.sql", sql: migration0037 },
+  { name: "0038_nfse_cancelamento.sql", sql: migration0038 },
 ];
 
 /** Aplica as migrations pendentes; devolve quantas rodaram. */
