@@ -1,11 +1,11 @@
 // Configurações → Nota fiscal (spec 19, fase 1): empresas que emitem a NFS-e
 // pelo Emissor Nacional, com o regime e o município. A empresa de cada nota é
 // escolhida na hora de emitir.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Building2, Pencil, Plus, Search, Trash2 } from "lucide-react";
-import { TaBadge, TaButton, TaInput, TaPanel, TaSelect } from "@tailadmin";
+import { TaBadge, TaButton, TaInput, TaPanel, TaSelect, TaTextarea } from "@tailadmin";
 import { call } from "../../rpc/client";
-import { ACCESS_LABEL, SIMPLES_LABEL, SPECIAL_REGIME_LABEL, type Issuer, type IssuerAccess, type SimplesOption } from "../../db/nfse";
+import { ACCESS_LABEL, DEFAULT_DESCRIPTION_TEMPLATE, NFSE_LIMITS, NFSE_TEMPLATE_VARS, SIMPLES_LABEL, SPECIAL_REGIME_LABEL, type Issuer, type IssuerAccess, type SimplesOption } from "../../db/nfse";
 import { formatCnpj, formatCnpjInput, lookupCnpj } from "../../lib/cnpj";
 import { errorText } from "../../lib/errors";
 import { buscarMunicipios, municipioPorIbge, municipioPorNome } from "../../lib/nfse/tabelas";
@@ -127,6 +127,22 @@ function IssuerModal({
   const [simples, setSimples] = useState<SimplesOption>(issuer?.simples ?? 3);
   const [regime, setRegime] = useState(issuer?.special_regime ?? 0);
   const [active, setActive] = useState(issuer ? !!issuer.active : true);
+  const [descTpl, setDescTpl] = useState(issuer?.description_template ?? DEFAULT_DESCRIPTION_TEMPLATE);
+  const [notesTpl, setNotesTpl] = useState(issuer?.notes_template ?? "");
+  /** Último modelo em que o usuário clicou: os botões de campo inserem nele. */
+  const focusRef = useRef<{ el: HTMLTextAreaElement | null; which: "desc" | "notes" }>({ el: null, which: "desc" });
+  const insertField = (key: string) => {
+    const { el, which } = focusRef.current;
+    const token = `{${key}}`;
+    const cur = which === "desc" ? descTpl : notesTpl;
+    const at = el ? el.selectionStart : cur.length;
+    const next = cur.slice(0, at) + token + cur.slice(el ? el.selectionEnd : cur.length);
+    (which === "desc" ? setDescTpl : setNotesTpl)(next);
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(at + token.length, at + token.length);
+    });
+  };
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -154,7 +170,7 @@ function IssuerModal({
   const save = async () => {
     setError(null);
     if (!city) return setError("Informe o município da empresa (é o local da prestação padrão nas notas).");
-    const input = { cnpj, legalName, municipalReg, cityIbge: city?.id ?? null, access, simples, specialRegime: regime, active };
+    const input = { cnpj, legalName, municipalReg, cityIbge: city?.id ?? null, access, simples, specialRegime: regime, active, descriptionTemplate: descTpl, notesTemplate: notesTpl };
     try {
       if (issuer) await call("nfse.updateIssuer", { id: issuer.id, patch: input });
       else await call("nfse.createIssuer", input);
@@ -218,6 +234,46 @@ function IssuerModal({
               ))}
             </TaSelect>
           </Field>
+        </div>
+        <div className="mb-4 rounded-xl border border-gray-200 p-3 dark:border-gray-800" data-nfse-templates>
+          <p className="text-theme-sm font-medium text-gray-800 dark:text-white/90">Textos padrão das notas desta empresa</p>
+          <p className="mb-3 text-theme-xs text-gray-500">
+            Ponto de partida de cada nota: na hora de emitir os dois textos aparecem para você ajustar ao cliente. A observação de um cliente que já teve nota vem da última nota dele.
+          </p>
+          <Field label="Discriminação dos serviços" hint={`Até ${NFSE_LIMITS.description} caracteres na nota.`}>
+            <TaTextarea
+              rows={4}
+              value={descTpl}
+              onChange={(e) => setDescTpl(e.target.value)}
+              onFocus={(e) => (focusRef.current = { el: e.currentTarget, which: "desc" })}
+              data-nfse-desc-template
+            />
+          </Field>
+          <Field label="Observação (informações complementares)" hint={`Até ${NFSE_LIMITS.notes} caracteres. Ex.: dados bancários, empenho, prazo de pagamento.`}>
+            <TaTextarea
+              rows={3}
+              value={notesTpl}
+              onChange={(e) => setNotesTpl(e.target.value)}
+              onFocus={(e) => (focusRef.current = { el: e.currentTarget, which: "notes" })}
+              data-nfse-notes-template
+            />
+          </Field>
+          <p className="mb-1.5 text-theme-xs font-medium text-gray-600 dark:text-gray-400">Inserir campo no texto selecionado:</p>
+          <div className="flex flex-wrap gap-1.5">
+            {NFSE_TEMPLATE_VARS.map((v) => (
+              <button
+                key={v.key}
+                type="button"
+                title={v.label}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => insertField(v.key)}
+                className="rounded-full border border-gray-200 px-2.5 py-1 text-theme-xs text-gray-700 hover:border-brand-300 hover:text-brand-600 dark:border-gray-700 dark:text-gray-300"
+                data-nfse-var={v.key}
+              >
+                {`{${v.key}}`}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex items-center justify-between rounded-xl border border-gray-200 px-4 py-3 text-theme-sm font-medium dark:border-gray-800">
           Ativa

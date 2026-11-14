@@ -44,7 +44,7 @@ Emitir a NFS-e do negócio a partir do cartão:
 | 3 | Emitir: pergunta por qual empresa emitir, confere a empresa logada no portal, preenche os 4 passos e para na tela final para o usuário clicar em Emitir. |
 | 4 | Retorno: número, chave, PDF e XML no cartão e no GED, status, cancelamento e receita na Gestão Financeira. |
 
-## Fase 1 — cadastro fiscal (0.2.102, empresa escolhida a cada nota na 0.2.103)
+## Fase 1 — cadastro fiscal (0.2.102; empresa escolhida a cada nota na 0.2.103; textos personalizados na 0.2.104)
 
 ### Empresas emissoras (Configurações → Nota fiscal)
 - Tabela `nfse_issuer`, com estes campos:
@@ -77,6 +77,47 @@ Emitir a NFS-e do negócio a partir do cartão:
 - **Código IBGE do tomador:** sai da cidade e da UF do endereço da organização,
   sem coluna nova. Por isso esta fase não mexe em `organization` e a regra de
   paridade com a Gestão Financeira não se aplica.
+
+### Textos personalizados de cada nota (0.2.104)
+A discriminação dos serviços e a observação mudam de cliente para cliente
+(processo de compra, empenho, prazo, dados bancários…). Por isso são revisadas
+a cada nota.
+
+**Campos do leiaute**
+| Campo | Leiaute | Limite |
+|---|---|---|
+| Discriminação dos serviços | `xDescServ` | 1000, obrigatória |
+| Observação (informações complementares) | `xInfComp` | 2000 |
+| Nº do pedido / processo de compra | `xPed` | 60 |
+
+**Modelos por empresa** (Configurações → Nota fiscal)
+- Um modelo de discriminação (padrão `{itens}`) e um de observação.
+- Os botões de campo inserem no texto selecionado.
+- Campos disponíveis:
+  - `{itens}`: um item por linha, com a quantidade quando maior que 1;
+  - `{cliente}` e `{documento_cliente}`;
+  - `{cartao}` e `{pedido}`;
+  - `{competencia}` (MM/AAAA) e `{valor}`.
+
+**Como o texto da nota é preenchido** (`nfse_draft`, um por cartão)
+1. Se o cartão já tem os textos salvos, valem eles.
+2. Se não tem, a discriminação vem do modelo da empresa.
+3. A observação vem da última nota do mesmo cliente. Se ele ainda não teve
+   nota, vem do modelo.
+
+A empresa escolhida também fica salva no rascunho.
+
+**Pendências que impedem a emissão**
+- textos ainda não revisados e salvos no cartão;
+- discriminação vazia ou acima de 1000 caracteres;
+- observação acima de 2000 ou nº do pedido acima de 60;
+- campo `{x}` que sobrou sem preencher.
+
+**Tela de emissão (Fase 2)**
+- Os dois textos aparecem em destaque, editáveis e com contador de caracteres.
+- Mostra de onde veio a observação ("da última nota deste cliente").
+- Tem um botão para reaplicar o modelo.
+- A emissão só é liberada depois de salvar os textos.
 
 ### Rascunho e pendências (base da Fase 2)
 - `nfseDraftForCard(cartão, { issuerId })` monta o rascunho a partir do cartão:

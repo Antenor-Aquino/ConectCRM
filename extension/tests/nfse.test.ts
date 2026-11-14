@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { createOrganization, createPerson } from "../src/db/contacts";
 import { createCard, setDealItems } from "../src/db/deals";
-import { createIssuer, deleteIssuer, listIssuers, nfseDraftForCard, nfsePending, updateIssuer } from "../src/db/nfse";
+import { createIssuer, deleteIssuer, listIssuers, nfseDraftForCard, nfsePending, saveNfseDraft, updateIssuer } from "../src/db/nfse";
 import { createPipeline } from "../src/db/pipelines";
 import { createProduct, getProduct, listProducts, updateProduct } from "../src/db/products";
 import { createUser } from "../src/db/users";
@@ -80,7 +80,11 @@ describe("NFS-e — rascunho e pendências", () => {
     expect(d.taker).toMatchObject({ kind: "organization", name: "Instituto de Ensino LTDA", address: { cityIbge: "3550308" } });
     expect(d.services).toEqual([expect.objectContaining({ tribNac: "010501", description: "Licença PowerCubus 2027", valueCents: 100000 })]);
     expect(d.competence).toBe("2026-11-14");
-    expect(nfsePending(d)).toEqual([]);
+    expect(d.texts).toMatchObject({ description: "2 × Licença PowerCubus 2027", notes: "", saved: false });
+    // Falta só revisar e salvar os textos.
+    expect(nfsePending(d).map((p) => p.field)).toEqual(["texts.review"]);
+    saveNfseDraft(db, ctx, card, { description: d.texts.description, notes: "Processo de compra: 2026191944" });
+    expect(nfsePending(nfseDraftForCard(db, card))).toEqual([]);
   });
 
   it("aponta o que falta: empresa a escolher, documento do tomador, código do serviço, cidade fora do IBGE", async () => {
@@ -119,6 +123,44 @@ describe("NFS-e — rascunho e pendências", () => {
     const d = nfseDraftForCard(db, card);
     expect(d.taker).toMatchObject({ kind: "person", document: "52998224725", name: "Cristiane", address: null });
     expect(d.services[0]).toMatchObject({ description: "Treinamento", valueCents: 120000, tribNac: null });
-    expect(nfsePending(d).map((x) => x.field)).toEqual(["service.tribNac"]);
+    expect(nfsePending(d).map((x) => x.field)).toEqual(["service.tribNac", "texts.review"]);
+  });
+
+  it("textos personalizados: modelo da empresa com campos, observação da última nota do cliente, rascunho salvo no cartão", async () => {
+    const { db, ctx, pc } = await setup();
+    const a = createIssuer(db, ctx, {
+      cnpj: "68.153.622/0001-93",
+      legalName: "A",
+      cityIbge: "3106200",
+      descriptionTemplate: "Processo De Compra: {pedido}\n{itens}",
+      notesTemplate: "Competência {competencia} · {cliente}",
+    });
+    const org = createOrganization(db, ctx, { name: "Caixa Escolar", cnpj: "20.597.183/0001-81" });
+    const cert = createProduct(db, ctx, { name: "Certificado", kind: "servico", nfseTribNac: "010901" });
+    const c1 = createCard(db, ctx, { pipelineId: pc, title: "Certificado A3", organizationId: org });
+    setDealItems(db, ctx, c1, [{ productId: cert, description: "Certificado Digital e-CNPJ A3 - Token USB - 24 meses de validade.", unitPriceCents: 30000 }]);
+
+    const d1 = nfseDraftForCard(db, c1, { today: new Date("2026-11-14T12:00:00Z") });
+    expect(d1.issuer?.id).toBe(a);
+    expect(d1.texts.description).toBe("Processo De Compra: \nCertificado Digital e-CNPJ A3 - Token USB - 24 meses de validade.");
+    expect(d1.texts.notes).toBe("Competência 11/2026 · Caixa Escolar");
+    expect(d1.texts.source).toEqual({ description: "template", notes: "template" });
+
+    // Campo desconhecido e texto longo viram pendência.
+    saveNfseDraft(db, ctx, c1, { issuerId: a, description: "Serviço {xyz}", notes: "x".repeat(2001), orderNumber: "2026191944" });
+    const p1 = nfsePending(nfseDraftForCard(db, c1)).map((p) => p.field);
+    expect(p1).toEqual(expect.arrayContaining(["texts.fields", "texts.notes"]));
+    expect(p1).not.toContain("texts.review");
+
+    saveNfseDraft(db, ctx, c1, { issuerId: a, description: "Processo De Compra: 2026191944\nCertificado A3", notes: "Empenho 123/2026 · Pagamento em 30 dias", orderNumber: "2026191944" });
+    const saved = nfseDraftForCard(db, c1);
+    expect(saved.texts).toMatchObject({ orderNumber: "2026191944", notes: "Empenho 123/2026 · Pagamento em 30 dias", saved: true });
+
+    // Novo cartão do mesmo cliente: a observação vem da última nota dele.
+    const c2 = createCard(db, ctx, { pipelineId: pc, title: "Renovação", organizationId: org });
+    const d2 = nfseDraftForCard(db, c2);
+    expect(d2.texts.notes).toBe("Empenho 123/2026 · Pagamento em 30 dias");
+    expect(d2.texts.source.notes).toBe("last-taker");
+    expect(d2.texts.saved).toBe(false);
   });
 });

@@ -60,6 +60,7 @@ export const DATA_TABLES = [
   "todo_task",
   "todo_step",
   "nfse_issuer",
+  "nfse_draft",
 ] as const;
 export type DataTable = (typeof DATA_TABLES)[number];
 
