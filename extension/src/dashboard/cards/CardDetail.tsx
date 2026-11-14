@@ -23,7 +23,8 @@ import {
   Trash2,
   Trophy,
   X,
-  XCircle, Repeat, ListTodo, GitMerge } from "lucide-react";
+  XCircle, Repeat, ListTodo, GitMerge, CalendarDays } from "lucide-react";
+import { openUnifiedAgenda } from "../../lib/unifiedAgenda";
 import { MergeDialog } from "../ui/MergeDialog";
 import { TODO_CHANGED_EVENT } from "../todo/useTodoBadge";
 import { TaBadge, TaButton, TaInput, TaModal, TaTextarea, cn } from "@tailadmin";
@@ -251,7 +252,7 @@ function CardDetailInner({
   return (
     <Shell onClose={onClose} mode={mode} onToggleMode={onToggleMode} ticketNumber={card.kind === "ticket" ? card.ticket_number : null} cardId={card.id}>
       {/* Cabeçalho */}
-      <div className={cn("flex items-start gap-3", onToggleMode ? "pr-20" : "pr-8")}>
+      <div className={cn("flex items-start gap-3", onToggleMode ? "pr-60" : "pr-48")}>
         <input
           className="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-theme-xl font-semibold text-gray-800 hover:border-gray-200 focus:border-brand-300 focus:outline-none dark:text-white/90"
           value={title}
@@ -947,6 +948,15 @@ function Shell({
   const buttons = (
     <div className="absolute right-5 top-5 flex flex-col items-end gap-1.5">
       <div className="flex gap-1.5">
+        <button
+          type="button"
+          onClick={() => void openUnifiedAgenda()}
+          title="Abrir a Agenda Unificada (Google e Outlook juntos)"
+          data-unified-agenda
+          className="flex h-8 items-center gap-1.5 rounded-lg bg-gray-100 px-2.5 text-theme-xs font-medium text-gray-600 hover:bg-gray-200 hover:text-brand-600 dark:bg-white/5 dark:text-gray-300"
+        >
+          <CalendarDays size={15} /> Agenda Unificada
+        </button>
         {onToggleMode && (
           <button
             type="button"

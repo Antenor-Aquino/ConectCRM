@@ -288,6 +288,37 @@ export interface NewEvent {
   reminderMin: number | null;
   /** Google Agenda: lembretes por e-mail do próprio Google (minutos antes), que saem mesmo com o Chrome fechado. */
   emailReminders?: number[];
+  /** Agenda escolhida (listCalendars); sem ela, a principal da conta. */
+  calendarId?: string | null;
+}
+
+export interface CalendarInfo {
+  id: string;
+  name: string;
+  primary: boolean;
+}
+
+/**
+ * Agendas em que a conta pode criar eventos (a principal, as próprias e as
+ * compartilhadas com permissão de edição). A Agenda Unificada mostra estas
+ * mesmas agendas, então o evento criado aparece lá.
+ */
+export async function listCalendars(provider: CalendarProvider): Promise<CalendarInfo[]> {
+  if (provider === "microsoft") {
+    const r = await mFetch<{ value?: { id: string; name: string; isDefaultCalendar?: boolean; canEdit?: boolean }[] }>(
+      "/me/calendars?$select=id,name,isDefaultCalendar,canEdit&$top=100",
+    );
+    return (r.value ?? [])
+      .filter((c) => c.canEdit !== false)
+      .map((c) => ({ id: c.id, name: c.name, primary: !!c.isDefaultCalendar }))
+      .sort((a, b) => Number(b.primary) - Number(a.primary) || a.name.localeCompare(b.name, "pt-BR"));
+  }
+  const r = await gFetch<{ items?: { id: string; summary?: string; summaryOverride?: string; primary?: boolean }[] }>(
+    "https://www.googleapis.com/calendar/v3/users/me/calendarList?minAccessRole=writer&maxResults=250",
+  );
+  return (r.items ?? [])
+    .map((c) => ({ id: c.id, name: c.summaryOverride || c.summary || c.id, primary: !!c.primary }))
+    .sort((a, b) => Number(b.primary) - Number(a.primary) || a.name.localeCompare(b.name, "pt-BR"));
 }
 
 export async function createCalendarEvent(provider: CalendarProvider, ev: NewEvent): Promise<{ id: string; link: string | null }> {
@@ -303,7 +334,8 @@ export async function createCalendarEvent(provider: CalendarProvider, ev: NewEve
       ...(ev.reminderMin !== null ? { reminderMinutesBeforeStart: ev.reminderMin } : {}),
       ...(ev.online ? { isOnlineMeeting: true, onlineMeetingProvider: "teamsForBusiness" } : {}),
     };
-    const created = await mFetch<{ id: string; onlineMeeting?: { joinUrl?: string } }>("/me/calendar/events", {
+    const path = ev.calendarId ? `/me/calendars/${encodeURIComponent(ev.calendarId)}/events` : "/me/calendar/events";
+    const created = await mFetch<{ id: string; onlineMeeting?: { joinUrl?: string } }>(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -330,7 +362,7 @@ export async function createCalendarEvent(provider: CalendarProvider, ev: NewEve
   if (ev.online) event.conferenceData = { createRequest: { requestId: `conectcrm-${Date.now()}`, conferenceSolutionKey: { type: "hangoutsMeet" } } };
   const params = new URLSearchParams({ sendUpdates: "all", ...(ev.online ? { conferenceDataVersion: "1" } : {}) });
   const created = await gFetch<{ id: string; hangoutLink?: string; conferenceData?: { entryPoints?: { entryPointType: string; uri: string }[] } }>(
-    `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`,
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(ev.calendarId || "primary")}/events?${params}`,
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(event) },
   );
   return { id: created.id, link: created.hangoutLink ?? created.conferenceData?.entryPoints?.find((e) => e.entryPointType === "video")?.uri ?? null };
