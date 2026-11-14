@@ -24,8 +24,7 @@ import {
   Trash2,
   Trophy,
   X,
-  XCircle, Repeat, ListTodo, GitMerge, Receipt } from "lucide-react";
-  XCircle, Repeat, ListTodo, GitMerge, CalendarDays } from "lucide-react";
+  XCircle, Repeat, ListTodo, GitMerge, CalendarDays, Receipt } from "lucide-react";
 import { openUnifiedAgenda } from "../../lib/unifiedAgenda";
 import { CalendlyLinkButton } from "./CalendlyLinkButton";
 import { MergeDialog } from "../ui/MergeDialog";
