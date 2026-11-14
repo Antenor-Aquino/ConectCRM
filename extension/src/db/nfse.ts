@@ -208,7 +208,17 @@ export interface NfsePending {
 const digits = (s: string | null | undefined) => (s ?? "").replace(/\D/g, "");
 
 /** Rascunho da nota a partir do cartão (organização ou contato e itens), pela empresa escolhida. */
-export function nfseDraftForCard(db: DatabaseSync, cardId: string, opts: { issuerId?: string | null; today?: Date } = {}): NfseDraft {
+export function nfseDraftForCard(
+  db: DatabaseSync,
+  cardId: string,
+  opts: {
+    issuerId?: string | null;
+    today?: Date;
+    /** "Reaplicar texto padrão": ignora os textos salvos e usa este nº de pedido. */
+    fromTemplate?: boolean;
+    orderNumber?: string | null;
+  } = {},
+): NfseDraft {
   const today = opts.today ?? new Date();
   const card = one<{ id: string; pipeline_id: string; title: string; value_cents: number; person_id: string | null; organization_id: string | null }>(
     db,
@@ -283,7 +293,7 @@ export function nfseDraftForCard(db: DatabaseSync, cardId: string, opts: { issue
 
   // Textos: os salvos neste cartão; senão o modelo da empresa (discriminação) e
   // a observação da última nota do mesmo cliente (ou o modelo).
-  const orderNumber = saved?.order_number ?? "";
+  const orderNumber = opts.orderNumber ?? saved?.order_number ?? "";
   const total = services.reduce((n, x) => n + x.valueCents, 0);
   const vars: Record<string, string> = {
     itens: itemLines.join("\n"),
@@ -294,8 +304,9 @@ export function nfseDraftForCard(db: DatabaseSync, cardId: string, opts: { issue
     competencia: `${String(today.getMonth() + 1).padStart(2, "0")}/${today.getFullYear()}`,
     valor: (total / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
   };
+  const useSaved = !!saved && !opts.fromTemplate;
   const lastNotes =
-    !saved && taker.id
+    !useSaved && !opts.fromTemplate && taker.id
       ? one<{ notes: string | null }>(
           db,
           "SELECT notes FROM nfse_draft WHERE taker_id = ? AND card_id <> ? AND deleted_at IS NULL AND notes IS NOT NULL AND notes <> '' ORDER BY updated_at DESC LIMIT 1",
@@ -303,14 +314,14 @@ export function nfseDraftForCard(db: DatabaseSync, cardId: string, opts: { issue
           cardId,
         )?.notes
       : null;
-  const texts: NfseTexts = saved
-    ? { description: saved.description ?? "", notes: saved.notes ?? "", orderNumber, source: { description: "saved", notes: "saved" }, saved: true }
+  const texts: NfseTexts = useSaved
+    ? { description: saved!.description ?? "", notes: saved!.notes ?? "", orderNumber, source: { description: "saved", notes: "saved" }, saved: true }
     : {
         description: renderNfseTemplate(issuer?.description_template || DEFAULT_DESCRIPTION_TEMPLATE, vars),
         notes: lastNotes ?? renderNfseTemplate(issuer?.notes_template ?? "", vars),
         orderNumber,
         source: { description: "template", notes: lastNotes ? "last-taker" : "template" },
-        saved: false,
+        saved: !!saved,
       };
 
   return {

@@ -925,9 +925,9 @@ export const methods = {
     if (!deals.getCard(db, p.id, viewer(db, ctx))) throw new ValidationError("Cartão não encontrado.");
     nfse.saveNfseDraft(db, ctx, p.id, p);
   },
-  "nfse.draft": (db: DatabaseSync, ctx: DbContext, p: Id & { issuerId?: string | null }) => {
+  "nfse.draft": (db: DatabaseSync, ctx: DbContext, p: Id & { issuerId?: string | null; fromTemplate?: boolean; orderNumber?: string | null }) => {
     if (!deals.getCard(db, p.id, viewer(db, ctx))) throw new ValidationError("Cartão não encontrado.");
-    const draft = nfse.nfseDraftForCard(db, p.id, { issuerId: p.issuerId });
+    const draft = nfse.nfseDraftForCard(db, p.id, { issuerId: p.issuerId, fromTemplate: p.fromTemplate, orderNumber: p.orderNumber });
     return { draft, pending: nfse.nfsePending(draft) };
   },
 
