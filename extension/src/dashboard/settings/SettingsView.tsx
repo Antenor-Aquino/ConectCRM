@@ -1,7 +1,7 @@
 // Configurações: menu lateral com as seções. As que chegam em outras fases
 // aparecem desabilitadas, com a fase indicada.
 import { useEffect, useState } from "react";
-import { Ban, Bell, Database, MessageCircle, Trash2, FileText, Plug, Sparkles, KeyRound, ListChecks, Mail, Package, SlidersHorizontal, Tags, Users, UsersRound } from "lucide-react";
+import { Ban, Bell, Database, MessageCircle, Trash2, FileText, Plug, Sparkles, KeyRound, ListChecks, Mail, Package, Receipt, SlidersHorizontal, Tags, Users, UsersRound } from "lucide-react";
 import { TaPanel, cn } from "@tailadmin";
 import { planLabel } from "../../lib/license";
 import { useLicense } from "../license/LicenseGate";
@@ -18,11 +18,12 @@ import { TrashSettings } from "./TrashSettings";
 import { WhatsAppSettings } from "./WhatsAppSettings";
 import { LossReasonsSettings } from "./LossReasonsSettings";
 import { ProductsSettings } from "./ProductsSettings";
+import { NfseSettings } from "./NfseSettings";
 import { TagsSettings } from "./TagsSettings";
 import { TeamsSettings } from "./TeamsSettings";
 import { UsersSettings } from "./UsersSettings";
 
-export type Section = "usuarios" | "equipes" | "licenca" | "tags" | "campos" | "produtos" | "motivos" | "tipos" | "documentos" | "backup" | "ia" | "email" | "notificacoes" | "integracoes" | "lixeira" | "whatsapp";
+export type Section = "usuarios" | "equipes" | "licenca" | "tags" | "campos" | "produtos" | "motivos" | "tipos" | "documentos" | "backup" | "ia" | "email" | "notificacoes" | "integracoes" | "lixeira" | "whatsapp" | "nfse";
 
 const SECTIONS: { id: Section | null; label: string; icon: React.ReactNode; phase?: string }[] = [
   { id: "usuarios", label: "Usuários", icon: <Users size={16} /> },
@@ -31,6 +32,7 @@ const SECTIONS: { id: Section | null; label: string; icon: React.ReactNode; phas
   { id: "tags", label: "Tags", icon: <Tags size={16} /> },
   { id: "campos", label: "Campos personalizados", icon: <SlidersHorizontal size={16} /> },
   { id: "produtos", label: "Produtos e serviços", icon: <Package size={16} /> },
+  { id: "nfse", label: "Nota fiscal", icon: <Receipt size={16} /> },
   { id: "motivos", label: "Motivos de perda", icon: <Ban size={16} /> },
   { id: "tipos", label: "Tipos de atividade", icon: <ListChecks size={16} /> },
   { id: "documentos", label: "Documentos (GED)", icon: <FileText size={16} /> },
@@ -74,6 +76,7 @@ export function SettingsView({ env, initialSection }: { env: DbEnv; initialSecti
         {section === "tags" && <TagsSettings />}
         {section === "campos" && <CustomFieldsSettings />}
         {section === "produtos" && <ProductsSettings />}
+        {section === "nfse" && <NfseSettings />}
         {section === "motivos" && <LossReasonsSettings />}
         {section === "tipos" && <ActivityTypesSettings />}
         {section === "documentos" && <DocumentsSettings env={env} />}

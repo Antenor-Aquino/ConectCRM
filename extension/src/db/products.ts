@@ -5,6 +5,7 @@ import { insertRow, softDelete, updateRow, type DbContext } from "./repo";
 import { moveToTrash, type TrashNotice } from "./trash";
 import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
 import { getCustomValues, setCustomValues, type CustomValue } from "./customFields";
+import { nbs, servicoNacional } from "../lib/nfse/tabelas";
 
 export type ProductKind = "produto" | "servico";
 export type Recurrence = "avulso" | "mensal" | "trimestral" | "semestral" | "anual";
@@ -23,6 +24,9 @@ export interface Product {
   category_id: string | null;
   description: string | null;
   active: number;
+  /** NFS-e (spec 19): código de tributação nacional (6 dígitos) e NBS (9 dígitos). */
+  nfse_trib_nac?: string | null;
+  nfse_nbs?: string | null;
   /** Campos marcados para aparecer junto com o nome (máx. 2). */
   name_ext?: string | null;
 }
@@ -38,6 +42,9 @@ export interface ProductInput {
   categoryId?: string | null;
   description?: string | null;
   active?: boolean;
+  /** NFS-e: código de tributação nacional e NBS (só para serviço). */
+  nfseTribNac?: string | null;
+  nfseNbs?: string | null;
   /** Campos personalizados do produto. */
   customValues?: Record<string, CustomValue>;
 }
@@ -71,6 +78,16 @@ function productData(db: DatabaseSync, input: Partial<ProductInput>, full: boole
   }
   if (full || input.description !== undefined) data.description = optionalText(input.description);
   if (input.active !== undefined) data.active = input.active ? 1 : 0;
+  if (full || input.nfseTribNac !== undefined) {
+    const c = (input.nfseTribNac ?? "").replace(/\D/g, "");
+    if (c && !servicoNacional(c.padStart(6, "0"))) throw new ValidationError(`O código de tributação nacional ${input.nfseTribNac} não existe na lista nacional de serviços.`);
+    data.nfse_trib_nac = c ? c.padStart(6, "0") : null;
+  }
+  if (full || input.nfseNbs !== undefined) {
+    const c = (input.nfseNbs ?? "").replace(/\D/g, "");
+    if (c && !nbs(c)) throw new ValidationError(`O código NBS ${input.nfseNbs} não existe na tabela NBS 2.0.`);
+    data.nfse_nbs = c || null;
+  }
   return data;
 }
 
@@ -116,7 +133,7 @@ export function listProducts(db: DatabaseSync, opts: { search?: string; includeI
   }
   const rows = many<Product>(
     db,
-    `SELECT id, code, name, kind, unit, price_cents, cost_cents, recurrence, category_id, description, active FROM product
+    `SELECT id, code, name, kind, unit, price_cents, cost_cents, recurrence, category_id, description, active, nfse_trib_nac, nfse_nbs FROM product
      WHERE ${where.join(" AND ")} ORDER BY name COLLATE NOCASE`,
     ...params,
   );

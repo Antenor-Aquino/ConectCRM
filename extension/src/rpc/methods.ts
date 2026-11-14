@@ -47,6 +47,7 @@ import { cardFinanceLocks } from "../db/financeLock";
 import { contactCardFor } from "../db/contactCard";
 import type { FinanceItem, ReturnPackage } from "../lib/finance/protocol";
 import * as users from "../db/users";
+import * as nfse from "../db/nfse";
 
 type Handler = (db: DatabaseSync, ctx: DbContext, params: never) => unknown;
 type Id = { id: string };
@@ -905,6 +906,26 @@ export const methods = {
   },
   "tags.usage": (db: DatabaseSync, _c: DbContext, p: { entity: tags.TagEntity }) => tags.tagUsage(db, p.entity),
   "products.usage": (db: DatabaseSync) => products.productUsage(db),
+
+  // Nota fiscal de serviço (spec 19): empresas emissoras só administradores; rascunho para quem vê o cartão.
+  "nfse.issuers": (db: DatabaseSync) => nfse.listIssuers(db),
+  "nfse.createIssuer": (db: DatabaseSync, ctx: DbContext, p: nfse.IssuerInput) => {
+    assertAdmin(db, ctx);
+    return nfse.createIssuer(db, ctx, p);
+  },
+  "nfse.updateIssuer": (db: DatabaseSync, ctx: DbContext, p: Id & { patch: Partial<nfse.IssuerInput> }) => {
+    assertAdmin(db, ctx);
+    nfse.updateIssuer(db, ctx, p.id, p.patch);
+  },
+  "nfse.deleteIssuer": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    assertAdmin(db, ctx);
+    nfse.deleteIssuer(db, ctx, p.id);
+  },
+  "nfse.draft": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    if (!deals.getCard(db, p.id, viewer(db, ctx))) throw new ValidationError("Cartão não encontrado.");
+    const draft = nfse.nfseDraftForCard(db, p.id);
+    return { draft, pending: nfse.nfsePending(draft) };
+  },
 
   // Produtos e serviços
   "products.customValues": (db: DatabaseSync, _c: DbContext, p: Id) => products.productCustomValues(db, p.id),
