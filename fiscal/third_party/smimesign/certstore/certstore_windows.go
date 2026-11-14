@@ -38,7 +38,9 @@ import (
 	"encoding/asn1"
 	"fmt"
 	"io"
+	"log"
 	"math/big"
+	"strings"
 	"unicode/utf16"
 	"unsafe"
 
@@ -64,10 +66,11 @@ const (
 // API will be used.
 //
 // Possible values are:
-//   0x00000000 —                                      — Only use CryptoAPI.
-//   0x00010000 — CRYPT_ACQUIRE_ALLOW_NCRYPT_KEY_FLAG  — Prefer CryptoAPI.
-//   0x00020000 — CRYPT_ACQUIRE_PREFER_NCRYPT_KEY_FLAG — Prefer CNG.
-//   0x00040000 — CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG   — Only uyse CNG.
+//
+//	0x00000000 —                                      — Only use CryptoAPI.
+//	0x00010000 — CRYPT_ACQUIRE_ALLOW_NCRYPT_KEY_FLAG  — Prefer CryptoAPI.
+//	0x00020000 — CRYPT_ACQUIRE_PREFER_NCRYPT_KEY_FLAG — Prefer CNG.
+//	0x00040000 — CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG   — Only uyse CNG.
 var winAPIFlag C.DWORD = C.CRYPT_ACQUIRE_PREFER_NCRYPT_KEY_FLAG
 
 // winStore is a wrapper around a C.HCERTSTORE.
@@ -313,6 +316,9 @@ type winPrivateKey struct {
 	// CNG fields
 	cngHandle C.NCRYPT_KEY_HANDLE
 	keySpec   C.DWORD
+
+	// ConectCRM: certificado de origem, para tentar a CryptoAPI quando o CNG falha.
+	certCtx C.PCCERT_CONTEXT
 }
 
 // newWinPrivateKey gets a *winPrivateKey for the given certificate.
@@ -341,12 +347,14 @@ func newWinPrivateKey(certCtx C.PCCERT_CONTEXT, publicKey crypto.PublicKey) (*wi
 		return &winPrivateKey{
 			publicKey: publicKey,
 			cngHandle: C.NCRYPT_KEY_HANDLE(provOrKey),
+			certCtx:   certCtx,
 		}, nil
 	} else {
 		return &winPrivateKey{
 			publicKey: publicKey,
 			capiProv:  C.HCRYPTPROV(provOrKey),
 			keySpec:   keySpec,
+			certCtx:   certCtx,
 		}, nil
 	}
 }
@@ -357,14 +365,67 @@ func (wpk *winPrivateKey) Public() crypto.PublicKey {
 }
 
 // Sign implements the crypto.Signer interface.
+//
+// ConectCRM: alguns provedores (certificado A1 importado num provedor antigo do
+// Windows, drivers de token A3) recusam a assinatura pelo caminho normal do CNG
+// (ex.: NTE_INTERNAL_ERROR 0x8009002D com SHA-1). Antes de desistir, tenta:
+//
+//	CryptoAPI (CAPI), reabrindo a chave pelo certificado. (A tentativa de CNG
+//	sem identificar o hash foi retirada: derrubou o driver de um token A3.)
+//
+// Cada tentativa vai para o fiscal.log antes de rodar (se o driver derrubar o
+// programa, o log mostra onde).
 func (wpk *winPrivateKey) Sign(rand io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
+	hash := opts.HashFunc()
 	if wpk.capiProv != 0 {
-		return wpk.capiSignHash(opts.HashFunc(), digest)
-	} else if wpk.cngHandle != 0 {
-		return wpk.cngSignHash(opts.HashFunc(), digest)
-	} else {
+		return wpk.capiSignHash(hash, digest)
+	}
+	if wpk.cngHandle == 0 {
 		return nil, errors.New("bad private key")
 	}
+	log.Printf("assinatura: CNG (%v)", hash)
+	sig, err := wpk.cngSignHash(hash, digest)
+	if err == nil {
+		return sig, nil
+	}
+	errs := []string{"CNG: " + err.Error()}
+	if _, isRSA := wpk.publicKey.(*rsa.PublicKey); isRSA {
+		if wpk.certCtx != nil {
+			log.Printf("assinatura: CNG recusou (%v); tentando CryptoAPI", err)
+			sig3, err3 := wpk.capiFallback(hash, digest)
+			if err3 == nil {
+				log.Printf("assinatura: feita pela CryptoAPI")
+				return sig3, nil
+			}
+			log.Printf("assinatura: CryptoAPI recusou (%v)", err3)
+			errs = append(errs, "CryptoAPI: "+err3.Error())
+		}
+	}
+	log.Printf("assinatura: todas as tentativas falharam: %s", strings.Join(errs, " | "))
+	return nil, errors.New(strings.Join(errs, " | "))
+}
+
+// capiFallback reabre a chave do certificado só pela CryptoAPI e assina.
+func (wpk *winPrivateKey) capiFallback(hash crypto.Hash, digest []byte) ([]byte, error) {
+	var (
+		provOrKey C.HCRYPTPROV_OR_NCRYPT_KEY_HANDLE
+		keySpec   C.DWORD
+		mustFree  C.WINBOOL
+	)
+	if ok := C.CryptAcquireCertificatePrivateKey(wpk.certCtx, 0, nil, &provOrKey, &keySpec, &mustFree); ok == winFalse {
+		return nil, lastError("failed to get CryptoAPI private key")
+	}
+	if keySpec == C.CERT_NCRYPT_KEY_SPEC {
+		if mustFree == winTrue {
+			C.NCryptFreeObject(C.NCRYPT_HANDLE(provOrKey))
+		}
+		return nil, errors.New("a chave só existe no CNG")
+	}
+	capi := &winPrivateKey{publicKey: wpk.publicKey, capiProv: C.HCRYPTPROV(provOrKey), keySpec: keySpec}
+	if mustFree == winTrue {
+		defer C.CryptReleaseContext(capi.capiProv, 0)
+	}
+	return capi.capiSignHash(hash, digest)
 }
 
 // cngSignHash signs a digest using the CNG APIs.

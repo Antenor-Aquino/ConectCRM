@@ -34,11 +34,17 @@ interface FiscalResponse {
 }
 
 export class FiscalNotInstalled extends Error {}
+/** O programa abriu, mas fechou sozinho (travou) antes de responder. */
+export class FiscalCrashed extends Error {}
 
 /** Mensagens do Chrome quando o programa não está instalado/registrado. */
 function friendly(message: string): Error {
-  if (/not found|forbidden|has exited|Error when communicating/i.test(message))
+  if (/not found|forbidden/i.test(message))
     return new FiscalNotInstalled("O ConectCRM Fiscal não está instalado neste computador (ou foi removido). Instale o ConectCRMFiscal.exe e reabra o Chrome.");
+  if (/has exited|Error when communicating/i.test(message))
+    return new FiscalCrashed(
+      "O ConectCRM Fiscal fechou sozinho no meio da operação (em geral, o programa do certificado ou do token travou). Tente de novo; se repetir, envie o arquivo fiscal.log da pasta %LOCALAPPDATA%\\ConectCRM\\Fiscal.",
+    );
   return new Error(`ConectCRM Fiscal: ${message}`);
 }
 
@@ -80,6 +86,48 @@ export async function eventViaFiscal(env: NfseEnvironment, thumbprint: string, a
   const r = await fiscalCall({ cmd: "event", env, thumbprint, accessKey, xml: eventXml });
   if (!r.result) throw new Error("ConectCRM Fiscal não devolveu a resposta da Receita.");
   return { result: r.result, signed: r.signed ?? eventXml };
+}
+
+/**
+ * Chave de uma nota que não existe (número 0) da própria empresa, para testar a
+ * conexão: cMun(7) + ambiente gerador(1) + tipo de inscrição(1) + CNPJ(14) +
+ * nNFSe(13) + AAMM(4) + código(9) + DV(1).
+ */
+export function probeAccessKey(cityIbge: string, cnpj: string, now = new Date()): string {
+  const aamm = `${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, "0")}`;
+  return `${cityIbge.padStart(7, "0")}22${cnpj.replace(/\D/g, "").padStart(14, "0")}${"0".repeat(13)}${aamm}${"0".repeat(10)}`;
+}
+
+export interface ConnectionTest {
+  ok: boolean;
+  /** Texto para a tela. */
+  message: string;
+  detail?: string;
+}
+
+/** Interpreta a resposta da consulta de teste: chegar na Receita com o certificado aceito é o que importa. */
+export function classifyProbe(r: SefinResult): ConnectionTest {
+  const detail = sefinErrors(r).join(" | ");
+  if (r.httpStatus === 401 || r.httpStatus === 495 || r.httpStatus === 496)
+    return { ok: false, message: "A Receita recusou o certificado desta conexão. Confira se é o certificado da empresa (e-CNPJ ICP-Brasil) e se não está vencido.", detail };
+  if (r.httpStatus >= 500) return { ok: false, message: `A Receita está com problema agora (HTTP ${r.httpStatus}). Tente de novo mais tarde.`, detail };
+  return { ok: true, message: "Conexão com a Receita funcionando: o certificado foi aceito. Nenhuma nota foi emitida no teste." };
+}
+
+/** Testa certificado + PIN + conexão com a Sefin, sem emitir nada (consulta uma nota inexistente). */
+export async function testSefinConnection(env: NfseEnvironment, thumbprint: string, cityIbge: string, cnpj: string): Promise<ConnectionTest> {
+  try {
+    const r = await fiscalCall({ cmd: "query", env, thumbprint, accessKey: probeAccessKey(cityIbge, cnpj) });
+    if (!r.result) return { ok: false, message: "ConectCRM Fiscal não devolveu a resposta da Receita." };
+    return classifyProbe(r.result);
+  } catch (e) {
+    const m = e instanceof Error ? e.message : String(e);
+    if (e instanceof FiscalNotInstalled) return { ok: false, message: m };
+    if (/PIN|cancel|canceled|cancelad/i.test(m)) return { ok: false, message: "O PIN do token não foi informado (ou foi cancelado).", detail: m };
+    if (/sem conexão|tls|handshake|certificate|x509|reset/i.test(m))
+      return { ok: false, message: "Não foi possível conectar à Receita com este certificado (a conexão segura falhou). Confira o certificado, a internet e o antivírus/proxy.", detail: m };
+    return { ok: false, message: m };
+  }
 }
 
 /** Número da NFS-e no XML devolvido pela Sefin. */

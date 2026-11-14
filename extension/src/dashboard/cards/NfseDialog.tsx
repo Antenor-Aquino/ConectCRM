@@ -131,6 +131,7 @@ export function NfseDialog({ cardId, onClose, onChanged }: { cardId: string; onC
     const total = draft.services.reduce((n, s) => n + s.valueCents, 0);
     const where = env === "producao_restrita" ? "no ambiente de TESTES (produção restrita, sem valor fiscal)" : "em PRODUÇÃO (nota com valor fiscal)";
     if (!confirm(`Emitir a NFS-e de ${formatCents(total)} para ${draft.taker.name} por ${draft.issuer.legal_name}, ${where}?\n\nA nota vai direto para a Receita. Se o certificado for token (A3), o Windows vai pedir o PIN.`)) return;
+    if (env === "producao" && !confirmProduction("emitir uma NFS-e REAL, com valor fiscal")) return;
     setMsg(null);
     setApiErrors(null);
     setSending(true);
@@ -189,6 +190,7 @@ export function NfseDialog({ cardId, onClose, onChanged }: { cardId: string; onC
     const err = cancelInputError(cancelCode, cancelText);
     if (err) return setMsg({ kind: "err", text: err });
     const amb = issued.environment === "producao_restrita" ? " (ambiente de testes)" : "";
+    if (issued.environment === "producao" && !confirmProduction("cancelar uma NFS-e REAL")) return;
     if (!confirm(`Cancelar a NFS-e${issued.number ? ` nº ${issued.number}` : ""}${amb} na Receita?\n\nMotivo: ${CANCEL_REASON_LABEL[cancelCode]} — ${cancelText.trim()}\n\nO cancelamento não pode ser desfeito. Se o certificado for token (A3), o Windows vai pedir o PIN.`)) return;
     setMsg(null);
     setApiErrors(null);
@@ -304,6 +306,11 @@ export function NfseDialog({ cardId, onClose, onChanged }: { cardId: string; onC
   return (
     <TaModal isOpen onClose={requestClose} title="Nota fiscal de serviço (NFS-e)" width="max-w-3xl">
       <div className="space-y-4 text-theme-sm text-gray-700 dark:text-gray-300" data-nfse-dialog>
+        {env === "producao" && !draft.issued && (
+          <p className="flex items-center gap-2 rounded-lg border border-error-300 bg-error-50 px-3 py-2 font-medium text-error-700 dark:bg-error-500/10" data-nfse-env-producao>
+            <AlertTriangle size={15} /> Ambiente de PRODUÇÃO: a nota emitida aqui tem valor fiscal. Para testar, mude para Produção restrita em Configurações → Nota fiscal.
+          </p>
+        )}
         {draft.issued && (
           <div
             className={cn(
@@ -665,3 +672,12 @@ function TextBox({ label, value, max, rows, onChange, hint, data }: { label: str
     </label>
   );
 }
+
+/** Em produção, além do confirm: digitar PRODUÇÃO (evita emitir nota real por engano). */
+export function confirmProduction(what: string): boolean {
+  const typed = prompt(`Atenção: o ambiente é PRODUÇÃO. Você vai ${what}.\n\nPara confirmar, digite PRODUÇÃO:`);
+  const ok = typed != null && typed.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase() === "PRODUCAO";
+  if (typed != null && !ok) alert("Texto diferente de PRODUÇÃO: nada foi enviado à Receita.");
+  return ok;
+}
+

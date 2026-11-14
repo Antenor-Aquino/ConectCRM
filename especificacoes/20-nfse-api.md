@@ -260,3 +260,107 @@ como Native Messaging e Sefin simulada exigindo certificado: emitir → baixar
 DANFSe → cancelamento recusado (E0840) → cancelado (evento assinado, conferido
 com xmlsec1) → DANFSe com "CANCELADA" → preparar nova nota.
 **Falta (B5):** cancelamento real em produção restrita com A1 e A3.
+
+## B5 — preparação do teste real (0.2.112; ConectCRM Fiscal 1.0.2)
+
+O teste real (A1 e token A3 contra a Sefin de produção restrita) é feito pelo
+dono do projeto no Windows, seguindo o roteiro entregue em PDF
+(`Roteiro-teste-B5-NFSe.pdf`). Para deixá-lo seguro e diagnosticável:
+
+- **Testar conexão com a Receita** (Configurações → Nota fiscal → empresa →
+  certificado): consulta pela API uma NFS-e que não existe (chave com o
+  município e CNPJ da empresa e número 0) usando o certificado escolhido.
+  Confere programa instalado, certificado/PIN e a conexão mTLS sem emitir
+  nada. 2xx/4xx (exceto 401) = certificado aceito; 401 = certificado recusado;
+  5xx = Receita fora; erro de conexão = TLS/rede (`classifyProbe`,
+  `testSefinConnection` em `lib/nfse/fiscal.ts`).
+- **ConectCRM Fiscal 1.0.2**: o `fiscal.log` passa a registrar o status HTTP e
+  os códigos de erro da Sefin (ex.: `emit producao_restrita: HTTP 400 E0712`),
+  sem dados da nota, PIN ou chave.
+- Verificado no Chrome com o programa real e Sefin simulada (consulta com
+  certificado do cliente na conexão).
+
+**Pendente (depende do teste no Windows):** resultado com A1 e A3, ajustes
+pelos códigos de erro reais, e só então liberar Produção.
+
+**Primeiro resultado real (produção, só o teste de conexão, A1):** a Sefin
+respondeu com `tls: no renegotiation`. O servidor (IIS) abre o TLS 1.2 sem
+pedir o certificado e só o pede numa renegociação, que o Go recusa por padrão.
+**ConectCRM Fiscal 1.0.3** aceita a renegociação (`tls.RenegotiateFreelyAsClient`).
+Reproduzido com um servidor de testes que renegocia pedindo o certificado:
+a 1.0.2 falha com o mesmo erro e a 1.0.3 conecta e envia o certificado.
+O programa passa a ser entregue dentro de .zip (o download direto de .exe é
+bloqueado pelo navegador/app).
+
+
+**Segundo resultado real (emissão):** `falha ao assinar: failed to sign digest:
+SECURITY_STATUS -2146893779` (0x8009002D, NTE_INTERNAL_ERROR) — o provedor da
+chave recusou a assinatura RSA/SHA-1 pelo caminho normal do CNG (típico de
+certificado A1 importado num provedor antigo do Windows ou de driver de token).
+**ConectCRM Fiscal 1.0.4**: se o CNG recusar, tenta (1) CNG com o DigestInfo
+montado pelo programa e (2) CryptoAPI, reabrindo a chave pelo certificado; o
+`fiscal.log` registra qual caminho assinou. Só compila e testa em Windows real
+(não há como reproduzir o provedor do cliente aqui).
+
+**Terceiro resultado real:** com a 1.0.4 a extensão mostrou "não está
+instalado" — na verdade o Chrome avisou que o programa fechou sozinho ("Native
+host has exited") durante a assinatura (o driver/provedor da chave derrubou o
+processo numa das tentativas). **ConectCRM Fiscal 1.0.5 / extensão 0.2.113**:
+CryptoAPI passa a ser a 1ª reserva (mais compatível com provedores antigos e
+tokens); cada tentativa é registrada no `fiscal.log` antes de rodar; pane em Go
+vira erro com a pilha no log; a extensão distingue "não instalado" de "fechou
+sozinho"; o instalador renomeia o programa antigo se ele estiver em uso.
+
+**Quarto resultado real (token A3, CLAUDIA):** o `fiscal.log` mostrou que o
+token assina SHA-256 (o teste de conexão passou: HTTP 404 E2401) mas recusa
+SHA-1 por todos os caminhos (CNG: 0x8009002D; CryptoAPI também recusou); a
+tentativa de CNG sem identificar o hash derrubou o driver. Os testes rodaram
+em **produção** (nenhuma nota saiu).
+**ConectCRM Fiscal 1.0.6 / extensão 0.2.114:** se a assinatura SHA-1 falhar,
+a DPS/evento é assinada com **RSA-SHA256** (`xmldsig-more#rsa-sha256`, digest
+`xmlenc#sha256`) — o `xmldsig-core-schema` do leiaute 1.01 não fixa mais o
+algoritmo (o 1.00 fixava SHA-1); a tentativa que derrubava o driver foi
+retirada. Na extensão, emitir ou cancelar em produção exige digitar
+"PRODUÇÃO", e a janela da nota mostra um aviso vermelho quando o ambiente é
+produção. Falta confirmar na Receita (produção restrita) que a assinatura
+SHA-256 é aceita.
+
+**Quinto resultado real (token A3, produção restrita):** SHA-256 também
+recusado (0x8009002D) na assinatura do XML — mas o mesmo token assina
+SHA-256 no TLS do teste de conexão. Diferença: o XML era assinado antes de
+qualquer conexão, na thread principal. **ConectCRM Fiscal 1.0.7:** emissão e
+cancelamento primeiro abrem a conexão com certificado (GET de uma chave
+inexistente — o token pede o PIN e abre a sessão), depois assinam o XML numa
+thread própria do sistema e enviam pela mesma conexão; o log registra a
+abertura da sessão e o tempo da assinatura.
+
+**Sexto resultado real (token A3, produção restrita): assinatura aceita.** A
+Receita recusou por esquema (E1235: `infDPS` não aceita `cLocEmi` logo após
+`tpEmit`; esperava `cMotivoEmisTI`/`finNFSe`). A produção restrita já usa o
+leiaute da reforma tributária (NT 009, anexo VI v1.04.01; esquemas
+`esquemas_prod_restrita_20261020.zip`, mesmos nomes de arquivo v1.01, conteúdo
+novo). **Extensão 0.2.115:** DPS com `finNFSe` = 0 (NFS-e regular) após
+`tpEmit` e `cNBS` antes de `xDescServ` (agora o último de `cServ`); os XSD dos
+testes foram trocados pelos de 20/10/2026 (DPS e pedido de cancelamento
+validados); o DANFSe lê `finNFSe` de `infDPS`.
+**Atenção para 2027:** para optantes do Simples, o grupo `IBSCBS` da DPS passa
+a ser obrigatório em 2027, e há regra prevista para `regApIBSCBSSN` no
+`regTrib` — tarefa a fazer antes de janeiro (ainda não está no XSD atual).
+
+**Sétimo resultado real (token A3, produção restrita):** E0039 — "o município
+emissor informado na DPS deve estar parametrizado para utilizar os emissores
+públicos nacionais". O XML passou no esquema e a assinatura foi aceita; a
+recusa é cadastral: Petrolina (2611101) não está parametrizada no ambiente de
+produção restrita. Não há o que corrigir no CRM. Próximo passo depende do
+dono: confirmar se a empresa já emite pelo Emissor Nacional em produção (o
+município estaria parametrizado lá) e fazer a primeira nota real pelo CRM, ou
+testar com a outra empresa se o município dela estiver parametrizado.
+
+**Oitavo resultado real (produção, nota real):** E1235 ao contrário — a
+produção ainda está no leiaute v1.01 de fev/2026 e não aceita `finNFSe`.
+**Extensão 0.2.116:** o leiaute da DPS segue o ambiente (`dpsLayoutFor`):
+produção → v1.01 (sem `finNFSe`, `xDescServ` antes de `cNBS`); produção
+restrita → reforma (NT 009). Testes validam cada um contra o esquema do seu
+ambiente (`fixtures/nfse-xsd-producao` = fev/2026; `fixtures/nfse-xsd` =
+20/10/2026). Quando a Receita levar o leiaute novo para produção, basta mudar
+`dpsLayoutFor`.

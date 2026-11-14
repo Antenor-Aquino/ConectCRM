@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows/registry"
@@ -40,7 +41,18 @@ func copyFile(src, dst string) error {
 	if err := out.Close(); err != nil {
 		return err
 	}
-	_ = os.Remove(dst)
+	// Sobras de atualizações anteriores (versões que estavam em uso).
+	if old, _ := filepath.Glob(dst + ".antigo*"); len(old) > 0 {
+		for _, f := range old {
+			_ = os.Remove(f)
+		}
+	}
+	if err := os.Remove(dst); err != nil && !os.IsNotExist(err) {
+		// Em uso pelo Chrome: o Windows não deixa apagar, mas deixa renomear.
+		if err := os.Rename(dst, fmt.Sprintf("%s.antigo-%d", dst, time.Now().Unix())); err != nil {
+			return fmt.Errorf("o programa antigo está em uso: feche o Chrome e instale de novo (%v)", err)
+		}
+	}
 	return os.Rename(tmp, dst)
 }
 

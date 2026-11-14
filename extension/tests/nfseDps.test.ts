@@ -13,7 +13,9 @@ import { createUser } from "../src/db/users";
 import { brasiliaDateTime, buildDpsXml, dpsId } from "../src/lib/nfse/dps";
 import { freshDb } from "./helpers";
 
+// Produção restrita: leiaute da reforma (esquemas de 20/10/2026). Produção: leiaute v1.01 de fev/2026.
 const XSD = resolve(__dirname, "fixtures/nfse-xsd/DPS_v1.01.xsd");
+const XSD_PRODUCAO = resolve(__dirname, "fixtures/nfse-xsd-producao/DPS_v1.01.xsd");
 const hasXmllint = (() => {
   try {
     execFileSync("xmllint", ["--version"], { stdio: "ignore" });
@@ -27,12 +29,12 @@ const hasXmllint = (() => {
  * O padrão do campo serie no XSD v1.01 ('^0{0,4}\d{1,5}$') usa ^ e $, que em XSD são
  * caracteres comuns: nenhum valor real passa no xmllint (a Receita aceita). Esse aviso é ignorado.
  */
-function validate(xml: string): string {
+function validate(xml: string, xsd = /<tpAmb>1<\/tpAmb>/.test(xml) ? XSD_PRODUCAO : XSD): string {
   const dir = mkdtempSync(join(tmpdir(), "dps-"));
   const f = join(dir, "dps.xml");
   writeFileSync(f, xml);
   try {
-    execFileSync("xmllint", ["--noout", "--schema", XSD, f], { stdio: "pipe" });
+    execFileSync("xmllint", ["--noout", "--schema", xsd, f], { stdio: "pipe" });
     return "";
   } catch (e) {
     const out = String((e as { stderr?: Buffer }).stderr ?? e);
@@ -88,7 +90,7 @@ describe("NFS-e API — DPS", () => {
     expect(xml).toContain("<regTrib><opSimpNac>3</opSimpNac><regApTribSN>1</regApTribSN><regEspTrib>0</regEspTrib></regTrib>");
     expect(xml).toContain("<IM>99650737</IM>");
     expect(xml).toContain("<toma><CNPJ>19929587000146</CNPJ><xNome>CAIXA ESCOLAR PROFESSOR HILDEBRANDO PONTES</xNome><end><endNac><cMun>3170107</cMun><CEP>38067230</CEP></endNac>");
-    expect(xml).toContain("<cServ><cTribNac>010901</cTribNac><xDescServ>Certificado digital A1 — Caixa Escolar Prof. Hildebrando Pontes</xDescServ><cNBS>115030000</cNBS></cServ>");
+    expect(xml).toContain("<cServ><cTribNac>010901</cTribNac><cNBS>115030000</cNBS><xDescServ>Certificado digital A1 — Caixa Escolar Prof. Hildebrando Pontes</xDescServ></cServ>");
     expect(xml).toContain("<infoCompl><xPed>22627840</xPed><xInfComp>Processo de compra 22627840</xInfComp></infoCompl>");
     expect(xml).toContain("<vServ>52.00</vServ>");
     expect(xml).toContain("<tpRetISSQN>1</tpRetISSQN><pAliq>2.00</pAliq>");
@@ -102,6 +104,23 @@ describe("NFS-e API — DPS", () => {
     expect(validate(xml)).toBe("");
     expect(xml).toContain("<toma><CPF>52998224725</CPF><xNome>Cristiane &amp; Cia &lt;teste&gt;</xNome><email>c@ied.edu.br</email></toma>");
     expect(xml).toContain("<tpAmb>1</tpAmb>");
+    // Produção ainda no leiaute anterior: sem finNFSe, xDescServ antes de cNBS.
+    expect(xml).not.toContain("finNFSe");
+    expect(xml).toMatch(/<\/xDescServ><cNBS>/);
+  });
+
+  it.skipIf(!hasXmllint)("leiaute escolhido pelo ambiente, e cada um só passa no esquema do seu ambiente", async () => {
+    const { db, ctx, card } = await setup();
+    const n = reserveDpsNumber(db, ctx, card);
+    const d = nfseDraftForCard(db, card);
+    const base = { issuedAt: new Date("2026-11-14T13:00:00Z"), ...n, appVersion: "ConectCRM" };
+    const prod = buildDpsXml(d, { ...base, environment: "producao" });
+    const rest = buildDpsXml(d, { ...base, environment: "producao_restrita" });
+    expect(validate(prod, XSD_PRODUCAO)).toBe("");
+    expect(validate(rest, XSD)).toBe("");
+    expect(validate(prod, XSD)).toMatch(/finNFSe|cLocEmi/);
+    expect(validate(rest, XSD_PRODUCAO)).toMatch(/finNFSe/);
+    expect(rest).toContain("<tpEmit>1</tpEmit><finNFSe>0</finNFSe><cLocEmi>");
   });
 
   it("número da DPS: reservado na 1ª tentativa, mantido ao reenviar, próximo para outra nota; trocar a empresa libera", async () => {
