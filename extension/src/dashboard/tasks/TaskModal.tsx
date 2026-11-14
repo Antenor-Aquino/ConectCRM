@@ -10,7 +10,21 @@ import { call } from "../../rpc/client";
 import type { Activity, ActivityType } from "../../db/activities";
 import type { CustomField, CustomValue } from "../../db/customFields";
 import { ActivityIcon } from "../../lib/activityIcons";
-import { busyRanges, calendarConnected, computeFreeSlots, connectCalendar, createCalendarEvent, googleClientConfigured, listCalendars, PROVIDER_LABEL, type CalendarInfo, type CalendarProvider } from "../../lib/calendar";
+import {
+  busyRanges,
+  calendarConnected,
+  computeFreeSlots,
+  connectCalendar,
+  createCalendarEvent,
+  googleCalendarConfigured,
+  googleMultiConfigured,
+  listCalendars,
+  listGoogleAccounts,
+  removeGoogleAccount,
+  PROVIDER_LABEL,
+  type CalendarInfo,
+  type CalendarProvider,
+} from "../../lib/calendar";
 import { isValidEmail } from "../../lib/validate";
 import { useSession } from "../session";
 import { Avatar } from "../ui/Avatar";
@@ -339,7 +353,16 @@ export function TaskModal({
   const isMeeting = !!type?.is_meeting && !existing?.external_event_id;
   // "Adicionar à agenda" vale para qualquer atividade ainda sem evento (reunião já vem ligada).
   const canCalendar = !existing?.external_event_id && loaded;
-  const googleReady = googleClientConfigured();
+  const googleReady = googleCalendarConfigured();
+  // Google com várias contas (Stepple, PowerCubus…): cada uma conectada pelo seu login.
+  const googleMulti = provider === "google" && googleMultiConfigured();
+  const [googleAccounts, setGoogleAccounts] = useState<string[]>([]);
+  const [calRev, setCalRev] = useState(0);
+  useEffect(() => {
+    if (googleMulti) void listGoogleAccounts().then(setGoogleAccounts);
+  }, [googleMulti, calRev]);
+  /** Valor da lista de agendas: conta + agenda (a mesma agenda pode existir em duas contas). */
+  const calKey = (c: CalendarInfo) => `${c.account ?? ""}|${c.id}`;
 
   useEffect(() => {
     if (!canCalendar) return;
@@ -353,7 +376,7 @@ export function TaskModal({
       setMakeEvent(c && isMeeting);
     });
     setSlots(null);
-  }, [canCalendar, isMeeting, provider]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [canCalendar, isMeeting, provider, calRev]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Agendas da conta (a principal, as próprias e as compartilhadas com edição); lembra a última escolhida.
   const [calendars, setCalendars] = useState<CalendarInfo[] | null>(null);
@@ -370,13 +393,14 @@ export function TaskModal({
         } catch {
           /* preferência opcional */
         }
-        setCalendarId(list.some((c) => c.id === saved) ? saved : (list.find((c) => c.primary) ?? list[0])?.id ?? "");
+        const first = list.find((c) => c.primary) ?? list[0];
+        setCalendarId(list.some((c) => calKey(c) === saved) ? saved : first ? calKey(first) : "");
       })
       .catch((e) => {
         setCalendars([]);
         setCalMsg(`Não foi possível listar as agendas: ${errorText(e)}`);
       });
-  }, [connected, makeEvent, provider]);
+  }, [connected, makeEvent, provider, calRev]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Convidado sugerido: e-mail do contato do cartão vinculado.
   useEffect(() => {
@@ -416,7 +440,7 @@ export function TaskModal({
   async function findSlots() {
     setCalMsg(null);
     try {
-      const { dayStart, dayEnd, busy } = await busyRanges(provider, when);
+      const { dayStart, dayEnd, busy } = await busyRanges(provider, when, calendarId ? calendarId.slice(0, calendarId.indexOf("|")) || null : null);
       setSlots(computeFreeSlots(dayStart, dayEnd, busy, Math.max(duration, 15)));
     } catch (e) {
       setCalMsg(errorText(e));
@@ -559,7 +583,8 @@ export function TaskModal({
           end: new Date(when.getTime() + Math.max(duration, 15) * 60_000),
           guests: isMeeting ? guests : [],
           online: isMeeting && online,
-          calendarId: calendarId || null,
+          calendarId: calendarId ? calendarId.slice(calendarId.indexOf("|") + 1) : null,
+          account: calendarId ? calendarId.slice(0, calendarId.indexOf("|")) || null : null,
           reminderMin: popupLead(reminders),
           emailReminders: notify?.calendarEmailBackup ? reminders.filter((r) => r.channels.includes("email")).map((r) => r.minutesBefore) : [],
         });
@@ -903,6 +928,24 @@ export function TaskModal({
                         <span className="text-theme-xs text-warning-700" data-google-not-configured>
                           Google Agenda ainda não configurado nesta instalação (falta o Client ID do Google).
                         </span>
+                      ) : googleMulti ? (
+                        <TaButton
+                          size="sm"
+                          data-google-add-account
+                          title="Conectar mais uma conta Google (ex.: Stepple e PowerCubus)"
+                          onClick={async () => {
+                            setCalMsg(null);
+                            try {
+                              await connectCalendar("google");
+                              setMakeEvent(true);
+                              setCalRev((r) => r + 1);
+                            } catch (e) {
+                              setCalMsg(errorText(e));
+                            }
+                          }}
+                        >
+                          {googleAccounts.length ? "+ Conta Google" : "Conectar"}
+                        </TaButton>
                       ) : connected ? (
                         <span className="text-theme-xs text-success-600">Conectado</span>
                       ) : (
@@ -923,6 +966,27 @@ export function TaskModal({
                         </TaButton>
                       )}
                     </div>
+                    {googleMulti && googleAccounts.length > 0 && (
+                      <div className="mb-2 flex flex-wrap gap-1.5" data-google-accounts>
+                        {googleAccounts.map((email) => (
+                          <span key={email} className="flex items-center gap-1 rounded-full bg-success-50 px-2.5 py-1 text-theme-xs text-success-700 dark:bg-success-500/10" data-google-account={email}>
+                            {email}
+                            <button
+                              type="button"
+                              title={`Desconectar ${email}`}
+                              onClick={async () => {
+                                if (!confirm(`Desconectar a conta ${email} do ConectCRM?`)) return;
+                                await removeGoogleAccount(email);
+                                setCalRev((r) => r + 1);
+                              }}
+                              className="text-success-600 hover:text-error-600"
+                            >
+                              <X size={12} />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     {makeEvent && connected && (
                       <label className="mb-2 block text-theme-xs font-medium text-gray-600 dark:text-gray-400">
                         Agenda
@@ -941,12 +1005,24 @@ export function TaskModal({
                           }}
                         >
                           {calendars === null && <option>Carregando agendas…</option>}
-                          {calendars?.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                              {c.primary ? " (principal)" : ""}
-                            </option>
-                          ))}
+                          {calendars &&
+                            [...new Set(calendars.map((c) => c.account ?? ""))].map((acc) => {
+                              const opts = calendars
+                                .filter((c) => (c.account ?? "") === acc)
+                                .map((c) => (
+                                  <option key={calKey(c)} value={calKey(c)}>
+                                    {c.primary && c.name === c.account ? "Agenda principal" : `${c.name}${c.primary ? " (principal)" : ""}`}
+                                  </option>
+                                ));
+                              // Várias contas Google: as agendas agrupadas pela conta.
+                              return acc && googleAccounts.length > 1 ? (
+                                <optgroup key={acc} label={acc}>
+                                  {opts}
+                                </optgroup>
+                              ) : (
+                                opts
+                              );
+                            })}
                         </select>
                       </label>
                     )}

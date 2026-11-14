@@ -211,3 +211,20 @@ contando da conclusão, na hora do início. A frase da regra aparece embaixo
   configurado.
 - Código: `lib/calendar.ts` (`listCalendars`, `calendarId` em
   `createCalendarEvent`), `lib/unifiedAgenda.ts`, `TaskModal.tsx`.
+
+## Várias contas Google (0.2.97)
+
+- No "Adicionar à agenda" com **Google Agenda**: botão **"Conectar" / "+ Conta
+  Google"** — cada conta entra pela janela de login do Google (independente da
+  conta do Chrome). As contas conectadas aparecem como etiquetas (o ✕
+  desconecta). No campo **Agenda**, as agendas de todas as contas, agrupadas
+  pela conta (ex.: antenor@stepple.com.br › Agenda principal, Comercial;
+  antenor@powercubus.com.br › Agenda principal, Implantações). O evento vai
+  para a conta e a agenda escolhidas; "Ver horários livres" usa a conta da
+  agenda escolhida.
+- O acesso vale 1 hora e é renovado em silêncio; se o Google pedir, abre a
+  janela de login daquela conta ao salvar.
+- Configuração: OAuth Client do tipo **"Aplicativo da Web"** no Google Cloud,
+  com o redirect `https://fabjbdmhpofceejnkeffkkiomoeifedj.chromiumapp.org/google`;
+  o Client ID vai em `GOOGLE_WEB_CLIENT_ID` (`lib/calendar.ts`). Sem ele,
+  continua o modo antigo (conta do Chrome, Client ID do manifesto).

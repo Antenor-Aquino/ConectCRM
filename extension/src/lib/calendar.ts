@@ -66,7 +66,130 @@ function calendarHttpError(service: string, status: number, raw: string | undefi
   return new Error(pt && pt !== raw ? pt : `Erro do ${service} (HTTP ${status}). Tente novamente.`);
 }
 
-async function gFetch<T>(url: string, init: RequestInit = {}): Promise<T> {
+// ---------- Google: várias contas (login próprio por conta) ----------
+// Cada conta Google entra pela janela de login do Google (launchWebAuthFlow),
+// independente da conta do Chrome — assim dá para ter, por exemplo, a conta
+// da Stepple e a da PowerCubus juntas. Precisa de um OAuth Client do tipo
+// "Aplicativo da Web" com o redirect https://<id-da-extensão>.chromiumapp.org/google.
+// O token vale 1 hora; depois é renovado em silêncio (prompt=none) e, se o
+// Google pedir, abre a janela de login daquela conta.
+
+export const GOOGLE_WEB_CLIENT_ID: string =
+  (import.meta.env?.VITE_GOOGLE_WEB_CLIENT_ID as string | undefined) || "COLE_AQUI_O_CLIENT_ID_WEB_DO_GOOGLE.apps.googleusercontent.com";
+const G_ACCOUNTS_KEY = "conectcrm-google-accounts";
+const G_SCOPES = "openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly";
+
+interface GoogleAccount {
+  email: string;
+  token: string | null;
+  expiresAt: number;
+}
+
+/** Várias contas Google configuradas (Client ID "Aplicativo da Web"). */
+export function googleMultiConfigured(): boolean {
+  return !!GOOGLE_WEB_CLIENT_ID && !GOOGLE_WEB_CLIENT_ID.startsWith("COLE_AQUI");
+}
+
+/** Google Agenda disponível (várias contas ou a conta do Chrome). */
+export function googleCalendarConfigured(): boolean {
+  return googleMultiConfigured() || googleClientConfigured();
+}
+
+async function loadGoogleAccounts(): Promise<GoogleAccount[]> {
+  return ((await chrome.storage.local.get(G_ACCOUNTS_KEY))[G_ACCOUNTS_KEY] as GoogleAccount[] | undefined) ?? [];
+}
+async function saveGoogleAccount(acc: GoogleAccount): Promise<void> {
+  const list = (await loadGoogleAccounts()).filter((a) => a.email.toLowerCase() !== acc.email.toLowerCase());
+  await chrome.storage.local.set({ [G_ACCOUNTS_KEY]: [...list, acc] });
+}
+
+/** Contas Google conectadas (e-mails). */
+export async function listGoogleAccounts(): Promise<string[]> {
+  return (await loadGoogleAccounts()).map((a) => a.email);
+}
+
+export async function removeGoogleAccount(email: string): Promise<void> {
+  const list = await loadGoogleAccounts();
+  await chrome.storage.local.set({ [G_ACCOUNTS_KEY]: list.filter((a) => a.email.toLowerCase() !== email.toLowerCase()) });
+}
+
+/** Lê o resultado do login (#access_token=…&expires_in=…&state=…). */
+export function parseGoogleRedirect(url: string, state: string): { token: string; expiresIn: number } {
+  const hash = new URLSearchParams(new URL(url).hash.replace(/^#/, ""));
+  const err = hash.get("error") ?? new URL(url).searchParams.get("error");
+  if (err) throw new Error(err === "access_denied" ? "Login do Google cancelado." : translateError(err));
+  if (hash.get("state") !== state) throw new Error("Falha de segurança no login do Google.");
+  const token = hash.get("access_token");
+  if (!token) throw new Error("O Google não devolveu o acesso. Tente conectar de novo.");
+  return { token, expiresIn: Number(hash.get("expires_in") ?? 3600) };
+}
+
+function googleAuthFlow(interactive: boolean, opts: { loginHint?: string; selectAccount?: boolean }): Promise<{ token: string; expiresIn: number }> {
+  const state = randomString(24);
+  const url =
+    "https://accounts.google.com/o/oauth2/v2/auth?" +
+    new URLSearchParams({
+      client_id: GOOGLE_WEB_CLIENT_ID,
+      response_type: "token",
+      redirect_uri: chrome.identity.getRedirectURL("google"),
+      scope: G_SCOPES,
+      include_granted_scopes: "true",
+      state,
+      prompt: interactive ? (opts.selectAccount ? "select_account consent" : "consent") : "none",
+      ...(opts.loginHint ? { login_hint: opts.loginHint } : {}),
+    });
+  return new Promise((resolve, reject) =>
+    chrome.identity.launchWebAuthFlow({ url, interactive }, (final) => {
+      if (chrome.runtime.lastError || !final) return reject(new Error(translateError(chrome.runtime.lastError?.message ?? "Login do Google cancelado.")));
+      try {
+        resolve(parseGoogleRedirect(final, state));
+      } catch (e) {
+        reject(e);
+      }
+    }),
+  );
+}
+
+/** Conecta mais uma conta Google (abre a escolha de conta). Devolve o e-mail. */
+export async function addGoogleAccount(): Promise<string> {
+  if (!googleMultiConfigured()) throw new Error("Várias contas Google ainda não configuradas (falta o Client ID do Google do tipo \"Aplicativo da Web\").");
+  const { token, expiresIn } = await googleAuthFlow(true, { selectAccount: true });
+  const res = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", { headers: { Authorization: `Bearer ${token}` } });
+  const email = ((await res.json().catch(() => ({}))) as { email?: string }).email;
+  if (!email) throw new Error("Não foi possível saber qual conta Google foi conectada.");
+  await saveGoogleAccount({ email, token, expiresAt: Date.now() + (expiresIn - 60) * 1000 });
+  return email;
+}
+
+async function googleAccountToken(email: string, interactive: boolean): Promise<string> {
+  const acc = (await loadGoogleAccounts()).find((a) => a.email.toLowerCase() === email.toLowerCase());
+  if (!acc) throw new Error(`A conta ${email} não está mais conectada.`);
+  if (acc.token && acc.expiresAt > Date.now()) return acc.token;
+  let got: { token: string; expiresIn: number };
+  try {
+    got = await googleAuthFlow(false, { loginHint: email });
+  } catch (e) {
+    if (!interactive) throw new Error(`A conexão com ${email} expirou. Conecte de novo.`);
+    got = await googleAuthFlow(true, { loginHint: email });
+  }
+  await saveGoogleAccount({ email, token: got.token, expiresAt: Date.now() + (got.expiresIn - 60) * 1000 });
+  return got.token;
+}
+
+async function gFetch<T>(url: string, init: RequestInit = {}, account?: string | null): Promise<T> {
+  if (account) {
+    const go = (t: string) => fetch(url, { ...init, headers: { ...(init.headers ?? {}), Authorization: `Bearer ${t}` } });
+    let res = await go(await googleAccountToken(account, true));
+    if (res.status === 401) {
+      const list = await loadGoogleAccounts();
+      const acc = list.find((a) => a.email === account);
+      if (acc) await saveGoogleAccount({ ...acc, token: null, expiresAt: 0 });
+      res = await go(await googleAccountToken(account, true));
+    }
+    const json = (await res.json().catch(() => ({}))) as T & { error?: { message?: string } };
+    if (!res.ok) throw calendarHttpError(`Google Agenda (${account})`, res.status, json.error?.message);
+    return json;
+  }
   let token = await googleToken(false);
   const go = (t: string) => fetch(url, { ...init, headers: { ...(init.headers ?? {}), Authorization: `Bearer ${t}` } });
   let res = await go(token);
@@ -226,6 +349,7 @@ export async function sendMail(provider: CalendarProvider, msg: { to: string; su
 // ---------- API comum ----------
 
 export async function connectCalendar(provider: CalendarProvider): Promise<string | null> {
+  if (provider === "google" && googleMultiConfigured()) return addGoogleAccount();
   if (provider === "google") {
     await googleToken(true);
     return (await gFetch<{ email?: string }>("https://www.googleapis.com/oauth2/v2/userinfo").catch(() => ({ email: undefined }))).email ?? null;
@@ -237,6 +361,7 @@ export async function connectCalendar(provider: CalendarProvider): Promise<strin
 /** Conectado sem abrir janela de login? */
 export async function calendarConnected(provider: CalendarProvider): Promise<boolean> {
   try {
+    if (provider === "google" && googleMultiConfigured()) return (await loadGoogleAccounts()).length > 0;
     if (provider === "google") await googleToken(false);
     else await microsoftToken(false);
     return true;
@@ -256,7 +381,7 @@ export async function disconnectCalendar(provider: CalendarProvider): Promise<vo
 }
 
 /** Compromissos ocupados no dia (8h–19h). */
-export async function busyRanges(provider: CalendarProvider, day: Date) {
+export async function busyRanges(provider: CalendarProvider, day: Date, account?: string | null) {
   const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 8);
   const dayEnd = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 19);
   if (provider === "microsoft") {
@@ -269,11 +394,15 @@ export async function busyRanges(provider: CalendarProvider, day: Date) {
       .flatMap((e) => (e.start && e.end ? [{ start: `${e.start.dateTime}Z`, end: `${e.end.dateTime}Z` }] : []));
     return { dayStart, dayEnd, busy };
   }
-  const fb = await gFetch<{ calendars?: { primary?: { busy?: { start: string; end: string }[] } } }>("https://www.googleapis.com/calendar/v3/freeBusy", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ timeMin: dayStart.toISOString(), timeMax: dayEnd.toISOString(), items: [{ id: "primary" }] }),
-  });
+  const fb = await gFetch<{ calendars?: { primary?: { busy?: { start: string; end: string }[] } } }>(
+    "https://www.googleapis.com/calendar/v3/freeBusy",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timeMin: dayStart.toISOString(), timeMax: dayEnd.toISOString(), items: [{ id: "primary" }] }),
+    },
+    account ?? (googleMultiConfigured() ? ((await loadGoogleAccounts())[0]?.email ?? null) : null),
+  );
   return { dayStart, dayEnd, busy: fb.calendars?.primary?.busy ?? [] };
 }
 
@@ -290,12 +419,16 @@ export interface NewEvent {
   emailReminders?: number[];
   /** Agenda escolhida (listCalendars); sem ela, a principal da conta. */
   calendarId?: string | null;
+  /** Google com várias contas: a conta da agenda escolhida. */
+  account?: string | null;
 }
 
 export interface CalendarInfo {
   id: string;
   name: string;
   primary: boolean;
+  /** Google com várias contas: de qual conta é a agenda. */
+  account?: string | null;
 }
 
 /**
@@ -313,12 +446,18 @@ export async function listCalendars(provider: CalendarProvider): Promise<Calenda
       .map((c) => ({ id: c.id, name: c.name, primary: !!c.isDefaultCalendar }))
       .sort((a, b) => Number(b.primary) - Number(a.primary) || a.name.localeCompare(b.name, "pt-BR"));
   }
-  const r = await gFetch<{ items?: { id: string; summary?: string; summaryOverride?: string; primary?: boolean }[] }>(
-    "https://www.googleapis.com/calendar/v3/users/me/calendarList?minAccessRole=writer&maxResults=250",
-  );
-  return (r.items ?? [])
-    .map((c) => ({ id: c.id, name: c.summaryOverride || c.summary || c.id, primary: !!c.primary }))
-    .sort((a, b) => Number(b.primary) - Number(a.primary) || a.name.localeCompare(b.name, "pt-BR"));
+  type GList = { items?: { id: string; summary?: string; summaryOverride?: string; primary?: boolean }[] };
+  const url = "https://www.googleapis.com/calendar/v3/users/me/calendarList?minAccessRole=writer&maxResults=250";
+  const toInfo = (r: GList, account: string | null) =>
+    (r.items ?? [])
+      .map((c) => ({ id: c.id, name: c.summaryOverride || c.summary || c.id, primary: !!c.primary, account }))
+      .sort((a, b) => Number(b.primary) - Number(a.primary) || a.name.localeCompare(b.name, "pt-BR"));
+  if (googleMultiConfigured()) {
+    const out: CalendarInfo[] = [];
+    for (const email of await listGoogleAccounts()) out.push(...toInfo(await gFetch<GList>(url, {}, email), email));
+    return out;
+  }
+  return toInfo(await gFetch<GList>(url), null);
 }
 
 export async function createCalendarEvent(provider: CalendarProvider, ev: NewEvent): Promise<{ id: string; link: string | null }> {
@@ -364,6 +503,7 @@ export async function createCalendarEvent(provider: CalendarProvider, ev: NewEve
   const created = await gFetch<{ id: string; hangoutLink?: string; conferenceData?: { entryPoints?: { entryPointType: string; uri: string }[] } }>(
     `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(ev.calendarId || "primary")}/events?${params}`,
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(event) },
+    ev.account ?? (googleMultiConfigured() ? ((await loadGoogleAccounts())[0]?.email ?? null) : null),
   );
   return { id: created.id, link: created.hangoutLink ?? created.conferenceData?.entryPoints?.find((e) => e.entryPointType === "video")?.uri ?? null };
 }
