@@ -5,7 +5,7 @@
 // Emissor Nacional" (fase 3) abre o portal com o painel do ConectCRM e espera a
 // nota emitida voltar (número e chave).
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, ExternalLink, FileText, Pencil, RefreshCw, RotateCcw, Save } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, ExternalLink, FileText, Pencil, RefreshCw, RotateCcw, Save, Send } from "lucide-react";
 import { TaButton, TaInput, TaModal, TaTextarea, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import { NFSE_LIMITS, unresolvedFields, type NfseDraft, type NfsePending } from "../../db/nfse";
@@ -15,6 +15,8 @@ import { formatCents } from "../../lib/format";
 import { formatTribNac, municipioPorIbge, servicoNacional } from "../../lib/nfse/tabelas";
 import { loadNfseEnvironment, openPortalAssistant, requestPortalPermission } from "../../lib/nfse/portal";
 import { buildPortalPayload } from "../../lib/nfse/portalSteps";
+import { buildDpsXml } from "../../lib/nfse/dps";
+import { emitViaFiscal, nfseNumberFromXml, sefinErrors } from "../../lib/nfse/fiscal";
 import { OrganizationFormModal } from "../contacts/OrganizationFormModal";
 import { PersonFormModal } from "../contacts/PersonFormModal";
 
@@ -36,6 +38,9 @@ export function NfseDialog({ cardId, onClose, onChanged }: { cardId: string; onC
   const [editTaker, setEditTaker] = useState(false);
   /** Assistente aberto no portal: a janela relê o cartão até a nota emitida voltar. */
   const [waiting, setWaiting] = useState(false);
+  /** Emissão pela API: enviando e erros devolvidos pela Receita. */
+  const [sending, setSending] = useState(false);
+  const [apiErrors, setApiErrors] = useState<string[] | null>(null);
   /** Ambiente lido ao abrir: o pedido de permissão precisa sair já no clique. */
   const [env, setEnv] = useState<"producao" | "producao_restrita">("producao_restrita");
 
@@ -114,6 +119,43 @@ export function NfseDialog({ cardId, onClose, onChanged }: { cardId: string; onC
     }
   };
 
+  /** Emissão direta pela API (ConectCRM Fiscal), sem abrir o portal. */
+  const emitApi = async () => {
+    if (!draft?.issuer?.cert_thumbprint) return;
+    const total = draft.services.reduce((n, s) => n + s.valueCents, 0);
+    const where = env === "producao_restrita" ? "no ambiente de TESTES (produção restrita, sem valor fiscal)" : "em PRODUÇÃO (nota com valor fiscal)";
+    if (!confirm(`Emitir a NFS-e de ${formatCents(total)} para ${draft.taker.name} por ${draft.issuer.legal_name}, ${where}?\n\nA nota vai direto para a Receita. Se o certificado for token (A3), o Windows vai pedir o PIN.`)) return;
+    setMsg(null);
+    setApiErrors(null);
+    setSending(true);
+    try {
+      const dps = await call("nfse.reserveDps", { id: cardId });
+      const xml = buildDpsXml(draft, { environment: env, issuedAt: new Date(), series: dps.series, number: dps.number, appVersion: `ConectCRM ${chrome.runtime.getManifest().version}` });
+      const r = await emitViaFiscal(env, draft.issuer.cert_thumbprint, xml);
+      if (r.httpStatus >= 200 && r.httpStatus < 300 && r.accessKey) {
+        await call("nfse.markIssued", { id: cardId, accessKey: r.accessKey, number: nfseNumberFromXml(r.nfseXml), environment: env, nfseXml: r.nfseXml ?? null, via: "api" });
+        await load({ keepTexts: true });
+        setMsg({ kind: "ok", text: "NFS-e emitida pela Receita e registrada no cartão." });
+        onChanged?.();
+      } else {
+        setApiErrors(sefinErrors(r));
+      }
+    } catch (e) {
+      setMsg({ kind: "err", text: errorText(e) });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const downloadXml = () => {
+    if (!draft?.issued?.xml) return;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([draft.issued.xml], { type: "application/xml" }));
+    a.download = `NFSe-${draft.issued.number ?? draft.issued.accessKey}.xml`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  };
+
   const setText = (k: keyof Texts, v: string) => {
     setTexts((t) => ({ ...t, [k]: v }));
     setDirty(true);
@@ -178,11 +220,32 @@ export function NfseDialog({ cardId, onClose, onChanged }: { cardId: string; onC
             </p>
             <p className="mt-1 break-all text-theme-xs">Chave de acesso: {draft.issued.accessKey}</p>
             <p className="text-theme-xs">Em {new Date(draft.issued.issuedAt).toLocaleString("pt-BR")}. O registro também está nas notas do cartão.</p>
+            {draft.issued.xml && (
+              <TaButton size="sm" variant="outline" className="mt-2" startIcon={<Download size={14} />} onClick={downloadXml} data-nfse-download-xml>
+                Baixar XML da NFS-e
+              </TaButton>
+            )}
           </div>
         )}
         {waiting && !draft.issued && (
           <p className="flex items-center gap-2 rounded-lg bg-brand-25 px-3 py-2 text-brand-700 dark:bg-brand-500/10" data-nfse-waiting>
             <RefreshCw size={15} className="animate-spin" /> Aguardando a nota no Emissor Nacional… (use “Trazer nota para o CRM” no painel do portal)
+          </p>
+        )}
+        {apiErrors && (
+          <div className="rounded-xl border border-error-200 bg-error-50 p-3 text-error-700 dark:bg-error-500/10" data-nfse-api-errors>
+            <p className="font-semibold">A Receita recusou a nota:</p>
+            <ul className="mt-1 list-disc pl-5 text-theme-xs">
+              {apiErrors.map((e, i) => (
+                <li key={i}>{e}</li>
+              ))}
+            </ul>
+            <p className="mt-1 text-theme-xs">Corrija e clique em Emitir de novo (o número da DPS é o mesmo).</p>
+          </div>
+        )}
+        {sending && (
+          <p className="flex items-center gap-2 rounded-lg bg-brand-25 px-3 py-2 text-brand-700 dark:bg-brand-500/10" data-nfse-sending>
+            <RefreshCw size={15} className="animate-spin" /> Enviando à Receita… (com token A3, digite o PIN na janela do Windows)
           </p>
         )}
         {/* Pendências */}
@@ -343,16 +406,41 @@ export function NfseDialog({ cardId, onClose, onChanged }: { cardId: string; onC
           <TaButton variant="outline" startIcon={<Save size={15} />} disabled={busy || !!draft.issued} onClick={() => void save()} data-nfse-save-draft>
             Salvar rascunho
           </TaButton>
-          <TaButton
-            variant="primary"
-            startIcon={<ExternalLink size={15} />}
-            disabled={!!errors.length || !!draft.issued}
-            title={errors.length ? "Resolva as pendências acima" : "Abre o Emissor Nacional com o painel do ConectCRM para preencher e emitir"}
-            onClick={() => void emit()}
-            data-nfse-emit
-          >
-            Emitir no Emissor Nacional
-          </TaButton>
+          {draft.issuer?.cert_thumbprint ? (
+            <>
+              <TaButton
+                variant="outline"
+                startIcon={<ExternalLink size={15} />}
+                disabled={!!errors.length || !!draft.issued || sending}
+                title="Alternativa: abrir o Emissor Nacional com o painel do ConectCRM"
+                onClick={() => void emit()}
+                data-nfse-emit
+              >
+                Pelo portal
+              </TaButton>
+              <TaButton
+                variant="primary"
+                startIcon={<Send size={15} />}
+                disabled={!!errors.length || !!draft.issued || sending}
+                title={errors.length ? "Resolva as pendências acima" : "Envia a nota direto à Receita (ConectCRM Fiscal)"}
+                onClick={() => void emitApi()}
+                data-nfse-emit-api
+              >
+                {sending ? "Enviando…" : "Emitir NFS-e"}
+              </TaButton>
+            </>
+          ) : (
+            <TaButton
+              variant="primary"
+              startIcon={<ExternalLink size={15} />}
+              disabled={!!errors.length || !!draft.issued}
+              title={errors.length ? "Resolva as pendências acima" : "Abre o Emissor Nacional com o painel do ConectCRM para preencher e emitir"}
+              onClick={() => void emit()}
+              data-nfse-emit
+            >
+              Emitir no Emissor Nacional
+            </TaButton>
+          )}
         </div>
       </div>
       {editTaker && t.kind === "organization" && (

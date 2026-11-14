@@ -36,6 +36,26 @@ func baseURL(env string) (string, error) {
 
 var testRoots *x509.CertPool // só nos testes
 
+// rootsForTest: nos testes de ponta a ponta, CONECTCRM_FISCAL_CA aponta o
+// certificado (PEM) da Sefin simulada. Em uso normal fica vazio e valem as
+// autoridades confiáveis do Windows.
+func rootsForTest() *x509.CertPool {
+	if testRoots != nil {
+		return testRoots
+	}
+	p := os.Getenv("CONECTCRM_FISCAL_CA")
+	if p == "" {
+		return nil
+	}
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return nil
+	}
+	pool := x509.NewCertPool()
+	pool.AppendCertsFromPEM(b)
+	return pool
+}
+
 func httpClient(id Identity) (*http.Client, error) {
 	signer, err := id.Signer()
 	if err != nil {
@@ -57,7 +77,7 @@ func httpClient(id Identity) (*http.Client, error) {
 		MinVersion:   tls.VersionTLS12,
 		MaxVersion:   tls.VersionTLS12,
 		Certificates: []tls.Certificate{cert},
-		RootCAs:      testRoots,
+		RootCAs:      rootsForTest(),
 	}
 	return &http.Client{Timeout: 90 * time.Second, Transport: &http.Transport{TLSClientConfig: cfg, Proxy: http.ProxyFromEnvironment}}, nil
 }

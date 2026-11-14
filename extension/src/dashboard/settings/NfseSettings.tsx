@@ -10,6 +10,7 @@ import { formatCnpj, formatCnpjInput, lookupCnpj } from "../../lib/cnpj";
 import { errorText } from "../../lib/errors";
 import { buscarMunicipios, municipioPorIbge, municipioPorNome } from "../../lib/nfse/tabelas";
 import { loadNfseEnvironment, saveNfseEnvironment } from "../../lib/nfse/portal";
+import { fiscalVersion, listFiscalCerts, type FiscalCert } from "../../lib/nfse/fiscal";
 import type { NfseEnvironment } from "../../db/nfse";
 import { useSession } from "../session";
 import { Combobox, type ComboItem } from "../ui/Combobox";
@@ -75,6 +76,10 @@ export function NfseSettings() {
                 {i.city_ibge && ` · ${cityItem(i.city_ibge)?.label}`}
                 {i.municipal_reg && ` · IM ${i.municipal_reg}`}
               </p>
+              <p className="mt-1 text-theme-xs text-gray-600 dark:text-gray-400">
+                {i.cert_thumbprint ? "Emite pela API (ConectCRM Fiscal)" : "Emite pelo portal (sem certificado escolhido)"}
+                {i.simples === 3 && i.simples_rate == null && <span className="text-warning-700"> · falta a alíquota do Simples</span>}
+              </p>
             </div>
             <button type="button" title="Editar" onClick={() => setEditing(i)} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5">
               <Pencil size={16} />
@@ -135,6 +140,16 @@ function IssuerModal({
   const [issRate, setIssRate] = useState(issuer?.iss_rate != null ? String(issuer.iss_rate).replace(".", ",") : "");
   const [dpsSeries, setDpsSeries] = useState(issuer?.dps_series ?? "1");
   const [dpsNext, setDpsNext] = useState(String(issuer?.dps_next ?? 1));
+  const [certThumb, setCertThumb] = useState(issuer?.cert_thumbprint ?? "");
+  /** null = carregando; string = programa ausente (mensagem). */
+  const [certs, setCerts] = useState<FiscalCert[] | string | null>(null);
+  const loadCerts = useCallback(() => {
+    setCerts(null);
+    listFiscalCerts()
+      .then((l) => setCerts(l))
+      .catch((e) => setCerts(errorText(e)));
+  }, []);
+  useEffect(() => loadCerts(), [loadCerts]);
   const [descTpl, setDescTpl] = useState(issuer?.description_template ?? DEFAULT_DESCRIPTION_TEMPLATE);
   const [notesTpl, setNotesTpl] = useState(issuer?.notes_template ?? "");
   /** Último modelo em que o usuário clicou: os botões de campo inserem nele. */
@@ -183,7 +198,8 @@ function IssuerModal({
       simplesRegime,
       issRate: issRate.trim() ? Number(issRate.replace(",", ".")) : null,
       dpsSeries,
-      dpsNext: Number(dpsNext) };
+      dpsNext: Number(dpsNext),
+      certThumbprint: certThumb || null };
     try {
       if (issuer) await call("nfse.updateIssuer", { id: issuer.id, patch: input });
       else await call("nfse.createIssuer", input);
@@ -280,6 +296,39 @@ function IssuerModal({
               </Field>
             </div>
           </div>
+          <Field label="Certificado digital (para emitir sem abrir o portal)" hint="Lista do ConectCRM Fiscal: certificados A1 instalados e tokens A3 conectados neste computador.">
+            {certs === null ? (
+              <p className="text-theme-xs text-gray-500">Procurando certificados…</p>
+            ) : typeof certs === "string" ? (
+              <p className="rounded-lg bg-warning-50 px-3 py-2 text-theme-xs text-warning-700" data-nfse-fiscal-missing>
+                {certs} Sem o programa, a nota é emitida pelo portal (assistente).
+              </p>
+            ) : (
+              <div className="flex gap-2">
+                <TaSelect value={certThumb} onChange={(e) => setCertThumb(e.target.value)} data-nfse-cert className="min-w-0 flex-1">
+                  <option value="">Nenhum (emitir pelo portal)</option>
+                  {certThumb && !certs.some((c) => c.thumbprint === certThumb) && <option value={certThumb}>Certificado escolhido antes (não encontrado agora: conecte o token)</option>}
+                  {certs.map((c) => (
+                    <option key={c.thumbprint} value={c.thumbprint}>
+                      {c.subject} {c.cnpj ? `— CNPJ ${formatCnpj(c.cnpj)}` : ""} — vence {new Date(c.notAfter).toLocaleDateString("pt-BR")}
+                    </option>
+                  ))}
+                </TaSelect>
+                <TaButton onClick={loadCerts} title="Procurar de novo (depois de conectar o token)">
+                  Atualizar
+                </TaButton>
+              </div>
+            )}
+            {(() => {
+              if (!Array.isArray(certs) || !certThumb) return null;
+              const c = certs.find((x) => x.thumbprint === certThumb);
+              const mine = cnpj.replace(/\D/g, "");
+              if (c && c.cnpj && mine && c.cnpj !== mine)
+                return <p className="mt-1 text-theme-xs text-error-600" data-nfse-cert-mismatch>O CNPJ deste certificado ({formatCnpj(c.cnpj)}) é diferente do CNPJ da empresa. A Receita recusa.</p>;
+              if (c && new Date(c.notAfter) < new Date()) return <p className="mt-1 text-theme-xs text-error-600">Certificado vencido.</p>;
+              return null;
+            })()}
+          </Field>
         </div>
         <div className="mb-4 rounded-xl border border-gray-200 p-3 dark:border-gray-800" data-nfse-templates>
           <p className="text-theme-sm font-medium text-gray-800 dark:text-white/90">Textos padrão das notas desta empresa</p>
@@ -340,8 +389,10 @@ function IssuerModal({
 /** Produção restrita (testes, sem valor fiscal) ou produção. Fica só neste computador. */
 function EnvironmentChoice() {
   const [env, setEnv] = useState<NfseEnvironment | null>(null);
+  const [fiscal, setFiscal] = useState<string | null | undefined>(undefined);
   useEffect(() => {
     void loadNfseEnvironment().then(setEnv);
+    void fiscalVersion().then(setFiscal);
   }, []);
   if (!env) return null;
   return (
@@ -363,6 +414,13 @@ function EnvironmentChoice() {
       </TaSelect>
       <span className="text-theme-xs text-gray-500">
         {env === "producao_restrita" ? "Use para conferir o preenchimento antes de emitir de verdade." : "As notas emitidas valem como documento fiscal."}
+      </span>
+      <span className="w-full text-theme-xs" data-nfse-fiscal-status>
+        {fiscal === undefined ? "" : fiscal ? (
+          <span className="text-success-700">ConectCRM Fiscal {fiscal} instalado: as empresas com certificado escolhido emitem sem abrir o portal.</span>
+        ) : (
+          <span className="text-gray-500">ConectCRM Fiscal não instalado neste computador: a emissão é pelo portal (assistente).</span>
+        )}
       </span>
     </div>
   );
