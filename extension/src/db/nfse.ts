@@ -36,6 +36,13 @@ export interface Issuer {
   /** Modelos da discriminação dos serviços e da observação (com {itens}, {pedido}…). */
   description_template: string | null;
   notes_template: string | null;
+  /** API (spec 20): alíquota do Simples (pTotTribSN, %), regime de apuração (regApTribSN), alíquota do ISS (pAliq, %). */
+  simples_rate: number | null;
+  simples_regime: 1 | 2 | 3;
+  iss_rate: number | null;
+  dps_series: string;
+  dps_next: number;
+  cert_thumbprint: string | null;
 }
 
 export interface IssuerInput {
@@ -49,7 +56,20 @@ export interface IssuerInput {
   active?: boolean;
   descriptionTemplate?: string | null;
   notesTemplate?: string | null;
+  simplesRate?: number | null;
+  simplesRegime?: 1 | 2 | 3;
+  issRate?: number | null;
+  dpsSeries?: string;
+  dpsNext?: number;
+  certThumbprint?: string | null;
 }
+
+/** Regime de apuração do Simples (regApTribSN). */
+export const SIMPLES_REGIME_LABEL: Record<1 | 2 | 3, string> = {
+  1: "Tributos federais e municipal (ISS) pelo Simples Nacional",
+  2: "Federais pelo Simples; ISS fora do Simples (por sublimite)",
+  3: "Federais e ISS fora do Simples (por sublimite/limite)",
+};
 
 function issuerData(db: DatabaseSync, input: Partial<IssuerInput>, full: boolean, exceptId = ""): Record<string, SqlValue> {
   const data: Record<string, SqlValue> = {};
@@ -85,6 +105,28 @@ function issuerData(db: DatabaseSync, input: Partial<IssuerInput>, full: boolean
   if (input.active !== undefined) data.active = input.active ? 1 : 0;
   if (full || input.descriptionTemplate !== undefined) data.description_template = optionalText(input.descriptionTemplate);
   if (full || input.notesTemplate !== undefined) data.notes_template = optionalText(input.notesTemplate);
+  const rate = (v: number | null | undefined, label: string, max: number) => {
+    if (v == null || (typeof v === "number" && Number.isNaN(v))) return null;
+    if (typeof v !== "number" || v < 0 || v > max) throw new ValidationError(`${label} deve estar entre 0 e ${max}%.`);
+    return Math.round(v * 100) / 100;
+  };
+  if (full || input.simplesRate !== undefined) data.simples_rate = rate(input.simplesRate, "A alíquota do Simples Nacional", 99.99);
+  if (full || input.issRate !== undefined) data.iss_rate = rate(input.issRate, "A alíquota do ISS", 5);
+  if (full || input.simplesRegime !== undefined) {
+    const r = input.simplesRegime ?? 1;
+    if (![1, 2, 3].includes(r)) throw new ValidationError("Regime de apuração do Simples inválido.");
+    data.simples_regime = r;
+  }
+  if (full || input.dpsSeries !== undefined) {
+    const sr = String(input.dpsSeries ?? "1").replace(/^0+/, "") || "0";
+    if (!/^\d{1,5}$/.test(sr) || Number(sr) < 1 || Number(sr) > 49999) throw new ValidationError("A série da DPS deve estar entre 1 e 49999 (faixa de aplicativo próprio).");
+    data.dps_series = sr;
+  }
+  if (input.dpsNext !== undefined) {
+    if (!Number.isInteger(input.dpsNext) || input.dpsNext < 1) throw new ValidationError("O próximo número da DPS deve ser um inteiro a partir de 1.");
+    data.dps_next = input.dpsNext;
+  }
+  if (full || input.certThumbprint !== undefined) data.cert_thumbprint = optionalText(input.certThumbprint);
   return data;
 }
 
@@ -109,7 +151,7 @@ export function deleteIssuer(db: DatabaseSync, ctx: DbContext, id: string): void
 export function listIssuers(db: DatabaseSync, opts: { activeOnly?: boolean } = {}): Issuer[] {
   return many<Issuer>(
     db,
-    `SELECT id, cnpj, legal_name, municipal_reg, city_ibge, access, simples, special_regime, active, description_template, notes_template FROM nfse_issuer
+    `SELECT id, cnpj, legal_name, municipal_reg, city_ibge, access, simples, special_regime, active, description_template, notes_template, simples_rate, simples_regime, iss_rate, dps_series, dps_next, cert_thumbprint FROM nfse_issuer
      WHERE deleted_at IS NULL ${opts.activeOnly ? "AND active = 1" : ""} ORDER BY legal_name`,
   );
 }
@@ -161,6 +203,18 @@ export interface NfseDraft {
   issRetention: 1 | 2;
   /** Textos da nota, revisados pelo usuário a cada emissão. */
   texts: NfseTexts;
+  /** Nota já emitida para este cartão (fase 3). */
+  issued: NfseIssued | null;
+}
+
+export type NfseEnvironment = "producao" | "producao_restrita";
+export interface NfseIssued {
+  number: string | null;
+  accessKey: string;
+  environment: NfseEnvironment;
+  issuedAt: string;
+  /** XML da NFS-e (emitida pela API); null quando veio do portal. */
+  xml: string | null;
 }
 
 export interface NfseTexts {
@@ -227,9 +281,20 @@ export function nfseDraftForCard(
   );
   if (!card) throw new ValidationError("Cartão não encontrado.");
   const issuers = listIssuers(db, { activeOnly: true });
-  const saved = one<{ issuer_id: string | null; description: string | null; notes: string | null; order_number: string | null }>(
+  const saved = one<{
+    issuer_id: string | null;
+    description: string | null;
+    notes: string | null;
+    order_number: string | null;
+    status: string;
+    access_key: string | null;
+    nfse_number: string | null;
+    environment: string | null;
+    issued_at: string | null;
+    nfse_xml: string | null;
+  }>(
     db,
-    "SELECT issuer_id, description, notes, order_number FROM nfse_draft WHERE card_id = ? AND deleted_at IS NULL",
+    "SELECT issuer_id, description, notes, order_number, status, access_key, nfse_number, environment, issued_at, nfse_xml FROM nfse_draft WHERE card_id = ? AND deleted_at IS NULL",
     cardId,
   );
   if (opts.issuerId === undefined && saved?.issuer_id && issuers.some((i) => i.id === saved.issuer_id)) opts = { ...opts, issuerId: saved.issuer_id };
@@ -335,7 +400,55 @@ export function nfseDraftForCard(
     placeIbge: issuer?.city_ibge ?? null,
     issRetention: 1,
     texts,
+    issued:
+      saved?.status === "issued" && saved.access_key
+        ? { number: saved.nfse_number, accessKey: saved.access_key, environment: (saved.environment as NfseEnvironment) ?? "producao", issuedAt: saved.issued_at ?? "", xml: saved.nfse_xml }
+        : null,
   };
+}
+
+/** Chave de acesso da NFS-e nacional: 50 caracteres alfanuméricos. */
+export const normalizeAccessKey = (v: string) => v.replace(/[^0-9A-Za-z]/g, "").toUpperCase();
+export const isAccessKey = (v: string) => /^[0-9A-Z]{50}$/.test(normalizeAccessKey(v));
+
+/**
+ * Nota emitida no Emissor Nacional: grava número e chave no rascunho do cartão
+ * e deixa uma nota no histórico. Emitir de novo o mesmo cartão é recusado
+ * (para outra nota, use um novo cartão ou cancele a anterior no portal).
+ */
+export function markNfseIssued(
+  db: DatabaseSync,
+  ctx: DbContext,
+  cardId: string,
+  input: { accessKey: string; number?: string | null; environment: NfseEnvironment; nfseXml?: string | null; via?: "portal" | "api" },
+): void {
+  const key = normalizeAccessKey(input.accessKey);
+  if (!isAccessKey(key)) throw new ValidationError("Chave de acesso da NFS-e inválida (são 50 caracteres).");
+  if (input.environment !== "producao" && input.environment !== "producao_restrita") throw new ValidationError("Ambiente do Emissor Nacional inválido.");
+  withTransaction(db, () => {
+    const row = one<{ id: string; status: string; access_key: string | null }>(db, "SELECT id, status, access_key FROM nfse_draft WHERE card_id = ? AND deleted_at IS NULL", cardId);
+    if (!row) throw new ValidationError("Salve o rascunho da nota antes de emitir.");
+    if (row.status === "issued") {
+      if (row.access_key === key) return; // mesma nota lida de novo
+      throw new ValidationError("Este cartão já tem uma NFS-e emitida.");
+    }
+    const number = optionalText(input.number);
+    updateRow(db, ctx, "nfse_draft", row.id, {
+      status: "issued",
+      access_key: key,
+      nfse_number: number,
+      environment: input.environment,
+      issued_at: new Date().toISOString(),
+      nfse_xml: input.nfseXml ?? null,
+    });
+    const amb = input.environment === "producao_restrita" ? " (produção restrita, sem valor fiscal)" : "";
+    insertRow(db, ctx, "note", {
+      entity_type: "deal",
+      entity_id: cardId,
+      body: `NFS-e${number ? ` nº ${number}` : ""} emitida ${input.via === "api" ? "pela API do Emissor Nacional (ConectCRM Fiscal)" : "no Emissor Nacional"}${amb}.\nChave de acesso: ${key}`,
+      document_ids: null,
+    });
+  });
 }
 
 /** Salva (revisa) os textos e a empresa da nota deste cartão. */
@@ -357,7 +470,10 @@ export function saveNfseDraft(
       notes: optionalText(input.notes),
       order_number: optionalText(input.orderNumber),
     };
-    const row = one<{ id: string }>(db, "SELECT id FROM nfse_draft WHERE card_id = ? AND deleted_at IS NULL", cardId);
+    const row = one<{ id: string; status: string; issuer_id: string | null }>(db, "SELECT id, status, issuer_id FROM nfse_draft WHERE card_id = ? AND deleted_at IS NULL", cardId);
+    if (row?.status === "issued") throw new ValidationError("A NFS-e deste cartão já foi emitida: o rascunho não pode mais ser alterado.");
+    // Trocou a empresa: o número de DPS reservado era da outra.
+    if (row && row.issuer_id !== data.issuer_id) Object.assign(data, { dps_series: null, dps_number: null });
     if (row) updateRow(db, ctx, "nfse_draft", row.id, data);
     else insertRow(db, ctx, "nfse_draft", { card_id: cardId, ...data });
   });
@@ -366,13 +482,18 @@ export function saveNfseDraft(
 /** O que falta (ou está errado) para emitir, conforme o leiaute da DPS. */
 export function nfsePending(d: NfseDraft): NfsePending[] {
   const out: NfsePending[] = [];
+  if (d.issued) return [{ field: "issued", message: `NFS-e já emitida para este cartão${d.issued.number ? ` (nº ${d.issued.number})` : ""}.`, level: "warning" }];
   const err = (field: string, message: string) => out.push({ field, message, level: "error" });
   const warn = (field: string, message: string) => out.push({ field, message, level: "warning" });
 
   // Prestador
   if (!d.issuer)
     err("issuer", d.issuers.length ? "Escolha por qual empresa a nota vai ser emitida." : "Cadastre uma empresa emissora (Configurações → Nota fiscal).");
-  else if (!d.issuer.city_ibge) err("issuer.city", `Informe o município da empresa emissora ${d.issuer.legal_name}.`);
+  else {
+    if (!d.issuer.city_ibge) err("issuer.city", `Informe o município da empresa emissora ${d.issuer.legal_name}.`);
+    if (d.issuer.simples === 3 && d.issuer.simples_rate == null)
+      warn("issuer.simplesRate", `Informe a alíquota do Simples Nacional de ${d.issuer.legal_name} (Configurações → Nota fiscal): é obrigatória para emitir pela API.`);
+  }
 
   // Tomador
   if (!d.taker.kind) err("taker", "O cartão não tem organização nem contato para ser o tomador da nota.");
@@ -410,4 +531,28 @@ export function nfsePending(d: NfseDraft): NfsePending[] {
   if (d.services.length > 1) warn("services", `Os serviços têm ${d.services.length} códigos de tributação diferentes: sai uma nota por código.`);
   if (d.productItems.length) warn("products", `Itens do tipo produto não entram na NFS-e: ${d.productItems.join(", ")}.`);
   return out;
+}
+
+/**
+ * Número da DPS desta nota (spec 20): reservado no rascunho na 1ª tentativa de
+ * envio. Reenviar a mesma nota (ex.: depois de uma recusa) usa o mesmo número;
+ * cada nota nova pega o próximo da empresa.
+ */
+export function reserveDpsNumber(db: DatabaseSync, ctx: DbContext, cardId: string): { series: string; number: number } {
+  return withTransaction(db, () => {
+    const row = one<{ id: string; status: string; issuer_id: string | null; dps_series: string | null; dps_number: number | null }>(
+      db,
+      "SELECT id, status, issuer_id, dps_series, dps_number FROM nfse_draft WHERE card_id = ? AND deleted_at IS NULL",
+      cardId,
+    );
+    if (!row) throw new ValidationError("Salve o rascunho da nota antes de emitir.");
+    if (row.status === "issued") throw new ValidationError("A NFS-e deste cartão já foi emitida.");
+    if (!row.issuer_id) throw new ValidationError("Escolha a empresa emissora.");
+    if (row.dps_series && row.dps_number) return { series: row.dps_series, number: row.dps_number };
+    const iss = one<{ dps_series: string; dps_next: number }>(db, "SELECT dps_series, dps_next FROM nfse_issuer WHERE id = ? AND deleted_at IS NULL", row.issuer_id);
+    if (!iss) throw new ValidationError("Empresa emissora não encontrada.");
+    updateRow(db, ctx, "nfse_issuer", row.issuer_id, { dps_next: iss.dps_next + 1 });
+    updateRow(db, ctx, "nfse_draft", row.id, { dps_series: iss.dps_series, dps_number: iss.dps_next });
+    return { series: iss.dps_series, number: iss.dps_next };
+  });
 }

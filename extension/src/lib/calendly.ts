@@ -46,9 +46,9 @@ export async function saveCalendly(s: CalendlySettings): Promise<void> {
   await chrome.storage.local.set({ [KEY]: s });
 }
 
-export async function requestCalendlyPermission(): Promise<boolean> {
-  if (!chrome.permissions?.request) return true;
-  if (await chrome.permissions.contains({ origins: [CALENDLY_ORIGIN] })) return true;
+/** Pedido direto no clique (o Chrome recusa o pedido depois de um await); já concedida, responde true sem perguntar. */
+export function requestCalendlyPermission(): Promise<boolean> {
+  if (!chrome.permissions?.request) return Promise.resolve(true);
   return chrome.permissions.request({ origins: [CALENDLY_ORIGIN] });
 }
 

@@ -12,6 +12,8 @@ import { addNotification } from "../lib/notifications";
 import { loadSoundSettings, soundFor, type PlaySoundMessage, type SoundCategory } from "../lib/notify/sounds";
 import { ALERTS_KEY, ALERT_PAGE, ALERT_WINDOW_KEY, type AlertActionMessage, type AlertItem } from "../lib/notify/alerts";
 import { runClip, type ClipStartMessage } from "./clip";
+import { nfseAssistant } from "../lib/nfse/assistant";
+import { PORTAL_BASE, type PortalPayload } from "../lib/nfse/portalSteps";
 import { fetchCalendlyBookings, loadCalendly, markCalendlySeen, refreshCalendlyAccount, saveCalendly } from "../lib/calendly";
 import type { CalendlyImportResult } from "../db/calendly";
 import { OFFSCREEN_PATH, type EnsureOffscreenMessage, type RpcRequest, type RpcResponse } from "../rpc/protocol";
@@ -62,6 +64,66 @@ chrome.runtime.onMessage.addListener((msg: { target?: string; kind?: string; use
     .catch((err: unknown) => sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) }));
   return true;
 });
+
+// ---------- Nota fiscal: assistente no Emissor Nacional (spec 19, fase 3) ----------
+const NFSE_ASSIST_KEY = "conectcrm-nfse-assist";
+type NfseAssist = { tabId: number; payload: PortalPayload };
+
+async function injectNfseAssistant(tabId: number, payload: PortalPayload): Promise<void> {
+  await chrome.scripting.executeScript({ target: { tabId }, func: nfseAssistant, args: [payload] });
+}
+
+chrome.runtime.onMessage.addListener((msg: { target?: string; kind?: string; payload?: PortalPayload }, _sender, sendResponse) => {
+  if (msg?.target !== "background" || msg.kind !== "nfse-open" || !msg.payload) return false;
+  const payload = msg.payload;
+  void (async () => {
+    const base = PORTAL_BASE[payload.environment];
+    const origin = new URL(base).origin;
+    const [existing] = await chrome.tabs.query({ url: `${origin}/*` });
+    const tab = existing ?? (await chrome.tabs.create({ url: base }));
+    await chrome.storage.session.set({ [NFSE_ASSIST_KEY]: { tabId: tab.id!, payload } satisfies NfseAssist });
+    if (existing) {
+      await chrome.tabs.update(existing.id!, { active: true });
+      if (existing.windowId) await chrome.windows.update(existing.windowId, { focused: true });
+      if (existing.status === "complete") await injectNfseAssistant(existing.id!, payload);
+    }
+  })()
+    .then(() => sendResponse({ ok: true }))
+    .catch((e: unknown) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+  return true;
+});
+
+// Cada página do portal que carrega (login, etapas, nota gerada) recebe o painel de novo.
+chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+  if (info.status !== "complete") return;
+  void chrome.storage.session.get(NFSE_ASSIST_KEY).then((r) => {
+    const a = r[NFSE_ASSIST_KEY] as NfseAssist | undefined;
+    if (!a || a.tabId !== tabId || !tab.url?.startsWith(new URL(PORTAL_BASE[a.payload.environment]).origin)) return;
+    injectNfseAssistant(tabId, a.payload).catch((e) => console.warn("Assistente NFS-e:", e));
+  });
+});
+chrome.tabs.onRemoved.addListener((tabId) => {
+  void chrome.storage.session.get(NFSE_ASSIST_KEY).then((r) => {
+    if ((r[NFSE_ASSIST_KEY] as NfseAssist | undefined)?.tabId === tabId) void chrome.storage.session.remove(NFSE_ASSIST_KEY);
+  });
+});
+
+// "Trazer nota para o CRM" no painel: grava número e chave no cartão.
+chrome.runtime.onMessage.addListener(
+  (msg: { target?: string; kind?: string; cardId?: string; accessKey?: string; number?: string; environment?: "producao" | "producao_restrita" }, _sender, sendResponse) => {
+    if (msg?.target !== "background" || msg.kind !== "nfse-issued") return false;
+    void (async () => {
+      const userId = ((await chrome.storage.local.get("conectcrm-current-user"))["conectcrm-current-user"] as string | undefined) ?? null;
+      await rpc("nfse.markIssued", { id: msg.cardId, accessKey: msg.accessKey, number: msg.number || null, environment: msg.environment }, userId);
+      const title = `NFS-e${msg.number ? ` nº ${msg.number}` : ""} registrada no cartão`;
+      chromeNotify(`notify:nfse-${Date.now()}`, title, msg.environment === "producao_restrita" ? "Ambiente de testes (sem valor fiscal)." : "Emitida no Emissor Nacional.", false);
+      await addNotification({ kind: "info", title, message: `Chave ${msg.accessKey}` });
+    })()
+      .then(() => sendResponse({ ok: true }))
+      .catch((e: unknown) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+    return true;
+  },
+);
 
 // ---------- Lembretes ----------
 

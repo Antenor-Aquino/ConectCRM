@@ -183,3 +183,67 @@ O botão **Nota fiscal** fica na barra de ações do cartão e abre a janela da 
   salvos. Nesta versão, avisa que o preenchimento do portal chega na fase 3.
 
 Ao fechar com textos alterados e não salvos, a janela pede confirmação.
+
+## Fase 3 — emitir pelo Emissor Nacional (0.2.106)
+
+**Ambiente** (Configurações → Nota fiscal)
+- Produção restrita (testes, sem valor fiscal) ou produção. O padrão é a produção
+  restrita.
+- Passar para produção pede confirmação.
+- A escolha fica neste computador (`conectcrm-nfse`).
+
+**Permissão:** a do site do ambiente (`www.producaorestrita.nfse.gov.br` ou
+`www.nfse.gov.br`) é pedida no primeiro uso (`optional_host_permissions`).
+O Chrome só aceita esse pedido dentro do próprio clique (0.2.107). Por isso ele
+é a primeira coisa do botão Emitir, antes da confirmação, e o ambiente é lido
+quando a janela abre. O mesmo vale para o pedido de acesso ao Calendly.
+
+**"Emitir no Emissor Nacional" na janela da nota**
+1. Pede confirmação com o valor, o tomador, a empresa e o ambiente.
+2. Abre o portal, ou traz a aba para a frente se já estiver aberta.
+3. Fica esperando a nota voltar e atualiza a janela sozinha.
+
+**Painel do ConectCRM dentro do portal** (`lib/nfse/assistant.ts`)
+- O service worker injeta o painel em cada página que carrega naquela aba.
+- **Fora do formulário (0.2.108):**
+  - na tela de login o painel esconde o "Preencher" e orienta: "Primeiro, entre
+    no portal… depois abra Emissão Completa";
+  - em página sem os campos da nota (painel inicial do portal), o "Preencher"
+    fica desligado, com o mesmo aviso.
+- **Empresa:** procura o CNPJ da empresa da nota na página. Se achar o de outra
+  empresa cadastrada, avisa para trocar o perfil ou o certificado.
+- **Etapas Pessoas, Serviço e Valores:** cada uma mostra os campos com o valor e
+  um botão **Copiar**. A etapa atual é reconhecida pelos campos na tela.
+- **Preencher a etapa:**
+  - acha cada campo pelo rótulo do guia oficial (Guia do Emissor Web v1.3), com
+    o bloco da tela levado em conta (o CPF/CNPJ do tomador não se confunde com o
+    do prestador);
+  - preenche e contorna de verde o campo preenchido;
+  - nos campos com lista de sugestões (município, código de tributação, NBS),
+    digita e escolhe a sugestão;
+  - mostra o que não achou ("copie e cole").
+- **Lembretes:** município do tomador (o portal busca pelo CEP), retenção do
+  ISSQN, valor aproximado dos tributos / alíquota do Simples. O usuário é quem
+  clica em Avançar e em Emitir NFS-e.
+- **Tela "NFS-e Gerada com sucesso":** o painel lê a chave de acesso (50
+  caracteres) e o número da nota, que podem ser corrigidos. **Trazer nota para
+  o CRM** grava no cartão.
+
+**Campos preenchidos** (`portalSteps.ts`)
+- **Pessoas:** data de competência, tomador no Brasil, CPF/CNPJ, nome/razão
+  social, CEP, logradouro, número, complemento, bairro, e-mail. O município do
+  tomador fica só para copiar.
+- **Serviço:** município do local da prestação, código de tributação nacional,
+  NBS, descrição do serviço, informações complementares, nº do pedido.
+- **Valores:** valor da operação/serviço prestado.
+
+**Nota emitida** (`nfse.markIssued`, migration `0035_nfse_emitida.sql`)
+- O rascunho do cartão vira emitido, com número, chave, ambiente e data.
+- Entra uma nota no histórico do cartão.
+- O rascunho fica travado: não salva mais e não emite de novo.
+- Ler a mesma nota de novo não duplica.
+
+**Teste no Chrome:** feito num portal simulado, com os rótulos e as etapas do
+guia oficial. O portal de verdade precisa de login. O primeiro uso deve ser em
+produção restrita. Se algum campo não for achado, o painel mostra qual, e o nome
+dele no portal ajusta o preenchimento.

@@ -5,10 +5,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Building2, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { TaBadge, TaButton, TaInput, TaPanel, TaSelect, TaTextarea } from "@tailadmin";
 import { call } from "../../rpc/client";
-import { ACCESS_LABEL, DEFAULT_DESCRIPTION_TEMPLATE, NFSE_LIMITS, NFSE_TEMPLATE_VARS, SIMPLES_LABEL, SPECIAL_REGIME_LABEL, type Issuer, type IssuerAccess, type SimplesOption } from "../../db/nfse";
+import { ACCESS_LABEL, SIMPLES_REGIME_LABEL, DEFAULT_DESCRIPTION_TEMPLATE, NFSE_LIMITS, NFSE_TEMPLATE_VARS, SIMPLES_LABEL, SPECIAL_REGIME_LABEL, type Issuer, type IssuerAccess, type SimplesOption } from "../../db/nfse";
 import { formatCnpj, formatCnpjInput, lookupCnpj } from "../../lib/cnpj";
 import { errorText } from "../../lib/errors";
 import { buscarMunicipios, municipioPorIbge, municipioPorNome } from "../../lib/nfse/tabelas";
+import { loadNfseEnvironment, saveNfseEnvironment } from "../../lib/nfse/portal";
+import { fiscalVersion, listFiscalCerts, type FiscalCert } from "../../lib/nfse/fiscal";
+import type { NfseEnvironment } from "../../db/nfse";
 import { useSession } from "../session";
 import { Combobox, type ComboItem } from "../ui/Combobox";
 import { ErrorText, Field } from "../ui/form";
@@ -51,6 +54,7 @@ export function NfseSettings() {
         </TaButton>
       }
     >
+      <EnvironmentChoice />
       <div className="space-y-3 text-theme-sm" data-nfse-issuers>
         {!issuers.length && (
           <p className="rounded-xl border border-dashed border-gray-300 p-6 text-center text-gray-500 dark:border-gray-700">
@@ -71,6 +75,10 @@ export function NfseSettings() {
                 CNPJ {formatCnpj(i.cnpj)} · {SIMPLES_LABEL[i.simples]} · {ACCESS_LABEL[i.access]}
                 {i.city_ibge && ` · ${cityItem(i.city_ibge)?.label}`}
                 {i.municipal_reg && ` · IM ${i.municipal_reg}`}
+              </p>
+              <p className="mt-1 text-theme-xs text-gray-600 dark:text-gray-400">
+                {i.cert_thumbprint ? "Emite pela API (ConectCRM Fiscal)" : "Emite pelo portal (sem certificado escolhido)"}
+                {i.simples === 3 && i.simples_rate == null && <span className="text-warning-700"> · falta a alíquota do Simples</span>}
               </p>
             </div>
             <button type="button" title="Editar" onClick={() => setEditing(i)} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5">
@@ -127,6 +135,21 @@ function IssuerModal({
   const [simples, setSimples] = useState<SimplesOption>(issuer?.simples ?? 3);
   const [regime, setRegime] = useState(issuer?.special_regime ?? 0);
   const [active, setActive] = useState(issuer ? !!issuer.active : true);
+  const [simplesRate, setSimplesRate] = useState(issuer?.simples_rate != null ? String(issuer.simples_rate).replace(".", ",") : "");
+  const [simplesRegime, setSimplesRegime] = useState<1 | 2 | 3>(issuer?.simples_regime ?? 1);
+  const [issRate, setIssRate] = useState(issuer?.iss_rate != null ? String(issuer.iss_rate).replace(".", ",") : "");
+  const [dpsSeries, setDpsSeries] = useState(issuer?.dps_series ?? "1");
+  const [dpsNext, setDpsNext] = useState(String(issuer?.dps_next ?? 1));
+  const [certThumb, setCertThumb] = useState(issuer?.cert_thumbprint ?? "");
+  /** null = carregando; string = programa ausente (mensagem). */
+  const [certs, setCerts] = useState<FiscalCert[] | string | null>(null);
+  const loadCerts = useCallback(() => {
+    setCerts(null);
+    listFiscalCerts()
+      .then((l) => setCerts(l))
+      .catch((e) => setCerts(errorText(e)));
+  }, []);
+  useEffect(() => loadCerts(), [loadCerts]);
   const [descTpl, setDescTpl] = useState(issuer?.description_template ?? DEFAULT_DESCRIPTION_TEMPLATE);
   const [notesTpl, setNotesTpl] = useState(issuer?.notes_template ?? "");
   /** Último modelo em que o usuário clicou: os botões de campo inserem nele. */
@@ -170,7 +193,13 @@ function IssuerModal({
   const save = async () => {
     setError(null);
     if (!city) return setError("Informe o município da empresa (é o local da prestação padrão nas notas).");
-    const input = { cnpj, legalName, municipalReg, cityIbge: city?.id ?? null, access, simples, specialRegime: regime, active, descriptionTemplate: descTpl, notesTemplate: notesTpl };
+    const input = { cnpj, legalName, municipalReg, cityIbge: city?.id ?? null, access, simples, specialRegime: regime, active, descriptionTemplate: descTpl, notesTemplate: notesTpl,
+      simplesRate: simplesRate.trim() ? Number(simplesRate.replace(",", ".")) : null,
+      simplesRegime,
+      issRate: issRate.trim() ? Number(issRate.replace(",", ".")) : null,
+      dpsSeries,
+      dpsNext: Number(dpsNext),
+      certThumbprint: certThumb || null };
     try {
       if (issuer) await call("nfse.updateIssuer", { id: issuer.id, patch: input });
       else await call("nfse.createIssuer", input);
@@ -235,6 +264,72 @@ function IssuerModal({
             </TaSelect>
           </Field>
         </div>
+        <div className="mb-4 rounded-xl border border-gray-200 p-3 dark:border-gray-800" data-nfse-api-fields>
+          <p className="text-theme-sm font-medium text-gray-800 dark:text-white/90">Dados para emitir pela API</p>
+          <p className="mb-3 text-theme-xs text-gray-500">Vão na nota enviada direto à Receita (sem abrir o portal). Confira com a contabilidade.</p>
+          <div className="grid grid-cols-2 gap-3">
+            {simples === 3 && (
+              <>
+                <Field label="Alíquota do Simples Nacional (%)" required hint="Alíquota da faixa do Simples (ex.: 6,00). Obrigatória para ME/EPP.">
+                  <TaInput value={simplesRate} onChange={(e) => setSimplesRate(e.target.value)} placeholder="6,00" inputMode="decimal" data-nfse-simples-rate />
+                </Field>
+                <Field label="Regime de apuração no Simples">
+                  <TaSelect value={simplesRegime} onChange={(e) => setSimplesRegime(Number(e.target.value) as 1 | 2 | 3)}>
+                    {([1, 2, 3] as const).map((v) => (
+                      <option key={v} value={v}>
+                        {SIMPLES_REGIME_LABEL[v]}
+                      </option>
+                    ))}
+                  </TaSelect>
+                </Field>
+              </>
+            )}
+            <Field label="Alíquota do ISS (%)" hint="Opcional. Até 5%; em branco, a Receita usa a do município.">
+              <TaInput value={issRate} onChange={(e) => setIssRate(e.target.value)} placeholder="ex.: 2,00" inputMode="decimal" />
+            </Field>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Série da DPS" hint="1 a 49999.">
+                <TaInput value={dpsSeries} onChange={(e) => setDpsSeries(e.target.value.replace(/\D/g, ""))} inputMode="numeric" />
+              </Field>
+              <Field label="Próximo nº da DPS" hint="Sequência desta série.">
+                <TaInput value={dpsNext} onChange={(e) => setDpsNext(e.target.value.replace(/\D/g, ""))} inputMode="numeric" />
+              </Field>
+            </div>
+          </div>
+          <Field label="Certificado digital (para emitir sem abrir o portal)" hint="Lista do ConectCRM Fiscal: certificados A1 instalados e tokens A3 conectados neste computador.">
+            {certs === null ? (
+              <p className="text-theme-xs text-gray-500">Procurando certificados…</p>
+            ) : typeof certs === "string" ? (
+              <p className="rounded-lg bg-warning-50 px-3 py-2 text-theme-xs text-warning-700" data-nfse-fiscal-missing>
+                {certs} Sem o programa, a nota é emitida pelo portal (assistente).
+              </p>
+            ) : (
+              <div className="flex gap-2">
+                <TaSelect value={certThumb} onChange={(e) => setCertThumb(e.target.value)} data-nfse-cert className="min-w-0 flex-1">
+                  <option value="">Nenhum (emitir pelo portal)</option>
+                  {certThumb && !certs.some((c) => c.thumbprint === certThumb) && <option value={certThumb}>Certificado escolhido antes (não encontrado agora: conecte o token)</option>}
+                  {certs.map((c) => (
+                    <option key={c.thumbprint} value={c.thumbprint}>
+                      {c.subject} {c.cnpj ? `— CNPJ ${formatCnpj(c.cnpj)}` : ""} — vence {new Date(c.notAfter).toLocaleDateString("pt-BR")}
+                    </option>
+                  ))}
+                </TaSelect>
+                <TaButton onClick={loadCerts} title="Procurar de novo (depois de conectar o token)">
+                  Atualizar
+                </TaButton>
+              </div>
+            )}
+            {(() => {
+              if (!Array.isArray(certs) || !certThumb) return null;
+              const c = certs.find((x) => x.thumbprint === certThumb);
+              const mine = cnpj.replace(/\D/g, "");
+              if (c && c.cnpj && mine && c.cnpj !== mine)
+                return <p className="mt-1 text-theme-xs text-error-600" data-nfse-cert-mismatch>O CNPJ deste certificado ({formatCnpj(c.cnpj)}) é diferente do CNPJ da empresa. A Receita recusa.</p>;
+              if (c && new Date(c.notAfter) < new Date()) return <p className="mt-1 text-theme-xs text-error-600">Certificado vencido.</p>;
+              return null;
+            })()}
+          </Field>
+        </div>
         <div className="mb-4 rounded-xl border border-gray-200 p-3 dark:border-gray-800" data-nfse-templates>
           <p className="text-theme-sm font-medium text-gray-800 dark:text-white/90">Textos padrão das notas desta empresa</p>
           <p className="mb-3 text-theme-xs text-gray-500">
@@ -288,5 +383,45 @@ function IssuerModal({
         </TaButton>
       </div>
     </GuardedModal>
+  );
+}
+
+/** Produção restrita (testes, sem valor fiscal) ou produção. Fica só neste computador. */
+function EnvironmentChoice() {
+  const [env, setEnv] = useState<NfseEnvironment | null>(null);
+  const [fiscal, setFiscal] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    void loadNfseEnvironment().then(setEnv);
+    void fiscalVersion().then(setFiscal);
+  }, []);
+  if (!env) return null;
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 p-3 text-theme-sm dark:border-gray-800" data-nfse-environment>
+      <span className="font-medium text-gray-800 dark:text-white/90">Emissor Nacional:</span>
+      <TaSelect
+        value={env}
+        onChange={async (e) => {
+          const v = e.target.value as NfseEnvironment;
+          if (v === "producao" && !confirm("Passar a emitir em PRODUÇÃO? As notas emitidas passam a ter valor fiscal.")) return;
+          setEnv(v);
+          await saveNfseEnvironment(v);
+        }}
+        className="w-auto"
+        data-nfse-env
+      >
+        <option value="producao_restrita">Produção restrita (testes, sem valor fiscal)</option>
+        <option value="producao">Produção (notas com valor fiscal)</option>
+      </TaSelect>
+      <span className="text-theme-xs text-gray-500">
+        {env === "producao_restrita" ? "Use para conferir o preenchimento antes de emitir de verdade." : "As notas emitidas valem como documento fiscal."}
+      </span>
+      <span className="w-full text-theme-xs" data-nfse-fiscal-status>
+        {fiscal === undefined ? "" : fiscal ? (
+          <span className="text-success-700">ConectCRM Fiscal {fiscal} instalado: as empresas com certificado escolhido emitem sem abrir o portal.</span>
+        ) : (
+          <span className="text-gray-500">ConectCRM Fiscal não instalado neste computador: a emissão é pelo portal (assistente).</span>
+        )}
+      </span>
+    </div>
   );
 }
