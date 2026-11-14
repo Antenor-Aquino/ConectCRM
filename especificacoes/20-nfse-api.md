@@ -355,3 +355,12 @@ produção restrita. Não há o que corrigir no CRM. Próximo passo depende do
 dono: confirmar se a empresa já emite pelo Emissor Nacional em produção (o
 município estaria parametrizado lá) e fazer a primeira nota real pelo CRM, ou
 testar com a outra empresa se o município dela estiver parametrizado.
+
+**Oitavo resultado real (produção, nota real):** E1235 ao contrário — a
+produção ainda está no leiaute v1.01 de fev/2026 e não aceita `finNFSe`.
+**Extensão 0.2.116:** o leiaute da DPS segue o ambiente (`dpsLayoutFor`):
+produção → v1.01 (sem `finNFSe`, `xDescServ` antes de `cNBS`); produção
+restrita → reforma (NT 009). Testes validam cada um contra o esquema do seu
+ambiente (`fixtures/nfse-xsd-producao` = fev/2026; `fixtures/nfse-xsd` =
+20/10/2026). Quando a Receita levar o leiaute novo para produção, basta mudar
+`dpsLayoutFor`.

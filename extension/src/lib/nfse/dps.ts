@@ -15,7 +15,17 @@ export interface DpsOptions {
   series: string;
   number: number;
   appVersion: string;
+  /**
+   * Leiaute da DPS. A Receita usa versões diferentes por ambiente (nov/2026):
+   * produção ainda no leiaute v1.01 de fev/2026; produção restrita já no da
+   * reforma tributária (NT 009: finNFSe obrigatório, cNBS antes de xDescServ).
+   * Padrão: pelo ambiente.
+   */
+  layout?: DpsLayout;
 }
+
+export type DpsLayout = "v101" | "rtc";
+export const dpsLayoutFor = (env: NfseEnvironment): DpsLayout => (env === "producao" ? "v101" : "rtc");
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const digits = (s: string | null | undefined) => (s ?? "").replace(/\D/g, "");
@@ -52,6 +62,7 @@ export function buildDpsXml(d: NfseDraft, o: DpsOptions): string {
   const t = d.taker;
   const total = d.services.reduce((n, x) => n + x.valueCents, 0);
   const id = dpsId(issuer.city_ibge, issuer.cnpj, o.series, o.number);
+  const rtc = (o.layout ?? dpsLayoutFor(o.environment)) === "rtc";
 
   // Prestador (o emitente é o próprio prestador: nome e endereço vêm do cadastro nacional).
   const prest =
@@ -77,7 +88,10 @@ export function buildDpsXml(d: NfseDraft, o: DpsOptions): string {
       : "";
   const serv =
     `<serv><locPrest><cLocPrestacao>${d.placeIbge}</cLocPrestacao></locPrest>` +
-    `<cServ><cTribNac>${s.tribNac}</cTribNac>${el("cNBS", s.nbs)}${el("xDescServ", text(d.texts.description, 1000))}</cServ>${infoCompl}</serv>`;
+    (rtc
+      ? `<cServ><cTribNac>${s.tribNac}</cTribNac>${el("cNBS", s.nbs)}${el("xDescServ", text(d.texts.description, 1000))}</cServ>`
+      : `<cServ><cTribNac>${s.tribNac}</cTribNac>${el("xDescServ", text(d.texts.description, 1000))}${el("cNBS", s.nbs)}</cServ>`) +
+    `${infoCompl}</serv>`;
 
   // Valores e tributos
   const totTrib = issuer.simples === 3 ? `<pTotTribSN>${pct(issuer.simples_rate!)}</pTotTribSN>` : `<indTotTrib>0</indTotTrib>`;
@@ -97,7 +111,7 @@ export function buildDpsXml(d: NfseDraft, o: DpsOptions): string {
     `<nDPS>${o.number}</nDPS>` +
     `<dCompet>${y}-${m}-${dd}</dCompet>` +
     `<tpEmit>1</tpEmit>` +
-    `<finNFSe>0</finNFSe>` +
+    (rtc ? `<finNFSe>0</finNFSe>` : "") +
     `<cLocEmi>${issuer.city_ibge}</cLocEmi>` +
     prest +
     toma +
