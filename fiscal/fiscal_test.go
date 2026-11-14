@@ -209,3 +209,10 @@ func TestEmissaoComCertificadoNaConexao(t *testing.T) {
 		t.Fatalf("resposta: %+v", r.Result)
 	}
 }
+
+func TestErrorCodes(t *testing.T) {
+	got := errorCodes([]byte(`{"erros":[{"Codigo":"E0712","Descricao":"x"},{"codigo":"E1235"}]}`))
+	if len(got) != 2 || got[0] != "E0712" || got[1] != "E1235" {
+		t.Fatalf("códigos: %v", got)
+	}
+}

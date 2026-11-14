@@ -4,10 +4,11 @@
 // Messaging do Chrome (só a extensão do ConectCRM pode chamá-lo).
 //
 // Uso:
-//   ConectCRMFiscal.exe              → instala (ou reinstala) para o usuário atual
-//   ConectCRMFiscal.exe --uninstall  → remove
-//   --quiet                          → sem a janela de aviso (instalação automática)
-//   (o Chrome o abre sozinho, com a origem da extensão como argumento)
+//
+//	ConectCRMFiscal.exe              → instala (ou reinstala) para o usuário atual
+//	ConectCRMFiscal.exe --uninstall  → remove
+//	--quiet                          → sem a janela de aviso (instalação automática)
+//	(o Chrome o abre sozinho, com a origem da extensão como argumento)
 package main
 
 import (
@@ -17,24 +18,25 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 )
 
 const (
-	version   = "1.0.1"
+	version   = "1.0.2"
 	hostName  = "com.conectcrm.fiscal"
 	extOrigin = "chrome-extension://fabjbdmhpofceejnkeffkkiomoeifedj/"
 )
 
 type request struct {
-	ID          string `json:"id"`
-	Cmd         string `json:"cmd"`
-	Env         string `json:"env"`
-	Thumbprint  string `json:"thumbprint"`
-	XML         string `json:"xml"`
-	Element     string `json:"element"`
-	AccessKey   string `json:"accessKey"`
+	ID         string `json:"id"`
+	Cmd        string `json:"cmd"`
+	Env        string `json:"env"`
+	Thumbprint string `json:"thumbprint"`
+	XML        string `json:"xml"`
+	Element    string `json:"element"`
+	AccessKey  string `json:"accessKey"`
 }
 
 type response struct {
@@ -137,6 +139,10 @@ func handle(req request) response {
 	default:
 		return fail(fmt.Errorf("comando desconhecido: %q", req.Cmd))
 	}
+	if res.Result != nil {
+		// Só o status e os códigos de erro da Receita (sem dados da nota) — ajuda no suporte.
+		log.Printf("%s %s: HTTP %d %s", req.Cmd, req.Env, res.Result.HTTPStatus, strings.Join(errorCodes(res.Result.Body), " "))
+	}
 	res.OK = true
 	return res
 }
@@ -201,4 +207,15 @@ func main() {
 	default:
 		show(install())
 	}
+}
+
+var codeRe = regexp.MustCompile(`"[Cc]odigo"\s*:\s*"([A-Za-z0-9]{1,12})"`)
+
+// errorCodes devolve os códigos de erro (ex.: E0712) presentes na resposta da Sefin.
+func errorCodes(body []byte) []string {
+	var out []string
+	for _, m := range codeRe.FindAllSubmatch(body, 20) {
+		out = append(out, string(m[1]))
+	}
+	return out
 }

@@ -10,7 +10,7 @@ import { formatCnpj, formatCnpjInput, lookupCnpj } from "../../lib/cnpj";
 import { errorText } from "../../lib/errors";
 import { buscarMunicipios, municipioPorIbge, municipioPorNome } from "../../lib/nfse/tabelas";
 import { loadNfseEnvironment, saveNfseEnvironment } from "../../lib/nfse/portal";
-import { fiscalVersion, listFiscalCerts, type FiscalCert } from "../../lib/nfse/fiscal";
+import { fiscalVersion, listFiscalCerts, testSefinConnection, type ConnectionTest, type FiscalCert } from "../../lib/nfse/fiscal";
 import type { NfseEnvironment } from "../../db/nfse";
 import { useSession } from "../session";
 import { Combobox, type ComboItem } from "../ui/Combobox";
@@ -150,6 +150,15 @@ function IssuerModal({
       .catch((e) => setCerts(errorText(e)));
   }, []);
   useEffect(() => loadCerts(), [loadCerts]);
+  const [probe, setProbe] = useState<ConnectionTest | "testing" | null>(null);
+  const runProbe = async () => {
+    const ibge = city?.id;
+    if (!certThumb || !ibge) return;
+    setProbe("testing");
+    const env = await loadNfseEnvironment();
+    const r = await testSefinConnection(env, certThumb, ibge, cnpj);
+    setProbe({ ...r, message: `${env === "producao" ? "Produção" : "Produção restrita (testes)"}: ${r.message}` });
+  };
   const [descTpl, setDescTpl] = useState(issuer?.description_template ?? DEFAULT_DESCRIPTION_TEMPLATE);
   const [notesTpl, setNotesTpl] = useState(issuer?.notes_template ?? "");
   /** Último modelo em que o usuário clicou: os botões de campo inserem nele. */
@@ -328,6 +337,20 @@ function IssuerModal({
               if (c && new Date(c.notAfter) < new Date()) return <p className="mt-1 text-theme-xs text-error-600">Certificado vencido.</p>;
               return null;
             })()}
+            {Array.isArray(certs) && certThumb && (
+              <div className="mt-2" data-nfse-probe>
+                <TaButton size="sm" variant="outline" disabled={probe === "testing" || !city} onClick={() => void runProbe()} data-nfse-probe-run>
+                  {probe === "testing" ? "Testando… (token A3: digite o PIN no Windows)" : "Testar conexão com a Receita"}
+                </TaButton>
+                <span className="ml-2 text-theme-xs text-gray-500">Não emite nota: só confere certificado, PIN e conexão.</span>
+                {probe && probe !== "testing" && (
+                  <p className={`mt-1 text-theme-xs ${probe.ok ? "text-success-700" : "text-error-600"}`} data-nfse-probe-result>
+                    {probe.message}
+                    {probe.detail && <span className="block text-gray-500">Detalhe: {probe.detail}</span>}
+                  </p>
+                )}
+              </div>
+            )}
           </Field>
         </div>
         <div className="mb-4 rounded-xl border border-gray-200 p-3 dark:border-gray-800" data-nfse-templates>

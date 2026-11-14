@@ -260,3 +260,25 @@ como Native Messaging e Sefin simulada exigindo certificado: emitir → baixar
 DANFSe → cancelamento recusado (E0840) → cancelado (evento assinado, conferido
 com xmlsec1) → DANFSe com "CANCELADA" → preparar nova nota.
 **Falta (B5):** cancelamento real em produção restrita com A1 e A3.
+
+## B5 — preparação do teste real (0.2.112; ConectCRM Fiscal 1.0.2)
+
+O teste real (A1 e token A3 contra a Sefin de produção restrita) é feito pelo
+dono do projeto no Windows, seguindo o roteiro entregue em PDF
+(`Roteiro-teste-B5-NFSe.pdf`). Para deixá-lo seguro e diagnosticável:
+
+- **Testar conexão com a Receita** (Configurações → Nota fiscal → empresa →
+  certificado): consulta pela API uma NFS-e que não existe (chave com o
+  município e CNPJ da empresa e número 0) usando o certificado escolhido.
+  Confere programa instalado, certificado/PIN e a conexão mTLS sem emitir
+  nada. 2xx/4xx (exceto 401) = certificado aceito; 401 = certificado recusado;
+  5xx = Receita fora; erro de conexão = TLS/rede (`classifyProbe`,
+  `testSefinConnection` em `lib/nfse/fiscal.ts`).
+- **ConectCRM Fiscal 1.0.2**: o `fiscal.log` passa a registrar o status HTTP e
+  os códigos de erro da Sefin (ex.: `emit producao_restrita: HTTP 400 E0712`),
+  sem dados da nota, PIN ou chave.
+- Verificado no Chrome com o programa real e Sefin simulada (consulta com
+  certificado do cliente na conexão).
+
+**Pendente (depende do teste no Windows):** resultado com A1 e A3, ajustes
+pelos códigos de erro reais, e só então liberar Produção.

@@ -238,3 +238,21 @@ describe("NFS-e B4 — DANFSe", () => {
     expect(() => danfseData("<DPS/>")).toThrow(/NFS-e/);
   });
 });
+
+describe("NFS-e B5 — teste de conexão", () => {
+  it("chave de teste com 50 dígitos da própria empresa", async () => {
+    const { probeAccessKey } = await import("../src/lib/nfse/fiscal");
+    const k = probeAccessKey("2611101", "68.153.622/0001-93", new Date(2026, 10, 14));
+    expect(k).toMatch(/^\d{50}$/);
+    expect(k).toBe("2611101" + "22" + "68153622000193" + "0".repeat(13) + "2611" + "0".repeat(10));
+  });
+  it("classifica a resposta", async () => {
+    const { classifyProbe } = await import("../src/lib/nfse/fiscal");
+    expect(classifyProbe({ httpStatus: 404 }).ok).toBe(true);
+    expect(classifyProbe({ httpStatus: 400, body: { erros: [{ codigo: "E999", descricao: "Chave inválida" }] } }).ok).toBe(true);
+    const r = classifyProbe({ httpStatus: 401, body: { erro: { codigo: "E1200", descricao: "Certificado de Transmissão Inválido" } } });
+    expect(r.ok).toBe(false);
+    expect(r.detail).toContain("E1200");
+    expect(classifyProbe({ httpStatus: 503, text: "fora" }).ok).toBe(false);
+  });
+});
