@@ -14,6 +14,18 @@ import { Switch } from "../ui/Switch";
 import { errorText } from "../../lib/errors";
 import { CustomFieldsForm } from "../ui/CustomFieldsForm";
 import type { CustomField, CustomValue } from "../../db/customFields";
+import { Combobox, type ComboItem } from "../ui/Combobox";
+import { buscarNbs, buscarServicos, formatNbs, formatTribNac, nbs, servicoNacional } from "../../lib/nfse/tabelas";
+
+/** Código de tributação nacional como item da busca. */
+const tribItem = (code: string | null | undefined): ComboItem | null => {
+  const s = servicoNacional(code);
+  return s ? { id: s.codigo, label: `${formatTribNac(s.codigo)} — ${s.descricao}`, sublabel: s.grupo } : null;
+};
+const nbsItem = (code: string | null | undefined): ComboItem | null => {
+  const n = nbs(code);
+  return n ? { id: n.codigo, label: `${formatNbs(n.codigo)} — ${n.descricao}` } : null;
+};
 
 
 export function ProductsSettings() {
@@ -158,6 +170,8 @@ function ProductModal({
   const [categoryId, setCategoryId] = useState(product?.category_id ?? "");
   const [description, setDescription] = useState(product?.description ?? "");
   const [active, setActive] = useState(product ? !!product.active : true);
+  const [tribNac, setTribNac] = useState<ComboItem | null>(() => tribItem(product?.nfse_trib_nac));
+  const [nbsCode, setNbsCode] = useState<ComboItem | null>(() => nbsItem(product?.nfse_nbs));
   const [error, setError] = useState<string | null>(null);
   const [fields, setFields] = useState<CustomField[]>([]);
   const [values, setValues] = useState<Record<string, CustomValue>>({});
@@ -167,7 +181,7 @@ function ProductModal({
   }, [product]);
 
   async function save() {
-    const input = { code, name, kind, unit, priceCents: price, costCents: cost || null, recurrence, categoryId: categoryId || null, description, active, customValues: values };
+    const input = { code, name, kind, unit, priceCents: price, costCents: cost || null, recurrence, categoryId: categoryId || null, description, active, customValues: values, nfseTribNac: kind === "servico" ? (tribNac?.id ?? null) : null, nfseNbs: kind === "servico" ? (nbsCode?.id ?? null) : null };
     try {
       if (product) await call("products.update", { id: product.id, patch: input });
       else await call("products.create", input);
@@ -223,9 +237,25 @@ function ProductModal({
           </TaSelect>
         </Field>
       </div>
-      <Field label="Descrição">
+      <Field label="Descrição" hint={kind === "servico" ? "Também é a descrição do serviço na nota fiscal (sem ela, vai o nome)." : undefined}>
         <TaTextarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
       </Field>
+      {kind === "servico" && (
+        <div className="mb-4 rounded-xl border border-gray-200 p-3 dark:border-gray-800" data-product-nfse>
+          <p className="mb-2 text-theme-sm font-medium text-gray-800 dark:text-white/90">Nota fiscal de serviço (NFS-e)</p>
+          <Field label="Código de tributação nacional" hint="Lista nacional de serviços (LC 116/2003). Obrigatório para emitir a nota.">
+            <Combobox
+              value={tribNac}
+              onChange={setTribNac}
+              search={async (t) => buscarServicos(t).map((x) => tribItem(x.codigo)!)}
+              placeholder="Buscar por código ou descrição (ex.: 01.05.01, consultoria)"
+            />
+          </Field>
+          <Field label="NBS" hint="Nomenclatura Brasileira de Serviços. Opcional por enquanto.">
+            <Combobox value={nbsCode} onChange={setNbsCode} search={async (t) => buscarNbs(t).map((x) => nbsItem(x.codigo)!)} placeholder="Buscar por código ou descrição" />
+          </Field>
+        </div>
+      )}
       <CustomFieldsForm fields={fields} values={values} onChange={setValues} columns={2} />
       <div className="flex items-center justify-between rounded-xl border border-gray-200 px-4 py-3 text-theme-sm font-medium dark:border-gray-800">
         Ativo (aparece em “Adicionar” nos cartões)
