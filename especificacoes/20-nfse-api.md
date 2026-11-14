@@ -333,3 +333,16 @@ cancelamento primeiro abrem a conexão com certificado (GET de uma chave
 inexistente — o token pede o PIN e abre a sessão), depois assinam o XML numa
 thread própria do sistema e enviam pela mesma conexão; o log registra a
 abertura da sessão e o tempo da assinatura.
+
+**Sexto resultado real (token A3, produção restrita): assinatura aceita.** A
+Receita recusou por esquema (E1235: `infDPS` não aceita `cLocEmi` logo após
+`tpEmit`; esperava `cMotivoEmisTI`/`finNFSe`). A produção restrita já usa o
+leiaute da reforma tributária (NT 009, anexo VI v1.04.01; esquemas
+`esquemas_prod_restrita_20261020.zip`, mesmos nomes de arquivo v1.01, conteúdo
+novo). **Extensão 0.2.115:** DPS com `finNFSe` = 0 (NFS-e regular) após
+`tpEmit` e `cNBS` antes de `xDescServ` (agora o último de `cServ`); os XSD dos
+testes foram trocados pelos de 20/10/2026 (DPS e pedido de cancelamento
+validados); o DANFSe lê `finNFSe` de `infDPS`.
+**Atenção para 2027:** para optantes do Simples, o grupo `IBSCBS` da DPS passa
+a ser obrigatório em 2027, e há regra prevista para `regApIBSCBSSN` no
+`regTrib` — tarefa a fazer antes de janeiro (ainda não está no XSD atual).

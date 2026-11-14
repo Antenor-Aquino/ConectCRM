@@ -1,6 +1,7 @@
 // DPS (Declaração de Prestação de Serviço) da NFS-e Nacional — spec 20, B1.
 // Monta o XML v1.01 (sem assinatura) a partir do rascunho do cartão, na ordem
-// do esquema oficial (DPS_v1.01.xsd). O ConectCRM Fiscal assina infDPS e envia.
+// do esquema oficial (DPS_v1.01.xsd da produção restrita de 20/10/2026, leiaute
+// da reforma tributária — NT 009: finNFSe após tpEmit; cNBS antes de xDescServ). O ConectCRM Fiscal assina infDPS e envia.
 // Sem prefixo de namespace (regra E1228).
 import type { NfseDraft, NfseEnvironment } from "../../db/nfse";
 
@@ -76,7 +77,7 @@ export function buildDpsXml(d: NfseDraft, o: DpsOptions): string {
       : "";
   const serv =
     `<serv><locPrest><cLocPrestacao>${d.placeIbge}</cLocPrestacao></locPrest>` +
-    `<cServ><cTribNac>${s.tribNac}</cTribNac>${el("xDescServ", text(d.texts.description, 1000))}${el("cNBS", s.nbs)}</cServ>${infoCompl}</serv>`;
+    `<cServ><cTribNac>${s.tribNac}</cTribNac>${el("cNBS", s.nbs)}${el("xDescServ", text(d.texts.description, 1000))}</cServ>${infoCompl}</serv>`;
 
   // Valores e tributos
   const totTrib = issuer.simples === 3 ? `<pTotTribSN>${pct(issuer.simples_rate!)}</pTotTribSN>` : `<indTotTrib>0</indTotTrib>`;
@@ -96,6 +97,7 @@ export function buildDpsXml(d: NfseDraft, o: DpsOptions): string {
     `<nDPS>${o.number}</nDPS>` +
     `<dCompet>${y}-${m}-${dd}</dCompet>` +
     `<tpEmit>1</tpEmit>` +
+    `<finNFSe>0</finNFSe>` +
     `<cLocEmi>${issuer.city_ibge}</cLocEmi>` +
     prest +
     toma +

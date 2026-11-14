@@ -366,7 +366,8 @@ export function danfseData(nfseXml: string): DanfseData {
       emissaoDps: xtext(dps, "dhEmi") ? brDate(xtext(dps, "dhEmi"), true) : DASH,
       emitente: or(EMITENTE[xtext(dps, "tpEmit")]),
       situacao: or(SITUACAO[xtext(inf, "cStat")] ?? xtext(inf, "cStat")),
-      finalidade: or(FINALIDADE[xtext(ibDps, "finNFSe")] ?? (ibDps ? "" : "NFS-e regular")),
+      // Leiaute da reforma (NT 009): finNFSe em infDPS; no anterior, dentro de IBSCBS.
+      finalidade: or(FINALIDADE[xtext(dps, "finNFSe") || xtext(ibDps, "finNFSe")] ?? (ibDps ? "" : "NFS-e regular")),
     },
     prestador,
     tomador: party(xnode(dps, "toma")),

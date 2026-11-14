@@ -88,7 +88,7 @@ describe("NFS-e API — DPS", () => {
     expect(xml).toContain("<regTrib><opSimpNac>3</opSimpNac><regApTribSN>1</regApTribSN><regEspTrib>0</regEspTrib></regTrib>");
     expect(xml).toContain("<IM>99650737</IM>");
     expect(xml).toContain("<toma><CNPJ>19929587000146</CNPJ><xNome>CAIXA ESCOLAR PROFESSOR HILDEBRANDO PONTES</xNome><end><endNac><cMun>3170107</cMun><CEP>38067230</CEP></endNac>");
-    expect(xml).toContain("<cServ><cTribNac>010901</cTribNac><xDescServ>Certificado digital A1 — Caixa Escolar Prof. Hildebrando Pontes</xDescServ><cNBS>115030000</cNBS></cServ>");
+    expect(xml).toContain("<cServ><cTribNac>010901</cTribNac><cNBS>115030000</cNBS><xDescServ>Certificado digital A1 — Caixa Escolar Prof. Hildebrando Pontes</xDescServ></cServ>");
     expect(xml).toContain("<infoCompl><xPed>22627840</xPed><xInfComp>Processo de compra 22627840</xInfComp></infoCompl>");
     expect(xml).toContain("<vServ>52.00</vServ>");
     expect(xml).toContain("<tpRetISSQN>1</tpRetISSQN><pAliq>2.00</pAliq>");
