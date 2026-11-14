@@ -9,6 +9,8 @@ import { ACCESS_LABEL, DEFAULT_DESCRIPTION_TEMPLATE, NFSE_LIMITS, NFSE_TEMPLATE_
 import { formatCnpj, formatCnpjInput, lookupCnpj } from "../../lib/cnpj";
 import { errorText } from "../../lib/errors";
 import { buscarMunicipios, municipioPorIbge, municipioPorNome } from "../../lib/nfse/tabelas";
+import { loadNfseEnvironment, saveNfseEnvironment } from "../../lib/nfse/portal";
+import type { NfseEnvironment } from "../../db/nfse";
 import { useSession } from "../session";
 import { Combobox, type ComboItem } from "../ui/Combobox";
 import { ErrorText, Field } from "../ui/form";
@@ -51,6 +53,7 @@ export function NfseSettings() {
         </TaButton>
       }
     >
+      <EnvironmentChoice />
       <div className="space-y-3 text-theme-sm" data-nfse-issuers>
         {!issuers.length && (
           <p className="rounded-xl border border-dashed border-gray-300 p-6 text-center text-gray-500 dark:border-gray-700">
@@ -288,5 +291,36 @@ function IssuerModal({
         </TaButton>
       </div>
     </GuardedModal>
+  );
+}
+
+/** Produção restrita (testes, sem valor fiscal) ou produção. Fica só neste computador. */
+function EnvironmentChoice() {
+  const [env, setEnv] = useState<NfseEnvironment | null>(null);
+  useEffect(() => {
+    void loadNfseEnvironment().then(setEnv);
+  }, []);
+  if (!env) return null;
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 p-3 text-theme-sm dark:border-gray-800" data-nfse-environment>
+      <span className="font-medium text-gray-800 dark:text-white/90">Emissor Nacional:</span>
+      <TaSelect
+        value={env}
+        onChange={async (e) => {
+          const v = e.target.value as NfseEnvironment;
+          if (v === "producao" && !confirm("Passar a emitir em PRODUÇÃO? As notas emitidas passam a ter valor fiscal.")) return;
+          setEnv(v);
+          await saveNfseEnvironment(v);
+        }}
+        className="w-auto"
+        data-nfse-env
+      >
+        <option value="producao_restrita">Produção restrita (testes, sem valor fiscal)</option>
+        <option value="producao">Produção (notas com valor fiscal)</option>
+      </TaSelect>
+      <span className="text-theme-xs text-gray-500">
+        {env === "producao_restrita" ? "Use para conferir o preenchimento antes de emitir de verdade." : "As notas emitidas valem como documento fiscal."}
+      </span>
+    </div>
   );
 }
