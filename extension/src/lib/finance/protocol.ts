@@ -99,6 +99,8 @@ export interface LaunchRequest {
   editTxId?: string | null;
   /** Observações sugeridas (ex.: produtos e serviços do cartão). */
   notes?: string | null;
+  /** Vencimento sugerido (aaaa-mm-dd), ex.: cobrança gerada no CRM. */
+  dueDate?: string | null;
 }
 
 /** Lançamento da Gestão Financeira ligado a um registro do CRM. */
@@ -179,6 +181,7 @@ function isLaunchRequest(v: unknown): v is LaunchRequest {
     typeof l.description === "string" &&
     (l.amountCents == null || (typeof l.amountCents === "number" && Number.isFinite(l.amountCents) && l.amountCents >= 0)) &&
     (l.notes == null || typeof l.notes === "string") &&
+    (l.dueDate == null || (typeof l.dueDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(l.dueDate))) &&
     isContactCard(cp) &&
     !!o && o.app === "conectcrm" && typeof o.ref === "string" && o.ref !== "" && typeof o.label === "string"
   );
