@@ -55,3 +55,11 @@ vinculados (`crm_ref`); as observações da Gestão Financeira são só de lá. 
 vão para lá os contatos usados em lançamentos ou enviados pelo botão "Enviar
 para a Gestão Financeira"; fotos/logos não vão. Detalhes em
 `especificacoes/13-gestao-financeira.md`.
+
+## Entrega de arquivos (regra permanente)
+
+Todo arquivo gerado para o dono do projeto (instalador `.zip`/`.exe`, planilha,
+PDF, relatório, imagem ou qualquer outro) é entregue **com o botão de download**
+na conversa: envie o arquivo pelo recurso de envio de arquivos da sessão, no modo
+de anexo para baixar (nunca só o caminho do arquivo no texto). Vale também para
+versões novas do mesmo arquivo: cada versão gerada é enviada de novo com o botão.
