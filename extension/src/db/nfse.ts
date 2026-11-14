@@ -213,6 +213,8 @@ export interface NfseIssued {
   accessKey: string;
   environment: NfseEnvironment;
   issuedAt: string;
+  /** XML da NFS-e (emitida pela API); null quando veio do portal. */
+  xml: string | null;
 }
 
 export interface NfseTexts {
@@ -289,9 +291,10 @@ export function nfseDraftForCard(
     nfse_number: string | null;
     environment: string | null;
     issued_at: string | null;
+    nfse_xml: string | null;
   }>(
     db,
-    "SELECT issuer_id, description, notes, order_number, status, access_key, nfse_number, environment, issued_at FROM nfse_draft WHERE card_id = ? AND deleted_at IS NULL",
+    "SELECT issuer_id, description, notes, order_number, status, access_key, nfse_number, environment, issued_at, nfse_xml FROM nfse_draft WHERE card_id = ? AND deleted_at IS NULL",
     cardId,
   );
   if (opts.issuerId === undefined && saved?.issuer_id && issuers.some((i) => i.id === saved.issuer_id)) opts = { ...opts, issuerId: saved.issuer_id };
@@ -399,7 +402,7 @@ export function nfseDraftForCard(
     texts,
     issued:
       saved?.status === "issued" && saved.access_key
-        ? { number: saved.nfse_number, accessKey: saved.access_key, environment: (saved.environment as NfseEnvironment) ?? "producao", issuedAt: saved.issued_at ?? "" }
+        ? { number: saved.nfse_number, accessKey: saved.access_key, environment: (saved.environment as NfseEnvironment) ?? "producao", issuedAt: saved.issued_at ?? "", xml: saved.nfse_xml }
         : null,
   };
 }
@@ -417,7 +420,7 @@ export function markNfseIssued(
   db: DatabaseSync,
   ctx: DbContext,
   cardId: string,
-  input: { accessKey: string; number?: string | null; environment: NfseEnvironment },
+  input: { accessKey: string; number?: string | null; environment: NfseEnvironment; nfseXml?: string | null; via?: "portal" | "api" },
 ): void {
   const key = normalizeAccessKey(input.accessKey);
   if (!isAccessKey(key)) throw new ValidationError("Chave de acesso da NFS-e inválida (são 50 caracteres).");
@@ -430,12 +433,19 @@ export function markNfseIssued(
       throw new ValidationError("Este cartão já tem uma NFS-e emitida.");
     }
     const number = optionalText(input.number);
-    updateRow(db, ctx, "nfse_draft", row.id, { status: "issued", access_key: key, nfse_number: number, environment: input.environment, issued_at: new Date().toISOString() });
+    updateRow(db, ctx, "nfse_draft", row.id, {
+      status: "issued",
+      access_key: key,
+      nfse_number: number,
+      environment: input.environment,
+      issued_at: new Date().toISOString(),
+      nfse_xml: input.nfseXml ?? null,
+    });
     const amb = input.environment === "producao_restrita" ? " (produção restrita, sem valor fiscal)" : "";
     insertRow(db, ctx, "note", {
       entity_type: "deal",
       entity_id: cardId,
-      body: `NFS-e${number ? ` nº ${number}` : ""} emitida no Emissor Nacional${amb}.\nChave de acesso: ${key}`,
+      body: `NFS-e${number ? ` nº ${number}` : ""} emitida ${input.via === "api" ? "pela API do Emissor Nacional (ConectCRM Fiscal)" : "no Emissor Nacional"}${amb}.\nChave de acesso: ${key}`,
       document_ids: null,
     });
   });
