@@ -161,6 +161,16 @@ export interface NfseDraft {
   issRetention: 1 | 2;
   /** Textos da nota, revisados pelo usuário a cada emissão. */
   texts: NfseTexts;
+  /** Nota já emitida para este cartão (fase 3). */
+  issued: NfseIssued | null;
+}
+
+export type NfseEnvironment = "producao" | "producao_restrita";
+export interface NfseIssued {
+  number: string | null;
+  accessKey: string;
+  environment: NfseEnvironment;
+  issuedAt: string;
 }
 
 export interface NfseTexts {
@@ -227,9 +237,19 @@ export function nfseDraftForCard(
   );
   if (!card) throw new ValidationError("Cartão não encontrado.");
   const issuers = listIssuers(db, { activeOnly: true });
-  const saved = one<{ issuer_id: string | null; description: string | null; notes: string | null; order_number: string | null }>(
+  const saved = one<{
+    issuer_id: string | null;
+    description: string | null;
+    notes: string | null;
+    order_number: string | null;
+    status: string;
+    access_key: string | null;
+    nfse_number: string | null;
+    environment: string | null;
+    issued_at: string | null;
+  }>(
     db,
-    "SELECT issuer_id, description, notes, order_number FROM nfse_draft WHERE card_id = ? AND deleted_at IS NULL",
+    "SELECT issuer_id, description, notes, order_number, status, access_key, nfse_number, environment, issued_at FROM nfse_draft WHERE card_id = ? AND deleted_at IS NULL",
     cardId,
   );
   if (opts.issuerId === undefined && saved?.issuer_id && issuers.some((i) => i.id === saved.issuer_id)) opts = { ...opts, issuerId: saved.issuer_id };
@@ -335,7 +355,48 @@ export function nfseDraftForCard(
     placeIbge: issuer?.city_ibge ?? null,
     issRetention: 1,
     texts,
+    issued:
+      saved?.status === "issued" && saved.access_key
+        ? { number: saved.nfse_number, accessKey: saved.access_key, environment: (saved.environment as NfseEnvironment) ?? "producao", issuedAt: saved.issued_at ?? "" }
+        : null,
   };
+}
+
+/** Chave de acesso da NFS-e nacional: 50 caracteres alfanuméricos. */
+export const normalizeAccessKey = (v: string) => v.replace(/[^0-9A-Za-z]/g, "").toUpperCase();
+export const isAccessKey = (v: string) => /^[0-9A-Z]{50}$/.test(normalizeAccessKey(v));
+
+/**
+ * Nota emitida no Emissor Nacional: grava número e chave no rascunho do cartão
+ * e deixa uma nota no histórico. Emitir de novo o mesmo cartão é recusado
+ * (para outra nota, use um novo cartão ou cancele a anterior no portal).
+ */
+export function markNfseIssued(
+  db: DatabaseSync,
+  ctx: DbContext,
+  cardId: string,
+  input: { accessKey: string; number?: string | null; environment: NfseEnvironment },
+): void {
+  const key = normalizeAccessKey(input.accessKey);
+  if (!isAccessKey(key)) throw new ValidationError("Chave de acesso da NFS-e inválida (são 50 caracteres).");
+  if (input.environment !== "producao" && input.environment !== "producao_restrita") throw new ValidationError("Ambiente do Emissor Nacional inválido.");
+  withTransaction(db, () => {
+    const row = one<{ id: string; status: string; access_key: string | null }>(db, "SELECT id, status, access_key FROM nfse_draft WHERE card_id = ? AND deleted_at IS NULL", cardId);
+    if (!row) throw new ValidationError("Salve o rascunho da nota antes de emitir.");
+    if (row.status === "issued") {
+      if (row.access_key === key) return; // mesma nota lida de novo
+      throw new ValidationError("Este cartão já tem uma NFS-e emitida.");
+    }
+    const number = optionalText(input.number);
+    updateRow(db, ctx, "nfse_draft", row.id, { status: "issued", access_key: key, nfse_number: number, environment: input.environment, issued_at: new Date().toISOString() });
+    const amb = input.environment === "producao_restrita" ? " (produção restrita, sem valor fiscal)" : "";
+    insertRow(db, ctx, "note", {
+      entity_type: "deal",
+      entity_id: cardId,
+      body: `NFS-e${number ? ` nº ${number}` : ""} emitida no Emissor Nacional${amb}.\nChave de acesso: ${key}`,
+      document_ids: null,
+    });
+  });
 }
 
 /** Salva (revisa) os textos e a empresa da nota deste cartão. */
@@ -357,7 +418,8 @@ export function saveNfseDraft(
       notes: optionalText(input.notes),
       order_number: optionalText(input.orderNumber),
     };
-    const row = one<{ id: string }>(db, "SELECT id FROM nfse_draft WHERE card_id = ? AND deleted_at IS NULL", cardId);
+    const row = one<{ id: string; status: string }>(db, "SELECT id, status FROM nfse_draft WHERE card_id = ? AND deleted_at IS NULL", cardId);
+    if (row?.status === "issued") throw new ValidationError("A NFS-e deste cartão já foi emitida: o rascunho não pode mais ser alterado.");
     if (row) updateRow(db, ctx, "nfse_draft", row.id, data);
     else insertRow(db, ctx, "nfse_draft", { card_id: cardId, ...data });
   });
@@ -366,6 +428,7 @@ export function saveNfseDraft(
 /** O que falta (ou está errado) para emitir, conforme o leiaute da DPS. */
 export function nfsePending(d: NfseDraft): NfsePending[] {
   const out: NfsePending[] = [];
+  if (d.issued) return [{ field: "issued", message: `NFS-e já emitida para este cartão${d.issued.number ? ` (nº ${d.issued.number})` : ""}.`, level: "warning" }];
   const err = (field: string, message: string) => out.push({ field, message, level: "error" });
   const warn = (field: string, message: string) => out.push({ field, message, level: "warning" });
 

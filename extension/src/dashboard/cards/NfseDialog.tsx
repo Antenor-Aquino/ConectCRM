@@ -1,8 +1,9 @@
 // "Nota fiscal" do cartão (spec 19, fase 2). A janela abre já preenchida com:
 // empresa emissora (perguntada quando há mais de uma), tomador, serviços e valor.
 // A discriminação e a observação são editáveis e revisadas a cada nota, e as
-// pendências aparecem no topo. O rascunho fica salvo no cartão. A emissão pelo
-// Emissor Nacional entra na fase 3.
+// pendências aparecem no topo. O rascunho fica salvo no cartão. "Emitir no
+// Emissor Nacional" (fase 3) abre o portal com o painel do ConectCRM e espera a
+// nota emitida voltar (número e chave).
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, ExternalLink, FileText, Pencil, RefreshCw, RotateCcw, Save } from "lucide-react";
 import { TaButton, TaInput, TaModal, TaTextarea, cn } from "@tailadmin";
@@ -12,6 +13,8 @@ import { formatCnpj } from "../../lib/cnpj";
 import { errorText } from "../../lib/errors";
 import { formatCents } from "../../lib/format";
 import { formatTribNac, municipioPorIbge, servicoNacional } from "../../lib/nfse/tabelas";
+import { loadNfseEnvironment, openPortalAssistant } from "../../lib/nfse/portal";
+import { buildPortalPayload } from "../../lib/nfse/portalSteps";
 import { OrganizationFormModal } from "../contacts/OrganizationFormModal";
 import { PersonFormModal } from "../contacts/PersonFormModal";
 
@@ -31,6 +34,8 @@ export function NfseDialog({ cardId, onClose, onChanged }: { cardId: string; onC
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [editTaker, setEditTaker] = useState(false);
+  /** Assistente aberto no portal: a janela relê o cartão até a nota emitida voltar. */
+  const [waiting, setWaiting] = useState(false);
 
   /** Recarrega o rascunho; os textos só são trocados quando não há edição pendente (ou quando pedido). */
   const load = useCallback(
@@ -59,6 +64,40 @@ export function NfseDialog({ cardId, onClose, onChanged }: { cardId: string; onC
   useEffect(() => {
     void load();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!waiting) return;
+    const t = setInterval(async () => {
+      const r = await call("nfse.draft", { id: cardId }).catch(() => null);
+      if (r?.draft.issued) {
+        setDraft(r.draft);
+        setPending(r.pending);
+        setWaiting(false);
+        onChanged?.();
+      }
+    }, 3000);
+    return () => clearInterval(t);
+  }, [waiting, cardId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const emit = async () => {
+    if (!draft?.issuer) return;
+    const env = await loadNfseEnvironment();
+    const where = env === "producao_restrita" ? "no ambiente de TESTES (produção restrita, sem valor fiscal)" : "em PRODUÇÃO (nota com valor fiscal)";
+    if (
+      !confirm(
+        `Emitir a NFS-e de ${formatCents(draft.services.reduce((n, s) => n + s.valueCents, 0))} para ${draft.taker.name} por ${draft.issuer.legal_name}, ${where}?\n\nO Emissor Nacional abre com o painel do ConectCRM: entre no portal, use "Preencher a etapa" em cada passo, confira e clique em Emitir NFS-e. No fim, "Trazer nota para o CRM".`,
+      )
+    )
+      return;
+    setMsg(null);
+    try {
+      await openPortalAssistant(buildPortalPayload(draft, env, draft.issuers.map((i) => i.cnpj)));
+      setWaiting(true);
+      setMsg({ kind: "ok", text: "Emissor Nacional aberto com o painel do ConectCRM. Esta janela atualiza sozinha quando a nota for trazida para o CRM." });
+    } catch (e) {
+      setMsg({ kind: "err", text: errorText(e) });
+    }
+  };
 
   const setText = (k: keyof Texts, v: string) => {
     setTexts((t) => ({ ...t, [k]: v }));
@@ -116,8 +155,23 @@ export function NfseDialog({ cardId, onClose, onChanged }: { cardId: string; onC
   return (
     <TaModal isOpen onClose={requestClose} title="Nota fiscal de serviço (NFS-e)" width="max-w-3xl">
       <div className="space-y-4 text-theme-sm text-gray-700 dark:text-gray-300" data-nfse-dialog>
+        {draft.issued && (
+          <div className="rounded-xl border border-success-200 bg-success-50 p-3 text-success-800 dark:bg-success-500/10" data-nfse-issued>
+            <p className="flex items-center gap-2 font-semibold">
+              <CheckCircle2 size={16} /> NFS-e{draft.issued.number ? ` nº ${draft.issued.number}` : ""} emitida
+              {draft.issued.environment === "producao_restrita" && <span className="font-normal">(ambiente de testes, sem valor fiscal)</span>}
+            </p>
+            <p className="mt-1 break-all text-theme-xs">Chave de acesso: {draft.issued.accessKey}</p>
+            <p className="text-theme-xs">Em {new Date(draft.issued.issuedAt).toLocaleString("pt-BR")}. O registro também está nas notas do cartão.</p>
+          </div>
+        )}
+        {waiting && !draft.issued && (
+          <p className="flex items-center gap-2 rounded-lg bg-brand-25 px-3 py-2 text-brand-700 dark:bg-brand-500/10" data-nfse-waiting>
+            <RefreshCw size={15} className="animate-spin" /> Aguardando a nota no Emissor Nacional… (use “Trazer nota para o CRM” no painel do portal)
+          </p>
+        )}
         {/* Pendências */}
-        {errors.length || warnings.length ? (
+        {draft.issued ? null : errors.length || warnings.length ? (
           <div className="space-y-1.5" data-nfse-pending>
             {errors.map((p, i) => (
               <p key={`e${i}`} className="flex gap-2 rounded-lg bg-error-50 px-3 py-2 text-error-700 dark:bg-error-500/10" data-nfse-pending-item={p.field}>
@@ -131,7 +185,7 @@ export function NfseDialog({ cardId, onClose, onChanged }: { cardId: string; onC
             ))}
           </div>
         ) : null}
-        {!errors.length && (
+        {!errors.length && !draft.issued && (
           <p className="flex items-center gap-2 rounded-lg bg-success-50 px-3 py-2 font-medium text-success-700 dark:bg-success-500/10" data-nfse-ready>
             <CheckCircle2 size={16} /> Tudo preenchido: a nota está pronta para emitir.
           </p>
@@ -223,6 +277,7 @@ export function NfseDialog({ cardId, onClose, onChanged }: { cardId: string; onC
               size="sm"
               variant="ghost"
               startIcon={<RotateCcw size={14} />}
+              disabled={!!draft.issued}
               title="Descarta os textos desta nota e volta ao texto padrão da empresa (com o nº do pedido digitado)"
               onClick={() => {
                 if (dirty || draft.texts.saved) if (!confirm("Trocar a discriminação e a observação pelo texto padrão da empresa?")) return;
@@ -270,15 +325,15 @@ export function NfseDialog({ cardId, onClose, onChanged }: { cardId: string; onC
             Atualizar dados
           </TaButton>
           <TaButton onClick={requestClose}>Fechar</TaButton>
-          <TaButton variant="outline" startIcon={<Save size={15} />} disabled={busy} onClick={() => void save()} data-nfse-save-draft>
+          <TaButton variant="outline" startIcon={<Save size={15} />} disabled={busy || !!draft.issued} onClick={() => void save()} data-nfse-save-draft>
             Salvar rascunho
           </TaButton>
           <TaButton
             variant="primary"
             startIcon={<ExternalLink size={15} />}
-            disabled={!!errors.length}
-            title={errors.length ? "Resolva as pendências acima" : "A emissão pelo Emissor Nacional entra na próxima versão (fase 3)"}
-            onClick={() => setMsg({ kind: "ok", text: "Rascunho pronto. O preenchimento automático do Emissor Nacional chega na fase 3; até lá, use os textos acima no portal." })}
+            disabled={!!errors.length || !!draft.issued}
+            title={errors.length ? "Resolva as pendências acima" : "Abre o Emissor Nacional com o painel do ConectCRM para preencher e emitir"}
+            onClick={() => void emit()}
             data-nfse-emit
           >
             Emitir no Emissor Nacional
