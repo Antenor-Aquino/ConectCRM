@@ -13,7 +13,7 @@ import { formatCnpj } from "../../lib/cnpj";
 import { errorText } from "../../lib/errors";
 import { formatCents } from "../../lib/format";
 import { formatTribNac, municipioPorIbge, servicoNacional } from "../../lib/nfse/tabelas";
-import { loadNfseEnvironment, openPortalAssistant } from "../../lib/nfse/portal";
+import { loadNfseEnvironment, openPortalAssistant, requestPortalPermission } from "../../lib/nfse/portal";
 import { buildPortalPayload } from "../../lib/nfse/portalSteps";
 import { OrganizationFormModal } from "../contacts/OrganizationFormModal";
 import { PersonFormModal } from "../contacts/PersonFormModal";
@@ -36,6 +36,8 @@ export function NfseDialog({ cardId, onClose, onChanged }: { cardId: string; onC
   const [editTaker, setEditTaker] = useState(false);
   /** Assistente aberto no portal: a janela relê o cartão até a nota emitida voltar. */
   const [waiting, setWaiting] = useState(false);
+  /** Ambiente lido ao abrir: o pedido de permissão precisa sair já no clique. */
+  const [env, setEnv] = useState<"producao" | "producao_restrita">("producao_restrita");
 
   /** Recarrega o rascunho; os textos só são trocados quando não há edição pendente (ou quando pedido). */
   const load = useCallback(
@@ -63,6 +65,7 @@ export function NfseDialog({ cardId, onClose, onChanged }: { cardId: string; onC
 
   useEffect(() => {
     void load();
+    void loadNfseEnvironment().then(setEnv);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -81,7 +84,19 @@ export function NfseDialog({ cardId, onClose, onChanged }: { cardId: string; onC
 
   const emit = async () => {
     if (!draft?.issuer) return;
-    const env = await loadNfseEnvironment();
+    // Primeiro, ainda dentro do clique: a permissão do site do portal (1º uso).
+    const permission = requestPortalPermission(env);
+    let granted = false;
+    try {
+      granted = await permission;
+    } catch (e) {
+      setMsg({ kind: "err", text: errorText(e) });
+      return;
+    }
+    if (!granted) {
+      setMsg({ kind: "err", text: "Sem a permissão de acesso ao Emissor Nacional não dá para abrir o portal. Clique em Emitir de novo e escolha Permitir." });
+      return;
+    }
     const where = env === "producao_restrita" ? "no ambiente de TESTES (produção restrita, sem valor fiscal)" : "em PRODUÇÃO (nota com valor fiscal)";
     if (
       !confirm(

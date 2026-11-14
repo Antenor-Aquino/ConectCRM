@@ -194,6 +194,9 @@ Ao fechar com textos alterados e não salvos, a janela pede confirmação.
 
 **Permissão:** a do site do ambiente (`www.producaorestrita.nfse.gov.br` ou
 `www.nfse.gov.br`) é pedida no primeiro uso (`optional_host_permissions`).
+O Chrome só aceita esse pedido dentro do próprio clique (0.2.107). Por isso ele
+é a primeira coisa do botão Emitir, antes da confirmação, e o ambiente é lido
+quando a janela abre. O mesmo vale para o pedido de acesso ao Calendly.
 
 **"Emitir no Emissor Nacional" na janela da nota**
 1. Pede confirmação com o valor, o tomador, a empresa e o ambiente.

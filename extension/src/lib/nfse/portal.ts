@@ -14,17 +14,22 @@ export async function saveNfseEnvironment(environment: NfseEnvironment): Promise
   await chrome.storage.local.set({ [KEY]: { environment } });
 }
 
-/** Permissão para o assistente entrar nas páginas do Emissor Nacional do ambiente (pedida no 1º uso). */
-export async function requestPortalPermission(env: NfseEnvironment): Promise<boolean> {
-  if (!chrome.permissions?.request) return true;
-  const origins = [`${new URL(PORTAL_BASE[env]).origin}/*`];
-  if (await chrome.permissions.contains({ origins })) return true;
-  return chrome.permissions.request({ origins });
+const portalOrigins = (env: NfseEnvironment) => [`${new URL(PORTAL_BASE[env]).origin}/*`];
+
+/**
+ * Permissão para o assistente entrar no Emissor Nacional do ambiente.
+ * O Chrome só aceita o pedido no próprio clique: chame antes de qualquer
+ * await ou confirm (já concedida, responde true sem perguntar).
+ */
+export function requestPortalPermission(env: NfseEnvironment): Promise<boolean> {
+  if (!chrome.permissions?.request) return Promise.resolve(true);
+  return chrome.permissions.request({ origins: portalOrigins(env) });
 }
 
 /** Abre (ou traz para frente) o Emissor Nacional com o painel do ConectCRM. */
 export async function openPortalAssistant(payload: PortalPayload): Promise<void> {
-  if (!(await requestPortalPermission(payload.environment))) throw new Error("Sem a permissão de acesso ao Emissor Nacional não dá para abrir o assistente.");
+  if (chrome.permissions?.contains && !(await chrome.permissions.contains({ origins: portalOrigins(payload.environment) })))
+    throw new Error("Sem a permissão de acesso ao Emissor Nacional não dá para abrir o assistente.");
   const r = (await chrome.runtime.sendMessage({ target: "background", kind: "nfse-open", payload })) as { ok: boolean; error?: string } | undefined;
   if (!r?.ok) throw new Error(r?.error ?? "Não foi possível abrir o Emissor Nacional.");
 }
