@@ -292,3 +292,12 @@ a 1.0.2 falha com o mesmo erro e a 1.0.3 conecta e envia o certificado.
 O programa passa a ser entregue dentro de .zip (o download direto de .exe é
 bloqueado pelo navegador/app).
 
+
+**Segundo resultado real (emissão):** `falha ao assinar: failed to sign digest:
+SECURITY_STATUS -2146893779` (0x8009002D, NTE_INTERNAL_ERROR) — o provedor da
+chave recusou a assinatura RSA/SHA-1 pelo caminho normal do CNG (típico de
+certificado A1 importado num provedor antigo do Windows ou de driver de token).
+**ConectCRM Fiscal 1.0.4**: se o CNG recusar, tenta (1) CNG com o DigestInfo
+montado pelo programa e (2) CryptoAPI, reabrindo a chave pelo certificado; o
+`fiscal.log` registra qual caminho assinou. Só compila e testa em Windows real
+(não há como reproduzir o provedor do cliente aqui).
