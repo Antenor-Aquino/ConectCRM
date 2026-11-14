@@ -47,6 +47,7 @@ import { cardFinanceLocks } from "../db/financeLock";
 import { contactCardFor } from "../db/contactCard";
 import type { FinanceItem, ReturnPackage } from "../lib/finance/protocol";
 import * as users from "../db/users";
+import { importCalendlyBookings, type CalendlyBooking } from "../db/calendly";
 
 type Handler = (db: DatabaseSync, ctx: DbContext, params: never) => unknown;
 type Id = { id: string };
@@ -289,6 +290,8 @@ export const methods = {
     return [...ext.externalLinks(db, p.provider, p.entity, p.externalIds).values()];
   },
   "integrations.refsOf": (db: DatabaseSync, _c: DbContext, p: Id) => ext.externalRefsOf(db, p.id),
+  // Calendly (spec 18): agendamentos lidos pelo service worker viram reuniões.
+  "calendly.import": (db: DatabaseSync, ctx: DbContext, p: { bookings: CalendlyBooking[] }) => importCalendlyBookings(db, ctx, p.bookings),
   "integrations.importOrganizations": (db: DatabaseSync, ctx: DbContext, p: ext.ExternalImportInput<ext.ExternalOrganizationRow>) => {
     assertIntegrations(db, ctx);
     return ext.importExternalOrganizations(db, ctx, p);

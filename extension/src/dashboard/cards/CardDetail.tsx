@@ -25,6 +25,7 @@ import {
   X,
   XCircle, Repeat, ListTodo, GitMerge, CalendarDays } from "lucide-react";
 import { openUnifiedAgenda } from "../../lib/unifiedAgenda";
+import { CalendlyLinkButton } from "./CalendlyLinkButton";
 import { MergeDialog } from "../ui/MergeDialog";
 import { TODO_CHANGED_EVENT } from "../todo/useTodoBadge";
 import { TaBadge, TaButton, TaInput, TaModal, TaTextarea, cn } from "@tailadmin";
@@ -343,6 +344,7 @@ function CardDetailInner({
           Perguntar ao Copiloto
         </TaButton>
         <AddToTodo cardId={cardId} />
+        <CalendlyLinkButton cardId={cardId} pipelineId={card.pipeline_id} personId={card.person_id ?? null} />
         <TaButton variant="ghost" startIcon={<GitMerge size={15} />} data-card-merge title={`Juntar este ${text.noun} com outro duplicado`} onClick={() => setMerging(true)}>
           Mesclar
         </TaButton>
