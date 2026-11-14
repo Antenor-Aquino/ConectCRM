@@ -116,3 +116,45 @@ pega o próximo.
 
 **Pendência nova para ME/EPP:** "Informe a alíquota do Simples Nacional da
 empresa".
+
+## B2 — ConectCRM Fiscal (programa auxiliar, versão 1.0.0)
+**Código:** pasta `fiscal/`, em Go. Gera um executável único para Windows 64
+bits que depende só das bibliotecas do próprio Windows (CRYPT32, ncrypt,
+ADVAPI32, KERNEL32, msvcrt). Detalhes de uso e desenvolvimento estão em
+`fiscal/README.md`.
+
+**Certificados**
+- Lê o repositório "Pessoal" do usuário, onde ficam o A1 instalado e o token A3.
+- Assina pelo CNG e, nos tokens antigos, pelo CryptoAPI. Os dois aceitam SHA-1.
+- O PIN do A3 é pedido pelo driver do token.
+
+**Assinatura**
+- O digest é calculado sobre o `infDPS` com o namespace herdado de `DPS`
+  declarado, como o C14N inclusivo exige.
+- `<Signature xmlns="http://www.w3.org/2000/09/xmldsig#">` vai logo depois do
+  elemento assinado, com o certificado em `KeyInfo`.
+
+**Conexão:** TLS 1.2, assinando com RSA PKCS#1, que os tokens suportam. O
+certificado e a cadeia do Windows vão na conexão.
+
+**Instalação**
+- Sem administrador: a pasta `%LOCALAPPDATA%\ConectCRM\Fiscal`, o manifesto
+  `com.conectcrm.fiscal.json` e as chaves `HKCU` do Chrome e do Edge.
+- `allowed_origins` só tem a extensão do ConectCRM.
+- `--uninstall` remove; `--quiet` instala sem janela.
+
+**Verificação**
+- Os testes em Go (`go test`) conferem:
+  - o CNPJ lido do certificado e-CNPJ;
+  - a assinatura da DPS gerada pela extensão, **validada pelo xmlsec1**, que
+    recusa o XML adulterado;
+  - a conversa Native Messaging (ping, listCerts, sign e erros);
+  - a emissão contra um servidor que **exige certificado na conexão**: o XML
+    chega assinado, em gzip e base64, e a resposta devolve chave e XML da
+    NFS-e.
+- No Windows simulado (Wine), o executável respondeu `ping` e `listCerts`,
+  recusou a emissão sem certificado e a instalação gravou o manifesto e o
+  registro.
+
+**Falta testar no Windows real:** o certificado A1 instalado, o token A3 (PIN)
+e a conexão com a Sefin. Isso entra na B3 e na B5.
