@@ -921,9 +921,9 @@ export const methods = {
     assertAdmin(db, ctx);
     nfse.deleteIssuer(db, ctx, p.id);
   },
-  "nfse.draft": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+  "nfse.draft": (db: DatabaseSync, ctx: DbContext, p: Id & { issuerId?: string | null }) => {
     if (!deals.getCard(db, p.id, viewer(db, ctx))) throw new ValidationError("Cartão não encontrado.");
-    const draft = nfse.nfseDraftForCard(db, p.id);
+    const draft = nfse.nfseDraftForCard(db, p.id, { issuerId: p.issuerId });
     return { draft, pending: nfse.nfsePending(draft) };
   },
 

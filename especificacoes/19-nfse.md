@@ -41,10 +41,10 @@ Emitir a NFS-e do negócio a partir do cartão:
 | 0 | Mapear o portal (produção restrita): campos e botões de cada passo. Precisa das páginas salvas pelo usuário. |
 | 1 | Cadastro fiscal: empresas emissoras, código de tributação nos serviços, tabelas oficiais (municípios IBGE, lista nacional de serviços, NBS) e regras de pendência. |
 | 2 | Botão "Emitir NFS-e" no cartão: formulário preenchido, lista de pendências e rascunho salvo no cartão. |
-| 3 | Emitir: confere a empresa logada no portal, preenche os 4 passos e para na tela final para o usuário clicar em Emitir. |
+| 3 | Emitir: pergunta por qual empresa emitir, confere a empresa logada no portal, preenche os 4 passos e para na tela final para o usuário clicar em Emitir. |
 | 4 | Retorno: número, chave, PDF e XML no cartão e no GED, status, cancelamento e receita na Gestão Financeira. |
 
-## Fase 1 — cadastro fiscal (0.2.102)
+## Fase 1 — cadastro fiscal (0.2.102, empresa escolhida a cada nota na 0.2.103)
 
 ### Empresas emissoras (Configurações → Nota fiscal)
 - Tabela `nfse_issuer`, com estes campos:
@@ -56,8 +56,10 @@ Emitir a NFS-e do negócio a partir do cartão:
   - situação no Simples Nacional (`opSimpNac`: 1 não optante, 2 MEI, 3 ME/EPP);
   - regime especial municipal (`regEspTrib`, padrão 0, nenhum);
   - ativa.
-- **Funis da empresa** (`nfse_pipeline_issuer`): cada funil emite por no máximo
-  uma empresa. Sem escolha, vale a única empresa ativa, se houver só uma.
+- **A empresa é escolhida a cada nota (0.2.103):** ao clicar para emitir, o CRM
+  pergunta por qual empresa sai a nota. Com uma única empresa ativa, ela já vem
+  escolhida. Não há vínculo fixo funil → empresa: a 0.2.102 tinha esse vínculo,
+  e a migration `0033_nfse_sem_funil.sql` removeu a tabela `nfse_pipeline_issuer`.
 - O botão "Buscar dados" preenche a razão social e o município pela consulta de
   CNPJ que o CRM já tem.
 
@@ -77,8 +79,9 @@ Emitir a NFS-e do negócio a partir do cartão:
   paridade com a Gestão Financeira não se aplica.
 
 ### Rascunho e pendências (base da Fase 2)
-- `nfseDraftForCard` monta o rascunho a partir do cartão:
-  - a empresa do funil;
+- `nfseDraftForCard(cartão, { issuerId })` monta o rascunho a partir do cartão:
+  - a empresa escolhida (sem escolha, a única ativa) e a lista de empresas
+    ativas para escolher;
   - o tomador, que é a organização do cartão (CNPJ, razão social, endereço e
     IBGE) ou, sem organização, o contato (CPF e nome);
   - os serviços dos itens do negócio;
@@ -87,7 +90,7 @@ Emitir a NFS-e do negócio a partir do cartão:
   - o local da prestação (município da empresa).
 - `nfsePending` lista as pendências, cada uma com o campo e o texto para o
   usuário. Exemplos:
-  - sem empresa emissora para o funil;
+  - empresa a escolher, quando há mais de uma ativa, ou nenhuma cadastrada;
   - tomador sem CNPJ/CPF ou sem nome;
   - CNPJ/CPF inválido;
   - endereço do tomador incompleto, quando informado, ou município sem código IBGE;
@@ -103,7 +106,7 @@ Emitir a NFS-e do negócio a partir do cartão:
 
 ### Testes
 - `tests/nfse.test.ts`:
-  - validação das empresas e dos funis;
+  - validação das empresas e escolha da empresa na hora de emitir;
   - código IBGE pela cidade e UF;
   - rascunho a partir do cartão;
   - pendências.

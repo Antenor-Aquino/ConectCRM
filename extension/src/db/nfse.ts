@@ -1,5 +1,5 @@
-// NFS-e Nacional (spec 19), fase 1: empresas emissoras, funil → empresa,
-// rascunho da nota a partir do cartão e lista de pendências (campos
+// NFS-e Nacional (spec 19), fase 1: empresas emissoras (escolhida a cada
+// nota), rascunho da nota a partir do cartão e lista de pendências (campos
 // obrigatórios do leiaute da DPS, Anexo I v1.01).
 import { insertRow, softDelete, updateRow, type DbContext } from "./repo";
 import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
@@ -33,8 +33,6 @@ export interface Issuer {
   simples: SimplesOption;
   special_regime: number;
   active: number;
-  /** Funis que emitem por esta empresa. */
-  pipeline_ids: string[];
 }
 
 export interface IssuerInput {
@@ -46,7 +44,6 @@ export interface IssuerInput {
   simples?: SimplesOption;
   specialRegime?: number;
   active?: boolean;
-  pipelineIds?: string[];
 }
 
 function issuerData(db: DatabaseSync, input: Partial<IssuerInput>, full: boolean, exceptId = ""): Record<string, SqlValue> {
@@ -84,28 +81,9 @@ function issuerData(db: DatabaseSync, input: Partial<IssuerInput>, full: boolean
   return data;
 }
 
-/** Funis da empresa: cada funil emite por uma empresa só (o funil sai da anterior). */
-function setIssuerPipelines(db: DatabaseSync, ctx: DbContext, issuerId: string, pipelineIds: string[]): void {
-  const want = new Set(pipelineIds);
-  for (const pid of want) if (!one(db, "SELECT 1 FROM pipeline WHERE id = ? AND deleted_at IS NULL", pid)) throw new ValidationError("Funil não encontrado.");
-  const rows = many<{ id: string; pipeline_id: string; issuer_id: string }>(
-    db,
-    "SELECT id, pipeline_id, issuer_id FROM nfse_pipeline_issuer WHERE deleted_at IS NULL AND (issuer_id = ? OR pipeline_id IN (SELECT value FROM json_each(?)))",
-    issuerId,
-    JSON.stringify([...want]),
-  );
-  for (const r of rows) {
-    if (r.issuer_id === issuerId && want.has(r.pipeline_id)) want.delete(r.pipeline_id);
-    else softDelete(db, ctx, "nfse_pipeline_issuer", r.id);
-  }
-  for (const pid of want) insertRow(db, ctx, "nfse_pipeline_issuer", { pipeline_id: pid, issuer_id: issuerId });
-}
-
 export function createIssuer(db: DatabaseSync, ctx: DbContext, input: IssuerInput): string {
   return withTransaction(db, () => {
-    const id = insertRow(db, ctx, "nfse_issuer", issuerData(db, input, true));
-    setIssuerPipelines(db, ctx, id, input.pipelineIds ?? []);
-    return id;
+    return insertRow(db, ctx, "nfse_issuer", issuerData(db, input, true));
   });
 }
 
@@ -114,27 +92,19 @@ export function updateIssuer(db: DatabaseSync, ctx: DbContext, id: string, patch
     if (!one(db, "SELECT 1 FROM nfse_issuer WHERE id = ? AND deleted_at IS NULL", id)) throw new ValidationError("Empresa emissora não encontrada.");
     const data = issuerData(db, patch, false, id);
     if (Object.keys(data).length) updateRow(db, ctx, "nfse_issuer", id, data);
-    if (patch.pipelineIds) setIssuerPipelines(db, ctx, id, patch.pipelineIds);
   });
 }
 
 export function deleteIssuer(db: DatabaseSync, ctx: DbContext, id: string): void {
-  withTransaction(db, () => {
-    setIssuerPipelines(db, ctx, id, []);
-    softDelete(db, ctx, "nfse_issuer", id);
-  });
+  softDelete(db, ctx, "nfse_issuer", id);
 }
 
-export function listIssuers(db: DatabaseSync): Issuer[] {
-  const list = many<Omit<Issuer, "pipeline_ids">>(db, "SELECT id, cnpj, legal_name, municipal_reg, city_ibge, access, simples, special_regime, active FROM nfse_issuer WHERE deleted_at IS NULL ORDER BY legal_name");
-  const links = many<{ issuer_id: string; pipeline_id: string }>(db, "SELECT issuer_id, pipeline_id FROM nfse_pipeline_issuer WHERE deleted_at IS NULL");
-  return list.map((i) => ({ ...i, pipeline_ids: links.filter((l) => l.issuer_id === i.id).map((l) => l.pipeline_id) }));
-}
-
-/** Empresa que emite pelo funil; sem escolha, a única empresa ativa (se houver só uma). */
-export function issuerForPipeline(db: DatabaseSync, pipelineId: string): Issuer | null {
-  const all = listIssuers(db).filter((i) => i.active);
-  return all.find((i) => i.pipeline_ids.includes(pipelineId)) ?? (all.length === 1 ? all[0]! : null);
+export function listIssuers(db: DatabaseSync, opts: { activeOnly?: boolean } = {}): Issuer[] {
+  return many<Issuer>(
+    db,
+    `SELECT id, cnpj, legal_name, municipal_reg, city_ibge, access, simples, special_regime, active FROM nfse_issuer
+     WHERE deleted_at IS NULL ${opts.activeOnly ? "AND active = 1" : ""} ORDER BY legal_name`,
+  );
 }
 
 // ---------- Rascunho e pendências ----------
@@ -162,7 +132,10 @@ export interface NfseService {
 
 export interface NfseDraft {
   cardId: string;
+  /** Empresa escolhida; sem escolha, a única ativa (se houver só uma). */
   issuer: Issuer | null;
+  /** Empresas ativas para escolher na hora de emitir. */
+  issuers: Issuer[];
   taker: {
     kind: "organization" | "person" | null;
     id: string | null;
@@ -190,15 +163,18 @@ export interface NfsePending {
 
 const digits = (s: string | null | undefined) => (s ?? "").replace(/\D/g, "");
 
-/** Rascunho da nota a partir do cartão (organização ou contato, itens e funil). */
-export function nfseDraftForCard(db: DatabaseSync, cardId: string, today = new Date()): NfseDraft {
+/** Rascunho da nota a partir do cartão (organização ou contato e itens), pela empresa escolhida. */
+export function nfseDraftForCard(db: DatabaseSync, cardId: string, opts: { issuerId?: string | null; today?: Date } = {}): NfseDraft {
+  const today = opts.today ?? new Date();
   const card = one<{ id: string; pipeline_id: string; title: string; value_cents: number; person_id: string | null; organization_id: string | null }>(
     db,
     "SELECT id, pipeline_id, title, value_cents, person_id, organization_id FROM deal WHERE id = ? AND deleted_at IS NULL",
     cardId,
   );
   if (!card) throw new ValidationError("Cartão não encontrado.");
-  const issuer = issuerForPipeline(db, card.pipeline_id);
+  const issuers = listIssuers(db, { activeOnly: true });
+  const issuer = opts.issuerId ? (issuers.find((i) => i.id === opts.issuerId) ?? null) : issuers.length === 1 ? issuers[0]! : null;
+  if (opts.issuerId && !issuer) throw new ValidationError("Empresa emissora não encontrada ou inativa.");
 
   let taker: NfseDraft["taker"] = { kind: null, id: null, document: null, name: null, email: null, address: null };
   if (card.organization_id) {
@@ -253,6 +229,7 @@ export function nfseDraftForCard(db: DatabaseSync, cardId: string, today = new D
   return {
     cardId,
     issuer,
+    issuers,
     taker,
     services,
     productItems,
@@ -269,11 +246,9 @@ export function nfsePending(d: NfseDraft): NfsePending[] {
   const warn = (field: string, message: string) => out.push({ field, message, level: "warning" });
 
   // Prestador
-  if (!d.issuer) err("issuer", "Nenhuma empresa emissora para o funil deste cartão (Configurações → Nota fiscal).");
-  else {
-    if (!d.issuer.active) err("issuer", `A empresa emissora ${d.issuer.legal_name} está inativa.`);
-    if (!d.issuer.city_ibge) err("issuer.city", `Informe o município da empresa emissora ${d.issuer.legal_name}.`);
-  }
+  if (!d.issuer)
+    err("issuer", d.issuers.length ? "Escolha por qual empresa a nota vai ser emitida." : "Cadastre uma empresa emissora (Configurações → Nota fiscal).");
+  else if (!d.issuer.city_ibge) err("issuer.city", `Informe o município da empresa emissora ${d.issuer.legal_name}.`);
 
   // Tomador
   if (!d.taker.kind) err("taker", "O cartão não tem organização nem contato para ser o tomador da nota.");
@@ -291,7 +266,7 @@ export function nfsePending(d: NfseDraft): NfsePending[] {
   }
 
   // Serviço e valores
-  if (!d.placeIbge) err("place", "Informe o local da prestação do serviço.");
+  if (d.issuer && !d.placeIbge) err("place", "Informe o local da prestação do serviço.");
   for (const s of d.services) {
     const label = s.description.split("\n")[0] || "Serviço";
     if (!s.tribNac) err("service.tribNac", `“${label}” sem código de tributação nacional (Configurações → Produtos e serviços).`);

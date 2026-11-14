@@ -1,5 +1,6 @@
 // Configurações → Nota fiscal (spec 19, fase 1): empresas que emitem a NFS-e
-// pelo Emissor Nacional, com o regime, o município e os funis de cada uma.
+// pelo Emissor Nacional, com o regime e o município. A empresa de cada nota é
+// escolhida na hora de emitir.
 import { useCallback, useEffect, useState } from "react";
 import { Building2, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { TaBadge, TaButton, TaInput, TaPanel, TaSelect } from "@tailadmin";
@@ -22,13 +23,11 @@ const cityItem = (ibge: string | null | undefined): ComboItem | null => {
 export function NfseSettings() {
   const { user } = useSession();
   const [issuers, setIssuers] = useState<Issuer[] | null>(null);
-  const [pipelines, setPipelines] = useState<{ id: string; name: string }[]>([]);
   const [editing, setEditing] = useState<Issuer | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setIssuers(await call("nfse.issuers"));
-    setPipelines((await call("pipelines.list", {})).map((p) => ({ id: p.id, name: p.name })));
   }, []);
   useEffect(() => {
     void load();
@@ -41,12 +40,11 @@ export function NfseSettings() {
       </TaPanel>
     );
   if (!issuers) return null;
-  const pipelineName = (id: string) => pipelines.find((p) => p.id === id)?.name ?? "?";
 
   return (
     <TaPanel
       title="Nota fiscal de serviço (NFS-e)"
-      subtitle="Empresas que emitem a nota pelo Emissor Nacional e os funis de cada uma. Os códigos de tributação ficam em Produtos e serviços."
+      subtitle="Empresas que emitem a nota pelo Emissor Nacional. Na hora de emitir, você escolhe por qual empresa sai a nota. Os códigos de tributação ficam em Produtos e serviços."
       action={
         <TaButton variant="primary" startIcon={<Plus size={15} />} onClick={() => setEditing("new")} data-nfse-new>
           Empresa emissora
@@ -73,9 +71,6 @@ export function NfseSettings() {
                 CNPJ {formatCnpj(i.cnpj)} · {SIMPLES_LABEL[i.simples]} · {ACCESS_LABEL[i.access]}
                 {i.city_ibge && ` · ${cityItem(i.city_ibge)?.label}`}
                 {i.municipal_reg && ` · IM ${i.municipal_reg}`}
-              </p>
-              <p className="mt-1 text-theme-xs text-gray-600 dark:text-gray-400">
-                Funis: {i.pipeline_ids.length ? i.pipeline_ids.map(pipelineName).join(", ") : issuers.filter((x) => x.active).length === 1 ? "todos (única empresa ativa)" : "nenhum"}
               </p>
             </div>
             <button type="button" title="Editar" onClick={() => setEditing(i)} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5">
@@ -104,8 +99,6 @@ export function NfseSettings() {
       {editing && (
         <IssuerModal
           issuer={editing === "new" ? null : editing}
-          pipelines={pipelines}
-          others={issuers.filter((x) => editing === "new" || x.id !== editing.id)}
           onClose={() => setEditing(null)}
           onSaved={async () => {
             setEditing(null);
@@ -119,14 +112,10 @@ export function NfseSettings() {
 
 function IssuerModal({
   issuer,
-  pipelines,
-  others,
   onClose,
   onSaved,
 }: {
   issuer: Issuer | null;
-  pipelines: { id: string; name: string }[];
-  others: Issuer[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -138,7 +127,6 @@ function IssuerModal({
   const [simples, setSimples] = useState<SimplesOption>(issuer?.simples ?? 3);
   const [regime, setRegime] = useState(issuer?.special_regime ?? 0);
   const [active, setActive] = useState(issuer ? !!issuer.active : true);
-  const [pipelineIds, setPipelineIds] = useState<string[]>(issuer?.pipeline_ids ?? []);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -166,7 +154,7 @@ function IssuerModal({
   const save = async () => {
     setError(null);
     if (!city) return setError("Informe o município da empresa (é o local da prestação padrão nas notas).");
-    const input = { cnpj, legalName, municipalReg, cityIbge: city?.id ?? null, access, simples, specialRegime: regime, active, pipelineIds };
+    const input = { cnpj, legalName, municipalReg, cityIbge: city?.id ?? null, access, simples, specialRegime: regime, active };
     try {
       if (issuer) await call("nfse.updateIssuer", { id: issuer.id, patch: input });
       else await call("nfse.createIssuer", input);
@@ -176,7 +164,6 @@ function IssuerModal({
     }
   };
 
-  const ownerOf = (pid: string) => others.find((o) => o.pipeline_ids.includes(pid));
   return (
     <GuardedModal isOpen onClose={onClose} title={issuer ? "Editar empresa emissora" : "Nova empresa emissora"}>
       <div className="space-y-1" data-nfse-form>
@@ -232,25 +219,6 @@ function IssuerModal({
             </TaSelect>
           </Field>
         </div>
-        <Field label="Funis que emitem por esta empresa" hint="Cada funil emite por uma empresa só. Com uma única empresa ativa, ela vale para todos.">
-          <div className="grid gap-1.5 sm:grid-cols-2">
-            {pipelines.map((p) => {
-              const other = ownerOf(p.id);
-              return (
-                <label key={p.id} className="flex items-center gap-2 text-theme-sm text-gray-700 dark:text-gray-300">
-                  <input
-                    type="checkbox"
-                    checked={pipelineIds.includes(p.id)}
-                    onChange={(e) => setPipelineIds((ids) => (e.target.checked ? [...ids, p.id] : ids.filter((x) => x !== p.id)))}
-                    data-nfse-pipeline={p.id}
-                  />
-                  {p.name}
-                  {other && !pipelineIds.includes(p.id) && <span className="text-theme-xs text-gray-400">(hoje: {other.legal_name})</span>}
-                </label>
-              );
-            })}
-          </div>
-        </Field>
         <div className="flex items-center justify-between rounded-xl border border-gray-200 px-4 py-3 text-theme-sm font-medium dark:border-gray-800">
           Ativa
           <Switch checked={active} onChange={setActive} />
