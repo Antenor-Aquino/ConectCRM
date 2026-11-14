@@ -346,3 +346,12 @@ validados); o DANFSe lê `finNFSe` de `infDPS`.
 **Atenção para 2027:** para optantes do Simples, o grupo `IBSCBS` da DPS passa
 a ser obrigatório em 2027, e há regra prevista para `regApIBSCBSSN` no
 `regTrib` — tarefa a fazer antes de janeiro (ainda não está no XSD atual).
+
+**Sétimo resultado real (token A3, produção restrita):** E0039 — "o município
+emissor informado na DPS deve estar parametrizado para utilizar os emissores
+públicos nacionais". O XML passou no esquema e a assinatura foi aceita; a
+recusa é cadastral: Petrolina (2611101) não está parametrizada no ambiente de
+produção restrita. Não há o que corrigir no CRM. Próximo passo depende do
+dono: confirmar se a empresa já emite pelo Emissor Nacional em produção (o
+município estaria parametrizado lá) e fazer a primeira nota real pelo CRM, ou
+testar com a outra empresa se o município dela estiver parametrizado.
