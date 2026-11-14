@@ -183,6 +183,16 @@ export function nfseAssistant(payload: PortalPayload): void {
     const ranked = (["pessoas", "servico", "valores"] as Step[]).map((s) => ({ s, n: score(s) })).sort((a, b) => b.n - a.n);
     return ranked[0]!.n ? ranked[0]!.s : current;
   }
+/** Tela de login do portal (ainda não entrou). */
+  function onLoginPage(): boolean {
+    const pwd = [...document.querySelectorAll("input[type=password]")].some((i) => visible(i));
+    const t = pageText();
+    return pwd && /acesso com (usuario|certificado)|entrar com|fazer primeiro acesso/.test(t);
+  }
+  /** Quantos campos da nota existem nesta página (0 = não é uma etapa da emissão). */
+  function fieldsOnPage(): number {
+    return payload.fields.filter((f) => f.kind !== "copy" && findLabels(f.labels).els.length).length;
+  }
   function issuedInfo(): { key: string | null; number: string | null } | null {
     const raw = document.body.innerText || "";
     const t = norm(raw);
@@ -242,8 +252,10 @@ export function nfseAssistant(payload: PortalPayload): void {
       bind();
       return;
     }
+    const login = onLoginPage();
     const comp = companyCheck();
     const iss = issuedInfo();
+    const onForm = !login && fieldsOnPage() > 0;
     const fields = payload.fields.filter((f) => f.step === current);
     const status = (f: Field) => {
       const r = results[f.id];
@@ -262,7 +274,7 @@ export function nfseAssistant(payload: PortalPayload): void {
         <div class="hd"><b>ConectCRM · NFS-e</b><button data-a="min">–</button><button data-a="close">✕</button></div>
         <div class="bd">
           ${payload.environment === "producao_restrita" ? `<div class="env">Ambiente de testes (produção restrita): a nota não tem valor fiscal.</div>` : ""}
-          <div class="chk ${comp.kind === "ok" ? "ok" : comp.kind === "warn" ? "warn" : "unk"}">${esc(comp.text)}</div>
+          ${login ? "" : `<div class="chk ${comp.kind === "ok" ? "ok" : comp.kind === "warn" ? "warn" : "unk"}">${esc(comp.text)}</div>`}
           ${
             iss
               ? `<div class="done"><b>NFS-e gerada.</b><br>
@@ -272,7 +284,12 @@ export function nfseAssistant(payload: PortalPayload): void {
               : ""
           }
           <div class="tabs">${(["pessoas", "servico", "valores"] as Step[]).map((s) => `<button data-step="${s}" class="${s === current ? "on" : ""}">${STEP_LABEL[s]}</button>`).join("")}</div>
-          <button class="main" data-a="fill" ${busy ? "disabled" : ""}>${busy ? "Preenchendo…" : `Preencher a etapa ${STEP_LABEL[current]}`}</button>
+          ${
+            login
+              ? `<div class="chk unk"><b>Primeiro, entre no portal</b> (certificado digital, gov.br ou usuário e senha). Depois do login, abra <b>Emissão Completa</b> (ícone <b>+</b> do menu ou Acesso Rápido). O preenchimento começa na etapa Pessoas.</div>`
+              : `${!iss && !onForm ? `<div class="chk unk">Esta página não tem os campos da nota. Abra <b>Emissão Completa</b> (ícone <b>+</b> do menu ou Acesso Rápido).</div>` : ""}
+                 <button class="main" data-a="fill" ${busy || !onForm ? "disabled" : ""}>${busy ? "Preenchendo…" : `Preencher a etapa ${STEP_LABEL[current]}`}</button>`
+          }
           ${fields
             .map(
               (f) => `<div class="f"><div class="t"><span>${esc(f.title)}</span><button data-copy="${f.id}">Copiar</button></div><div class="v">${esc(f.value)}</div>${status(f)}</div>`,
@@ -340,7 +357,7 @@ export function nfseAssistant(payload: PortalPayload): void {
   w.__conectcrmNfseTimer = window.setInterval(() => {
     if (busy || minimized || !document.getElementById(HOST_ID)) return;
     const iss = issuedInfo();
-    const sig = `${guessStep()}|${iss ? `${iss.key}${iss.number}` : ""}|${companyCheck().kind}`;
+    const sig = `${guessStep()}|${iss ? `${iss.key}${iss.number}` : ""}|${companyCheck().kind}|${onLoginPage()}|${fieldsOnPage() > 0}`;
     if (sig !== lastSig) {
       const focused = root.activeElement;
       if (focused && focused.tagName === "INPUT") return; // não atrapalha quem está digitando a chave

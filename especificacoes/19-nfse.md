@@ -205,6 +205,11 @@ quando a janela abre. O mesmo vale para o pedido de acesso ao Calendly.
 
 **Painel do ConectCRM dentro do portal** (`lib/nfse/assistant.ts`)
 - O service worker injeta o painel em cada página que carrega naquela aba.
+- **Fora do formulário (0.2.108):**
+  - na tela de login o painel esconde o "Preencher" e orienta: "Primeiro, entre
+    no portal… depois abra Emissão Completa";
+  - em página sem os campos da nota (painel inicial do portal), o "Preencher"
+    fica desligado, com o mesmo aviso.
 - **Empresa:** procura o CNPJ da empresa da nota na página. Se achar o de outra
   empresa cadastrada, avisa para trocar o perfil ou o certificado.
 - **Etapas Pessoas, Serviço e Valores:** cada uma mostra os campos com o valor e
