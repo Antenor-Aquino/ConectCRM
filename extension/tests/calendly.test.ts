@@ -92,3 +92,26 @@ describe("Calendly — link e leitura", async () => {
     expect(accountForPipeline(s, "P1")!.email).toBe("a@x");
   });
 });
+
+describe("Calendly — agendar pela atividade", () => {
+  it("atividade salva com 'Agendar pelo Calendly' recebe o horário marcado, sem criar outra", async () => {
+    const { createActivity } = await import("../src/db/activities");
+    const { bookingLink } = await import("../src/lib/calendly");
+    const { db, ctx, pid } = await setup();
+    const deal = createCard(db, ctx, { pipelineId: pid, title: "Licenças" });
+    const act = createActivity(db, ctx, { title: "Apresentação", description: "Mostrar o módulo escolar", dueAt: "2026-11-18T12:00:00.000Z", durationMin: 30, dealId: deal, ownerId: ctx.userId });
+    const u = new URL(bookingLink("https://calendly.com/a/30min", { name: "Ana", email: "a@x", dealId: deal, activityId: act }));
+    expect(u.searchParams.get("utm_term")).toBe(act);
+    const r = importCalendlyBookings(db, ctx, [booking({ invitee: { dealId: deal, activityId: act } })]);
+    expect(r.created).toBe(1);
+    const list = listActivities(db, { dealId: deal });
+    expect(list).toHaveLength(1);
+    const a = getActivity(db, act)!;
+    expect(a).toMatchObject({ title: "Apresentação", due_at: "2026-11-20T13:00:00.000Z", meeting_url: "https://meet.google.com/abc" });
+    expect(a.description).toContain("Mostrar o módulo escolar");
+    expect(a.description).toContain("Agendado pelo Calendly");
+    // Cancelado depois: a mesma atividade é concluída.
+    expect(importCalendlyBookings(db, ctx, [booking({ status: "canceled", invitee: { dealId: deal, activityId: act } })]).canceled).toBe(1);
+    expect(getActivity(db, act)!.title).toBe("Cancelada: Apresentação");
+  });
+});
