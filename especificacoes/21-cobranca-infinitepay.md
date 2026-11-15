@@ -70,7 +70,15 @@ inteiro.
   ainda existe, não duplica.
 - Sem a GF no mesmo Chrome (modo pacote), o CRM avisa para excluir lá.
 
+## Cobrança paga → receita Recebida (0.2.125 / GF 0.0.50)
+- "Marcar como paga" no CRM pede à GF (`settleLaunch`, mesmos critérios de
+  `removeLaunch`) para dar baixa na receita do pedido: status Recebida, data
+  de pagamento = hoje (a mesma rotina do "Confirmar pagamento" da GF).
+- "Reabrir" uma cobrança paga volta a receita para pendente (sem data).
+- Sem a GF no mesmo Chrome (modo pacote), o CRM avisa para dar baixa lá.
+
 ## Protocolo CRM ↔ GF
 `LaunchRequest.dueDate` (opcional, aaaa-mm-dd), `LaunchRequest.requestId` e a
-mensagem `removeLaunch {ref, requestId, dryRun?}` → `{removed, pending, paid}`
+mensagens `removeLaunch {ref, requestId, dryRun?}` → `{removed, pending, paid}` e
+`settleLaunch {ref, requestId, paid, paymentDate?}` → `{updated, total}`
 — arquivo `protocol.ts` idêntico nos dois repositórios.

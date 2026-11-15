@@ -148,7 +148,13 @@ export type IntegrationRequest =
    * cartão `ref` com origin_request = `requestId` (ou com "Pedido: <requestId>"
    * nas observações). Recebidos não são excluídos. `dryRun`: só conta.
    */
-  | { type: "removeLaunch"; protocol: number; ref: string; requestId: string; dryRun?: boolean };
+  | { type: "removeLaunch"; protocol: number; ref: string; requestId: string; dryRun?: boolean }
+  /**
+   * Baixa (ou desfaz a baixa) dos lançamentos de um pedido do CRM (ex.:
+   * cobrança marcada como paga): mesmos critérios de `removeLaunch`.
+   * `paid`: true = recebido/pago em `paymentDate` (aaaa-mm-dd); false = volta a pendente.
+   */
+  | { type: "settleLaunch"; protocol: number; ref: string; requestId: string; paid: boolean; paymentDate?: string | null };
 
 export type GfEnv = "production" | "demo";
 
@@ -159,6 +165,7 @@ export type IntegrationResponse =
   | { ok: true; status: "contacts"; created: number; updated: number; failed: { crmRef: string; message: string }[] }
   | { ok: true; status: "items"; items: FinanceItem[]; env: GfEnv; at: string }
   | { ok: true; status: "removed"; removed: number; pending: number; paid: number }
+  | { ok: true; status: "settled"; updated: number; total: number }
   | { ok: false; error: "not-paired" | "invalid" | "protocol"; message?: string };
 
 export function isIntegrationRequest(v: unknown): v is IntegrationRequest {
@@ -168,6 +175,14 @@ export function isIntegrationRequest(v: unknown): v is IntegrationRequest {
   if (m.type === "upsertContacts")
     return typeof m.protocol === "number" && Array.isArray(m.contacts) && m.contacts.length <= 500 && m.contacts.every(isContactCard);
   if (m.type === "openLaunch") return typeof m.protocol === "number" && isLaunchRequest(m.launch);
+  if (m.type === "settleLaunch")
+    return (
+      typeof m.protocol === "number" &&
+      typeof m.ref === "string" && m.ref !== "" &&
+      typeof m.requestId === "string" && m.requestId.trim().length >= 3 &&
+      typeof m.paid === "boolean" &&
+      (m.paymentDate == null || (typeof m.paymentDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(m.paymentDate)))
+    );
   if (m.type === "removeLaunch")
     return (
       typeof m.protocol === "number" &&

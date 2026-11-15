@@ -12,7 +12,7 @@ import { formatCents } from "../../lib/format";
 import { MoneyInput } from "../ui/MoneyInput";
 import { Field } from "../ui/form";
 import type { LaunchPreset } from "./FinanceTab";
-import { loadGfSettings, removeLaunch } from "../../lib/finance/gfBridge";
+import { loadGfSettings, removeLaunch, settleLaunch } from "../../lib/finance/gfBridge";
 
 const today = () => new Date().toLocaleDateString("sv-SE");
 const day = (d: string | null) => (d ? d.slice(0, 10).split("-").reverse().join("/") : "");
@@ -146,12 +146,14 @@ export function ChargeDialog({
   const setStatus = async (c: Charge, status: Charge["status"]) => {
     const q =
       status === "paid"
-        ? `Marcar a cobrança de ${formatCents(c.amount_cents)} como paga?\n\nConfira o pagamento no app ou na Conta Web da InfinitePay (Suas vendas → Checkout integrado). Dê baixa também na receita da Gestão Financeira.`
+        ? `Marcar a cobrança de ${formatCents(c.amount_cents)} como paga?\n\nConfira o pagamento no app ou na Conta Web da InfinitePay (Suas vendas → Checkout integrado). A receita dela na Gestão Financeira fica como Recebida (hoje).`
         : status === "canceled"
           ? `Cancelar a cobrança de ${formatCents(c.amount_cents)}?\n\nA receita dela na Gestão Financeira será excluída (se ainda não foi recebida).\nA InfinitePay não permite desativar um link já criado: se o cliente pagar mesmo assim, estorne pelo app ou pela Conta Web.`
           : c.status === "canceled"
             ? "Reabrir esta cobrança?\n\nA receita dela será lançada de novo na Gestão Financeira."
-            : "Reabrir esta cobrança?";
+            : c.status === "paid"
+              ? "Reabrir esta cobrança?\n\nA receita dela na Gestão Financeira volta a ficar pendente (sem data de recebimento)."
+              : "Reabrir esta cobrança?";
     if (!confirm(q)) return;
     setError(null);
     setInfo(null);
@@ -165,7 +167,26 @@ export function ChargeDialog({
     }
     const gf = await loadGfSettings().catch(() => null);
     const direct = !!gf?.gfId && gf.direct;
-    if (status === "canceled") {
+    if (status === "paid" || (status === "open" && c.status === "paid")) {
+      const paid = status === "paid";
+      if (!direct) {
+        if (gfActive) setInfo(`Cobrança ${paid ? "marcada como paga" : "reaberta"}. Sem a Gestão Financeira aberta neste Chrome, ${paid ? "dê baixa na receita" : "volte a receita para pendente"} lá.`);
+        return;
+      }
+      try {
+        const r = await settleLaunch(gf!.gfId!, cardId, c.order_nsu, paid, today());
+        setInfo(
+          r.total === 0
+            ? `Cobrança ${paid ? "marcada como paga" : "reaberta"}. Não achei a receita desta cobrança na Gestão Financeira.`
+            : paid
+              ? `Cobrança paga e receita marcada como Recebida na Gestão Financeira${r.updated < r.total ? " (já estava recebida)" : ""}.`
+              : "Cobrança reaberta e receita de volta a pendente na Gestão Financeira.",
+        );
+        onChanged?.();
+      } catch (e) {
+        setError(`Cobrança ${paid ? "marcada como paga" : "reaberta"} no CRM, mas a receita não mudou na Gestão Financeira: ${errorText(e)}`);
+      }
+    } else if (status === "canceled") {
       if (!direct) {
         if (gfActive) setInfo("Cobrança cancelada. Sem a Gestão Financeira aberta neste Chrome, exclua a receita dela lá (o número do pedido está nas observações).");
         return;
