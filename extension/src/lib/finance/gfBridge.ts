@@ -124,6 +124,17 @@ export async function openLaunch(gfId: string, launch: LaunchRequest): Promise<n
   throw new GfError(responseText(r) || "A Gestão Financeira não abriu o lançamento.");
 }
 
+/**
+ * Exclui na Gestão Financeira os lançamentos ainda não recebidos de um pedido
+ * do CRM (ex.: cobrança cancelada). `dryRun`: só conta (pendentes e recebidos).
+ */
+export async function removeLaunch(gfId: string, ref: string, requestId: string, dryRun = false): Promise<{ removed: number; pending: number; paid: number }> {
+  const r = await sendToGf(gfId, { type: "removeLaunch", protocol: PROTOCOL, ref, requestId, dryRun }, 15000);
+  if (r.ok && r.status === "removed") return { removed: r.removed, pending: r.pending, paid: r.paid };
+  if (!r.ok && r.error === "invalid") throw new GfError("Atualize a Gestão Financeira (versão 0.0.48 ou mais nova) para excluir a receita da cobrança automaticamente.");
+  throw new GfError(responseText(r) || "A Gestão Financeira não respondeu à exclusão da receita.");
+}
+
 /** Lançamentos destes cartões, lidos agora da Gestão Financeira. */
 export async function listByOrigin(gfId: string, refs: string[]): Promise<{ items: FinanceItem[]; env: GfEnv; at: string }> {
   const r = await sendToGf(gfId, { type: "listByOrigin", protocol: PROTOCOL, refs }, 15000);

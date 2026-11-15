@@ -48,6 +48,7 @@ import { contactCardFor } from "../db/contactCard";
 import type { FinanceItem, ReturnPackage } from "../lib/finance/protocol";
 import * as users from "../db/users";
 import * as nfse from "../db/nfse";
+import * as charges from "../db/charges";
 import { importCalendlyBookings, linkCalendlyEvent, type CalendlyBooking } from "../db/calendly";
 
 type Handler = (db: DatabaseSync, ctx: DbContext, params: never) => unknown;
@@ -936,6 +937,27 @@ export const methods = {
   "nfse.markCanceled": (db: DatabaseSync, ctx: DbContext, p: Id & { accessKey: string; code?: number | null; reason?: string | null; eventXml?: string | null }) => {
     if (!deals.getCard(db, p.id, viewer(db, ctx))) throw new ValidationError("Cartão não encontrado.");
     nfse.markNfseCanceled(db, ctx, p.id, p);
+  },
+  "charges.draft": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    if (!deals.getCard(db, p.id, viewer(db, ctx))) throw new ValidationError("Cartão não encontrado.");
+    return charges.chargeDraftForCard(db, p.id);
+  },
+  "charges.newOrderNsu": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    if (!deals.getCard(db, p.id, viewer(db, ctx))) throw new ValidationError("Cartão não encontrado.");
+    return charges.newOrderNsu(p.id);
+  },
+  "charges.save": (
+    db: DatabaseSync,
+    ctx: DbContext,
+    p: Id & { handle: string; orderNsu: string; url: string; items: charges.ChargeItem[]; description: string; dueDate?: string | null; company?: string | null },
+  ) => {
+    if (!deals.getCard(db, p.id, viewer(db, ctx))) throw new ValidationError("Cartão não encontrado.");
+    return charges.saveCharge(db, ctx, p.id, p);
+  },
+  "charges.setStatus": (db: DatabaseSync, ctx: DbContext, p: Id & { status: "open" | "paid" | "canceled" }) => {
+    const card = charges.chargeCardId(db, p.id);
+    if (!card || !deals.getCard(db, card, viewer(db, ctx))) throw new ValidationError("Cobrança não encontrada.");
+    charges.setChargeStatus(db, ctx, p.id, p.status);
   },
   "nfse.saveDanfse": (db: DatabaseSync, ctx: DbContext, p: Id & { file: docs.FileRef; name: string; canceled: boolean }) => {
     if (!deals.getCard(db, p.id, viewer(db, ctx))) throw new ValidationError("Cartão não encontrado.");

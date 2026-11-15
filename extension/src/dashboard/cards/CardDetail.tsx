@@ -2,6 +2,7 @@
 // resolvido/não resolvido, concluído/não concluído conforme o tipo),
 // notas, tarefas e histórico de alterações.
 import { NfseDialog } from "./NfseDialog";
+import { ChargeDialog } from "./ChargeDialog";
 import { useGfActive } from "../useGfActive";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -24,7 +25,7 @@ import {
   Trash2,
   Trophy,
   X,
-  XCircle, Repeat, ListTodo, GitMerge, CalendarDays, Receipt } from "lucide-react";
+  XCircle, Repeat, ListTodo, GitMerge, CalendarDays, Receipt, CreditCard } from "lucide-react";
 import { openUnifiedAgenda } from "../../lib/unifiedAgenda";
 import { CalendlyLinkButton } from "./CalendlyLinkButton";
 import { MergeDialog } from "../ui/MergeDialog";
@@ -69,7 +70,7 @@ import { EmailLink, PhoneLink } from "../ui/ContactLinks";
 import { errorText } from "../../lib/errors";
 import { RECURRENCE_LABEL, type Recurrence } from "../../db/products";
 import { ExternalOrigin } from "../ui/ExternalOrigin";
-import { FinanceTab } from "./FinanceTab";
+import { FinanceTab, type LaunchPreset } from "./FinanceTab";
 import { DeleteBlockedDialog } from "./DeleteBlockedDialog";
 import { checkCardsForDelete, type DeleteCheck } from "../../lib/finance/deleteGuard";
 import { loadGfSettings } from "../../lib/finance/gfBridge";
@@ -123,7 +124,10 @@ function CardDetailInner({
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("notas");
   // Ao marcar como ganho: abrir já a receita na Gestão Financeira.
-  const [launchIncome, setLaunchIncome] = useState<false | "card" | "custom">(false);
+  const [launchIncome, setLaunchIncome] = useState<false | "card" | "custom" | LaunchPreset>(false);
+  const [chargeOpen, setChargeOpen] = useState(false);
+  /** Muda quando uma cobrança mexe na Gestão Financeira: a aba Financeiro lê de novo. */
+  const [financeKey, setFinanceKey] = useState(0);
   // Ganhou/concluiu com valor: pergunta se registra no financeiro (pode não receber o valor todo).
   const [askFinance, setAskFinance] = useState(false);
   // Aba Financeiro e resultado só com a integração com a Gestão Financeira ativada.
@@ -348,6 +352,9 @@ function CardDetailInner({
         <AddToTodo cardId={cardId} />
         <TaButton variant="ghost" startIcon={<Receipt size={15} />} data-card-nfse title="Preparar a nota fiscal de serviço deste cartão" onClick={() => setNfseOpen(true)}>
           Nota fiscal
+        </TaButton>
+        <TaButton variant="ghost" startIcon={<CreditCard size={15} />} data-card-charge title="Gerar a cobrança (link de pagamento InfinitePay) deste cartão" onClick={() => setChargeOpen(true)}>
+          Cobrança
         </TaButton>
         <CalendlyLinkButton cardId={cardId} pipelineId={card.pipeline_id} personId={card.person_id ?? null} />
         <TaButton variant="ghost" startIcon={<GitMerge size={15} />} data-card-merge title={`Juntar este ${text.noun} com outro duplicado`} onClick={() => setMerging(true)}>
@@ -707,6 +714,7 @@ function CardDetailInner({
           {tab === "documentos" && <DocumentsPanel type="deal" id={cardId} onChanged={recount} />}
           {gfActive && tab === "financeiro" && (
             <FinanceTab
+              key={financeKey}
               cardId={cardId}
               title={card.title}
               valueCents={card.value_cents}
@@ -757,6 +765,22 @@ function CardDetailInner({
       {docOpen && <DocumentViewer documentId={docOpen} onClose={() => setDocOpen(null)} />}
       {leaveDialog}
       {nfseOpen && <NfseDialog cardId={cardId} onClose={() => setNfseOpen(false)} />}
+      {chargeOpen && (
+        <ChargeDialog
+          cardId={cardId}
+          gfActive={gfActive}
+          onClose={() => setChargeOpen(false)}
+          onChanged={() => {
+            onChanged();
+            recount();
+            if (tab === "financeiro") setFinanceKey((k) => k + 1);
+          }}
+          onLaunchFinance={(preset) => {
+            setTab("financeiro");
+            setLaunchIncome(preset);
+          }}
+        />
+      )}
       {merging && (
         <MergeDialog
           entity="deal"

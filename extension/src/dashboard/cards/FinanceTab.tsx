@@ -19,9 +19,21 @@ import { GF_ENV_LABEL, listByOrigin, loadGfSettings, openLaunch, type GfSettings
 import { formatCents, formatDateTime } from "../../lib/format";
 import { errorText } from "../../lib/errors";
 
+/** Receita pronta para abrir na Gestão Financeira (ex.: cobrança gerada no cartão). */
+export interface LaunchPreset {
+  description: string;
+  amountCents: number;
+  notes: string;
+  dueDate: string | null;
+  /** Pedido do CRM (order_nsu da cobrança): vai no lançamento, para achá-lo depois. */
+  requestId?: string | null;
+}
+
 /** "aaaa-mm-dd" → "dd/mm/aaaa" (sem fuso: é data, não instante). */
 const day = (d: string | null) => (d ? d.split("-").reverse().join("/") : "");
 const today = () => new Date().toLocaleDateString("sv-SE");
+
+type FinanceTabProps = Parameters<typeof FinanceTab>[0];
 
 export function FinanceTab({
   cardId,
@@ -43,8 +55,11 @@ export function FinanceTab({
   /** "Negócio", "Projeto"... (vai no rótulo da origem lá). */
   cardLabel: string;
   onOpenSettings?: () => void;
-  /** Abrir já a receita (ex.: ao marcar como ganho): com o valor do cartão ou para informar outro valor. */
-  autoLaunch?: false | "card" | "custom";
+  /**
+   * Abrir já a receita (ex.: ao marcar como ganho): com o valor do cartão, para
+   * informar outro valor, ou com dados prontos (ex.: cobrança InfinitePay gerada).
+   */
+  autoLaunch?: false | "card" | "custom" | LaunchPreset;
   onAutoLaunchDone?: () => void;
   /** Cópia local atualizada (a aba mostra a quantidade). */
   onSynced?: () => void;
@@ -69,6 +84,7 @@ export function FinanceTab({
   const [requests, setRequests] = useState<FinanceRequestRow[]>([]);
   const [requestMode, setRequestMode] = useState<"income" | "expense" | null>(null);
   const [requestCustom, setRequestCustom] = useState(false);
+  const [requestPreset, setRequestPreset] = useState<LaunchPreset | null>(null);
 
   const loadLocal = useCallback(async () => {
     setData(await call("finance.card", { id: cardId }));
@@ -128,7 +144,7 @@ export function FinanceTab({
   const direct = !!settings?.gfId && settings.direct && live === "ok";
   const packageMode = !!settings?.package && !direct;
 
-  async function launch(mode: "income" | "expense", edit?: FinanceEntry, opts: { customAmount?: boolean } = {}) {
+  async function launch(mode: "income" | "expense", edit?: FinanceEntry, opts: { customAmount?: boolean; preset?: LaunchPreset } = {}) {
     setError(null);
     if (!counterparty) {
       setError("Para lançar no financeiro, vincule uma organização ou um contato a este cartão.");
@@ -137,6 +153,7 @@ export function FinanceTab({
     if (!direct) {
       if (packageMode && !edit) {
         setRequestCustom(!!opts.customAmount);
+        setRequestPreset(opts.preset ?? null);
         setRequestMode(mode);
       }
       return;
@@ -149,13 +166,15 @@ export function FinanceTab({
       void call("finance.linkContact", { crmRef: counterparty.crmRef, sent: true });
       launchWindow.current = await openLaunch(settings.gfId, {
         mode,
-        description: title,
-        amountCents: suggested || null,
+        description: opts.preset?.description ?? title,
+        amountCents: opts.preset?.amountCents ?? (suggested || null),
         counterparty,
         origin: { app: "conectcrm", ref: cardId, label: `${cardLabel} "${title}" (ConectCRM)` },
         walletId: "empresa",
         editTxId: edit?.id ?? null,
-        notes: mode === "income" && !edit ? itemsNotes(items ?? []) : null,
+        notes: opts.preset?.notes ?? (mode === "income" && !edit ? itemsNotes(items ?? []) : null),
+        dueDate: opts.preset?.dueDate ?? null,
+        requestId: opts.preset?.requestId ?? null,
       });
       if (!edit) setPending({ mode, before: (data?.entries ?? []).filter((e) => e.type === mode).length, closed: false });
     } catch (e) {
@@ -166,12 +185,14 @@ export function FinanceTab({
   }
 
   // Abrir a receita direto (pedido ao marcar como ganho), quando já dá.
-  const autoDone = useRef(false);
+  // Guarda o pedido já atendido: um pedido novo (ex.: outra cobrança) abre de novo.
+  const autoDone = useRef<FinanceTabProps["autoLaunch"]>(false);
   useEffect(() => {
-    if (!autoLaunch || autoDone.current || live === "loading" || counterparty === undefined) return;
-    autoDone.current = true;
+    if (!autoLaunch || autoDone.current === autoLaunch || live === "loading" || counterparty === undefined) return;
+    autoDone.current = autoLaunch;
     onAutoLaunchDone?.();
-    if ((settings?.gfId && settings.direct) || settings?.package) void launch("income", undefined, { customAmount: autoLaunch === "custom" });
+    if ((settings?.gfId && settings.direct) || settings?.package)
+      void launch("income", undefined, typeof autoLaunch === "object" ? { preset: autoLaunch } : { customAmount: autoLaunch === "custom" });
   });
 
   if (!settings || live === "loading" || counterparty === undefined) return <p className="text-theme-sm text-gray-500">Carregando…</p>;
@@ -344,10 +365,14 @@ export function FinanceTab({
       {requestMode && (
         <RequestModal
           mode={requestMode}
-          title={title}
-          suggestedCents={requestCustom ? null : suggestedFor(requestMode)}
-          initialNotes={requestMode === "income" ? itemsNotes(items ?? []) : null}
-          onClose={() => setRequestMode(null)}
+          title={requestPreset?.description ?? title}
+          suggestedCents={requestPreset?.amountCents ?? (requestCustom ? null : suggestedFor(requestMode))}
+          initialNotes={requestPreset?.notes ?? (requestMode === "income" ? itemsNotes(items ?? []) : null)}
+          initialDueDate={requestPreset?.dueDate ?? null}
+          onClose={() => {
+            setRequestMode(null);
+            setRequestPreset(null);
+          }}
           onSave={async (input) => {
             await call("finance.requestCreate", { dealId: cardId, ...input });
             setRequestMode(null);
@@ -426,6 +451,7 @@ function RequestModal({
   title,
   suggestedCents,
   initialNotes,
+  initialDueDate,
   onClose,
   onSave,
 }: {
@@ -433,12 +459,13 @@ function RequestModal({
   title: string;
   suggestedCents: number | null;
   initialNotes?: string | null;
+  initialDueDate?: string | null;
   onClose: () => void;
   onSave: (input: { mode: "income" | "expense"; description: string; amountCents: number | null; dueDate: string | null; competenceDate: string | null; notes: string | null }) => Promise<void>;
 }) {
   const [description, setDescription] = useState(title);
   const [amount, setAmount] = useState(suggestedCents ?? 0);
-  const [dueDate, setDueDate] = useState(today());
+  const [dueDate, setDueDate] = useState(initialDueDate || today());
   const [competenceDate, setCompetenceDate] = useState(today());
   const [notes, setNotes] = useState(initialNotes ?? "");
   const [error, setError] = useState<string | null>(null);

@@ -3,7 +3,7 @@
 // arrastadas vão para o GED (tipo "Foto/imagem", vinculadas ao registro) e
 // aparecem dentro da nota no lugar onde foram coladas.
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
-import { ImagePlus, Pencil, Pin, Trash2, X } from "lucide-react";
+import { Check, Copy, ImagePlus, Pencil, Pin, Trash2, X } from "lucide-react";
 import { TaButton, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { Note, NoteEntity } from "../../db/notes";
@@ -309,6 +309,8 @@ export function NotesPanel({
   const [notes, setNotes] = useState<Note[]>([]);
   const listRef = useRef<HTMLUListElement>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  /** Nota cujo texto acabou de ser copiado (mostra o "copiado" por um instante). */
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [newKey, setNewKey] = useState(0);
   const [viewing, setViewing] = useState<string | null>(null);
   const load = useCallback(() => call("notes.list", { entityType, entityId }).then(setNotes), [entityId]);
@@ -394,7 +396,21 @@ export function NotesPanel({
                     {formatDateTime(n.created_at)}
                     {n.edited_at && <span title={`Editada em ${formatDateTime(n.edited_at)}`}> · editada</span>}
                   </span>
-                  <button type="button" className="ml-auto hover:text-brand-600" title="Editar" aria-label="Editar nota" onClick={() => setEditingId(n.id)}>
+                  <button
+                    type="button"
+                    className={cn("ml-auto hover:text-brand-600", copiedId === n.id && "text-success-600")}
+                    title={copiedId === n.id ? "Copiado" : "Copiar o texto da nota"}
+                    aria-label="Copiar nota"
+                    data-note-copy
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(n.body);
+                      setCopiedId(n.id);
+                      setTimeout(() => setCopiedId((c) => (c === n.id ? null : c)), 1500);
+                    }}
+                  >
+                    {copiedId === n.id ? <Check size={14} /> : <Copy size={14} />}
+                  </button>
+                  <button type="button" className="hover:text-brand-600" title="Editar" aria-label="Editar nota" onClick={() => setEditingId(n.id)}>
                     <Pencil size={14} />
                   </button>
                   <button

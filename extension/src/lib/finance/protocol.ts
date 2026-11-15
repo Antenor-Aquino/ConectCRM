@@ -99,6 +99,10 @@ export interface LaunchRequest {
   editTxId?: string | null;
   /** Observações sugeridas (ex.: produtos e serviços do cartão). */
   notes?: string | null;
+  /** Vencimento sugerido (aaaa-mm-dd), ex.: cobrança gerada no CRM. */
+  dueDate?: string | null;
+  /** Identificador do pedido no CRM (ex.: order_nsu da cobrança): fica no lançamento (origin_request). */
+  requestId?: string | null;
 }
 
 /** Lançamento da Gestão Financeira ligado a um registro do CRM. */
@@ -138,7 +142,13 @@ export type IntegrationRequest =
   /** Cria/atualiza em "Clientes e fornecedores" os contatos e organizações do CRM (o CRM manda nos dados vinculados). */
   | { type: "upsertContacts"; protocol: number; contacts: ContactCard[] }
   /** Lançamentos destes cartões (ids do CRM); sem `refs`, todos os lançamentos vindos do CRM. */
-  | { type: "listByOrigin"; protocol: number; refs?: string[] };
+  | { type: "listByOrigin"; protocol: number; refs?: string[] }
+  /**
+   * Exclui os lançamentos de um pedido do CRM (ex.: cobrança cancelada): os do
+   * cartão `ref` com origin_request = `requestId` (ou com "Pedido: <requestId>"
+   * nas observações). Recebidos não são excluídos. `dryRun`: só conta.
+   */
+  | { type: "removeLaunch"; protocol: number; ref: string; requestId: string; dryRun?: boolean };
 
 export type GfEnv = "production" | "demo";
 
@@ -148,6 +158,7 @@ export type IntegrationResponse =
   | { ok: true; status: "opened"; windowId: number | null }
   | { ok: true; status: "contacts"; created: number; updated: number; failed: { crmRef: string; message: string }[] }
   | { ok: true; status: "items"; items: FinanceItem[]; env: GfEnv; at: string }
+  | { ok: true; status: "removed"; removed: number; pending: number; paid: number }
   | { ok: false; error: "not-paired" | "invalid" | "protocol"; message?: string };
 
 export function isIntegrationRequest(v: unknown): v is IntegrationRequest {
@@ -157,6 +168,13 @@ export function isIntegrationRequest(v: unknown): v is IntegrationRequest {
   if (m.type === "upsertContacts")
     return typeof m.protocol === "number" && Array.isArray(m.contacts) && m.contacts.length <= 500 && m.contacts.every(isContactCard);
   if (m.type === "openLaunch") return typeof m.protocol === "number" && isLaunchRequest(m.launch);
+  if (m.type === "removeLaunch")
+    return (
+      typeof m.protocol === "number" &&
+      typeof m.ref === "string" && m.ref !== "" &&
+      typeof m.requestId === "string" && m.requestId.trim().length >= 3 &&
+      (m.dryRun == null || typeof m.dryRun === "boolean")
+    );
   if (m.type === "listByOrigin")
     return typeof m.protocol === "number" && (m.refs === undefined || (Array.isArray(m.refs) && m.refs.length <= 500 && m.refs.every((r) => typeof r === "string")));
   if (m.type === "hello") return m.app === "conectcrm" && typeof m.appVersion === "string" && typeof m.protocol === "number";
@@ -179,6 +197,8 @@ function isLaunchRequest(v: unknown): v is LaunchRequest {
     typeof l.description === "string" &&
     (l.amountCents == null || (typeof l.amountCents === "number" && Number.isFinite(l.amountCents) && l.amountCents >= 0)) &&
     (l.notes == null || typeof l.notes === "string") &&
+    (l.dueDate == null || (typeof l.dueDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(l.dueDate))) &&
+    (l.requestId == null || typeof l.requestId === "string") &&
     isContactCard(cp) &&
     !!o && o.app === "conectcrm" && typeof o.ref === "string" && o.ref !== "" && typeof o.label === "string"
   );
