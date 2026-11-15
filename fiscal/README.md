@@ -47,3 +47,11 @@ dados do certificado.
 - `third_party/smimesign` é uma cópia da biblioteca `github/smimesign/certstore`
   (licença MIT) com um ajuste para compilar no mingw-w64 atual: a conversão de
   ponteiro no `LocalFree`.
+
+## Banco Inter (1.1.0, spec 22)
+
+Comandos `interSetup`, `interStatus`, `interClear` e `interCall`: o Fiscal guarda o
+certificado (.crt), a chave (.key), o Client ID/Secret e os tokens da integração do
+Inter em `%LOCALAPPDATA%\ConectCRM\Fiscal\inter-<ambiente>-*.bin`, protegidos pelo
+Windows (DPAPI), e faz as chamadas à API com mTLS. Detalhes em
+`especificacoes/22-cobranca-inter.md`.

@@ -959,6 +959,33 @@ export const methods = {
     if (!deals.getCard(db, p.id, viewer(db, ctx))) throw new ValidationError("Cartão não encontrado.");
     return charges.saveCharge(db, ctx, p.id, p);
   },
+  "charges.saveInter": (
+    db: DatabaseSync,
+    ctx: DbContext,
+    p: Id & Parameters<typeof charges.saveInterCharge>[3],
+  ) => {
+    if (!deals.getCard(db, p.id, viewer(db, ctx))) throw new ValidationError("Cartão não encontrado.");
+    return charges.saveInterCharge(db, ctx, p.id, p);
+  },
+  "charges.interCodes": (db: DatabaseSync, ctx: DbContext, p: Id & { barcode?: string | null; pixCode?: string | null }) => {
+    const card = charges.chargeCardId(db, p.id);
+    if (!card || !deals.getCard(db, card, viewer(db, ctx))) throw new ValidationError("Cobrança não encontrada.");
+    charges.setInterCodes(db, ctx, p.id, p);
+  },
+  "charges.savePdf": (db: DatabaseSync, ctx: DbContext, p: Id & { file: docs.FileRef; name: string }) => {
+    const card = charges.chargeCardId(db, p.id);
+    if (!card || !deals.getCard(db, card, viewer(db, ctx))) throw new ValidationError("Cobrança não encontrada.");
+    return charges.saveChargePdf(db, ctx, p.id, p);
+  },
+  "charges.interRef": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    const card = charges.chargeCardId(db, p.id);
+    if (!card || !deals.getCard(db, card, viewer(db, ctx))) throw new ValidationError("Cobrança não encontrada.");
+    return charges.interChargeRef(db, p.id);
+  },
+  /** Consulta periódica (service worker) e "Atualizar situação". */
+  "charges.interOpen": (db: DatabaseSync) => charges.openInterCharges(db),
+  "charges.interApply": (db: DatabaseSync, ctx: DbContext, p: Id & { situacao: string; dataSituacao?: string | null; receivedCents?: number | null }) =>
+    charges.applyInterSituacao(db, ctx, p.id, p),
   "charges.setStatus": (db: DatabaseSync, ctx: DbContext, p: Id & { status: "open" | "paid" | "canceled" }) => {
     const card = charges.chargeCardId(db, p.id);
     if (!card || !deals.getCard(db, card, viewer(db, ctx))) throw new ValidationError("Cobrança não encontrada.");
