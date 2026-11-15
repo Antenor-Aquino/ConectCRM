@@ -20,6 +20,7 @@ import { Field } from "../ui/form";
 import { PipedriveImportModal } from "./PipedriveImportModal";
 import { GestaoFinanceiraPanel } from "./GestaoFinanceiraPanel";
 import { CalendlyPanel } from "./CalendlyPanel";
+import { InterPanel } from "./InterPanel";
 
 type Msg = { text: string; kind: "ok" | "err" } | null;
 
@@ -27,6 +28,7 @@ const INTEGRATIONS = [
   { id: "pipedrive", name: "Pipedrive", description: "Importar leads, contatos e organizações, com de-para dos campos.", logo: "p", bg: "bg-[#1a1a1a]" },
   { id: "gestao", name: "Gestão Financeira", description: "Receitas e despesas dos cartões na extensão Gestão Financeira deste Chrome.", logo: "$", bg: "bg-success-600" },
   { id: "calendly", name: "Calendly", description: "Link de agendamento nos cartões; as reuniões marcadas entram sozinhas no CRM.", logo: "C", bg: "bg-[#006bff]" },
+  { id: "inter", name: "Banco Inter", description: "Cobrança com boleto + Pix no botão Cobrança do cartão; a baixa vem sozinha.", logo: "i", bg: "bg-[#ff7a00]" },
 ] as const;
 type IntegrationId = (typeof INTEGRATIONS)[number]["id"];
 
@@ -80,6 +82,7 @@ export function IntegrationsSettings() {
       {selected === "pipedrive" && <PipedrivePanel settings={s} onChange={setS} />}
       {selected === "gestao" && <GestaoFinanceiraPanel />}
       {selected === "calendly" && <CalendlyPanel />}
+      {selected === "inter" && <InterPanel />}
     </>
   );
 }

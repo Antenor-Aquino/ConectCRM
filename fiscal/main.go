@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	version   = "1.0.7"
+	version   = "1.1.0"
 	hostName  = "com.conectcrm.fiscal"
 	extOrigin = "chrome-extension://fabjbdmhpofceejnkeffkkiomoeifedj/"
 )
@@ -38,6 +38,17 @@ type request struct {
 	XML        string `json:"xml"`
 	Element    string `json:"element"`
 	AccessKey  string `json:"accessKey"`
+	// Banco Inter
+	ClientID     string `json:"clientId"`
+	ClientSecret string `json:"clientSecret"`
+	Account      string `json:"account"`
+	CertPEM      string `json:"certPem"`
+	KeyPEM       string `json:"keyPem"`
+	Method       string `json:"method"`
+	Path         string `json:"path"`
+	Query        string `json:"query"`
+	Body         string `json:"body"`
+	Scopes       string `json:"scopes"`
 }
 
 type response struct {
@@ -48,9 +59,14 @@ type response struct {
 	Certs   []CertInfo   `json:"certs,omitempty"` // sem certificados: o campo some (a extensão trata como lista vazia)
 	Signed  string       `json:"signed,omitempty"`
 	Result  *SefinResult `json:"result,omitempty"`
+	Inter   *InterInfo   `json:"inter,omitempty"`
+	HTTP    *InterResult `json:"http,omitempty"`
 }
 
 func dataDir() string {
+	if v := os.Getenv("CONECTCRM_FISCAL_DATA"); v != "" {
+		return v
+	}
 	base, err := os.UserCacheDir() // Windows: %LOCALAPPDATA%
 	if err != nil {
 		base = os.TempDir()
@@ -143,6 +159,25 @@ func handle(req request) (out response) {
 		if err != nil {
 			return fail(err)
 		}
+	case "interSetup":
+		info, err := interSetup(req.Env, interConfig{ClientID: req.ClientID, ClientSecret: req.ClientSecret, Account: req.Account, CertPEM: req.CertPEM, KeyPEM: req.KeyPEM})
+		if err != nil {
+			return fail(err)
+		}
+		res.Inter = &info
+	case "interStatus":
+		info := interStatus(req.Env)
+		res.Inter = &info
+	case "interClear":
+		interClear(req.Env)
+	case "interCall":
+		r, err := interCall(req.Env, req.Method, req.Path, req.Query, req.Body, req.Scopes)
+		if err != nil {
+			return fail(err)
+		}
+		res.HTTP = r
+		// Só o método, o caminho e o status (sem dados de clientes) — ajuda no suporte.
+		log.Printf("interCall %s %s %s: HTTP %d", req.Env, req.Method, req.Path, r.HTTPStatus)
 	default:
 		return fail(fmt.Errorf("comando desconhecido: %q", req.Cmd))
 	}

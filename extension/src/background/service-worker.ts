@@ -3,6 +3,8 @@
 import { gfIntegrationActive, listAllFromCrm, loadGfSettings, pushPendingContactsVia } from "../lib/finance/gfBridge";
 import type { NotifyJob } from "../db/notifications";
 import type { ContactSendJob } from "../db/contactMessages";
+import type { InterOpenCharge } from "../db/charges";
+import { syncInterCharge } from "../lib/interSync";
 import { sendMail } from "../lib/calendar";
 import { sendCallMeBot } from "../lib/notify/callmebot";
 import { blobToDataUrl, sendFileViaWhatsAppWeb, sendViaWhatsAppWeb, WHATSAPP_FILE_MAX } from "../lib/notify/waweb";
@@ -326,6 +328,35 @@ async function loadContactFiles(
   return out;
 }
 
+// Banco Inter (spec 22): sem webhook (precisaria de servidor), consulta a
+// situação dos boletos em aberto a cada 30 min. Pago → baixa no CRM e na
+// Gestão Financeira; cancelado/expirado → receita excluída. Avisa no sino.
+const INTER_SYNC_KEY = "conectcrm-inter-sync";
+async function runInterSync(userId: string | null): Promise<void> {
+  const last = (await chrome.storage.local.get(INTER_SYNC_KEY))[INTER_SYNC_KEY] as number | undefined;
+  if (last && Date.now() - last < 30 * 60_000) return;
+  await chrome.storage.local.set({ [INTER_SYNC_KEY]: Date.now() });
+  const open = await rpc<InterOpenCharge[]>("charges.interOpen", {}, userId);
+  if (!open.length) return;
+  const call = <T,>(method: string, params: Record<string, unknown>) => rpc<T>(method, params, userId);
+  for (const c of open.slice(0, 50)) {
+    try {
+      const r = await syncInterCharge(call, c);
+      if (!r.change.changed) continue;
+      const valor = (r.change.amountCents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+      if (r.change.to === "paid") {
+        chromeNotify(`notify:inter-${c.id}`, "Boleto pago no Inter", `${valor} — pedido ${c.order_nsu}${r.gf ? `. ${r.gf}` : ""}`, false, "reminder");
+        await addNotification({ kind: "info", title: `Boleto pago: ${valor}`, message: `Pedido ${c.order_nsu}${r.gf ? ` — ${r.gf}` : ""}` });
+      } else if (r.change.to === "canceled")
+        await addNotification({ kind: "info", title: `Boleto ${r.cobranca.situacao === "EXPIRADO" ? "expirado" : "cancelado"} no Inter: ${valor}`, message: `Pedido ${c.order_nsu}${r.gf ? ` — ${r.gf}` : ""}` });
+    } catch (e) {
+      // Fiscal fechado, sem internet ou Inter fora: tenta na próxima passada.
+      console.warn("Banco Inter: consulta", c.order_nsu, e);
+      if (/não está instalado|ainda não foi configurado/i.test(e instanceof Error ? e.message : String(e))) return;
+    }
+  }
+}
+
 // Lembrete para o contato por WhatsApp (0.2.69): Z-API ou WhatsApp Web, com o
 // Chrome aberto (mesmo com o CRM fechado). Falha ou hora perdida: avisa o usuário.
 let sendingContacts = false;
@@ -439,6 +470,7 @@ async function runNotifications(): Promise<void> {
     await runTodoReminders(userId).catch((e) => console.warn("Lembrete do To Do:", e));
     await runContactMessages(userId).catch((e) => console.warn("Lembrete do contato:", e));
     await refreshFinanceCopy(userId);
+    await runInterSync(userId).catch((e) => console.warn("Banco Inter:", e));
     await syncCalendly(userId).catch((e) => console.warn("Calendly:", e));
     const settings = Object.fromEntries(Object.entries(await loadAllNotifySettings()).map(([id, x]) => [id, activeSettings(x)]));
     // Alertas financeiros do resumo diário só com a integração com a Gestão Financeira ativada.
