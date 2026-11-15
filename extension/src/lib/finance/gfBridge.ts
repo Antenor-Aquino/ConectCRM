@@ -135,6 +135,14 @@ export async function removeLaunch(gfId: string, ref: string, requestId: string,
   throw new GfError(responseText(r) || "A Gestão Financeira não respondeu à exclusão da receita.");
 }
 
+/** Baixa (paid) ou desfaz a baixa dos lançamentos de um pedido do CRM (ex.: cobrança paga). */
+export async function settleLaunch(gfId: string, ref: string, requestId: string, paid: boolean, paymentDate?: string | null): Promise<{ updated: number; total: number }> {
+  const r = await sendToGf(gfId, { type: "settleLaunch", protocol: PROTOCOL, ref, requestId, paid, paymentDate: paymentDate ?? null }, 15000);
+  if (r.ok && r.status === "settled") return { updated: r.updated, total: r.total };
+  if (!r.ok && r.error === "invalid") throw new GfError("Atualize a Gestão Financeira (versão 0.0.50 ou mais nova) para dar baixa na receita da cobrança automaticamente.");
+  throw new GfError(responseText(r) || "A Gestão Financeira não respondeu à baixa da receita.");
+}
+
 /** Lançamentos destes cartões, lidos agora da Gestão Financeira. */
 export async function listByOrigin(gfId: string, refs: string[]): Promise<{ items: FinanceItem[]; env: GfEnv; at: string }> {
   const r = await sendToGf(gfId, { type: "listByOrigin", protocol: PROTOCOL, refs }, 15000);
