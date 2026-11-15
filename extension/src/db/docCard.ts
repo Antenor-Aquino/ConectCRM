@@ -27,16 +27,27 @@ export interface DocCardInput {
   person: { id: string } | { create: PersonInput } | null;
   /** Nomes; os que não existem no tipo do cartão são criados. */
   tags: string[];
-  document: { name: string; typeId: string | null; description?: string | null; file: FileRef };
+  /** Um documento (formato antigo) ou vários (`documents`): todos vão para o GED ligados ao cartão. */
+  document?: DocCardDocument;
+  documents?: DocCardDocument[];
   /** Para o histórico: arquivo, tipo identificado e IA usada. */
   source: { fileName: string; docType: string; provider: string };
+}
+
+export interface DocCardDocument {
+  name: string;
+  typeId: string | null;
+  description?: string | null;
+  file: FileRef;
 }
 
 export interface DocCardResult {
   cardId: string;
   organizationId: string | null;
   personId: string | null;
+  /** O primeiro documento (compatibilidade). */
   documentId: string;
+  documentIds: string[];
 }
 
 /** Resumo guardado no registro de origem (vira as linhas do histórico). */
@@ -110,42 +121,57 @@ export function createCardFromDocument(db: DatabaseSync, ctx: DbContext, viewer:
       ...(organizationId ? [{ type: "organization" as const, id: organizationId }] : []),
       ...(personId ? [{ type: "person" as const, id: personId }] : []),
     ];
-    const dup = documentsBySha(db, p.document.file.sha256, viewer)[0];
-    let documentId: string;
-    if (dup) {
-      documentId = dup.id;
-      addDocumentLinks(db, ctx, dup.id, links);
-    } else {
-      documentId = createDocument(db, ctx, {
-        name: p.document.name,
-        // Sem tipo escolhido: "Outros" (o GED exige a classificação).
-        typeId: p.document.typeId ?? one<{ id: string }>(db, "SELECT id FROM document_type WHERE name = 'Outros' AND deleted_at IS NULL")?.id ?? null,
-        description: p.document.description ?? null,
-        links,
-        file: p.document.file,
-      });
+    const docs = p.documents?.length ? p.documents : p.document ? [p.document] : [];
+    if (!docs.length) throw new ValidationError("Envie pelo menos um documento.");
+    const otherType = one<{ id: string }>(db, "SELECT id FROM document_type WHERE name = 'Outros' AND deleted_at IS NULL")?.id ?? null;
+    const documentIds: string[] = [];
+    const savedNames: string[] = [];
+    for (const d of docs) {
+      // O mesmo arquivo já guardado ganha os vínculos novos.
+      const dup = documentsBySha(db, d.file.sha256, viewer)[0];
+      if (dup) {
+        if (!documentIds.includes(dup.id)) {
+          addDocumentLinks(db, ctx, dup.id, links);
+          documentIds.push(dup.id);
+          savedNames.push(dup.name);
+        }
+        continue;
+      }
+      documentIds.push(
+        createDocument(db, ctx, {
+          name: d.name,
+          // Sem tipo escolhido: "Outros" (o GED exige a classificação).
+          typeId: d.typeId ?? otherType,
+          description: d.description ?? null,
+          links,
+          file: d.file,
+        }),
+      );
+      savedNames.push(d.name);
     }
-    summary.document = dup?.name ?? p.document.name;
+    const documentId = documentIds[0]!;
+    summary.document = savedNames.join('", "');
 
     const origin = (entity: "deal" | "person" | "organization", id: string) =>
       insertRow(db, ctx, "record_origin", { entity_type: entity, local_id: id, source: "copilot-document", document_id: documentId, summary: JSON.stringify(summary) });
     origin("deal", cardId);
     if (summary.organization?.created && organizationId) origin("organization", organizationId);
     if (summary.person?.created && personId) origin("person", personId);
-    return { cardId, organizationId, personId, documentId };
+    return { cardId, organizationId, personId, documentId, documentIds };
   });
 }
 
 /** Linhas resumidas do histórico ("Criado pelo Copiloto a partir do documento…"). */
 export function originLines(s: OriginSummary, entity: "deal" | "person" | "organization" = "deal"): string[] {
   const what = entity === "deal" ? "Criado" : entity === "person" ? "Contato criado" : "Organização criada";
-  const lines = [`${what} pelo Copiloto (${s.provider}) a partir do documento "${s.file}" (${s.docType})`];
+  const many = s.file.includes('", "');
+  const lines = [`${what} pelo Copiloto (${s.provider}) a partir ${many ? "dos documentos" : "do documento"} "${s.file}" (${s.docType})`];
   if (entity !== "deal") return lines;
   const parts = [
     s.organization ? `organização ${s.organization.name} (${s.organization.created ? "nova" : "existente"})` : "",
     s.person ? `contato ${s.person.name} (${s.person.created ? "novo" : "existente"})` : "",
     s.tags?.length ? `tags ${s.tags.map((t) => `${t.name}${t.created ? " (nova)" : ""}`).join(", ")}` : "",
-    s.document ? `documento salvo no GED como "${s.document}"` : "",
+    s.document ? (s.document.includes('", "') ? `documentos salvos no GED: "${s.document}"` : `documento salvo no GED como "${s.document}"`) : "",
   ].filter(Boolean);
   if (parts.length) lines.push(`Com ${parts.join("; ")}`);
   return lines;

@@ -23,6 +23,7 @@ import { errorText } from "../../lib/errors";
 import { formatDateTime } from "../../lib/format";
 import { formatBytes } from "../../lib/files";
 import { DOC_ACCEPT } from "../../lib/copilot/docRead";
+import { MAX_FILES } from "../../lib/copilot/docRead";
 import { analysisToHistory, analyzeDocument, DocCardProposalView, type DocAnalysis } from "./DocCardProposal";
 
 export interface CopilotRequest {
@@ -42,7 +43,7 @@ interface Entry {
   text?: string;
   card?: CopilotCard;
   /** Documento enviado pelo usuário. */
-  file?: { name: string; size: number };
+  files?: { name: string; size: number }[];
   /** Cartão proposto a partir do documento (aguarda a confirmação). */
   doc?: DocAnalysis;
   docCreated?: boolean;
@@ -95,7 +96,7 @@ export function CopilotPanel({
   const recorder = useRef<MediaRecorder | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
-  const [attached, setAttached] = useState<File | null>(null);
+  const [attached, setAttached] = useState<File[]>([]);
   const [docStep, setDocStep] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -112,25 +113,33 @@ export function CopilotPanel({
   const toHistory = (list: Entry[]): CopilotMessage[] =>
     list.map((e) =>
       e.role === "user"
-        ? { role: "user", content: `${e.text ?? ""}${e.file ? ` (anexou o documento "${e.file.name}")` : ""}` }
+        ? {
+            role: "user",
+            content: `${e.text ?? ""}${e.files?.length ? ` (anexou ${e.files.length > 1 ? "os documentos" : "o documento"} ${e.files.map((f) => `"${f.name}"`).join(", ")})` : ""}`,
+          }
         : { role: "assistant", content: e.doc ? analysisToHistory(e.doc, !!e.docCreated) : cardToHistory(e.card!) },
     );
 
-  /** Documento anexado: lê, identifica os dados e mostra o cartão para confirmar. */
-  const analyze = async (file: File, instruction: string) => {
+  /** Anexos: lê todos, identifica os dados e mostra o cartão para confirmar. */
+  const analyze = async (files: File[], instruction: string) => {
     const settings = await loadAiSettings();
     setAi(settings);
     if (!aiConfigured(settings)) return;
     setInput("");
-    setAttached(null);
+    setAttached([]);
     setError(null);
     setEntries((cur) => [
       ...cur,
-      { id: crypto.randomUUID(), role: "user", text: instruction.trim() || "Crie um cartão a partir deste documento", file: { name: file.name, size: file.size } },
+      {
+        id: crypto.randomUUID(),
+        role: "user",
+        text: instruction.trim() || (files.length > 1 ? "Crie um cartão a partir destes documentos" : "Crie um cartão a partir deste documento"),
+        files: files.map((f) => ({ name: f.name, size: f.size })),
+      },
     ]);
     setLoading(true);
     try {
-      const doc = await analyzeDocument(settings, file, instruction, setDocStep);
+      const doc = await analyzeDocument(settings, files, instruction, setDocStep);
       setEntries((cur) => [...cur, { id: crypto.randomUUID(), role: "assistant", doc }]);
     } catch (e) {
       setError(errorText(e));
@@ -140,15 +149,22 @@ export function CopilotPanel({
     }
   };
 
-  const attach = (f: File | null | undefined) => {
-    if (!f) return;
+  /** Junta anexos (vários de uma vez, até MAX_FILES). */
+  const attach = (list: FileList | File[] | null | undefined) => {
+    const files = [...(list ?? [])];
+    if (!files.length) return;
     setError(null);
-    if (f.size > 25 * 1024 * 1024) return setError("Arquivo grande demais (máximo 25 MB).");
-    setAttached(f);
+    const big = files.find((f) => f.size > 25 * 1024 * 1024);
+    if (big) return setError(`"${big.name}" é grande demais (máximo 25 MB por arquivo).`);
+    setAttached((cur) => {
+      const next = [...cur, ...files.filter((f) => !cur.some((c) => c.name === f.name && c.size === f.size))];
+      if (next.length > MAX_FILES) setError(`Envie até ${MAX_FILES} anexos por vez (fiquei com os ${MAX_FILES} primeiros).`);
+      return next.slice(0, MAX_FILES);
+    });
   };
 
   const ask = async (question: string, focusCard = cardId) => {
-    if (attached && !loading) return analyze(attached, question);
+    if (attached.length && !loading) return analyze(attached, question);
     if (!question.trim() || loading) return;
     const settings = await loadAiSettings();
     setAi(settings);
@@ -182,7 +198,7 @@ export function CopilotPanel({
     setEntries([]);
     setError(null);
     setInput("");
-    setAttached(null);
+    setAttached([]);
     // A nova conversa continua no cartão aberto (o "Geral" da barra tira o cartão).
     setCardId(contextCardId);
   };
@@ -237,7 +253,7 @@ export function CopilotPanel({
           setDragging(false);
           if (!configured || !e.dataTransfer.files.length) return;
           e.preventDefault();
-          attach(e.dataTransfer.files[0]);
+          attach(e.dataTransfer.files);
         }}
       >
         <header className="flex items-center gap-3 border-b border-gray-200 px-5 py-4 dark:border-gray-800">
@@ -287,9 +303,9 @@ export function CopilotPanel({
               >
                 <Paperclip size={18} className="shrink-0 text-brand-600" />
                 <span>
-                  <span className="block text-theme-sm font-medium text-gray-800 dark:text-white/90">Criar cartão a partir de um documento</span>
+                  <span className="block text-theme-sm font-medium text-gray-800 dark:text-white/90">Criar cartão a partir de documentos</span>
                   <span className="block text-theme-xs text-gray-500">
-                    Envie ou arraste um PDF, Word, planilha ou foto: eu identifico cliente, contato e pedido, e você confirma antes de gravar.
+                    Envie ou arraste um ou mais PDFs, Word, planilhas ou fotos: eu junto as informações, listo o que encontrei e o que falta, e você confirma antes de gravar.
                   </span>
                 </span>
               </button>
@@ -310,11 +326,11 @@ export function CopilotPanel({
           {entries.map((e) =>
             e.role === "user" ? (
               <div key={e.id} className="ml-auto max-w-[85%] rounded-2xl rounded-br-md bg-brand-500 px-4 py-2.5 text-theme-sm text-white">
-                {e.file && (
-                  <span className="mb-1 flex items-center gap-1.5 rounded-lg bg-white/15 px-2 py-1 text-theme-xs">
-                    <Paperclip size={12} /> {e.file.name} · {formatBytes(e.file.size)}
+                {e.files?.map((f) => (
+                  <span key={f.name} className="mb-1 flex items-center gap-1.5 rounded-lg bg-white/15 px-2 py-1 text-theme-xs">
+                    <Paperclip size={12} /> {f.name} · {formatBytes(f.size)}
                   </span>
-                )}
+                ))}
                 {e.text}
               </div>
             ) : e.doc ? (
@@ -335,15 +351,23 @@ export function CopilotPanel({
           <div ref={bottom} />
         </div>
 
-        {attached && (
-          <div className="flex items-center gap-2 border-t border-gray-200 bg-gray-50 px-5 py-2 text-theme-xs text-gray-700 dark:border-gray-800 dark:bg-white/5 dark:text-gray-300" data-copilot-attached>
-            <Paperclip size={13} className="text-brand-600" />
-            <span className="min-w-0 flex-1 truncate">
-              <b>{attached.name}</b> · {formatBytes(attached.size)} — envie para eu montar o cartão (pode escrever uma instrução, ex.: "no funil Licitações").
-            </span>
-            <button type="button" title="Tirar o anexo" className="text-gray-400 hover:text-error-600" onClick={() => setAttached(null)}>
-              <X size={14} />
-            </button>
+        {attached.length > 0 && (
+          <div className="border-t border-gray-200 bg-gray-50 px-5 py-2 text-theme-xs text-gray-700 dark:border-gray-800 dark:bg-white/5 dark:text-gray-300" data-copilot-attached>
+            <div className="mb-1 flex flex-wrap gap-1.5">
+              {attached.map((f) => (
+                <span key={`${f.name}-${f.size}`} className="inline-flex max-w-[240px] items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-0.5 dark:border-gray-700 dark:bg-gray-900" data-copilot-attached-file>
+                  <Paperclip size={11} className="shrink-0 text-brand-600" />
+                  <span className="truncate">{f.name}</span>
+                  <span className="shrink-0 text-gray-400">{formatBytes(f.size)}</span>
+                  <button type="button" title="Tirar este anexo" className="text-gray-400 hover:text-error-600" onClick={() => setAttached((l) => l.filter((x) => x !== f))}>
+                    <X size={11} />
+                  </button>
+                </span>
+              ))}
+            </div>
+            <p className="text-gray-500">
+              {attached.length > 1 ? `${attached.length} anexos` : "1 anexo"} — envie para eu analisar tudo junto e montar o cartão (pode anexar mais ou escrever uma instrução, ex.: "no funil Licitações").
+            </p>
           </div>
         )}
         <form
@@ -357,16 +381,17 @@ export function CopilotPanel({
             ref={fileInput}
             type="file"
             hidden
+            multiple
             accept={DOC_ACCEPT}
-            aria-label="Anexar documento"
+            aria-label="Anexar documentos"
             onChange={(e) => {
-              attach(e.target.files?.[0]);
+              attach(e.target.files);
               e.target.value = "";
             }}
           />
           <button
             type="button"
-            title="Anexar documento para criar um cartão"
+            title="Anexar documentos ou imagens para criar um cartão (vários de uma vez)"
             disabled={!configured || busy || recording}
             onClick={() => fileInput.current?.click()}
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700"
@@ -377,14 +402,13 @@ export function CopilotPanel({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onPaste={(e) => {
-              const f = e.clipboardData.files[0];
-              if (f) {
+              if (e.clipboardData.files.length) {
                 e.preventDefault();
-                attach(f);
+                attach(e.clipboardData.files);
               }
             }}
             disabled={!configured || busy || recording}
-            placeholder={attached ? "Instrução opcional (ex.: no funil Licitações)…" : cardId ? "Pergunte sobre este negócio ou qualquer outra coisa…" : "Pergunte ao Copiloto…"}
+            placeholder={attached.length ? "Instrução opcional (ex.: no funil Licitações)…" : cardId ? "Pergunte sobre este negócio ou qualquer outra coisa…" : "Pergunte ao Copiloto…"}
             className="h-11 flex-1 rounded-full border border-gray-300 bg-white px-4 text-theme-sm text-gray-800 focus:border-brand-300 focus:outline-none focus:ring-4 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
           />
           {canTalk &&
@@ -414,7 +438,7 @@ export function CopilotPanel({
           <button
             type="submit"
             title="Enviar"
-            disabled={!configured || busy || recording || (!input.trim() && !attached)}
+            disabled={!configured || busy || recording || (!input.trim() && !attached.length)}
             className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-500 text-white hover:bg-brand-600 disabled:opacity-40"
           >
             <Send size={16} />
