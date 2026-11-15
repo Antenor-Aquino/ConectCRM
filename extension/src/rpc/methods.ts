@@ -718,7 +718,8 @@ export const methods = {
     assertActivityAccess(db, ctx, p.id);
     activities.setActivityExternalEvent(db, ctx, p.id, p);
   },
-  "cards.search": (db: DatabaseSync, ctx: DbContext, p: { search: string }) => deals.searchCards(db, p.search, viewer(db, ctx)),
+  "cards.search": (db: DatabaseSync, ctx: DbContext, p: { search: string; pipelineIds?: string[]; pipelineTypes?: string[]; limit?: number }) =>
+    deals.searchCards(db, p.search, viewer(db, ctx), Math.min(p.limit ?? 10, 50), { pipelineIds: p.pipelineIds, pipelineTypes: p.pipelineTypes }),
   "activities.get": (db: DatabaseSync, _c: DbContext, p: Id) => activities.getActivity(db, p.id),
   /** Com `recurrence`: cria a série e devolve a 1ª ocorrência (spec 02, recorrentes). */
   "activities.create": (

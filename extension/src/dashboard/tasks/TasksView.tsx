@@ -4,7 +4,7 @@
 // Cada linha mostra tags, início/finalização com os dias que faltam, anexos
 // para baixar e atalhos clicáveis para o cartão, o contato e a organização.
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Building2, CalendarClock, CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Circle, Download, Filter, List, Paperclip, Plus, Search, Sun, User, Video, Repeat } from "lucide-react";
+import { AlertTriangle, Building2, CalendarClock, CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Circle, Download, Filter, List, Paperclip, Plus, Search, SlidersHorizontal, Sun, User, Video, Repeat, X } from "lucide-react";
 import { TaButton, TaSelect, badgePalette, cn, type BadgeColor } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { ActivityListItem, ActivityType } from "../../db/activities";
@@ -15,6 +15,8 @@ import { useSession } from "../session";
 import { Avatar } from "../ui/Avatar";
 import { TaskModal, type TaskRequest } from "./TaskModal";
 import { TaskRowActions } from "./TaskRowActions";
+import { PIPELINE_TYPE_LABEL } from "../../lib/cardTypes";
+import { ActivityFilterDrawer, advancedFilterCount, advancedFilterParams, EMPTY_ADVANCED_FILTER, type ActivityAdvancedFilter } from "./ActivityFilterDrawer";
 import { errorText } from "../../lib/errors";
 
 type Period = "hoje" | "amanha" | "semana" | "mes" | "todas" | "personalizado" | "atrasadas" | "proximos7";
@@ -130,6 +132,8 @@ export function TasksView({
   const [ownerId, setOwnerId] = useState("");
   const [typeId, setTypeId] = useState("");
   const [search, setSearch] = useState("");
+  const [advanced, setAdvanced] = useState<ActivityAdvancedFilter>(EMPTY_ADVANCED_FILTER);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [types, setTypes] = useState<ActivityType[]>([]);
   const [teamIds, setTeamIds] = useState<string[]>([user.id]);
   const [rows, setRows] = useState<ActivityListItem[]>([]);
@@ -157,7 +161,11 @@ export function TasksView({
   }, [user.id]);
 
   const ownerIds = ownerId ? [ownerId] : scope === "minhas" ? [user.id] : scope === "equipe" ? teamIds : undefined;
-  const base = useMemo(() => ({ ownerIds, typeId: typeId || undefined, search: search || undefined }), [ownerId, scope, teamIds, typeId, search]); // eslint-disable-line react-hooks/exhaustive-deps
+  const base = useMemo(
+    () => ({ ownerIds, typeId: typeId || undefined, search: search || undefined, ...advancedFilterParams(advanced) }),
+    [ownerId, scope, teamIds, typeId, search, advanced], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const advCount = advancedFilterCount(advanced);
 
   const load = useCallback(async () => {
     const r =
@@ -412,10 +420,39 @@ export function TasksView({
           <option value="concluidas">Concluídas</option>
           <option value="todas">Todas</option>
         </TaSelect>
+        <span className="inline-flex items-center">
+          <TaButton
+            startIcon={<SlidersHorizontal size={15} />}
+            onClick={() => setFiltersOpen(true)}
+            className={cn(advCount > 0 && "border-brand-300 text-brand-600")}
+            data-activity-filters
+            title="Filtrar por tipo de funil, funil e cartão"
+          >
+            Filtros{advCount > 0 && <span className="ml-1 rounded-full bg-brand-500 px-1.5 text-theme-xs text-white">{advCount}</span>}
+          </TaButton>
+          {advCount > 0 && (
+            <button type="button" className="ml-1 rounded p-1 text-gray-400 hover:text-error-600" title="Limpar os filtros avançados" onClick={() => setAdvanced(EMPTY_ADVANCED_FILTER)} data-activity-filters-clear>
+              <X size={14} />
+            </button>
+          )}
+        </span>
         <TaButton variant="primary" startIcon={<Plus size={15} />} onClick={() => setModal({})}>
           Atividade
         </TaButton>
+        {advCount > 0 && (
+          <p className="w-full text-theme-xs text-gray-500" data-activity-filters-summary>
+            Filtros avançados:{" "}
+            {[
+              advanced.pipelineType && `tipo ${PIPELINE_TYPE_LABEL[advanced.pipelineType]}`,
+              advanced.pipelineIds.length && `${advanced.pipelineIds.length} funil(is)`,
+              advanced.card && `cartão "${advanced.card.label}"`,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+        )}
       </div>
+      <ActivityFilterDrawer isOpen={filtersOpen} value={advanced} onApply={setAdvanced} onClose={() => setFiltersOpen(false)} />
 
       <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-theme-xs dark:border-gray-800 dark:bg-gray-900">
         {mode === "lista" ? (

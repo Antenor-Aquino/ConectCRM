@@ -304,6 +304,10 @@ export interface ActivityFilter {
   ownerIds?: string[];
   typeId?: string;
   dealId?: string;
+  /** Só atividades de cartões destes tipos de funil (comercial, operacional, projeto). */
+  pipelineTypes?: string[];
+  /** Só atividades de cartões destes funis. */
+  pipelineIds?: string[];
   personId?: string;
   organizationId?: string;
   /** Texto no título ou descrição. */
@@ -356,6 +360,13 @@ function activityWhere(db: DatabaseSync, f: ActivityFilter): { sql: string; para
   if (f.ownerIds?.length) add(`a.owner_id IN (${f.ownerIds.map(() => "?").join(", ")})`, ...f.ownerIds);
   if (f.typeId) add("a.type_id = ?", f.typeId);
   if (f.dealId) add("a.deal_id = ?", f.dealId);
+  if (f.pipelineIds?.length)
+    add(`a.deal_id IN (SELECT id FROM deal WHERE deleted_at IS NULL AND pipeline_id IN (${f.pipelineIds.map(() => "?").join(", ")}))`, ...f.pipelineIds);
+  if (f.pipelineTypes?.length)
+    add(
+      `a.deal_id IN (SELECT d.id FROM deal d JOIN pipeline pl ON pl.id = d.pipeline_id WHERE d.deleted_at IS NULL AND pl.type IN (${f.pipelineTypes.map(() => "?").join(", ")}))`,
+      ...f.pipelineTypes,
+    );
   if (f.personId) add("a.person_id = ?", f.personId);
   if (f.organizationId) add("a.organization_id = ?", f.organizationId);
   return { sql: where.join(" AND "), params };
