@@ -2,8 +2,9 @@
 // da Gestão Financeira. Filtra pelo tipo de funil, pelos funis e por um cartão.
 // Os campos são um rascunho até "Aplicar filtros".
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Filter, GitBranch, Layers, SquareKanban } from "lucide-react";
-import { TaButton, TaDrawer, TaSelect, cn } from "@tailadmin";
+import { Filter, GitBranch, Layers, SquareKanban, Tag as TagIcon } from "lucide-react";
+import { TaButton, TaDrawer, TaSelect, badgePalette, cn, type BadgeColor } from "@tailadmin";
+import type { Tag } from "../../db/tags";
 import { call } from "../../rpc/client";
 import type { Pipeline, PipelineType } from "../../db/pipelines";
 import { PIPELINE_TYPE_LABEL } from "../../lib/cardTypes";
@@ -14,21 +15,32 @@ export interface ActivityAdvancedFilter {
   pipelineIds: string[];
   /** Cartão escolhido (id + rótulo, para mostrar no botão). */
   card: ComboItem | null;
+  /** Etiquetas (da atividade ou do cartão dela); `tagNames` só para o resumo. */
+  tagIds: string[];
+  tagNames?: string[];
 }
 
-export const EMPTY_ADVANCED_FILTER: ActivityAdvancedFilter = { pipelineType: "", pipelineIds: [], card: null };
+export const EMPTY_ADVANCED_FILTER: ActivityAdvancedFilter = { pipelineType: "", pipelineIds: [], card: null, tagIds: [] };
 
 /** Quantos filtros avançados estão ligados (para o número no botão). */
-export const advancedFilterCount = (f: ActivityAdvancedFilter) => (f.pipelineType ? 1 : 0) + (f.pipelineIds.length ? 1 : 0) + (f.card ? 1 : 0);
+export const advancedFilterCount = (f: ActivityAdvancedFilter) =>
+  (f.pipelineType ? 1 : 0) + (f.pipelineIds.length ? 1 : 0) + (f.card ? 1 : 0) + (f.tagIds?.length ? 1 : 0);
 
 /** Parâmetros para activities.list / activities.counters. */
-export function advancedFilterParams(f: ActivityAdvancedFilter): { pipelineTypes?: string[]; pipelineIds?: string[]; dealId?: string } {
+export function advancedFilterParams(f: ActivityAdvancedFilter): { pipelineTypes?: string[]; pipelineIds?: string[]; dealId?: string; tagIds?: string[] } {
   return {
     ...(f.pipelineType ? { pipelineTypes: [f.pipelineType] } : {}),
     ...(f.pipelineIds.length ? { pipelineIds: f.pipelineIds } : {}),
     ...(f.card ? { dealId: f.card.id } : {}),
+    ...(f.tagIds?.length ? { tagIds: f.tagIds } : {}),
   };
 }
+
+/** Etiquetas de atividades e de cartões (negócio, ticket, projeto) para escolher no filtro. */
+const TAG_GROUPS: { entities: Tag["entity"][]; label: string }[] = [
+  { entities: ["activity"], label: "Da atividade" },
+  { entities: ["deal", "ticket", "project"], label: "Do cartão" },
+];
 
 function Section({ icon, title, hint, color, children }: { icon: ReactNode; title: string; hint: string; color: string; children: ReactNode }) {
   return (
@@ -56,11 +68,19 @@ export function ActivityFilterDrawer({
 }) {
   const [draft, setDraft] = useState<ActivityAdvancedFilter>(value);
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
   useEffect(() => {
     if (!isOpen) return;
     setDraft(value);
     void call("pipelines.list", {}).then(setPipelines);
+    void Promise.all((["activity", "deal", "ticket", "project"] as const).map((entity) => call("tags.list", { entity }))).then((l) => setTags(l.flat()));
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  const toggleTag = (t: Tag) =>
+    setDraft((d) => {
+      const on = d.tagIds.includes(t.id);
+      const tagIds = on ? d.tagIds.filter((x) => x !== t.id) : [...d.tagIds, t.id];
+      return { ...d, tagIds, tagNames: tags.filter((x) => tagIds.includes(x.id)).map((x) => x.name) };
+    });
 
   const types = useMemo(() => [...new Set(pipelines.map((p) => p.type))], [pipelines]);
   const visible = useMemo(
@@ -70,6 +90,7 @@ export function ActivityFilterDrawer({
 
   const setType = (t: PipelineType | "") =>
     setDraft((d) => ({
+      ...d,
       pipelineType: t,
       // Funis de outro tipo saem da seleção; o cartão também, se for de outro tipo.
       pipelineIds: t ? d.pipelineIds.filter((id) => pipelines.find((p) => p.id === id)?.type === t) : d.pipelineIds,
@@ -167,6 +188,45 @@ export function ActivityFilterDrawer({
               emptyText="Nenhum cartão encontrado."
             />
           </div>
+        </Section>
+
+        <Section icon={<TagIcon size={16} />} title="Etiquetas" hint="A atividade ou o cartão dela tem pelo menos uma das etiquetas marcadas." color="text-warning-600">
+          {tags.length === 0 ? (
+            <p className="text-theme-xs text-gray-500">Nenhuma etiqueta cadastrada.</p>
+          ) : (
+            <div className="space-y-2" data-activity-filter-tags>
+              {TAG_GROUPS.map((g) => {
+                const list = tags.filter((t) => g.entities.includes(t.entity)).sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+                if (!list.length) return null;
+                return (
+                  <div key={g.label}>
+                    <p className="mb-1 text-theme-xs text-gray-400">{g.label}</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {list.map((t) => {
+                        const on = draft.tagIds.includes(t.id);
+                        const pal = badgePalette[(t.color as BadgeColor) in badgePalette ? (t.color as BadgeColor) : "slate"];
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => toggleTag(t)}
+                            aria-pressed={on}
+                            className={cn(
+                              "rounded-full border px-2.5 py-0.5 text-theme-xs transition",
+                              on ? "border-transparent font-semibold ring-2 ring-brand-400" : "border-gray-200 opacity-80 hover:opacity-100 dark:border-gray-700",
+                            )}
+                            style={{ background: pal.bg, color: pal.fg }}
+                          >
+                            {t.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </Section>
 
         <p className="flex items-center gap-1.5 text-theme-xs text-gray-400">
