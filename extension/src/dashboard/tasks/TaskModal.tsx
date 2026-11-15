@@ -44,7 +44,7 @@ import { RemindersEditor } from "../ui/RemindersEditor";
 import { ContactTemplateEditor } from "../ui/ContactTemplateEditor";
 import { Switch } from "../ui/Switch";
 import { UnsavedDialog, useDraft } from "../ui/unsaved";
-import { CONTACT_MINUTES_OPTIONS, leadText } from "../../lib/notify/contactMessage";
+import { LeadTimeInput } from "../ui/LeadTimeInput";
 import { loadSenders, type WhatsAppSender } from "../../lib/whatsappSenders";
 import { LinkedTextarea } from "../ui/LinkedTextarea";
 import { RecurrenceEditor, ScopeDialog, type Scope } from "./RecurrenceEditor";
@@ -707,24 +707,15 @@ export function TaskModal({
                         ))}
                       </select>
                     </label>
-                    <label className="text-theme-xs text-gray-500">
+                    <div className="text-theme-xs text-gray-500">
                       Quando
-                      <select
-                        className="mt-1 h-9 w-full rounded-lg border border-gray-300 bg-white px-2 text-theme-sm dark:border-gray-700 dark:bg-gray-900"
+                      <LeadTimeInput
                         value={contact.minutesBefore}
                         disabled={contactSent}
-                        onChange={(e) => setContact({ ...contact, minutesBefore: Number(e.target.value) })}
-                        aria-label="Quando enviar"
-                      >
-                        {[...new Set([...CONTACT_MINUTES_OPTIONS, contact.minutesBefore])]
-                          .sort((a, b) => a - b)
-                          .map((m) => (
-                            <option key={m} value={m}>
-                              {leadText(m)}
-                            </option>
-                          ))}
-                      </select>
-                    </label>
+                        label="Quando enviar"
+                        onChange={(m) => setContact({ ...contact, minutesBefore: m })}
+                      />
+                    </div>
                     <label className="col-span-2 text-theme-xs text-gray-500">
                       Link da reunião
                       <input

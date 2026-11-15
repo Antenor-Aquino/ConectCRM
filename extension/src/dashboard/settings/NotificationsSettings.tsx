@@ -30,7 +30,7 @@ import { Field } from "../ui/form";
 import { RemindersEditor } from "../ui/RemindersEditor";
 import { SoundSettingsPanel } from "./SoundSettings";
 import { ContactTemplateEditor } from "../ui/ContactTemplateEditor";
-import { CONTACT_MINUTES_OPTIONS, leadText } from "../../lib/notify/contactMessage";
+import { LeadTimeInput } from "../ui/LeadTimeInput";
 
 const MAIL_LABEL: Record<CalendarProvider, string> = { google: "Gmail", microsoft: "Outlook" };
 
@@ -526,13 +526,7 @@ export function NotificationsSettings() {
           />
           <div className="space-y-3">
             <Field label="Enviar, por padrão">
-              <TaSelect value={s.contact.minutes} onChange={(e) => patch({ contact: { ...s.contact, minutes: Number(e.target.value) } })} aria-label="Antecedência padrão">
-                {CONTACT_MINUTES_OPTIONS.map((m) => (
-                  <option key={m} value={m}>
-                    {leadText(m)}
-                  </option>
-                ))}
-              </TaSelect>
+              <LeadTimeInput value={s.contact.minutes} label="Antecedência padrão" onChange={(m) => patch({ contact: { ...s.contact, minutes: m } })} />
             </Field>
             <Field label="Enviar pelo número" hint={autoSenders.length ? undefined : "Cadastre um número com Z-API ou WhatsApp Web em Configurações → WhatsApp."}>
               <TaSelect value={s.contact.senderId ?? ""} onChange={(e) => patch({ contact: { ...s.contact, senderId: e.target.value || null } })} aria-label="Número de origem">
