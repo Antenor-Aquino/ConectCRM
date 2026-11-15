@@ -3,7 +3,7 @@
 // arrastadas vão para o GED (tipo "Foto/imagem", vinculadas ao registro) e
 // aparecem dentro da nota no lugar onde foram coladas.
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
-import { Check, Copy, ImagePlus, Pencil, Pin, Trash2, X } from "lucide-react";
+import { Check, Copy, ImagePlus, Paperclip, Pencil, Pin, Trash2, X } from "lucide-react";
 import { TaButton, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { Note, NoteEntity } from "../../db/notes";
@@ -96,11 +96,14 @@ export function NoteEditor({
   autoFocus,
   onSave,
   onCancel,
-  placeholder = "Escreva uma nota… (cole ou arraste imagens aqui)",
+  placeholder,
   imageName = "Imagem da nota",
   draftLabel,
   controlRef,
+  allowFiles = false,
 }: {
+  /** Permite anexar arquivos (vão para os Documentos/GED e ficam ligados à nota). */
+  allowFiles?: boolean;
   /** Quem está em volta pode saber se há algo digitado e salvar de fora (ex.: botão ✓ do To Do). */
   controlRef?: { current: { dirty: boolean; save: () => Promise<boolean> } | null };
   placeholder?: string;
@@ -134,10 +137,13 @@ export function NoteEditor({
   });
   const [body, setBody] = useState(startBody);
   const [images, setImages] = useState<EditorImage[]>(startImages);
+  /** Arquivos anexados (não imagem no texto): vão para o GED ao salvar. */
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Texto ou imagem ainda não salvos: avisa antes de fechar o cartão (a aba pode ser trocada sem perder).
-  const dirty = body !== startBody || images.length !== startImages.length;
+  const dirty = body !== startBody || images.length !== startImages.length || attachments.length > 0;
   useDraft(draftLabel ?? (onCancel ? "Edição de nota" : "Nota nova"), dirty, "notas");
 
   // Miniaturas das imagens que já estavam no GED.
@@ -156,6 +162,25 @@ export function NoteEditor({
     }
     return () => urls.forEach((u) => URL.revokeObjectURL(u));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Anexa arquivos (fora do texto). Devolve false se não havia arquivo. */
+  const addFiles = (files: File[]): boolean => {
+    if (!allowFiles || !files.length) return false;
+    setError(null);
+    const big = files.find((f) => f.size > MAX_UPLOAD_BYTES);
+    if (big) {
+      setError(`"${big.name}" passa de 25 MB.`);
+      return true;
+    }
+    setAttachments((list) => [...list, ...files.filter((f) => !list.some((x) => x.name === f.name && x.size === f.size))]);
+    return true;
+  };
+  /** Colar/arrastar: imagens entram no texto; os demais arquivos viram anexo. */
+  const addDropped = (files: File[]): boolean => {
+    const imgs = addImages(files);
+    const others = addFiles(files.filter((f) => !f.type.startsWith("image/")));
+    return imgs || others;
+  };
 
   /** Coloca as imagens no texto, onde está o cursor. Devolve false se não havia imagem. */
   const addImages = (files: File[]): boolean => {
@@ -211,9 +236,22 @@ export function NoteEditor({
         text = text.split(pendingMarker(p.n)).join(`[imagem:${docId}]`);
         ids.push(docId);
       }
+      if (attachments.length) {
+        const types = (await call("documentTypes.list", {})).filter((t) => t.active);
+        const docType = (types.find((t) => t.name === "Outros") ?? types[0])?.id;
+        if (!docType) throw new Error("Cadastre um tipo de documento em Configurações → Documentos (GED) para guardar os arquivos.");
+        const made = await createDocumentsFrom(
+          attachments.map((file) => ({ file, name: file.name.replace(/\.[^.]+$/, "") || file.name })),
+          docType,
+          { type: entityType, id: entityId },
+        );
+        ids.push(...made.ids);
+        if (!text.trim()) text = `${attachments.length > 1 ? "Arquivos anexados" : "Arquivo anexado"}: ${attachments.map((f) => f.name).join(", ")}`;
+      }
       await onSave(text, ids);
       images.forEach((p) => p.file && p.url && URL.revokeObjectURL(p.url));
       setImages([]);
+      setAttachments([]);
       setBody("");
       return true;
     } catch (e) {
@@ -238,11 +276,11 @@ export function NoteEditor({
         rows={3}
         autoFocus={autoFocus}
         className="w-full rounded-lg border border-warning-200 bg-warning-25 px-4 py-2.5 text-theme-sm text-gray-800 shadow-theme-xs outline-none placeholder:text-gray-400 focus:border-brand-300 focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
-        placeholder={placeholder}
+        placeholder={placeholder ?? (allowFiles ? "Escreva uma nota… (cole ou arraste imagens e arquivos aqui)" : "Escreva uma nota… (cole ou arraste imagens aqui)")}
         value={body}
         onChange={(e) => setBody(e.target.value)}
-        onPaste={(e: ClipboardEvent<HTMLTextAreaElement>) => addImages([...e.clipboardData.files]) && e.preventDefault()}
-        onDrop={(e: DragEvent<HTMLTextAreaElement>) => addImages([...e.dataTransfer.files]) && e.preventDefault()}
+        onPaste={(e: ClipboardEvent<HTMLTextAreaElement>) => addDropped([...e.clipboardData.files]) && e.preventDefault()}
+        onDrop={(e: DragEvent<HTMLTextAreaElement>) => addDropped([...e.dataTransfer.files]) && e.preventDefault()}
         onKeyDown={(e) => {
           if (e.key === "Escape" && onCancel) {
             e.stopPropagation();
@@ -274,10 +312,43 @@ export function NoteEditor({
           ))}
         </div>
       )}
+      {attachments.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-2" data-note-attachments>
+          {attachments.map((f) => (
+            <span key={`${f.name}-${f.size}`} className="inline-flex max-w-[260px] items-center gap-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-theme-xs text-gray-700 dark:border-gray-700 dark:bg-white/5 dark:text-gray-300">
+              <FileTypeIcon mime={f.type} size={13} />
+              <span className="truncate">{f.name}</span>
+              <button type="button" title="Tirar o anexo" className="text-gray-400 hover:text-error-600" onClick={() => setAttachments((l) => l.filter((x) => x !== f))}>
+                <X size={11} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       {error && <p className="mt-2 rounded-lg bg-error-50 px-3 py-2 text-theme-sm text-error-700">{error}</p>}
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="flex items-center gap-1 text-theme-xs text-gray-400">
-          <ImagePlus size={13} /> Imagens coladas vão para o GED e aparecem na nota.
+        <span className="flex items-center gap-3 text-theme-xs text-gray-400">
+          {allowFiles && (
+            <>
+              <input
+                ref={fileRef}
+                type="file"
+                multiple
+                hidden
+                data-note-file-input
+                onChange={(e) => {
+                  addFiles([...(e.target.files ?? [])]);
+                  e.target.value = "";
+                }}
+              />
+              <button type="button" className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap font-medium text-brand-600 hover:underline" onClick={() => fileRef.current?.click()} data-note-attach>
+                <Paperclip size={13} /> Anexar arquivo
+              </button>
+            </>
+          )}
+          <span className="flex items-center gap-1">
+            <ImagePlus size={13} /> {allowFiles ? "Imagens coladas e arquivos vão para os Documentos (GED)." : "Imagens coladas vão para o GED e aparecem na nota."}
+          </span>
         </span>
         <span className="flex gap-2">
           {onCancel && (
@@ -285,7 +356,7 @@ export function NoteEditor({
               Cancelar
             </TaButton>
           )}
-          <TaButton size={onCancel ? "sm" : undefined} variant="primary" disabled={!body.trim() || saving} onClick={() => void save()}>
+          <TaButton size={onCancel ? "sm" : undefined} variant="primary" disabled={(!body.trim() && !attachments.length) || saving} onClick={() => void save()}>
             {saving ? "Salvando…" : saveLabel}
           </TaButton>
         </span>
@@ -332,6 +403,7 @@ export function NotesPanel({
         key={newKey}
         entityType={entityType}
         entityId={entityId}
+        allowFiles
         saveLabel="Salvar nota"
         onSave={async (body, imageIds) => {
           await call("notes.add", { entityType, entityId, body, documentIds: imageIds });
@@ -358,6 +430,7 @@ export function NotesPanel({
                   entityId={entityId}
                   initial={n.body}
                   docs={n.documents}
+                  allowFiles
                   saveLabel="Salvar"
                   autoFocus
                   onCancel={() => setEditingId(null)}
