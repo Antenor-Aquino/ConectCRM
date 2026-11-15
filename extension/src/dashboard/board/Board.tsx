@@ -217,6 +217,15 @@ export function Board({
       /* preferência só desta tela */
     }
   };
+  /** Etapas em que o usuário pediu os cartões com atividade atrasada primeiro (clique no relógio). */
+  const [overdueFirst, setOverdueFirst] = useState<Set<string>>(new Set());
+  const toggleOverdueFirst = (id: string) =>
+    setOverdueFirst((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const toggleStage = (id: string) => {
     const next = new Set(collapsed);
     if (next.has(id)) next.delete(id);
@@ -707,7 +716,7 @@ export function Board({
                     ({col.count})
                     {(pipeline.type === "comercial" || col.total_cents > 0) && ` - ${formatCents(col.total_cents)}`}
                   </span>
-                  <OverdueBadge count={col.overdue_activities} />
+                  <OverdueBadge count={col.overdue_activities} active={overdueFirst.has(col.id)} onClick={() => toggleOverdueFirst(col.id)} />
                   <span className="ml-auto flex shrink-0 items-center">
                     {col.cards.length > 0 && (
                       <input
@@ -743,7 +752,11 @@ export function Board({
                 <div className="mb-3" />
                 {/* Os cartões rolam dentro da etapa: o quadro cabe na janela e a barra de rolagem lateral fica sempre à vista. */}
                 <div data-stage-cards className="-mr-2 flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto pr-2 custom-scrollbar">
-                  {col.cards.map((card) => (
+                  {(overdueFirst.has(col.id) && col.overdue_activities > 0
+                    ? // Atrasadas primeiro (mais atividades atrasadas antes); o resto mantém a ordem escolhida.
+                      [...col.cards].sort((a, b) => Number(b.act_overdue > 0) - Number(a.act_overdue > 0) || b.act_overdue - a.act_overdue)
+                    : col.cards
+                  ).map((card) => (
                     <div key={card.id}>
                       {drop?.stageId === col.id && drop.beforeId === card.id && <div className="mb-2 h-1 rounded bg-brand-400" />}
                       <KanbanCard
@@ -799,16 +812,48 @@ export function Board({
   );
 }
 
-/** Relógio com o número de atividades atrasadas da etapa (só quando há). */
-function OverdueBadge({ count }: { count: number }) {
+/**
+ * Relógio com o número de atividades atrasadas da etapa (só quando há). Com
+ * `onClick`, vira botão: põe primeiro os cartões com atividade atrasada (de novo: ordem normal).
+ */
+function OverdueBadge({ count, active, onClick }: { count: number; active?: boolean; onClick?: () => void }) {
   if (!count) return null;
   const label = `${count} atividade${count > 1 ? "s" : ""} atrasada${count > 1 ? "s" : ""} nesta etapa`;
-  return (
-    <span title={label} aria-label={label} data-stage-overdue={count} className="relative mr-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-gray-500 shadow-theme-xs dark:bg-white/10 dark:text-gray-300">
+  const cls = cn(
+    "relative mr-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-gray-500 shadow-theme-xs dark:bg-white/10 dark:text-gray-300",
+    onClick && "cursor-pointer hover:text-error-600",
+    active && "bg-error-50 text-error-600 ring-2 ring-error-300 dark:bg-error-500/15",
+  );
+  const inner = (
+    <>
       <Clock size={14} />
       <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-error-500 px-1 text-[10px] font-bold leading-none text-white">
         {count > 99 ? "99+" : count}
       </span>
-    </span>
+    </>
+  );
+  if (!onClick)
+    return (
+      <span title={label} aria-label={label} data-stage-overdue={count} className={cls}>
+        {inner}
+      </span>
+    );
+  const title = active ? `${label} — mostrando primeiro os cartões atrasados (clique para voltar à ordem normal)` : `${label} — clique para mostrar primeiro os cartões com atividade atrasada`;
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      aria-pressed={!!active}
+      data-stage-overdue={count}
+      data-stage-overdue-first={active ? "1" : "0"}
+      className={cls}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+    >
+      {inner}
+    </button>
   );
 }

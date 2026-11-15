@@ -24,7 +24,7 @@ async function setup() {
   createActivity(db, ctx, { title: "Cobrar boleto", dealId: b, dueAt: due });
   createActivity(db, ctx, { title: "Visita técnica", dealId: c, dueAt: due });
   createActivity(db, ctx, { title: "Organizar agenda", dueAt: due });
-  return { db, vendas, power, suporte, a, b, c };
+  return { db, ctx, vendas, power, suporte, a, b, c };
 }
 const titles = (rows: { title: string }[]) => rows.map((r) => r.title).sort();
 
@@ -41,6 +41,20 @@ describe("Atividades — filtros avançados", () => {
     expect(activityCounters(db, { pipelineTypes: ["comercial"] }).today + activityCounters(db, { pipelineTypes: ["comercial"] }).next7).toBe(2);
   });
 
+  it("por etiqueta da atividade ou do cartão", async () => {
+    const { db, ctx, a, c } = await setup();
+    const { createTag, setEntityTags } = await import("../src/db/tags");
+    const quente = createTag(db, ctx, { entity: "deal", name: "QUENTE" });
+    const urgente = createTag(db, ctx, { entity: "activity", name: "Urgente" });
+    setEntityTags(db, ctx, "deal", a, [quente]);
+    const visita = listActivities(db, { dealId: c })[0]!;
+    setEntityTags(db, ctx, "activity", visita.id, [urgente]);
+    expect(titles(listActivities(db, { tagIds: [quente] }))).toEqual(["Ligar Claudia"]);
+    expect(titles(listActivities(db, { tagIds: [urgente] }))).toEqual(["Visita técnica"]);
+    expect(titles(listActivities(db, { tagIds: [quente, urgente] }))).toEqual(["Ligar Claudia", "Visita técnica"]);
+    expect(titles(listActivities(db, { tagIds: [quente], pipelineTypes: ["operacional"] }))).toEqual([]);
+  });
+
   it("busca de cartões do filtro: por título, organização, limitada aos funis/tipo escolhidos", async () => {
     const { db, vendas, suporte } = await setup();
     expect(searchCards(db, "educti").map((c) => c.title)).toEqual(["Claudia Teste"]);
@@ -51,8 +65,8 @@ describe("Atividades — filtros avançados", () => {
   it("parâmetros e contagem dos filtros da tela", () => {
     expect(advancedFilterCount(EMPTY_ADVANCED_FILTER)).toBe(0);
     expect(advancedFilterParams(EMPTY_ADVANCED_FILTER)).toEqual({});
-    const f = { pipelineType: "comercial" as const, pipelineIds: ["p1"], card: { id: "c1", label: "Claudia" } };
-    expect(advancedFilterCount(f)).toBe(3);
-    expect(advancedFilterParams(f)).toEqual({ pipelineTypes: ["comercial"], pipelineIds: ["p1"], dealId: "c1" });
+    const f = { pipelineType: "comercial" as const, pipelineIds: ["p1"], card: { id: "c1", label: "Claudia" }, tagIds: ["t1", "t2"] };
+    expect(advancedFilterCount(f)).toBe(4);
+    expect(advancedFilterParams(f)).toEqual({ pipelineTypes: ["comercial"], pipelineIds: ["p1"], dealId: "c1", tagIds: ["t1", "t2"] });
   });
 });

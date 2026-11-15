@@ -308,6 +308,8 @@ export interface ActivityFilter {
   pipelineTypes?: string[];
   /** Só atividades de cartões destes funis. */
   pipelineIds?: string[];
+  /** Etiquetas: a atividade ou o cartão dela tem pelo menos uma destas. */
+  tagIds?: string[];
   personId?: string;
   organizationId?: string;
   /** Texto no título ou descrição. */
@@ -362,6 +364,14 @@ function activityWhere(db: DatabaseSync, f: ActivityFilter): { sql: string; para
   if (f.dealId) add("a.deal_id = ?", f.dealId);
   if (f.pipelineIds?.length)
     add(`a.deal_id IN (SELECT id FROM deal WHERE deleted_at IS NULL AND pipeline_id IN (${f.pipelineIds.map(() => "?").join(", ")}))`, ...f.pipelineIds);
+  if (f.tagIds?.length) {
+    const m = f.tagIds.map(() => "?").join(", ");
+    add(
+      `(a.id IN (SELECT entity_id FROM entity_tag WHERE deleted_at IS NULL AND tag_id IN (${m})) OR a.deal_id IN (SELECT entity_id FROM entity_tag WHERE deleted_at IS NULL AND tag_id IN (${m})))`,
+      ...f.tagIds,
+      ...f.tagIds,
+    );
+  }
   if (f.pipelineTypes?.length)
     add(
       `a.deal_id IN (SELECT d.id FROM deal d JOIN pipeline pl ON pl.id = d.pipeline_id WHERE d.deleted_at IS NULL AND pl.type IN (${f.pipelineTypes.map(() => "?").join(", ")}))`,

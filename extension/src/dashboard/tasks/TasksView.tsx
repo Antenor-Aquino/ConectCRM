@@ -446,6 +446,7 @@ export function TasksView({
               advanced.pipelineType && `tipo ${PIPELINE_TYPE_LABEL[advanced.pipelineType]}`,
               advanced.pipelineIds.length && `${advanced.pipelineIds.length} funil(is)`,
               advanced.card && `cartão "${advanced.card.label}"`,
+              advanced.tagIds.length && `etiqueta(s) ${advanced.tagNames?.join(", ") || advanced.tagIds.length}`,
             ]
               .filter(Boolean)
               .join(" · ")}
