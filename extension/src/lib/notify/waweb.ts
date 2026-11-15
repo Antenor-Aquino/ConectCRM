@@ -6,7 +6,7 @@
 const WA_URL = "https://web.whatsapp.com/*";
 const LIB = "vendor/wppconnect-wa.js";
 /** Versão de public/vendor/wppconnect-wa.js (a aba com outra versão é recarregada). */
-export const WA_JS_VERSION = "4.7.1";
+export const WA_JS_VERSION = "4.8.0";
 
 /** "(41) 99999-8888" → "5541999998888" (sem o 55, assume Brasil). */
 export function waDigits(phone: string): string {
@@ -68,16 +68,27 @@ async function waSend(digits: string, payload: WaPayload | null, waitMs: number,
       if (meDigits.slice(-8) !== from.slice(-8) || ddd(meDigits) !== ddd(from)) return { ok: false, code: "wrong-number", message: `+${meDigits}` };
     }
     if (!payload) return { ok: true, me: meDigits };
-    const found = (await WPP.contact.queryWidExists(`${digits}@c.us`)) as { wid: Wid } | null;
+    const found = (await WPP.contact.queryWidExists(`${digits}@c.us`)) as { wid: Wid; lid?: Wid } | null;
     if (!found) return { ok: false, code: "not-on-whatsapp" };
     const id = found.wid._serialized ?? found.wid.toString();
     if (me && (me._serialized ?? me.toString()) === id) return { ok: false, code: "self" };
-    if ("text" in payload) await WPP.chat.sendTextMessage(id, payload.text, { createChat: true, linkPreview: false });
-    else {
-      const { dataUrl, filename, mime } = payload.file;
-      // Imagem vai como foto (com legenda); o resto, como documento.
-      const type = /^image\/(png|jpe?g|webp)$/.test(mime) ? "image" : "document";
-      await WPP.chat.sendFileMessage(id, dataUrl, { type, filename, mimetype: mime, caption: payload.caption || undefined, createChat: true });
+    const lid = found.lid ? (found.lid._serialized ?? found.lid.toString()) : null;
+    const send = async (to: string) => {
+      if ("text" in payload) await WPP.chat.sendTextMessage(to, payload.text, { createChat: true, linkPreview: false });
+      else {
+        const { dataUrl, filename, mime } = payload.file;
+        // Imagem vai como foto (com legenda); o resto, como documento.
+        const type = /^image\/(png|jpe?g|webp)$/.test(mime) ? "image" : "document";
+        await WPP.chat.sendFileMessage(to, dataUrl, { type, filename, mimetype: mime, caption: payload.caption || undefined, createChat: true });
+      }
+    };
+    try {
+      await send(id);
+    } catch (e) {
+      // WhatsApp Web novo (contas migradas para LID): "No LID for user" com o
+      // número; tenta de novo pelo LID que a consulta do número devolveu.
+      if (!lid || lid === id || !/no lid/i.test(e instanceof Error ? e.message : String(e))) throw e;
+      await send(lid);
     }
     return { ok: true, me: meDigits };
   } catch (e) {
@@ -113,12 +124,20 @@ async function waStage(
       const ddd = (d: string) => (d.startsWith("55") ? d.slice(2, 4) : d.slice(0, -8));
       if (meDigits.slice(-8) !== from.slice(-8) || ddd(meDigits) !== ddd(from)) return { ok: false, code: "wrong-number", message: `+${meDigits}` };
     }
-    const found = (await WPP.contact.queryWidExists(`${digits}@c.us`)) as { wid: Wid } | null;
+    const found = (await WPP.contact.queryWidExists(`${digits}@c.us`)) as { wid: Wid; lid?: Wid } | null;
     if (!found) return { ok: false, code: "not-on-whatsapp" };
-    const id = found.wid._serialized ?? found.wid.toString();
+    let id = found.wid._serialized ?? found.wid.toString();
     if (me && (me._serialized ?? me.toString()) === id) return { ok: false, code: "self" };
+    const lid = found.lid ? (found.lid._serialized ?? found.lid.toString()) : null;
     const since = Math.floor(Date.now() / 1000) - 2;
-    await WPP.chat.openChatBottom(id);
+    try {
+      await WPP.chat.openChatBottom(id);
+    } catch (e) {
+      // Contas migradas para LID: abre a conversa pelo LID do contato.
+      if (!lid || lid === id || !/no lid/i.test(e instanceof Error ? e.message : String(e))) throw e;
+      id = lid;
+      await WPP.chat.openChatBottom(id);
+    }
     // Caixa de mensagem da conversa aberta.
     const editable = () => [...document.querySelectorAll<HTMLElement>('div[contenteditable="true"]')];
     let box: HTMLElement | undefined;
