@@ -48,6 +48,9 @@ export interface Charge {
   pdf_doc_id: string | null;
   received_cents: number | null;
   checked_at: string | null;
+  /** Mudança ainda não levada à Gestão Financeira ('paid' | 'canceled') e o último motivo. */
+  gf_sync: string | null;
+  gf_sync_error: string | null;
 }
 
 /** Pagador do boleto (Inter exige documento e endereço completo). */
@@ -119,7 +122,7 @@ export function listCharges(db: DatabaseSync, cardId: string): Charge[] {
   return many<Record<string, unknown>>(
     db,
     `SELECT id, card_id, provider, handle, order_nsu, url, amount_cents, description, items_json, due_date, status, paid_at, created_at,
-       provider_ref, provider_env, provider_status, barcode, pix_code, pdf_doc_id, received_cents, checked_at
+       provider_ref, provider_env, provider_status, barcode, pix_code, pdf_doc_id, received_cents, checked_at, gf_sync, gf_sync_error
      FROM payment_charge WHERE card_id = ? AND deleted_at IS NULL ORDER BY created_at DESC`,
     cardId,
   ).map(rowToCharge);
@@ -445,6 +448,10 @@ export function applyInterSituacao(
     const data: Record<string, string | number | null> = { provider_status: r.situacao, checked_at: new Date().toISOString() };
     if (to !== c.status) {
       data.status = to;
+      // A Gestão Financeira recebe a mudança depois (com novas tentativas até dar certo).
+      data.gf_sync = to === "open" ? null : to;
+      data.gf_sync_since = new Date().toISOString();
+      data.gf_sync_error = null;
       data.paid_at = to === "paid" ? `${day}T12:00:00.000Z` : null;
       if (to === "paid" && r.receivedCents) data.received_cents = r.receivedCents;
     }
@@ -474,4 +481,53 @@ export function interChargeRef(db: DatabaseSync, id: string): { card_id: string;
   return (
     one(db, "SELECT card_id, provider_ref, provider_env, status, order_nsu, amount_cents FROM payment_charge WHERE id = ? AND provider = 'inter' AND deleted_at IS NULL", id) ?? null
   );
+}
+
+export interface GfPendingCharge {
+  id: string;
+  card_id: string;
+  order_nsu: string;
+  gf_sync: "paid" | "canceled";
+  paid_at: string | null;
+  gf_sync_since: string | null;
+}
+
+/** Cobranças com baixa/exclusão ainda não feita na Gestão Financeira. */
+export function gfPendingCharges(db: DatabaseSync, cardId?: string): GfPendingCharge[] {
+  return many<GfPendingCharge>(
+    db,
+    `SELECT id, card_id, order_nsu, gf_sync, paid_at, gf_sync_since FROM payment_charge
+     WHERE gf_sync IN ('paid', 'canceled') AND deleted_at IS NULL ${cardId ? "AND card_id = ?" : ""} ORDER BY gf_sync_since`,
+    ...(cardId ? [cardId] : []),
+  );
+}
+
+/** Dias tentando levar a mudança à Gestão Financeira antes de desistir (com nota no cartão). */
+export const GF_SYNC_MAX_DAYS = 7;
+
+/** Resultado de uma tentativa: feito, ou o motivo (e desiste depois de GF_SYNC_MAX_DAYS). */
+export function gfSyncResult(db: DatabaseSync, ctx: DbContext, id: string, r: { done: boolean; error?: string | null }, now = new Date()): void {
+  const c = one<{ card_id: string; gf_sync: string | null; gf_sync_since: string | null; order_nsu: string; amount_cents: number }>(
+    db,
+    "SELECT card_id, gf_sync, gf_sync_since, order_nsu, amount_cents FROM payment_charge WHERE id = ? AND deleted_at IS NULL",
+    id,
+  );
+  if (!c?.gf_sync) return;
+  if (r.done) {
+    updateRow(db, ctx, "payment_charge", id, { gf_sync: null, gf_sync_error: null });
+    return;
+  }
+  const since = c.gf_sync_since ? new Date(c.gf_sync_since).getTime() : now.getTime();
+  if (now.getTime() - since > GF_SYNC_MAX_DAYS * 86400_000) {
+    updateRow(db, ctx, "payment_charge", id, { gf_sync: null, gf_sync_error: r.error ?? null });
+    const what = c.gf_sync === "paid" ? "dar baixa na receita" : "excluir a receita";
+    insertRow(db, ctx, "note", {
+      entity_type: "deal",
+      entity_id: c.card_id,
+      body: `Não consegui ${what} da cobrança de ${brl(c.amount_cents)} (pedido ${c.order_nsu}) na Gestão Financeira em ${GF_SYNC_MAX_DAYS} dias: ${r.error ?? "sem resposta"}. Faça lá manualmente.`,
+      document_ids: null,
+    });
+    return;
+  }
+  updateRow(db, ctx, "payment_charge", id, { gf_sync_error: r.error ?? null });
 }

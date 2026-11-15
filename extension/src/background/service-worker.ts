@@ -4,7 +4,7 @@ import { gfIntegrationActive, listAllFromCrm, loadGfSettings, pushPendingContact
 import type { NotifyJob } from "../db/notifications";
 import type { ContactSendJob } from "../db/contactMessages";
 import type { InterOpenCharge } from "../db/charges";
-import { syncInterCharge } from "../lib/interSync";
+import { syncGfPending, syncInterCharge } from "../lib/interSync";
 import { sendMail } from "../lib/calendar";
 import { sendCallMeBot } from "../lib/notify/callmebot";
 import { blobToDataUrl, sendFileViaWhatsAppWeb, sendViaWhatsAppWeb, WHATSAPP_FILE_MAX } from "../lib/notify/waweb";
@@ -332,7 +332,15 @@ async function loadContactFiles(
 // situação dos boletos em aberto a cada 30 min. Pago → baixa no CRM e na
 // Gestão Financeira; cancelado/expirado → receita excluída. Avisa no sino.
 const INTER_SYNC_KEY = "conectcrm-inter-sync";
+const GF_RETRY_KEY = "conectcrm-gf-retry";
 async function runInterSync(userId: string | null): Promise<void> {
+  // Baixas/exclusões que ainda não chegaram à Gestão Financeira: a cada 5 min.
+  const retry = (await chrome.storage.local.get(GF_RETRY_KEY))[GF_RETRY_KEY] as number | undefined;
+  if (!retry || Date.now() - retry >= 5 * 60_000) {
+    await chrome.storage.local.set({ [GF_RETRY_KEY]: Date.now() });
+    const done = await syncGfPending(<T,>(m: string, p: Record<string, unknown>) => rpc<T>(m, p, userId)).catch(() => []);
+    for (const d of done) if (d.done && d.message) await addNotification({ kind: "info", title: "Gestão Financeira atualizada", message: d.message });
+  }
   const last = (await chrome.storage.local.get(INTER_SYNC_KEY))[INTER_SYNC_KEY] as number | undefined;
   if (last && Date.now() - last < 30 * 60_000) return;
   await chrome.storage.local.set({ [INTER_SYNC_KEY]: Date.now() });

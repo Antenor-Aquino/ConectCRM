@@ -24,7 +24,7 @@ import {
   type InterSettings,
   type InterSituacao,
 } from "../../lib/inter";
-import { applyInterResult, syncInterCharge } from "../../lib/interSync";
+import { applyInterResult, syncGfPending, syncInterCharge } from "../../lib/interSync";
 import { fiscalVersion } from "../../lib/nfse/fiscal";
 import { formatCepInput, lookupCep } from "../../lib/cep";
 import { prepareFile, saveBlobAs, saveContent } from "../../lib/documentFiles";
@@ -120,7 +120,9 @@ export function ChargeDialog({
     }
   };
   useEffect(() => {
-    void load(true);
+    void load(true).then(() => syncGfPending(rpcAny, { cardId }).then(async (r) => {
+        if (r.some((x) => x.done)) await load(false);
+      }).catch(() => undefined));
     void loadInfinitePay().then((s) => {
       setHandle(s.handle);
       setCompany(s.company);
@@ -609,6 +611,29 @@ export function ChargeDialog({
                         {c.due_date ? ` · vence ${day(c.due_date)}` : ""}
                         {c.paid_at ? ` · paga em ${day(c.paid_at)}` : ""}
                       </span>
+                      {c.gf_sync && (
+                        <span className="flex w-full items-center gap-2 text-theme-xs text-warning-700" data-charge-gf-pending>
+                          Gestão Financeira: {c.gf_sync === "paid" ? "baixa da receita pendente" : "exclusão da receita pendente"}
+                          {c.gf_sync_error ? ` — ${c.gf_sync_error}` : ""}
+                          <button
+                            type="button"
+                            className="font-medium text-brand-600 hover:underline"
+                            disabled={busyRow === c.id}
+                            onClick={async () => {
+                              setBusyRow(c.id);
+                              setInfo(null);
+                              const r = await syncGfPending(rpcAny, { cardId, chargeId: c.id }).catch((e) => [{ id: c.id, done: false, message: errorText(e) }]);
+                              setInfo(r[0]?.message || null);
+                              await load(false);
+                              onChanged?.();
+                              setBusyRow(null);
+                            }}
+                            data-charge-gf-retry
+                          >
+                            Tentar agora
+                          </button>
+                        </span>
+                      )}
                       {c.provider === "inter" ? (
                         <span className="ml-auto flex flex-wrap gap-1" data-charge-inter-actions>
                           {c.barcode && (
