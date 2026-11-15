@@ -4,10 +4,12 @@
 // sair. Se o Chrome estava fechado na hora, sai quando ele abrir, desde que a
 // atividade ainda não tenha começado; senão fica "não enviada" e o usuário é
 // avisado. O envio vira nota na atividade e no contato.
-import { renderContactMessage, type ContactVars } from "../lib/notify/contactMessage";
+import { CONTACT_MAX_FILES, parseAttachments, renderContactMessage, type ContactAttachments, type ContactVars } from "../lib/notify/contactMessage";
+export { CONTACT_MAX_FILES, parseAttachments, type ContactAttachments };
 import { nowIso } from "../lib/ids";
 import { ValidationError } from "../lib/validate";
 import { listCardContacts } from "./cardContacts";
+import { logDocumentEvent } from "./documents";
 import { addNote } from "./notes";
 import { insertRow, softDelete, updateRow, type DbContext } from "./repo";
 import { many, one, withTransaction, type DatabaseSync } from "./sql";
@@ -20,7 +22,11 @@ export interface ContactMessageInput {
   template: string;
   /** Número de origem (Configurações → WhatsApp: Z-API ou WhatsApp Web). */
   senderId?: string | null;
+  /** Anexos do GED: "all" = todos os documentos da atividade na hora do envio; lista = os escolhidos. */
+  attachments?: ContactAttachments;
 }
+
+const attachmentsColumn = (a: ContactAttachments | undefined): string | null => (!a ? null : a === "all" ? "all" : a.length ? JSON.stringify([...new Set(a)]) : null);
 
 export interface ContactMessage {
   id: string;
@@ -29,6 +35,7 @@ export interface ContactMessage {
   minutes_before: number;
   template: string;
   sender_id: string | null;
+  attachments: string | null;
   status: ContactMessageStatus;
   sent_at: string | null;
   sent_text: string | null;
@@ -62,7 +69,7 @@ export function companyForDeal(db: DatabaseSync, dealId: string | null | undefin
 export function getContactMessage(db: DatabaseSync, activityId: string): ContactMessage | undefined {
   return one<ContactMessage>(
     db,
-    `SELECT id, activity_id, person_id, minutes_before, template, sender_id, status, sent_at, sent_text, error, created_by
+    `SELECT id, activity_id, person_id, minutes_before, template, sender_id, attachments, status, sent_at, sent_text, error, created_by
      FROM activity_contact_message WHERE activity_id = ? AND deleted_at IS NULL`,
     activityId,
   );
@@ -75,6 +82,12 @@ function checkInput(db: DatabaseSync, input: ContactMessageInput): void {
   if (!Number.isInteger(input.minutesBefore) || input.minutesBefore < 0 || input.minutesBefore > 60 * 24 * 30) throw new ValidationError("Antecedência do lembrete inválida.");
   if (!input.template.trim()) throw new ValidationError("Escreva a mensagem do lembrete.");
   if (input.template.length > 2000) throw new ValidationError("A mensagem do lembrete é longa demais (máx. 2.000 caracteres).");
+  const a = input.attachments;
+  if (Array.isArray(a)) {
+    if (new Set(a).size > CONTACT_MAX_FILES) throw new ValidationError(`Escolha até ${CONTACT_MAX_FILES} documentos para enviar junto.`);
+    for (const id of a)
+      if (!one(db, "SELECT 1 FROM document WHERE id = ? AND deleted_at IS NULL", id)) throw new ValidationError("Um dos documentos escolhidos para enviar junto não existe mais.");
+  }
 }
 
 /**
@@ -88,7 +101,7 @@ export function setContactMessage(db: DatabaseSync, ctx: DbContext, activityId: 
     const cur = getContactMessage(db, activityId);
     if (cur?.status === "sent") {
       if (input === null) return;
-      const same = cur.person_id === input.personId && cur.minutes_before === input.minutesBefore && cur.template === input.template && cur.sender_id === (input.senderId ?? null);
+      const same = cur.person_id === input.personId && cur.minutes_before === input.minutesBefore && cur.template === input.template && cur.sender_id === (input.senderId ?? null) && (input.attachments === undefined || (cur.attachments ?? null) === attachmentsColumn(input.attachments));
       if (same) return;
       throw new ValidationError("O lembrete para o contato já foi enviado e não pode mais ser alterado.");
     }
@@ -102,6 +115,7 @@ export function setContactMessage(db: DatabaseSync, ctx: DbContext, activityId: 
       minutes_before: input.minutesBefore,
       template: input.template,
       sender_id: input.senderId ?? null,
+      ...(input.attachments !== undefined ? { attachments: attachmentsColumn(input.attachments) } : {}),
       status: "pending",
       error: null,
     };
@@ -122,7 +136,7 @@ interface DueRow extends ContactMessage {
   creator_name: string | null;
 }
 
-const DUE_SQL = `SELECT m.id, m.activity_id, m.person_id, m.minutes_before, m.template, m.sender_id, m.status, m.sent_at, m.sent_text, m.error, m.created_by,
+const DUE_SQL = `SELECT m.id, m.activity_id, m.person_id, m.minutes_before, m.template, m.sender_id, m.attachments, m.status, m.sent_at, m.sent_text, m.error, m.created_by,
     a.due_at, a.done, a.title, a.meeting_url, a.deal_id, p.name AS person_name, p.phone,
     ow.name AS owner_name, cu.name AS creator_name
   FROM activity_contact_message m
@@ -156,6 +170,34 @@ export interface ContactSendJob {
   /** Usuário que agendou (os números de origem são dele). */
   userId: string | null;
   text: string;
+  /** Arquivos que vão junto (o 1º leva o texto como legenda). */
+  files: ContactSendFile[];
+}
+
+export interface ContactSendFile {
+  documentId: string;
+  versionId: string;
+  name: string;
+}
+
+/** Documentos que vão junto: os escolhidos (se ainda existirem) ou todos os da atividade. */
+export function contactMessageFiles(db: DatabaseSync, activityId: string, raw: string | null): ContactSendFile[] {
+  const a = parseAttachments(raw);
+  if (!a) return [];
+  const rows =
+    a === "all"
+      ? many<ContactSendFile>(
+          db,
+          `SELECT d.id AS documentId, d.current_version_id AS versionId, d.name FROM document d
+           JOIN document_link l ON l.document_id = d.id AND l.deleted_at IS NULL AND l.entity_type = 'activity' AND l.entity_id = ?
+           WHERE d.deleted_at IS NULL AND d.current_version_id IS NOT NULL ORDER BY d.created_at`,
+          activityId,
+        )
+      : a
+          .map((id) => one<ContactSendFile>(db, "SELECT id AS documentId, current_version_id AS versionId, name FROM document WHERE id = ? AND deleted_at IS NULL AND current_version_id IS NOT NULL", id))
+          .filter((x): x is ContactSendFile => !!x);
+  const seen = new Set<string>();
+  return rows.filter((r) => !seen.has(r.documentId) && seen.add(r.documentId)).slice(0, a === "all" ? CONTACT_MAX_FILES : undefined);
 }
 
 /**
@@ -193,13 +235,19 @@ export function dueContactMessages(db: DatabaseSync, ctx: DbContext, now = new D
       senderId: r.sender_id,
       userId: r.created_by,
       text: renderContactMessage(r.template, varsOf(db, r), now),
+      files: contactMessageFiles(db, r.activity_id, r.attachments),
     });
   }
   return { jobs, missed };
 }
 
 /** Resultado do envio; enviado vira nota na atividade e no contato. */
-export function recordContactMessage(db: DatabaseSync, ctx: DbContext, id: string, result: { ok: boolean; text?: string; error?: string }): void {
+export function recordContactMessage(
+  db: DatabaseSync,
+  ctx: DbContext,
+  id: string,
+  result: { ok: boolean; text?: string; error?: string; files?: { documentId: string; filename: string }[] },
+): void {
   withTransaction(db, () => {
     const r = one<DueRow>(db, `${DUE_SQL} AND m.id = ?`, id);
     if (!r || r.status !== "pending") return;
@@ -210,7 +258,10 @@ export function recordContactMessage(db: DatabaseSync, ctx: DbContext, id: strin
     const at = nowIso();
     updateRow(db, ctx, "activity_contact_message", id, { status: "sent", sent_at: at, sent_text: result.text ?? null, error: null });
     const hm = new Date(at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-    const body = `<p>📲 Lembrete enviado por WhatsApp para ${esc(r.person_name)} às ${hm}:</p><p>${esc(result.text ?? "").replace(/\n/g, "<br>")}</p>`;
+    const files = result.files ?? [];
+    for (const f of files) logDocumentEvent(db, ctx, f.documentId, "whatsapp", `Lembrete da atividade "${r.title}" para ${r.person_name}`);
+    const anexos = files.length ? `<p>📎 Anexos: ${files.map((f) => esc(f.filename)).join(", ")}</p>` : "";
+    const body = `<p>📲 Lembrete enviado por WhatsApp para ${esc(r.person_name)} às ${hm}:</p><p>${esc(result.text ?? "").replace(/\n/g, "<br>")}</p>${anexos}`;
     addNote(db, ctx, "activity", r.activity_id, body);
     addNote(db, ctx, "person", r.person_id, body);
   });

@@ -91,3 +91,20 @@ export function leadText(min: number): string {
   if (min % 60 === 0) return `${min / 60} ${min === 60 ? "hora" : "horas"} antes`;
   return `${min} min antes`;
 }
+
+/** Anexos do lembrete do contato (documentos do GED). */
+export type ContactAttachments = "all" | string[] | null;
+
+/** Máximo de arquivos por lembrete. */
+export const CONTACT_MAX_FILES = 5;
+
+export const parseAttachments = (raw: string | null | undefined): ContactAttachments => {
+  if (!raw) return null;
+  if (raw === "all") return "all";
+  try {
+    const v = JSON.parse(raw) as unknown;
+    return Array.isArray(v) && v.length ? v.filter((x): x is string => typeof x === "string") : null;
+  } catch {
+    return null;
+  }
+};

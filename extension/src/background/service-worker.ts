@@ -5,8 +5,10 @@ import type { NotifyJob } from "../db/notifications";
 import type { ContactSendJob } from "../db/contactMessages";
 import { sendMail } from "../lib/calendar";
 import { sendCallMeBot } from "../lib/notify/callmebot";
-import { sendViaWhatsAppWeb } from "../lib/notify/waweb";
-import { loadSenders, zapiSendText } from "../lib/whatsappSenders";
+import { blobToDataUrl, sendFileViaWhatsAppWeb, sendViaWhatsAppWeb, WHATSAPP_FILE_MAX } from "../lib/notify/waweb";
+import { readContent } from "../lib/fileStore";
+import type { DbEnv } from "../lib/environment";
+import { loadSenders, zapiSendFile, zapiSendText } from "../lib/whatsappSenders";
 import { CHANNEL_LABEL, activeSettings, loadAllNotifySettings, loadMailSender, withDefaults, type Channel } from "../lib/notify/settings";
 import { addNotification } from "../lib/notifications";
 import { loadSoundSettings, soundFor, type PlaySoundMessage, type SoundCategory } from "../lib/notify/sounds";
@@ -297,6 +299,33 @@ async function refreshFinanceCopy(userId: string | null): Promise<void> {
   }
 }
 
+/** Arquivos do GED de um lembrete do contato (IndexedDB ou pasta de documentos). */
+async function loadContactFiles(
+  files: ContactSendJob["files"],
+  userId: string | null,
+): Promise<{ documentId: string; blob: Blob; filename: string; mime: string }[]> {
+  if (!files.length) return [];
+  const env = await rpc<DbEnv>("system.env", {}, userId);
+  const out: { documentId: string; blob: Blob; filename: string; mime: string }[] = [];
+  for (const f of files) {
+    const info = await rpc<{ sha256: string; location: "browser" | "folder" | "legacy"; path: string | null; filename: string; mime: string; legacyDataUrl: string | null }>(
+      "documents.file",
+      { versionId: f.versionId, action: "index" },
+      userId,
+    );
+    let blob: Blob;
+    try {
+      blob = info.legacyDataUrl ? await (await fetch(info.legacyDataUrl)).blob() : await readContent(env, info);
+    } catch (e) {
+      throw new Error(`Não foi possível ler o anexo "${f.name}": ${e instanceof Error ? e.message : String(e)}`);
+    }
+    if (blob.size > WHATSAPP_FILE_MAX) throw new Error(`O anexo "${f.name}" passa de 64 MB.`);
+    const mime = info.mime || blob.type || "application/octet-stream";
+    out.push({ documentId: f.documentId, blob: blob.type ? blob : new Blob([blob], { type: mime }), filename: info.filename, mime });
+  }
+  return out;
+}
+
 // Lembrete para o contato por WhatsApp (0.2.69): Z-API ou WhatsApp Web, com o
 // Chrome aberto (mesmo com o CRM fechado). Falha ou hora perdida: avisa o usuário.
 let sendingContacts = false;
@@ -311,18 +340,31 @@ async function runContactMessages(userId: string | null): Promise<void> {
     }
     for (const job of jobs) {
       let error: string | undefined;
+      const sentFiles: { documentId: string; filename: string }[] = [];
       try {
         const sender = (await loadSenders(job.userId ?? "")).senders.find((x) => x.id === job.senderId);
         if (!sender) throw new Error("O número de origem do lembrete não existe mais em Configurações → WhatsApp.");
-        if (sender.via === "zapi") {
-          if (!sender.zapi) throw new Error("A Z-API do número de origem não está configurada.");
-          await zapiSendText(sender.zapi, job.phone, job.text);
-        } else if (sender.via === "web") await sendViaWhatsAppWeb(job.phone, job.text, 30_000, sender.phone);
-        else throw new Error("O número de origem é manual; escolha um com Z-API ou WhatsApp Web.");
+        if (sender.via !== "zapi" && sender.via !== "web") throw new Error("O número de origem é manual; escolha um com Z-API ou WhatsApp Web.");
+        if (sender.via === "zapi" && !sender.zapi) throw new Error("A Z-API do número de origem não está configurada.");
+        // Anexos: lidos todos antes de enviar (arquivo faltando não manda nada pela metade).
+        const files = await loadContactFiles(job.files ?? [], userId);
+        const sendFile = async (f: (typeof files)[number], caption: string) => {
+          if (sender.via === "zapi") await zapiSendFile(sender.zapi!, job.phone, { dataUrl: await blobToDataUrl(f.blob), filename: f.filename, mime: f.mime }, caption);
+          else await sendFileViaWhatsAppWeb(job.phone, f, caption, 30_000, sender.phone);
+          sentFiles.push({ documentId: f.documentId, filename: f.filename });
+        };
+        if (!files.length) {
+          if (sender.via === "zapi") await zapiSendText(sender.zapi!, job.phone, job.text);
+          else await sendViaWhatsAppWeb(job.phone, job.text, 30_000, sender.phone);
+        } else {
+          // O 1º arquivo leva a mensagem como legenda; os outros vão em seguida.
+          for (const [i, f] of files.entries()) await sendFile(f, i === 0 ? job.text : "");
+        }
       } catch (e) {
         error = e instanceof Error ? e.message : String(e);
+        if (sentFiles.length) error = `Enviado em parte (${sentFiles.map((f) => f.filename).join(", ")}); depois falhou: ${error}`;
       }
-      await rpc("contactMessages.record", { id: job.id, ok: !error, text: job.text, error }, userId);
+      await rpc("contactMessages.record", { id: job.id, ok: !error, text: job.text, error, files: sentFiles }, userId);
       if (error) {
         chromeNotify(`notify:contato-${job.id}`, `Lembrete para ${job.personName} não foi enviado`, `${job.title}: ${error}`, false, "overdue");
         await addNotification({ kind: "error", title: `Lembrete para ${job.personName} não foi enviado`, message: `${job.title}: ${error}` });
