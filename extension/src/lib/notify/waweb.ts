@@ -16,7 +16,7 @@ export function waDigits(phone: string): string {
 
 type SendResult =
   | { ok: true; me?: string }
-  | { ok: false; code: "not-ready" | "not-auth" | "not-on-whatsapp" | "self" | "wrong-number" | "stage-failed" | "error"; message?: string };
+  | { ok: false; code: "not-ready" | "not-auth" | "not-on-whatsapp" | "self" | "wrong-number" | "stage-failed" | "no-lid" | "error"; message?: string };
 
 const ERRORS: Record<Exclude<SendResult, { ok: true }>["code"], string> = {
   "not-ready": "o WhatsApp Web não terminou de carregar. Deixe a aba aberta e conectada.",
@@ -25,6 +25,8 @@ const ERRORS: Record<Exclude<SendResult, { ok: true }>["code"], string> = {
   self: "o número indicado é o mesmo do WhatsApp Web; mensagem para você mesmo não toca no celular. Indique outro número.",
   "wrong-number": "o WhatsApp Web deste Chrome está conectado em outro número",
   "stage-failed": "não foi possível deixar o arquivo pronto para envio",
+  "no-lid":
+    "o WhatsApp não liberou a conversa com esse número (contato que nunca falou com você). Abra uma conversa com ele no WhatsApp, mande um \"oi\" e salve a atividade de novo",
   error: "não foi possível enviar.",
 };
 
@@ -43,7 +45,7 @@ function waConfigure(): string {
 type WaPayload = { text: string } | { file: { dataUrl: string; filename: string; mime: string }; caption: string };
 
 /** `from` = número de origem esperado (confere o conectado); `digits` vazio = só informa o número conectado. */
-async function waSend(digits: string, payload: WaPayload | null, waitMs: number, from: string | null): Promise<SendResult> {
+export async function waSend(digits: string, payload: WaPayload | null, waitMs: number, from: string | null, viaActive = false): Promise<SendResult> {
   type Wid = { _serialized?: string; toString(): string; user?: string };
   const WPP = (window as unknown as { WPP?: any }).WPP; // eslint-disable-line @typescript-eslint/no-explicit-any
   if (!WPP) return { ok: false, code: "not-ready" };
@@ -68,6 +70,30 @@ async function waSend(digits: string, payload: WaPayload | null, waitMs: number,
       if (meDigits.slice(-8) !== from.slice(-8) || ddd(meDigits) !== ddd(from)) return { ok: false, code: "wrong-number", message: `+${meDigits}` };
     }
     if (!payload) return { ok: true, me: meDigits };
+    // Contato novo no WhatsApp Web atual: a conversa aberta pelo link oficial
+    // (web.whatsapp.com/send?phone=) já tem o LID. Confere que é do número certo.
+    const activeChatFor = async (): Promise<string | null> => {
+      for (let i = 0; i < 80; i++) {
+        const chat = WPP.chat.getActiveChat?.() as { id?: Wid & { server?: string } } | undefined;
+        const cid = chat?.id;
+        if (cid) {
+          const ser = cid._serialized ?? cid.toString();
+          let pn = /@c\.us$/.test(ser) ? ser.split("@")[0]! : "";
+          if (!pn) {
+            try {
+              const e = (await WPP.contact.getPnLidEntry(ser)) as { phoneNumber?: { id?: string; _serialized?: string } } | undefined;
+              pn = (e?.phoneNumber?.id ?? e?.phoneNumber?._serialized ?? "").replace(/\D/g, "");
+            } catch {
+              pn = "";
+            }
+          }
+          if (pn && pn.slice(-8) === digits.slice(-8)) return ser;
+        }
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      return null;
+    };
+    const isNoLid = (e: unknown) => /no lid/i.test(e instanceof Error ? e.message : String(e));
     const found = (await WPP.contact.queryWidExists(`${digits}@c.us`)) as { wid: Wid; lid?: Wid } | null;
     if (!found) return { ok: false, code: "not-on-whatsapp" };
     const id = found.wid._serialized ?? found.wid.toString();
@@ -82,13 +108,25 @@ async function waSend(digits: string, payload: WaPayload | null, waitMs: number,
         await WPP.chat.sendFileMessage(to, dataUrl, { type, filename, mimetype: mime, caption: payload.caption || undefined, createChat: true });
       }
     };
+    if (viaActive) {
+      const active = await activeChatFor();
+      if (!active) return { ok: false, code: "no-lid" };
+      await send(active);
+      return { ok: true, me: meDigits };
+    }
     try {
       await send(id);
     } catch (e) {
       // WhatsApp Web novo (contas migradas para LID): "No LID for user" com o
       // número; tenta de novo pelo LID que a consulta do número devolveu.
-      if (!lid || lid === id || !/no lid/i.test(e instanceof Error ? e.message : String(e))) throw e;
-      await send(lid);
+      if (!isNoLid(e)) throw e;
+      if (!lid || lid === id) return { ok: false, code: "no-lid" };
+      try {
+        await send(lid);
+      } catch (e2) {
+        if (isNoLid(e2)) return { ok: false, code: "no-lid" };
+        throw e2;
+      }
     }
     return { ok: true, me: meDigits };
   } catch (e) {
@@ -108,6 +146,7 @@ async function waStage(
   caption: string,
   waitMs: number,
   from: string | null,
+  viaActive = false,
 ): Promise<{ ok: true; chatId: string; since: number } | { ok: false; code: string; message?: string }> {
   type Wid = { _serialized?: string; toString(): string; user?: string };
   const WPP = (window as unknown as { WPP?: any }).WPP; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -124,19 +163,56 @@ async function waStage(
       const ddd = (d: string) => (d.startsWith("55") ? d.slice(2, 4) : d.slice(0, -8));
       if (meDigits.slice(-8) !== from.slice(-8) || ddd(meDigits) !== ddd(from)) return { ok: false, code: "wrong-number", message: `+${meDigits}` };
     }
+    // Contato novo no WhatsApp Web atual: a conversa aberta pelo link oficial
+    // (web.whatsapp.com/send?phone=) já tem o LID. Confere que é do número certo.
+    const activeChatFor = async (): Promise<string | null> => {
+      for (let i = 0; i < 80; i++) {
+        const chat = WPP.chat.getActiveChat?.() as { id?: Wid & { server?: string } } | undefined;
+        const cid = chat?.id;
+        if (cid) {
+          const ser = cid._serialized ?? cid.toString();
+          let pn = /@c\.us$/.test(ser) ? ser.split("@")[0]! : "";
+          if (!pn) {
+            try {
+              const e = (await WPP.contact.getPnLidEntry(ser)) as { phoneNumber?: { id?: string; _serialized?: string } } | undefined;
+              pn = (e?.phoneNumber?.id ?? e?.phoneNumber?._serialized ?? "").replace(/\D/g, "");
+            } catch {
+              pn = "";
+            }
+          }
+          if (pn && pn.slice(-8) === digits.slice(-8)) return ser;
+        }
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      return null;
+    };
     const found = (await WPP.contact.queryWidExists(`${digits}@c.us`)) as { wid: Wid; lid?: Wid } | null;
     if (!found) return { ok: false, code: "not-on-whatsapp" };
     let id = found.wid._serialized ?? found.wid.toString();
     if (me && (me._serialized ?? me.toString()) === id) return { ok: false, code: "self" };
     const lid = found.lid ? (found.lid._serialized ?? found.lid.toString()) : null;
     const since = Math.floor(Date.now() / 1000) - 2;
-    try {
-      await WPP.chat.openChatBottom(id);
-    } catch (e) {
-      // Contas migradas para LID: abre a conversa pelo LID do contato.
-      if (!lid || lid === id || !/no lid/i.test(e instanceof Error ? e.message : String(e))) throw e;
-      id = lid;
-      await WPP.chat.openChatBottom(id);
+    const isNoLid = (e: unknown) => /no lid/i.test(e instanceof Error ? e.message : String(e));
+    if (viaActive) {
+      // A conversa já foi aberta pelo link oficial do WhatsApp.
+      const active = await activeChatFor();
+      if (!active) return { ok: false, code: "no-lid" };
+      id = active;
+    } else {
+      try {
+        await WPP.chat.openChatBottom(id);
+      } catch (e) {
+        // Contas migradas para LID: abre a conversa pelo LID do contato.
+        if (!isNoLid(e)) throw e;
+        if (!lid || lid === id) return { ok: false, code: "no-lid" };
+        try {
+          id = lid;
+          await WPP.chat.openChatBottom(id);
+        } catch (e2) {
+          if (isNoLid(e2)) return { ok: false, code: "no-lid" };
+          throw e2;
+        }
+      }
     }
     // Caixa de mensagem da conversa aberta.
     const editable = () => [...document.querySelectorAll<HTMLElement>('div[contenteditable="true"]')];
@@ -234,6 +310,17 @@ async function preparedTab(): Promise<{ target: { tabId: number }; tab: chrome.t
   return { target, tab };
 }
 
+/**
+ * Contato novo ("No LID for user"): abre a conversa pelo link oficial do
+ * WhatsApp (web.whatsapp.com/send?phone=…), que resolve o LID como o próprio
+ * WhatsApp faz, e recarrega a biblioteca na aba.
+ */
+async function openChatByLink(tabId: number, digits: string): Promise<{ tabId: number }> {
+  await chrome.tabs.update(tabId, { url: `https://web.whatsapp.com/send?phone=${digits}` });
+  await waitTabLoaded(tabId);
+  return (await preparedTab()).target;
+}
+
 function failure(r: { ok: false; code: keyof typeof ERRORS; message?: string } | undefined): Error {
   const code = r?.code ?? "error";
   return new Error(`WhatsApp Web: ${ERRORS[code] ?? ERRORS.error}${r?.message ? ` (${r.message})` : ""}`);
@@ -243,8 +330,14 @@ async function sendPayload(phone: string, payload: WaPayload | null, waitMs: num
   const digits = phone ? waDigits(phone) : "";
   if (payload && digits.length < 12) throw new Error("WhatsApp Web: informe o número com DDD.");
   const { target } = await preparedTab();
-  const [res] = await chrome.scripting.executeScript({ target, world: "MAIN", func: waSend, args: [digits, payload, waitMs, from ? waDigits(from) : null] });
-  const r = res?.result as SendResult | undefined;
+  const fromDigits = from ? waDigits(from) : null;
+  const [res] = await chrome.scripting.executeScript({ target, world: "MAIN", func: waSend, args: [digits, payload, waitMs, fromDigits] });
+  let r = res?.result as SendResult | undefined;
+  if (r && !r.ok && r.code === "no-lid" && payload) {
+    const t2 = await openChatByLink(target.tabId, digits);
+    const [res2] = await chrome.scripting.executeScript({ target: t2, world: "MAIN", func: waSend, args: [digits, payload, Math.max(waitMs, 60_000), fromDigits, true] });
+    r = res2?.result as SendResult | undefined;
+  }
   if (r?.ok) return r.me;
   throw failure(r && !r.ok ? r : undefined);
 }
@@ -311,13 +404,15 @@ export async function stageFileInWhatsAppWeb(
   if (tab.windowId !== undefined) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => undefined);
   const mime = file.mime || "application/octet-stream";
   const dataUrl = await blobToDataUrl(new Blob([file.blob], { type: mime }));
-  const [res] = await chrome.scripting.executeScript({
-    target,
-    world: "MAIN",
-    func: waStage,
-    args: [digits, { dataUrl, filename: file.filename, mime }, caption, waitMs, from ? waDigits(from) : null],
-  });
-  const r = res?.result as Awaited<ReturnType<typeof waStage>> | undefined;
+  const stageArgs = (viaActive: boolean, wait: number) =>
+    [digits, { dataUrl, filename: file.filename, mime }, caption, wait, from ? waDigits(from) : null, viaActive] as Parameters<typeof waStage>;
+  const [res] = await chrome.scripting.executeScript({ target, world: "MAIN", func: waStage, args: stageArgs(false, waitMs) });
+  let r = res?.result as Awaited<ReturnType<typeof waStage>> | undefined;
+  if (r && !r.ok && r.code === "no-lid") {
+    const t2 = await openChatByLink(target.tabId, digits);
+    const [res2] = await chrome.scripting.executeScript({ target: t2, world: "MAIN", func: waStage, args: stageArgs(true, Math.max(waitMs, 60_000)) });
+    r = res2?.result as Awaited<ReturnType<typeof waStage>> | undefined;
+  }
   if (r?.ok) return { tabId: target.tabId, chatId: r.chatId, since: r.since };
   throw failure(r && !r.ok ? (r as { ok: false; code: keyof typeof ERRORS; message?: string }) : undefined);
 }
