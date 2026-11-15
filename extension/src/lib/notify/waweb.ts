@@ -352,13 +352,13 @@ export async function connectedWhatsAppNumber(waitMs = 15_000): Promise<string> 
   return (await sendPayload("", null, waitMs)) ?? "";
 }
 
-export const blobToDataUrl = (blob: Blob) =>
-  new Promise<string>((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result));
-    r.onerror = () => reject(r.error ?? new Error("Não foi possível ler o arquivo."));
-    r.readAsDataURL(blob);
-  });
+/** Blob → data URL (sem FileReader: também roda no service worker). */
+export async function blobToDataUrl(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return `data:${blob.type || "application/octet-stream"};base64,${btoa(bin)}`;
+}
 
 /** Até 64 MB (limite de documentos do WhatsApp é maior, mas a aba precisa receber o arquivo inteiro). */
 export const WHATSAPP_FILE_MAX = 64 * 1024 * 1024;

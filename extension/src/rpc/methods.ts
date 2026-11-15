@@ -786,7 +786,11 @@ export const methods = {
   },
   /** Service worker: o que enviar agora (e o que passou da hora). */
   "contactMessages.due": (db: DatabaseSync, ctx: DbContext, p: { now?: string }) => contactMsg.dueContactMessages(db, ctx, p.now ? new Date(p.now) : new Date()),
-  "contactMessages.record": (db: DatabaseSync, ctx: DbContext, p: { id: string; ok: boolean; text?: string; error?: string }) =>
+  "contactMessages.record": (
+    db: DatabaseSync,
+    ctx: DbContext,
+    p: { id: string; ok: boolean; text?: string; error?: string; files?: { documentId: string; filename: string }[] },
+  ) =>
     contactMsg.recordContactMessage(db, ctx, p.id, p),
   /** Regra da recorrência de uma atividade (null = não repete). */
   "activities.series": (db: DatabaseSync, ctx: DbContext, p: Id) => {

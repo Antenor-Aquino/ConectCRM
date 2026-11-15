@@ -35,6 +35,7 @@ import { Popover } from "../ui/Popover";
 import { EndPicker, WhenPicker } from "./WhenPicker";
 import { TagPicker } from "../ui/TagPicker";
 import { formatBytes, MAX_UPLOAD_BYTES } from "../../lib/files";
+import { CONTACT_MAX_FILES, parseAttachments, type ContactAttachments } from "../../lib/notify/contactMessage";
 import { DocumentsPanel } from "../documents/DocumentsPanel";
 import { UploadModal } from "../documents/UploadModal";
 import { errorText } from "../../lib/errors";
@@ -214,12 +215,16 @@ export function TaskModal({
   // Lembrete para o contato por WhatsApp (0.2.69).
   const [meetingUrl, setMeetingUrl] = useState("");
   const [contactOn, setContactOn] = useState(false);
-  const [contact, setContact] = useState<{ personId: string; minutesBefore: number; template: string; senderId: string | null }>({
+  const [contact, setContact] = useState<{ personId: string; minutesBefore: number; template: string; senderId: string | null; attachments: ContactAttachments }>({
     personId: "",
     minutesBefore: 60,
     template: "",
     senderId: null,
+    attachments: null,
   });
+  // Documentos da atividade (para escolher o que vai junto no lembrete do contato).
+  const [actDocs, setActDocs] = useState<{ id: string; name: string }[]>([]);
+  const [docsRev, setDocsRev] = useState(0);
   const [contactCtx, setContactCtx] = useState<Awaited<ReturnType<typeof call<"contactMessages.context">>> | null>(null);
   const [autoSenders, setAutoSenders] = useState<WhatsAppSender[]>([]);
   // Cadastro do contato aberto daqui (completar celular, e-mail…); ao salvar, os dados entram na atividade.
@@ -410,12 +415,22 @@ export function TaskModal({
       setContactCtx(copying ? { ...c, current: null } : c);
       if (c.current) {
         setContactOn(true);
-        setContact({ personId: c.current.person_id, minutesBefore: c.current.minutes_before, template: c.current.template, senderId: c.current.sender_id });
+        setContact({
+          personId: c.current.person_id,
+          minutesBefore: c.current.minutes_before,
+          template: c.current.template,
+          senderId: c.current.sender_id,
+          attachments: parseAttachments(c.current.attachments),
+        });
       } else {
         setContact((x) => (x.personId && c.recipients.some((r) => r.id === x.personId) ? x : { ...x, personId: c.recipients.find((r) => r.phone)?.id ?? c.recipients[0]?.id ?? "" }));
       }
     });
   }, [loaded, link?.id, personForContact, sourceId, contactRev]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!request.id) return;
+    void call("documents.forEntity", { type: "activity", id: request.id }).then((l) => setActDocs(l.map((d) => ({ id: d.id, name: d.name }))));
+  }, [request.id, docsRev]);
   const contactSent = contactCtx?.current?.status === "sent";
   const recipient = contactCtx?.recipients.find((r) => r.id === contact.personId) ?? null;
   const withPhone = contactCtx?.recipients.filter((r) => r.phone) ?? [];
@@ -668,7 +683,7 @@ export function TaskModal({
                 </div>
               )}
               <div className="ml-8 mt-3">
-                {request.id ? <DocumentsPanel type="activity" id={request.id} compact /> : <PendingFiles pending={pending} onPending={setPending} />}
+                {request.id ? <DocumentsPanel type="activity" id={request.id} compact onChanged={() => setDocsRev((n) => n + 1)} /> : <PendingFiles pending={pending} onPending={setPending} />}
               </div>
               {contactOn && (
                 <div className="ml-8 mt-4 rounded-xl border border-success-200 bg-success-25 p-3 dark:border-success-500/30 dark:bg-success-500/5" data-contact-card>
@@ -762,6 +777,13 @@ export function TaskModal({
                       myName: owner?.name ?? user.name,
                       company: contactCtx?.company ?? null,
                     }}
+                  />
+                  <ContactAttachmentsPicker
+                    value={contact.attachments}
+                    onChange={(attachments) => setContact({ ...contact, attachments })}
+                    docs={request.id ? actDocs : null}
+                    pendingCount={pending.length}
+                    disabled={contactSent}
                   />
                 </div>
               )}
@@ -1091,6 +1113,79 @@ function DeliveryLog({ list }: { list: { channel: Channel; kind: keyof typeof KI
 }
 
 /** Tarefa nova: arquivos escolhidos agora viram documentos logo depois de salvar. */
+/**
+ * Anexos do lembrete do contato: na atividade já salva, marca os documentos
+ * dela; na nova, "enviar junto os arquivos anexados" (todos os da atividade).
+ */
+function ContactAttachmentsPicker({
+  value,
+  onChange,
+  docs,
+  pendingCount,
+  disabled,
+}: {
+  value: ContactAttachments;
+  onChange: (v: ContactAttachments) => void;
+  /** null = atividade nova (ainda sem documentos salvos). */
+  docs: { id: string; name: string }[] | null;
+  pendingCount: number;
+  disabled?: boolean;
+}) {
+  const chosen = value === "all" ? (docs ?? []).map((d) => d.id).slice(0, CONTACT_MAX_FILES) : (value ?? []);
+  const toggle = (id: string) => {
+    const next = chosen.includes(id) ? chosen.filter((x) => x !== id) : [...chosen, id];
+    onChange(next.length ? next : null);
+  };
+  return (
+    <div className="mt-3" data-contact-attachments>
+      <p className="mb-1 flex items-center gap-1.5 text-theme-xs font-semibold text-gray-600 dark:text-gray-300">
+        <Paperclip size={13} /> Enviar junto
+      </p>
+      {docs === null ? (
+        <label className={cn("flex items-center gap-2 text-theme-xs", pendingCount ? "text-gray-700 dark:text-gray-300" : "text-gray-400")}>
+          <input
+            type="checkbox"
+            className="accent-success-600"
+            checked={value === "all"}
+            disabled={disabled || (!pendingCount && value !== "all")}
+            onChange={(e) => onChange(e.target.checked ? "all" : null)}
+            data-contact-attach-all
+          />
+          {pendingCount
+            ? `Os ${pendingCount === 1 ? "arquivo anexado" : `${pendingCount} arquivos anexados`} acima, em Documentos`
+            : "Anexe arquivos em Documentos (acima) para enviar junto com a mensagem."}
+        </label>
+      ) : docs.length === 0 ? (
+        <p className="text-theme-xs text-gray-400">Anexe documentos em Documentos (acima) para enviar junto com a mensagem.</p>
+      ) : (
+        <ul className="space-y-1">
+          {docs.map((d) => {
+            const on = chosen.includes(d.id);
+            return (
+              <li key={d.id}>
+                <label className="flex items-center gap-2 text-theme-xs text-gray-700 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    className="accent-success-600"
+                    checked={on}
+                    disabled={disabled || (!on && chosen.length >= CONTACT_MAX_FILES)}
+                    onChange={() => toggle(d.id)}
+                    data-contact-attach={d.id}
+                  />
+                  <span className="truncate">{d.name}</span>
+                </label>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {(value === "all" || (value?.length ?? 0) > 0) && (
+        <p className="mt-1 text-theme-xs text-gray-500">O 1º arquivo leva a mensagem como legenda; os outros vão logo em seguida (até {CONTACT_MAX_FILES}).</p>
+      )}
+    </div>
+  );
+}
+
 function PendingFiles({ pending, onPending }: { pending: File[]; onPending: (f: File[]) => void }) {
   const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
