@@ -4,12 +4,12 @@
 // só então o CRM grava (organização, contato, tags, cartão, documento no GED
 // e a origem no histórico).
 import { useEffect, useState } from "react";
-import { AlertTriangle, Building2, Check, ChevronDown, ExternalLink, FileText, Plus, Sparkles, Tag, User, X } from "lucide-react";
+import { AlertTriangle, Building2, Check, ChevronDown, CircleDashed, ExternalLink, FileText, ListChecks, Plus, Sparkles, Tag, User, X } from "lucide-react";
 import { TaButton, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import { AI_LABELS, AI_READS_IMAGES, type AiSettings } from "../../lib/ai";
 import { proposeFromDocument, type CrmStructureLite, type DocProposal } from "../../lib/copilot/docExtract";
-import { readDocument } from "../../lib/copilot/docRead";
+import { readDocuments, type ReadFiles } from "../../lib/copilot/docRead";
 import { prepareFile, saveContent } from "../../lib/documentFiles";
 import { errorText } from "../../lib/errors";
 import { formatBytes } from "../../lib/files";
@@ -20,9 +20,11 @@ import { formatCnpj } from "../../lib/cnpj";
 type Match = { id: string; name: string; why: string } | null;
 
 export interface DocAnalysis {
-  file: File;
+  /** Anexos lidos (os que não puderam ser lidos ficam de fora, com aviso). */
+  files: File[];
+  /** Como cada anexo foi lido. */
+  read: ReadFiles["files"];
   provider: string;
-  kind: string;
   truncated: boolean;
   usedImages: number;
   proposal: DocProposal;
@@ -34,12 +36,12 @@ export interface DocAnalysis {
 
 const KIND_BY_TYPE: Record<string, "deal" | "ticket" | "project"> = { comercial: "deal", operacional: "ticket", projeto: "project" };
 
-/** Lê o documento, pede os dados à IA e procura no CRM o que já existe. */
-export async function analyzeDocument(settings: AiSettings, file: File, instruction: string, onStep: (text: string) => void): Promise<DocAnalysis> {
+/** Lê os anexos, pede os dados à IA e procura no CRM o que já existe. */
+export async function analyzeDocument(settings: AiSettings, input: File | File[], instruction: string, onStep: (text: string) => void): Promise<DocAnalysis> {
+  const all = Array.isArray(input) ? input : [input];
   const provider = AI_LABELS[settings.provider];
-  onStep("Lendo o documento…");
-  const read = await readDocument(file, AI_READS_IMAGES.includes(settings.provider));
-  if (!read.text.trim() && !read.images.length) throw new Error("Não encontrei texto neste documento.");
+  onStep(all.length > 1 ? `Lendo os ${all.length} anexos…` : "Lendo o documento…");
+  const read = await readDocuments(all, AI_READS_IMAGES.includes(settings.provider));
   const [structure, types, tags] = await Promise.all([
     call("copilot.structure") as Promise<CrmStructureLite>,
     call("documentTypes.list", {}),
@@ -50,7 +52,7 @@ export async function analyzeDocument(settings: AiSettings, file: File, instruct
   const proposal = await proposeFromDocument(
     settings,
     read,
-    file.name,
+    all.map((f) => f.name),
     instruction,
     structure,
     tags.map((t) => t.name),
@@ -77,12 +79,20 @@ export async function analyzeDocument(settings: AiSettings, file: File, instruct
     const sim = (await call("similar.persons", { name: c.nome }))[0];
     if (sim && sim.score >= 90) personMatch = { id: sim.id, name: sim.name, why: `nome parecido (${sim.score}%)` };
   }
-  return { file, provider, kind: read.kind, truncated: read.truncated, usedImages: read.images.length, proposal, structure, gedTypes, orgMatch, personMatch };
+  const files = all.filter((f) => !read.files.find((r) => r.name === f.name && r.size === f.size)?.error);
+  return { files, read: read.files, provider, truncated: read.truncated, usedImages: read.images.length, proposal, structure, gedTypes, orgMatch, personMatch };
 }
 
 /** Como a análise volta para o histórico da conversa (a IA sabe o que aconteceu). */
 export function analysisToHistory(a: DocAnalysis, created: boolean): string {
-  return `Li o documento "${a.file.name}" (${a.proposal.tipoDocumento}) e preparei o cartão "${a.proposal.cartao.titulo}" para o usuário confirmar${created ? "; ele confirmou e o cartão foi criado" : ""}.`;
+  const names = a.files.map((f) => `"${f.name}"`).join(", ");
+  const found = a.proposal.detectados.slice(0, 12).map((d) => `${d.campo}: ${d.valor}`).join("; ");
+  const missing = a.proposal.faltando.join("; ");
+  return (
+    `Li ${a.files.length > 1 ? `os anexos ${names}` : `o documento ${names}`} (${a.proposal.tipoDocumento}) e preparei o cartão "${a.proposal.cartao.titulo}" para o usuário confirmar${created ? "; ele confirmou e o cartão foi criado" : ""}.` +
+    (found ? ` Detectado: ${found}.` : "") +
+    (missing ? ` Faltando: ${missing}.` : "")
+  );
 }
 
 const input =
@@ -153,8 +163,15 @@ export function DocCardProposalView({
   const [description, setDescription] = useState(p.resumo);
   const [tags, setTags] = useState<string[]>(p.tags);
   const [newTag, setNewTag] = useState("");
-  const [docName, setDocName] = useState(p.documento.nome);
-  const [docType, setDocType] = useState(gedTypes.find((t) => t.name === p.documento.tipoGed)?.id ?? "");
+  // Um documento no GED por anexo (nome e tipo editáveis).
+  const [docs, setDocs] = useState(() =>
+    analysis.files.map((f) => {
+      const d = p.documentos.find((x) => x.arquivo === f.name);
+      return { name: d?.nome ?? f.name.replace(/\.[^.]+$/, ""), typeId: gedTypes.find((t) => t.name === (d?.tipoGed ?? p.documento.tipoGed))?.id ?? "" };
+    }),
+  );
+  const setDoc = (i: number, patch: Partial<{ name: string; typeId: string }>) => setDocs((l) => l.map((d, j) => (j === i ? { ...d, ...patch } : d)));
+  const [showFound, setShowFound] = useState(true);
   // Onde criar: o usuário escolhe (a sugestão da IA é só um atalho).
   const [pipelineId, setPipelineId] = useState("");
   const [stageId, setStageId] = useState("");
@@ -188,8 +205,12 @@ export function DocCardProposalView({
     setError(null);
     setState("saving");
     try {
-      const prepared = await prepareFile(analysis.file);
-      const file = await saveContent(prepared, docName.trim() || analysis.file.name);
+      const documents = [];
+      for (const [i, f] of analysis.files.entries()) {
+        const name = docs[i]?.name.trim() || f.name;
+        const file = await saveContent(await prepareFile(f), name);
+        documents.push({ name, typeId: docs[i]?.typeId || null, description: `Enviado ao Copiloto para criar o cartão "${title.trim()}".`, file });
+      }
       const r = await call("copilot.createFromDocument", {
         pipelineId,
         stageId,
@@ -221,8 +242,8 @@ export function DocCardProposalView({
               ? { create: { name: person.nome.trim(), email: person.email.trim() || null, phone: person.telefone.trim() || null, notes: person.cargo.trim() ? `Cargo: ${person.cargo.trim()}` : null } }
               : null,
         tags,
-        document: { name: docName.trim() || analysis.file.name, typeId: docType || null, description: `Enviado ao Copiloto para criar o cartão "${title.trim()}".`, file },
-        source: { fileName: analysis.file.name, docType: p.tipoDocumento, provider: analysis.provider },
+        documents,
+        source: { fileName: analysis.files.map((f) => f.name).join('", "'), docType: p.tipoDocumento, provider: analysis.provider },
       });
       setCreatedId(r.cardId);
       setState("done");
@@ -247,7 +268,10 @@ export function DocCardProposalView({
           {orgMode !== "none" && <li>• Organização: {orgMode === "existing" ? `${analysis.orgMatch?.name} (existente)` : `${org.nome} (nova)`}</li>}
           {personMode !== "none" && <li>• Contato: {personMode === "existing" ? `${analysis.personMatch?.name} (existente)` : `${person.nome} (novo)`}</li>}
           {tags.length > 0 && <li>• Tags: {tags.join(", ")}</li>}
-          <li>• Documento salvo no GED: {docName}</li>
+          <li>
+            • {docs.length > 1 ? `${docs.length} documentos salvos no GED: ` : "Documento salvo no GED: "}
+            {docs.map((d) => d.name).join(", ")}
+          </li>
           <li>• A origem ficou registrada no histórico do cartão.</li>
         </ul>
         <TaButton size="sm" className="mt-3" startIcon={<ExternalLink size={14} />} onClick={() => onOpenCard(createdId)}>
@@ -265,15 +289,63 @@ export function DocCardProposalView({
         <Sparkles size={16} className="mt-0.5 shrink-0 text-brand-500" />
         <div className="min-w-0">
           <p className="text-theme-sm font-semibold text-gray-800 dark:text-white/90">
-            Identifiquei um(a) {p.tipoDocumento.toLowerCase()} em "{analysis.file.name}"
+            {analysis.files.length > 1
+              ? `Analisei ${analysis.files.length} anexos: ${p.tipoDocumento.toLowerCase()}`
+              : `Identifiquei um(a) ${p.tipoDocumento.toLowerCase()} em "${analysis.files[0]?.name}"`}
           </p>
+          <ul className="text-theme-xs text-gray-500" data-doc-files>
+            {analysis.read.map((r) => (
+              <li key={r.name} className={cn(r.error && "text-error-600")}>
+                {r.name} · {r.error ? `não lido: ${r.error}` : `${r.kind} · ${formatBytes(r.size)}${r.images ? ` · ${r.images} imagem(ns)` : ""}${r.truncated ? " · longo: li só o começo" : ""}`}
+              </li>
+            ))}
+          </ul>
           <p className="text-theme-xs text-gray-500">
-            {analysis.kind} · {formatBytes(analysis.file.size)}
-            {analysis.usedImages ? ` · ${analysis.usedImages} imagem(ns) lida(s) pela IA` : ""}
-            {analysis.truncated ? " · documento longo: li só o começo" : ""}. Confira e corrija antes de criar.
+            {analysis.usedImages ? `${analysis.usedImages} imagem(ns) lida(s) pela IA. ` : ""}Confira e corrija antes de criar.
           </p>
         </div>
       </div>
+
+      {(p.detectados.length > 0 || p.faltando.length > 0) && (
+        <section className="mb-3 rounded-xl border border-gray-200 p-3 dark:border-gray-800" data-doc-summary>
+          <button type="button" className="flex w-full items-center gap-1.5 text-left text-theme-sm font-semibold text-gray-800 dark:text-white/90" onClick={() => setShowFound(!showFound)}>
+            <ListChecks size={15} className="text-success-600" /> O que encontrei nos anexos
+            <span className="ml-1 text-theme-xs font-normal text-gray-500">
+              ({p.detectados.length} dado(s){p.faltando.length ? ` · ${p.faltando.length} faltando` : ""})
+            </span>
+            <ChevronDown size={14} className={cn("ml-auto transition", showFound && "rotate-180")} />
+          </button>
+          {showFound && (
+            <>
+              {p.detectados.length > 0 && (
+                <ul className="mt-2 space-y-1 text-theme-xs" data-doc-found>
+                  {p.detectados.map((d, i) => (
+                    <li key={i} className="flex gap-1.5">
+                      <Check size={12} className="mt-0.5 shrink-0 text-success-600" />
+                      <span>
+                        <b className="text-gray-700 dark:text-gray-300">{d.campo}:</b> {d.valor}
+                        {analysis.files.length > 1 && d.arquivo && <span className="text-gray-400"> — {d.arquivo}</span>}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {p.faltando.length > 0 && (
+                <div className="mt-2 rounded-lg bg-warning-50 px-3 py-2 dark:bg-warning-500/10" data-doc-missing>
+                  <p className="mb-1 text-theme-xs font-semibold text-warning-800 dark:text-warning-400">Falta para a oportunidade (não está nos anexos):</p>
+                  <ul className="space-y-0.5 text-theme-xs text-warning-800 dark:text-warning-400">
+                    {p.faltando.map((f) => (
+                      <li key={f} className="flex gap-1.5">
+                        <CircleDashed size={12} className="mt-0.5 shrink-0" /> {f}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          )}
+        </section>
+      )}
 
       {p.avisos.length > 0 && (
         <ul className="mb-3 space-y-0.5 rounded-lg bg-warning-50 px-3 py-2 text-theme-xs text-warning-800 dark:bg-warning-500/10 dark:text-warning-400">
@@ -463,20 +535,29 @@ export function DocCardProposalView({
 
       <section className="mb-3">
         <p className="mb-2 flex items-center gap-1.5 text-theme-xs font-semibold uppercase tracking-wide text-gray-400">
-          <FileText size={13} /> Documento no GED
+          <FileText size={13} /> {docs.length > 1 ? "Documentos no GED" : "Documento no GED"}
         </p>
-        <div className="grid grid-cols-[1fr_auto] gap-2">
-          <input className={input} aria-label="Nome do documento" value={docName} onChange={(e) => setDocName(e.target.value)} disabled={busy} />
-          <select className={cn(input, "w-40")} aria-label="Tipo do documento" value={docType} onChange={(e) => setDocType(e.target.value)} disabled={busy}>
-            <option value="">Outros</option>
-            {gedTypes.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
+        <div className="space-y-2" data-doc-ged>
+          {docs.map((d, i) => (
+            <div key={i}>
+              {docs.length > 1 && <p className="mb-0.5 truncate text-theme-xs text-gray-400">{analysis.files[i]?.name}</p>}
+              <div className="grid grid-cols-[1fr_auto] gap-2">
+                <input className={input} aria-label="Nome do documento" value={d.name} onChange={(e) => setDoc(i, { name: e.target.value })} disabled={busy} />
+                <select className={cn(input, "w-40")} aria-label="Tipo do documento" value={d.typeId} onChange={(e) => setDoc(i, { typeId: e.target.value })} disabled={busy}>
+                  <option value="">Outros</option>
+                  {gedTypes.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          ))}
         </div>
-        <p className="mt-1 text-theme-xs text-gray-500">O arquivo original fica no GED, vinculado ao cartão, à organização e ao contato.</p>
+        <p className="mt-1 text-theme-xs text-gray-500">
+          {docs.length > 1 ? "Os arquivos originais ficam" : "O arquivo original fica"} no GED, vinculado(s) ao cartão, à organização e ao contato.
+        </p>
       </section>
 
       {p.evidencias.length > 0 && (
@@ -488,7 +569,7 @@ export function DocCardProposalView({
             <ul className="mt-1.5 space-y-1 rounded-lg bg-gray-50 px-3 py-2 text-theme-xs text-gray-600 dark:bg-white/5 dark:text-gray-400" data-doc-evidence>
               {p.evidencias.map((e, i) => (
                 <li key={i}>
-                  <b className="text-gray-700 dark:text-gray-300">{e.campo}</b>: “{e.trecho}”
+                  <b className="text-gray-700 dark:text-gray-300">{e.campo}</b>: “{e.trecho}”{analysis.files.length > 1 && e.arquivo && <span className="text-gray-400"> — {e.arquivo}</span>}
                 </li>
               ))}
             </ul>

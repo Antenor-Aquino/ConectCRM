@@ -127,3 +127,53 @@ export async function readDocument(file: File, canSeeImages: boolean): Promise<R
   }
   throw new Error("Tipo de arquivo não suportado. Envie PDF, Word (.docx), planilha, imagem ou texto.");
 }
+
+/** Mais anexos de uma vez: limite de arquivos e de imagens enviadas à IA. */
+export const MAX_FILES = 8;
+const MAX_TOTAL_IMAGES = 8;
+
+export interface ReadFiles {
+  /** Texto de todos os anexos, cada um entre marcadores com o nome do arquivo. */
+  text: string;
+  images: string[];
+  /** O que foi lido de cada arquivo (ou por que não foi). */
+  files: { name: string; size: number; kind: string; truncated: boolean; images: number; error?: string }[];
+  truncated: boolean;
+}
+
+/**
+ * Lê vários anexos para a mesma análise. O texto é dividido entre os arquivos
+ * (cada um com a sua parte do limite); um arquivo ilegível não derruba os
+ * outros — fica registrado com o motivo. Só falha se nenhum puder ser lido.
+ */
+export async function readDocuments(files: File[], canSeeImages: boolean, read: typeof readDocument = readDocument): Promise<ReadFiles> {
+  if (!files.length) throw new Error("Anexe pelo menos um documento.");
+  if (files.length > MAX_FILES) throw new Error(`Envie até ${MAX_FILES} anexos por vez.`);
+  const budget = Math.floor(MAX_TEXT / files.length);
+  const parts: string[] = [];
+  const images: string[] = [];
+  const out: ReadFiles["files"] = [];
+  let truncated = false;
+  for (const [i, f] of files.entries()) {
+    try {
+      const r = await read(f, canSeeImages);
+      const cutText = r.text.length > budget;
+      const text = cutText ? r.text.slice(0, budget) : r.text;
+      const room = Math.max(0, MAX_TOTAL_IMAGES - images.length);
+      const imgs = r.images.slice(0, room);
+      images.push(...imgs);
+      truncated ||= r.truncated || cutText;
+      parts.push(
+        `<<<ARQUIVO ${i + 1}: ${f.name} (${r.kind}${imgs.length ? `, ${imgs.length} imagem(ns) anexa(s) a partir da nº ${images.length - imgs.length + 1}` : ""})`,
+        text.trim() || "(sem texto: use as imagens)",
+        `ARQUIVO ${i + 1}>>>`,
+      );
+      out.push({ name: f.name, size: f.size, kind: r.kind, truncated: r.truncated || cutText, images: imgs.length });
+    } catch (e) {
+      out.push({ name: f.name, size: f.size, kind: "—", truncated: false, images: 0, error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  if (out.every((f) => f.error)) throw new Error(out.length === 1 ? out[0]!.error! : `Não consegui ler nenhum anexo. ${out.map((f) => `${f.name}: ${f.error}`).join(" ")}`);
+  if (!parts.some((p) => p.trim()) && !images.length) throw new Error("Não encontrei texto nos anexos.");
+  return { text: parts.join("\n"), images, files: out, truncated };
+}

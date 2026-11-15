@@ -110,3 +110,91 @@ describe("Copiloto: validação do que a IA devolveu", () => {
     expect(normalizeProposal({ destino: { funilId: "xx", etapaId: "e1" } }, structure, ged, "a.pdf").destino).toBeNull();
   });
 });
+
+describe("Copiloto: vários anexos", () => {
+  const structure = { funis: [{ id: "f1", nome: "Licitações", tipo: "comercial", etapas: [{ id: "e1", nome: "Pesquisa" }] }] };
+  const ged = ["Proposta", "Foto/imagem", "Outros"];
+
+  it("detectados com o arquivo de origem, o que falta e um documento por anexo (na ordem)", () => {
+    const p = normalizeProposal(
+      {
+        tipoDocumento: "Solicitação de orçamento",
+        resumo: "Aplicativo para 62 turmas.",
+        organizacao: { nome: "IED", razaoSocial: "", cnpj: "", email: "", telefone: "", endereco: "", cidade: "", uf: "" },
+        contato: null,
+        cartao: { titulo: "Uso de aplicativo escolar — IED", valor: null, prazo: "" },
+        tags: [],
+        destino: null,
+        documento: { nome: "Pedido", tipoGed: "Proposta" },
+        documentos: [
+          { arquivo: "foto quadro.jpg", nome: "Foto do quadro de turmas", tipoGed: "foto/imagem" },
+          { arquivo: "pedido.pdf", nome: "Pedido de orçamento", tipoGed: "Proposta" },
+        ],
+        detectados: [
+          { campo: "Turmas", valor: "62 (30 matutinas, 26 vespertinas, 6 noturnas)", arquivo: "foto quadro.jpg" },
+          { campo: "Professores", valor: "140", arquivo: "PEDIDO.PDF" },
+          { campo: "", valor: "x", arquivo: "pedido.pdf" },
+        ],
+        faltando: ["Valor estimado", "CNPJ do cliente", "valor estimado"],
+        evidencias: [{ campo: "cartao.titulo", trecho: "aplicativo", arquivo: "pedido.pdf" }],
+        avisos: [],
+      },
+      structure,
+      ged,
+      ["pedido.pdf", "foto quadro.jpg", "planilha.xlsx"],
+    );
+    expect(p.detectados).toEqual([
+      { campo: "Turmas", valor: "62 (30 matutinas, 26 vespertinas, 6 noturnas)", arquivo: "foto quadro.jpg" },
+      { campo: "Professores", valor: "140", arquivo: "pedido.pdf" },
+    ]);
+    expect(p.faltando).toEqual(["Valor estimado", "CNPJ do cliente"]);
+    expect(p.documentos).toEqual([
+      { arquivo: "pedido.pdf", nome: "Pedido de orçamento", tipoGed: "Proposta" },
+      { arquivo: "foto quadro.jpg", nome: "Foto do quadro de turmas", tipoGed: "Foto/imagem" },
+      { arquivo: "planilha.xlsx", nome: "planilha", tipoGed: "Proposta" },
+    ]);
+    expect(p.evidencias[0]).toMatchObject({ arquivo: "pedido.pdf" });
+  });
+
+  it("grava todos os anexos no GED ligados ao cartão; o mesmo arquivo repetido entra uma vez; histórico cita os documentos", async () => {
+    const { db, actx, pl, stages } = await setup();
+    const r = createCardFromDocument(db, actx, null, {
+      pipelineId: pl,
+      stageId: stages[0]!,
+      title: "Uso de aplicativo escolar — IED",
+      organization: { create: { name: "IED" } },
+      person: null,
+      tags: [],
+      documents: [
+        { name: "Pedido de orçamento", typeId: null, file: file("b") },
+        { name: "Foto do quadro", typeId: null, file: file("c") },
+        { name: "Cópia do pedido", typeId: null, file: file("b") },
+      ],
+      source: { fileName: 'pedido.pdf", "foto.jpg', docType: "Solicitação de orçamento", provider: "OpenAI" },
+    });
+    expect(r.documentIds).toHaveLength(2);
+    expect(r.documentId).toBe(r.documentIds[0]);
+    const onCard = docs.documentsFor(db, "deal", r.cardId, null).map((d) => d.name).sort();
+    expect(onCard).toEqual(["Foto do quadro", "Pedido de orçamento"]);
+    expect(docs.documentsFor(db, "organization", r.organizationId!, null)).toHaveLength(2);
+    const lines = cardHistory(db, r.cardId).map((h) => JSON.stringify(h)).join(" ");
+    expect(lines).toContain("a partir dos documentos");
+    expect(lines).toContain("documentos salvos no GED");
+  });
+
+  it("leitura de vários arquivos: um ilegível vira aviso, os outros seguem; nenhum legível = erro", async () => {
+    const { readDocuments } = await import("../src/lib/copilot/docRead");
+    const fake = async (f: File) => {
+      if (f.name.endsWith(".odt")) throw new Error("formato não lido");
+      return { text: `conteúdo de ${f.name}`, images: f.name.endsWith(".jpg") ? ["img1"] : [], kind: f.name.endsWith(".jpg") ? "Imagem" : "Texto", truncated: false };
+    };
+    const files = [new File(["a"], "pedido.txt"), new File(["b"], "quadro.jpg"), new File(["c"], "velho.odt")];
+    const r = await readDocuments(files, true, fake);
+    expect(r.files.map((f) => [f.name, f.error ?? f.kind])).toEqual([["pedido.txt", "Texto"], ["quadro.jpg", "Imagem"], ["velho.odt", "formato não lido"]]);
+    expect(r.images).toEqual(["img1"]);
+    expect(r.text).toContain("<<<ARQUIVO 1: pedido.txt");
+    expect(r.text).toContain("<<<ARQUIVO 2: quadro.jpg (Imagem, 1 imagem(ns) anexa(s) a partir da nº 1)");
+    await expect(readDocuments([new File(["x"], "a.odt")], true, fake)).rejects.toThrow(/formato não lido/);
+    await expect(readDocuments(Array.from({ length: 9 }, (_, i) => new File(["x"], `${i}.txt`)), true, fake)).rejects.toThrow(/até 8/);
+  });
+});

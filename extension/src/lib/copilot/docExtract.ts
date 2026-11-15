@@ -8,7 +8,7 @@
 import type { AiSettings } from "../ai";
 import { cnpjDigits, isValidCnpj, uniqueNames } from "../validate";
 import { forcedToolCall } from "./agent";
-import type { ReadDocument } from "./docRead";
+import type { ReadDocument, ReadFiles } from "./docRead";
 import type { Schema, ToolDef } from "./tools";
 
 export interface CrmStructureLite {
@@ -24,8 +24,15 @@ export interface DocProposal {
   cartao: { titulo: string; valor: number | null; prazo: string };
   tags: string[];
   destino: { funilId: string; etapaId: string; motivo: string } | null;
+  /** O primeiro documento (compatibilidade); ver `documentos`. */
   documento: { nome: string; tipoGed: string };
-  evidencias: { campo: string; trecho: string }[];
+  /** Nome e tipo no GED de cada anexo, na ordem dos arquivos. */
+  documentos: { arquivo: string; nome: string; tipoGed: string }[];
+  evidencias: { campo: string; trecho: string; arquivo?: string }[];
+  /** Tudo o que foi encontrado nos anexos (em português), com o arquivo de origem. */
+  detectados: { campo: string; valor: string; arquivo: string }[];
+  /** O que falta para a oportunidade ficar completa (não aparece em nenhum anexo). */
+  faltando: string[];
   avisos: string[];
 }
 
@@ -82,20 +89,58 @@ export function extractTool(gedTypes: string[]): ToolDef {
         },
         documento: {
           type: "object",
+          description: "Nome e tipo no GED do PRIMEIRO anexo.",
           properties: {
             nome: s("Nome descritivo para guardar o arquivo no GED.", false),
             tipoGed: { type: "string", enum: gedTypes, description: "Tipo do documento no GED." },
           },
           required: ["nome", "tipoGed"],
         },
+        documentos: {
+          type: "array",
+          description: "Um item por anexo, na mesma ordem dos arquivos: nome descritivo e tipo no GED.",
+          items: {
+            type: "object",
+            properties: {
+              arquivo: s("Nome do arquivo exatamente como informado (ARQUIVO n: <nome>).", false),
+              nome: s("Nome descritivo para guardar no GED.", false),
+              tipoGed: { type: "string", enum: gedTypes, description: "Tipo no GED." },
+            },
+            required: ["arquivo", "nome", "tipoGed"],
+          },
+        },
+        detectados: {
+          type: "array",
+          description:
+            "TODOS os dados úteis para a oportunidade encontrados nos anexos, em português (traduza o que estiver em outro idioma): cliente, CNPJ, contato, quantidades, itens, prazos, valores, condições, local… Um item por dado.",
+          items: {
+            type: "object",
+            properties: {
+              campo: s("Nome do dado em português (ex.: Cliente, CNPJ, Quantidade de turmas, Prazo de entrega).", false),
+              valor: s("Valor encontrado (traduzido para o português quando necessário).", false),
+              arquivo: s("Nome do arquivo de onde saiu.", false),
+            },
+            required: ["campo", "valor", "arquivo"],
+          },
+        },
+        faltando: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Informações importantes para criar e qualificar a oportunidade que NÃO aparecem em nenhum anexo (ex.: 'Valor estimado', 'CNPJ do cliente', 'Telefone do contato', 'Prazo de decisão', 'Forma de pagamento', 'Quem decide a compra'). Frases curtas.",
+        },
         evidencias: {
           type: "array",
-          description: "Para cada dado preenchido, o trecho literal (até 80 caracteres) de onde ele saiu.",
-          items: { type: "object", properties: { campo: s("Campo (ex.: organizacao.nome).", false), trecho: s("Trecho do documento.", false) }, required: ["campo", "trecho"] },
+          description: "Para cada dado preenchido, o trecho literal (até 80 caracteres) de onde ele saiu e o arquivo.",
+          items: {
+            type: "object",
+            properties: { campo: s("Campo (ex.: organizacao.nome).", false), trecho: s("Trecho do documento.", false), arquivo: s("Nome do arquivo.") },
+            required: ["campo", "trecho"],
+          },
         },
-        avisos: { type: "array", items: { type: "string" }, description: "O que faltou ou está ambíguo (ex.: 'O documento não informa CNPJ')." },
+        avisos: { type: "array", items: { type: "string" }, description: "O que está ambíguo ou em conflito entre os anexos (ex.: 'Os anexos trazem dois prazos diferentes')." },
       },
-      required: ["tipoDocumento", "resumo", "organizacao", "contato", "cartao", "tags", "destino", "documento", "evidencias", "avisos"],
+      required: ["tipoDocumento", "resumo", "organizacao", "contato", "cartao", "tags", "destino", "documento", "documentos", "detectados", "faltando", "evidencias", "avisos"],
     },
   };
 }
@@ -113,6 +158,10 @@ export function extractSystemPrompt(structure: CrmStructureLite, existingTags: s
     "TÍTULO: curto, '<o que está sendo pedido> — <cliente abreviado>' (ex.: 'Licença de sistema de grade horária — Caixa Escolar Prof. Edileia').",
     "RESUMO: o que o cliente quer, com quantidades e prazos (ex.: '12 turmas matutino, 8 vespertino, 9 noturno; licença de 12 meses').",
     "DESTINO: escolha funil e etapa da lista abaixo só se a instrução do usuário indicar ou se o tipo de documento combinar claramente; senão null. Use só ids da lista.",
+    "VÁRIOS ANEXOS: todos falam da MESMA oportunidade. Combine as informações de todos (um traz o cliente, outro as quantidades, uma foto o cabeçalho…). " +
+      "Se dois anexos discordarem, use o mais completo/recente e registre o conflito em avisos.",
+    "IDIOMA: se um anexo estiver em outro idioma, traduza os dados para o português no resumo, no título e em detectados.",
+    "DETECTADOS e FALTANDO: liste tudo o que foi encontrado (com o arquivo de origem) e o que falta para a oportunidade (valor, prazo, CNPJ, contato, decisor, forma de pagamento…).",
     "INSTRUÇÃO DO USUÁRIO (se houver) tem prioridade sobre as suas escolhas.",
     "",
     "FUNIS E ETAPAS:",
@@ -126,7 +175,9 @@ const str = (v: unknown) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim
 const EMAIL = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
 
 /** Valida e completa a resposta da IA (nunca confia nos ids, CNPJ, e-mail…). */
-export function normalizeProposal(raw: Record<string, unknown>, structure: CrmStructureLite, gedTypes: string[], fileName: string): DocProposal {
+export function normalizeProposal(raw: Record<string, unknown>, structure: CrmStructureLite, gedTypes: string[], fileNameOrNames: string | string[]): DocProposal {
+  const fileNames = Array.isArray(fileNameOrNames) ? fileNameOrNames : [fileNameOrNames];
+  const fileName = fileNames[0] ?? "documento";
   const avisos = (Array.isArray(raw.avisos) ? raw.avisos : []).map(str).filter(Boolean).slice(0, 6);
   const o = (raw.organizacao ?? null) as Record<string, unknown> | null;
   const c = (raw.contato ?? null) as Record<string, unknown> | null;
@@ -174,11 +225,34 @@ export function normalizeProposal(raw: Record<string, unknown>, structure: CrmSt
   }
 
   const tags = uniqueNames((Array.isArray(raw.tags) ? raw.tags : []).map(str).filter((t) => t.length <= 40)).slice(0, 5);
-  const tipoGed = gedTypes.find((t) => t.toLowerCase() === str(doc.tipoGed).toLowerCase()) ?? gedTypes.find((t) => t === "Outros") ?? gedTypes[0] ?? "";
+  const gedType = (v: unknown) => gedTypes.find((t) => t.toLowerCase() === str(v).toLowerCase()) ?? gedTypes.find((t) => t === "Outros") ?? gedTypes[0] ?? "";
+  const tipoGed = gedType(doc.tipoGed);
+  // Arquivo citado pela IA → um dos nomes enviados (ou vazio).
+  const fileOf = (v: unknown) => {
+    const n = str(v).toLowerCase();
+    return fileNames.find((f) => f.toLowerCase() === n) ?? fileNames.find((f) => n && (f.toLowerCase().includes(n) || n.includes(f.toLowerCase()))) ?? (fileNames.length === 1 ? fileName : "");
+  };
   const evidencias = (Array.isArray(raw.evidencias) ? raw.evidencias : [])
-    .map((e) => ({ campo: str((e as Record<string, unknown>)?.campo), trecho: str((e as Record<string, unknown>)?.trecho).slice(0, 120) }))
+    .map((e) => {
+      const r = e as Record<string, unknown>;
+      return { campo: str(r?.campo), trecho: str(r?.trecho).slice(0, 120), arquivo: fileOf(r?.arquivo) || undefined };
+    })
     .filter((e) => e.campo && e.trecho)
-    .slice(0, 15);
+    .slice(0, 20);
+  const detectados = (Array.isArray(raw.detectados) ? raw.detectados : [])
+    .map((e) => {
+      const r = e as Record<string, unknown>;
+      return { campo: str(r?.campo).slice(0, 60), valor: str(r?.valor).slice(0, 300), arquivo: fileOf(r?.arquivo) };
+    })
+    .filter((e) => e.campo && e.valor)
+    .slice(0, 40);
+  const faltando = uniqueNames((Array.isArray(raw.faltando) ? raw.faltando : []).map(str).filter(Boolean)).slice(0, 15);
+  // Um documento por arquivo enviado, na ordem; o que a IA não nomeou fica com o nome do arquivo.
+  const rawDocs = (Array.isArray(raw.documentos) ? raw.documentos : []) as Record<string, unknown>[];
+  const documentos = fileNames.map((f, i) => {
+    const byName = rawDocs.find((d) => fileOf(d?.arquivo) === f) ?? (rawDocs.length === fileNames.length ? rawDocs[i] : undefined) ?? (i === 0 ? doc : undefined);
+    return { arquivo: f, nome: (str(byName?.nome) || f.replace(/\.[^.]+$/, "")).slice(0, 200), tipoGed: byName ? gedType(byName.tipoGed) : tipoGed };
+  });
 
   return {
     tipoDocumento: str(raw.tipoDocumento) || "Documento",
@@ -188,32 +262,43 @@ export function normalizeProposal(raw: Record<string, unknown>, structure: CrmSt
     cartao: { titulo: titulo.slice(0, 200), valor, prazo },
     tags,
     destino,
-    documento: { nome: (str(doc.nome) || fileName.replace(/\.[^.]+$/, "")).slice(0, 200), tipoGed },
+    documento: { nome: documentos[0]?.nome ?? (str(doc.nome) || fileName.replace(/\.[^.]+$/, "")).slice(0, 200), tipoGed: documentos[0]?.tipoGed ?? tipoGed },
+    documentos,
     evidencias,
+    detectados,
+    faltando,
     avisos,
   };
 }
 
-/** Lê o documento com a IA e devolve a proposta validada. */
+/** Lê os anexos com a IA e devolve a proposta validada. */
 export async function proposeFromDocument(
   settings: AiSettings,
-  read: ReadDocument,
-  fileName: string,
+  read: ReadDocument | ReadFiles,
+  fileNameOrNames: string | string[],
   instruction: string,
   structure: CrmStructureLite,
   existingTags: string[],
   gedTypes: string[],
 ): Promise<DocProposal> {
+  const names = Array.isArray(fileNameOrNames) ? fileNameOrNames : [fileNameOrNames];
+  const multi = "files" in read;
+  const header = multi
+    ? `ANEXOS (${read.files.filter((f) => !f.error).length}): ${read.files.map((f, i) => `${i + 1}. ${f.name} (${f.error ? `não lido: ${f.error}` : f.kind})`).join("; ")}${read.truncated ? " — textos longos foram cortados" : ""}`
+    : `ARQUIVO: ${names[0]} (${read.kind}${read.truncated ? ", texto cortado por ser longo" : ""})`;
   const text = [
-    instruction.trim() ? `INSTRUÇÃO DO USUÁRIO: ${instruction.trim()}` : "INSTRUÇÃO DO USUÁRIO: (nenhuma — criar um cartão a partir do documento)",
-    `ARQUIVO: ${fileName} (${read.kind}${read.truncated ? ", texto cortado por ser longo" : ""})`,
-    read.images.length ? `IMAGENS ANEXAS: ${read.images.length} (cabeçalho/páginas do documento).` : "",
-    "<<<DOCUMENTO",
+    instruction.trim() ? `INSTRUÇÃO DO USUÁRIO: ${instruction.trim()}` : "INSTRUÇÃO DO USUÁRIO: (nenhuma — criar um cartão a partir dos anexos)",
+    header,
+    read.images.length ? `IMAGENS ANEXAS: ${read.images.length} (fotos, cabeçalhos ou páginas dos anexos, na ordem dos arquivos).` : "",
+    "<<<DOCUMENTOS",
     read.text || "(sem texto: use as imagens)",
-    "DOCUMENTO>>>",
+    "DOCUMENTOS>>>",
   ]
     .filter(Boolean)
     .join("\n");
   const raw = await forcedToolCall(settings, extractSystemPrompt(structure, existingTags), text, read.images, extractTool(gedTypes));
-  return normalizeProposal(raw, structure, gedTypes, fileName);
+  const usable = multi ? read.files.filter((f) => !f.error).map((f) => f.name) : names;
+  const p = normalizeProposal(raw, structure, gedTypes, usable);
+  if (multi) for (const f of read.files.filter((x) => x.error)) p.avisos.push(`"${f.name}" não foi lido: ${f.error}`);
+  return p;
 }

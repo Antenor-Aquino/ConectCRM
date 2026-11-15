@@ -56,3 +56,24 @@ o cartão. **Nada é gravado sem a confirmação.**
   Copiloto a partir do documento X em dd/mm/aaaa".
 - O documento fica no GED com a descrição "Enviado ao Copiloto para criar o
   cartão …".
+
+## Vários anexos de uma vez (0.2.123)
+- O clipe do Copiloto aceita vários arquivos (até 8, 25 MB cada): seleção
+  múltipla, arrastar ou colar; a lista aparece antes de enviar, com ✕ por
+  arquivo. PDF, Word, planilha, texto e imagens podem vir misturados.
+- `readDocuments` lê todos: o texto é dividido entre os arquivos (cada um
+  entre marcadores `<<<ARQUIVO n: nome … ARQUIVO n>>>`), até 8 imagens no
+  total. Um arquivo ilegível não derruba os outros: vira aviso.
+- A IA (uma chamada, ferramenta forçada) recebe a regra de que todos os
+  anexos são da mesma oportunidade (combinar; conflito vira aviso) e de
+  traduzir para o português o que estiver em outro idioma. Devolve também:
+  - `detectados`: cada dado encontrado (campo, valor, arquivo de origem);
+  - `faltando`: o que falta para a oportunidade (valor, CNPJ, contato,
+    prazo de decisão…);
+  - `documentos`: nome e tipo no GED de cada anexo.
+- A confirmação mostra no topo "O que encontrei nos anexos" (detectados) e
+  "Falta para a oportunidade"; um campo de nome/tipo no GED por anexo.
+- `copilot.createFromDocument` aceita `documents[]` (o formato antigo com
+  `document` continua): todos vão para o GED ligados ao cartão, à organização
+  e ao contato; arquivo repetido entra uma vez; o histórico cita "dos
+  documentos".
