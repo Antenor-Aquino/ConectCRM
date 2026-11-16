@@ -8,6 +8,9 @@ import { getCobranca, type InterCobranca } from "./inter";
 
 type Rpc = <T>(method: string, params: Record<string, unknown>) => Promise<T>;
 
+/** Baixa pendente porque a receita desta cobrança nunca foi salva na Gestão Financeira. */
+export const GF_MISSING_RECEITA = "A receita desta cobrança não está na Gestão Financeira: lance a receita (a baixa vem sozinha em seguida) ou dispense, se ela não vai ser lançada.";
+
 export interface InterSyncResult {
   cobranca: InterCobranca;
   change: InterSituacaoChange;
@@ -63,7 +66,7 @@ export async function syncGfPending(rpc: Rpc, opts: { cardId?: string; chargeId?
           done = x.total > 0;
           message = done
             ? "Receita marcada como Recebida na Gestão Financeira."
-            : "A receita desta cobrança ainda não está na Gestão Financeira: quando ela for salva lá, a baixa é feita sozinha.";
+            : GF_MISSING_RECEITA;
         } else {
           const x = await removeLaunch(s.gfId, c.card_id, c.order_nsu);
           done = true;

@@ -61,7 +61,7 @@ describe("boleto pago → baixa na Gestão Financeira com novas tentativas", () 
     gf.settle.mockResolvedValueOnce({ updated: 0, total: 0 });
     const r1 = await syncGfPending(rpc, { cardId: card });
     expect(r1[0]).toMatchObject({ done: false });
-    expect(r1[0]!.message).toMatch(/ainda não está na Gestão Financeira/);
+    expect(r1[0]!.message).toMatch(/não está na Gestão Financeira/);
     expect(gf.settle).toHaveBeenCalledWith("gf", card, "C2611151200", true, "2026-11-15");
     expect(ch.listCharges(db, card)[0]!.gf_sync).toBe("paid");
 
