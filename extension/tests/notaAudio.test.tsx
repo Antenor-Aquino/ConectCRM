@@ -37,11 +37,11 @@ describe("ditado de nota", () => {
 
   it("transcreve e ajusta; se o ajuste falhar, fica a transcrição", async () => {
     const audio = new Blob(["x".repeat(2000)], { type: "audio/webm;codecs=opus" });
-    const transcribe = vi.fn(async () => RAW);
-    const ok = await dictateNote(ai.settings as never, audio, { transcribe, generate: vi.fn(async () => "Falei com a Rozi: proposta até sexta, R$ 495,00.") });
+    const transcribe = vi.fn(async (..._a: unknown[]) => RAW);
+    const ok = await dictateNote(ai.settings as never, audio, { transcribe: transcribe as never, generate: vi.fn(async () => "Falei com a Rozi: proposta até sexta, R$ 495,00.") });
     expect(ok).toEqual({ text: "Falei com a Rozi: proposta até sexta, R$ 495,00.", raw: RAW, polished: true });
     expect(transcribe.mock.calls[0]![2]).toBe("audio/webm");
-    const fail = await dictateNote(ai.settings as never, audio, { transcribe, generate: vi.fn(async () => Promise.reject(new Error("429"))) });
+    const fail = await dictateNote(ai.settings as never, audio, { transcribe: transcribe as never, generate: vi.fn(async () => Promise.reject(new Error("429"))) });
     expect(fail).toEqual({ text: RAW, raw: RAW, polished: false });
     await expect(dictateNote(ai.settings as never, audio, { transcribe: vi.fn(async () => "  ") })).rejects.toThrow(/Não deu para entender/);
   });
