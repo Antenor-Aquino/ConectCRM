@@ -3,6 +3,7 @@
 // O CRM monta os itens a partir dos produtos e serviços do cartão, a extensão
 // cria o link na InfinitePay e grava a cobrança aqui (com nota no cartão). A
 // receita correspondente é lançada na Gestão Financeira pela aba Financeiro.
+import { payerOrganizationId } from "./cardOrganizations";
 import { contextLinks, createDocument, type FileRef } from "./documents";
 import { insertRow, updateRow, type DbContext } from "./repo";
 import { many, one, withTransaction, type DatabaseSync } from "./sql";
@@ -149,7 +150,9 @@ export function chargeDraftForCard(db: DatabaseSync, cardId: string): ChargeDraf
   const person = card.person_id
     ? one<{ name: string; email: string | null; phone: string | null; cpf: string | null }>(db, "SELECT name, email, phone, cpf FROM person WHERE id = ? AND deleted_at IS NULL", card.person_id)
     : null;
-  const org = card.organization_id
+  // Quem paga: a organização pagadora do cartão (ex.: Caixa Escolar); sem ela, a principal.
+  const payerOrg = payerOrganizationId(db, cardId);
+  const org = payerOrg
     ? one<{
         name: string;
         legal_name: string | null;
@@ -166,7 +169,7 @@ export function chargeDraftForCard(db: DatabaseSync, cardId: string): ChargeDraf
       }>(
         db,
         "SELECT name, legal_name, email, phone, cnpj, cep, street, number, complement, district, city, state FROM organization WHERE id = ? AND deleted_at IS NULL",
-        card.organization_id,
+        payerOrg,
       )
     : null;
   const customer: ChargeCustomer = {

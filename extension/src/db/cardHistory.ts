@@ -3,6 +3,7 @@
 // anexos e tarefas) e descreve cada alteração em português, com o valor
 // antigo e o novo. Gravações do mesmo usuário em até 2 segundos viram um só
 // evento (ex.: salvar produtos também atualiza o valor do negócio).
+import { CARD_ORG_ROLE_LABEL, type CardOrgRole } from "./cardOrganizations";
 import { noteText } from "./notes";
 import { CARD_TEXT, OUTCOME_TEXT, PIPELINE_TYPE_BY_KIND } from "../lib/cardTypes";
 import { originLines, type OriginSummary } from "./docCard";
@@ -148,6 +149,7 @@ export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
     { table: "document_link", sql: "SELECT id FROM document_link WHERE entity_type = 'deal' AND entity_id = ?" },
     { table: "activity", sql: "SELECT id FROM activity WHERE deal_id = ?" },
     { table: "deal_participant", sql: "SELECT id FROM deal_participant WHERE deal_id = ?" },
+    { table: "deal_org_link", sql: "SELECT id FROM deal_org_link WHERE deal_id = ?" },
     { table: "record_origin", sql: "SELECT id FROM record_origin WHERE entity_type = 'deal' AND local_id = ?" },
   ];
   const ids: string[] = [cardId];
@@ -235,6 +237,14 @@ export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
       const who = name(persons, next.person_id);
       if (l.op === "insert" || l.op === "restore") return [`Adicionou o contato ${who}`];
       if (l.op === "delete") return [`Removeu o contato ${who}`];
+      return [];
+    }
+    if (t === "deal_org_link") {
+      const org = name(orgs, next.organization_id);
+      const role = CARD_ORG_ROLE_LABEL[(next.role as CardOrgRole) ?? "outra"] ?? "Outra";
+      if (l.op === "insert" || l.op === "restore") return [`Vinculou a organização ${org} (${role})`];
+      if (l.op === "delete") return [`Desvinculou a organização ${org}`];
+      if (ch.role) return [`Organização ${org}: papel ${CARD_ORG_ROLE_LABEL[(ch.role as [CardOrgRole, CardOrgRole])[0]] ?? "?"} → ${role}`];
       return [];
     }
     if (t === "entity_tag") {

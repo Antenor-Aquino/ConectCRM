@@ -17,6 +17,7 @@ import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./
 import { createTag, getEntityTags, setEntityTags, type Tag } from "./tags";
 import { getUser, teammateIds, type Viewer } from "./users";
 import { copyCardContacts, listCardContacts, type CardContact } from "./cardContacts";
+import { copyCardOrganizations, dropLinkIfPrimary, listCardOrganizations, type CardOrganization } from "./cardOrganizations";
 import { attachExtras, nameExtras, withExtra } from "./nameExtras";
 import type { CustomFieldEntity } from "./customFields";
 
@@ -107,6 +108,8 @@ export interface DealItem {
 export interface CardDetail extends Card {
   /** Contatos do cartão: o principal primeiro, depois os demais. */
   contacts: CardContact[];
+  /** Organização principal + vinculadas com papel (pagador, mantenedora, unidade, outra). */
+  organizations: CardOrganization[];
   person_name: string | null;
   organization_name: string | null;
   /** Campos marcados para aparecer junto com o título. */
@@ -294,7 +297,11 @@ export function updateCard(
       const dup = data.person_id && one<{ id: string }>(db, "SELECT id FROM deal_participant WHERE deal_id = ? AND person_id = ? AND deleted_at IS NULL", id, data.person_id);
       if (dup) softDelete(db, ctx, "deal_participant", dup.id);
     }
-    if (patch.organizationId !== undefined) data.organization_id = checkRef(db, "organization", patch.organizationId, "Organização não encontrada.");
+    if (patch.organizationId !== undefined) {
+      data.organization_id = checkRef(db, "organization", patch.organizationId, "Organização não encontrada.");
+      // Virou principal: sai das outras organizações do cartão.
+      dropLinkIfPrimary(db, ctx, id, data.organization_id as string | null);
+    }
     if (patch.ownerId !== undefined) data.owner_id = checkRef(db, "app_user", patch.ownerId, "Responsável não encontrado.");
     if (patch.origin !== undefined) data.origin = optionalText(patch.origin);
     updateRow(db, ctx, "deal", id, data);
@@ -465,6 +472,7 @@ export function cloneCard(db: DatabaseSync, ctx: DbContext, id: string, input: {
       customValues: customValuesFor(db, id, kind, target.id),
     });
     copyCardContacts(db, ctx, id, newId);
+    copyCardOrganizations(db, ctx, id, newId);
     return newId;
   });
 }
@@ -575,6 +583,7 @@ export function getCard(db: DatabaseSync, id: string, viewer?: Viewer | null): C
     organization_name: names.organization_name && withExtra(names.organization_name, nameExtras(db, "organization", [card.organization_id]).get(card.organization_id ?? "")),
     title_ext: nameExtras(db, kindOf, [id]).get(id) ?? null,
     contacts: attachExtras(db, "person", listCardContacts(db, id), "id", "name_ext"),
+    organizations: listCardOrganizations(db, id),
     items: listDealItems(db, id),
     tags: getEntityTags(db, id),
     customValues: getCustomValues(db, id),
@@ -684,9 +693,11 @@ function boardWhere(db: DatabaseSync, pipelineId: string, opts: BoardFilterOpts)
     where.push(
       `(d.title LIKE ? OR p.name LIKE ? OR o.name LIKE ?${ticket !== null ? " OR d.ticket_number = ?" : ""}
         OR EXISTS (SELECT 1 FROM deal_participant dp JOIN person pp ON pp.id = dp.person_id AND pp.deleted_at IS NULL
-                   WHERE dp.deal_id = d.id AND dp.deleted_at IS NULL AND pp.name LIKE ?))`,
+                   WHERE dp.deal_id = d.id AND dp.deleted_at IS NULL AND pp.name LIKE ?)
+        OR EXISTS (SELECT 1 FROM deal_org_link xo JOIN organization oo ON oo.id = xo.organization_id AND oo.deleted_at IS NULL
+                   WHERE xo.deal_id = d.id AND xo.deleted_at IS NULL AND (oo.name LIKE ? OR oo.legal_name LIKE ?)))`,
     );
-    params.push(q, q, q, ...(ticket !== null ? [ticket] : []), q);
+    params.push(q, q, q, ...(ticket !== null ? [ticket] : []), q, q, q);
   }
   return { where, params };
 }
@@ -818,17 +829,30 @@ export function listCardsForEntity(
   db: DatabaseSync,
   f: { personId?: string; organizationId?: string },
   viewer?: Viewer | null,
-): { id: string; title: string; kind: DealKind; status: DealStatus; value_cents: number; pipeline_id: string; pipeline_name: string; stage_name: string; updated_at: string }[] {
+): {
+  id: string;
+  title: string;
+  kind: DealKind;
+  status: DealStatus;
+  value_cents: number;
+  pipeline_id: string;
+  pipeline_name: string;
+  stage_name: string;
+  updated_at: string;
+  /** Organização: papel dela no cartão (vinculada: pagador, mantenedora…; null = principal ou contato). */
+  link_role: string | null;
+}[] {
   // Contato: principal ou um dos outros contatos do cartão.
   const col = f.personId
     ? "(d.person_id = ?1 OR EXISTS (SELECT 1 FROM deal_participant dp WHERE dp.deal_id = d.id AND dp.person_id = ?1 AND dp.deleted_at IS NULL))"
-    : "d.organization_id = ?1";
+    : "(d.organization_id = ?1 OR EXISTS (SELECT 1 FROM deal_org_link x WHERE x.deal_id = d.id AND x.organization_id = ?1 AND x.deleted_at IS NULL))";
   const id = f.personId ?? f.organizationId;
   if (!id) return [];
   const scope = cardScope(db, viewer);
   return many(
     db,
-    `SELECT d.id, d.title, d.kind, d.status, d.value_cents, d.pipeline_id, p.name AS pipeline_name, s.name AS stage_name, d.updated_at
+    `SELECT d.id, d.title, d.kind, d.status, d.value_cents, d.pipeline_id, p.name AS pipeline_name, s.name AS stage_name, d.updated_at,
+       ${f.organizationId ? "CASE WHEN d.organization_id = ?1 THEN NULL ELSE (SELECT x.role FROM deal_org_link x WHERE x.deal_id = d.id AND x.organization_id = ?1 AND x.deleted_at IS NULL LIMIT 1) END" : "NULL"} AS link_role
      FROM deal d JOIN pipeline p ON p.id = d.pipeline_id JOIN stage s ON s.id = d.stage_id
      WHERE ${col} AND d.deleted_at IS NULL${scope.sql}
      ORDER BY d.status = 'open' DESC, d.updated_at DESC`,
@@ -863,8 +887,11 @@ export function searchCards(
     `SELECT d.id, d.title, d.kind, p.name AS pipeline_name, pe.name AS person_name, o.name AS organization_name
      FROM deal d JOIN pipeline p ON p.id = d.pipeline_id LEFT JOIN person pe ON pe.id = d.person_id
      LEFT JOIN organization o ON o.id = d.organization_id
-     WHERE d.deleted_at IS NULL AND (d.title LIKE ? OR pe.name LIKE ? OR o.name LIKE ?)${extra.join("")}${scope.sql}
+     WHERE d.deleted_at IS NULL AND (d.title LIKE ? OR pe.name LIKE ? OR o.name LIKE ?
+       OR EXISTS (SELECT 1 FROM deal_org_link xo JOIN organization oo ON oo.id = xo.organization_id AND oo.deleted_at IS NULL
+                  WHERE xo.deal_id = d.id AND xo.deleted_at IS NULL AND oo.name LIKE ?))${extra.join("")}${scope.sql}
      ORDER BY d.status = 'open' DESC, d.updated_at DESC LIMIT ?`,
+    q,
     q,
     q,
     q,

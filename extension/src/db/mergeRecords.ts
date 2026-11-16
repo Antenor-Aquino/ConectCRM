@@ -194,6 +194,7 @@ function related(db: DatabaseSync, entity: MergeEntity, id: string): { label: st
           ["Documentos", count(db, `SELECT COUNT(*) AS n FROM document_link WHERE entity_type = 'deal' AND entity_id = ? AND ${live}`, id)],
           ["Produtos", count(db, `SELECT COUNT(*) AS n FROM deal_item WHERE deal_id = ? AND ${live}`, id)],
           ["Outros contatos", count(db, `SELECT COUNT(*) AS n FROM deal_participant WHERE deal_id = ? AND person_id IS NOT NULL AND ${live}`, id)],
+          ["Outras organizações", count(db, `SELECT COUNT(*) AS n FROM deal_org_link WHERE deal_id = ? AND ${live}`, id)],
           ["Tarefas do To Do", count(db, `SELECT COUNT(*) AS n FROM todo_task WHERE deal_id = ? AND ${live}`, id)],
         ]
       : entity === "person"
@@ -206,7 +207,7 @@ function related(db: DatabaseSync, entity: MergeEntity, id: string): { label: st
           ]
         : [
             ["Contatos", count(db, `SELECT COUNT(*) AS n FROM person_organization WHERE organization_id = ? AND ${live}`, id)],
-            ["Cartões", count(db, `SELECT COUNT(*) AS n FROM deal WHERE organization_id = ? AND ${live}`, id)],
+            ["Cartões", count(db, `SELECT COUNT(*) AS n FROM deal WHERE (organization_id = ? OR id IN (SELECT deal_id FROM deal_org_link WHERE organization_id = ? AND ${live})) AND ${live}`, id, id)],
             ["Atividades", count(db, `SELECT COUNT(*) AS n FROM activity WHERE organization_id = ? AND ${live}`, id)],
             ["Notas", count(db, `SELECT COUNT(*) AS n FROM note WHERE entity_type = 'organization' AND entity_id = ? AND ${live}`, id)],
             ["Documentos", count(db, `SELECT COUNT(*) AS n FROM document_link WHERE entity_type = 'organization' AND entity_id = ? AND ${live}`, id)],
@@ -342,8 +343,21 @@ function moveDeal(db: DatabaseSync, ctx: DbContext, from: string, to: string): v
     if (dup) softDelete(db, ctx, "deal_participant", p.id);
     else updateRow(db, ctx, "deal_participant", p.id, { deal_id: to });
   }
+  // Outras organizações (e a principal do que sai, como unidade) vão para o que fica.
+  for (const l of many<{ id: string; organization_id: string }>(db, "SELECT id, organization_id FROM deal_org_link WHERE deal_id = ? AND deleted_at IS NULL", from)) {
+    const dup = keep.organization_id === l.organization_id || one(db, "SELECT 1 FROM deal_org_link WHERE deal_id = ? AND organization_id = ? AND deleted_at IS NULL", to, l.organization_id);
+    if (dup) softDelete(db, ctx, "deal_org_link", l.id);
+    else updateRow(db, ctx, "deal_org_link", l.id, { deal_id: to });
+  }
   // Contato principal do que sai vira "outro contato" do que fica (se for outra pessoa).
   const removed = rowOf(db, "deal", from);
+  if (
+    removed.organization_id &&
+    keep.organization_id &&
+    removed.organization_id !== keep.organization_id &&
+    !one(db, "SELECT 1 FROM deal_org_link WHERE deal_id = ? AND organization_id = ? AND deleted_at IS NULL", to, removed.organization_id)
+  )
+    insertRow(db, ctx, "deal_org_link", { deal_id: to, organization_id: removed.organization_id, role: "cliente" });
   if (removed.person_id && removed.person_id !== keep.person_id && !one(db, "SELECT 1 FROM deal_participant WHERE deal_id = ? AND person_id = ? AND deleted_at IS NULL", to, removed.person_id))
     insertRow(db, ctx, "deal_participant", { deal_id: to, person_id: removed.person_id });
   const lastPos = one<{ p: number | null }>(db, "SELECT MAX(position) AS p FROM deal_item WHERE deal_id = ? AND deleted_at IS NULL", to)?.p ?? 0;
@@ -394,6 +408,14 @@ function moveOrganization(db: DatabaseSync, ctx: DbContext, from: string, to: st
     else updateRow(db, ctx, "person_organization", l.id, { organization_id: to });
   }
   repoint(db, ctx, "deal", "organization_id", from, to);
+  // Cartões em que as duas estavam (uma principal, outra vinculada): fica um vínculo só.
+  for (const l of many<{ id: string; deal_id: string }>(db, "SELECT id, deal_id FROM deal_org_link WHERE organization_id = ? AND deleted_at IS NULL", from)) {
+    const dup =
+      one(db, "SELECT 1 FROM deal WHERE id = ? AND organization_id = ?", l.deal_id, to) ||
+      one(db, "SELECT 1 FROM deal_org_link WHERE deal_id = ? AND organization_id = ? AND deleted_at IS NULL", l.deal_id, to);
+    if (dup) softDelete(db, ctx, "deal_org_link", l.id);
+    else updateRow(db, ctx, "deal_org_link", l.id, { organization_id: to });
+  }
   repoint(db, ctx, "activity", "organization_id", from, to);
   movePolymorphic(db, ctx, "organization", from, to);
 }

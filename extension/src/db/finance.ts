@@ -7,11 +7,12 @@ import { contactCardFor, organizationCard, personCard } from "./contactCard";
 import { ValidationError } from "../lib/validate";
 import { formatCents } from "../lib/format";
 import { cardScope } from "./deals";
+import { payerOrganizationId } from "./cardOrganizations";
 import { updateRow, type DbContext } from "./repo";
 import { many, one, run, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
 import type { Viewer } from "./users";
 
-/** Cliente/fornecedor padrão do cartão (ficha completa): a organização; sem ela, o contato principal. */
+/** Cliente/fornecedor padrão do cartão (ficha completa): a organização pagadora (ou a principal); sem ela, o contato principal. */
 export function cardCounterparty(db: DatabaseSync, dealId: string): ContactCard | null {
   const d = one<{ person_id: string | null; organization_id: string | null }>(
     db,
@@ -19,7 +20,8 @@ export function cardCounterparty(db: DatabaseSync, dealId: string): ContactCard 
     dealId,
   );
   if (!d) return null;
-  return (d.organization_id ? organizationCard(db, d.organization_id) : null) ?? (d.person_id ? personCard(db, d.person_id) : null);
+  const org = payerOrganizationId(db, dealId);
+  return (org ? organizationCard(db, org) : null) ?? (d.person_id ? personCard(db, d.person_id) : null);
 }
 
 // ---------- Paridade de cadastros: quem está na Gestão Financeira ----------
@@ -447,7 +449,7 @@ export interface ClientFinance {
 export function clientFinance(db: DatabaseSync, f: { organizationId?: string; personId?: string }, viewer?: Viewer | null, today = new Date().toLocaleDateString("sv-SE")): ClientFinance {
   const id = f.organizationId ?? f.personId;
   const extra = f.organizationId
-    ? " AND d.organization_id = ?"
+    ? " AND EXISTS (SELECT 1 FROM (SELECT d.organization_id AS oid UNION ALL SELECT x.organization_id FROM deal_org_link x WHERE x.deal_id = d.id AND x.deleted_at IS NULL) WHERE oid = ?)" // principal ou vinculada (pagador, mantenedora…)
     : " AND d.person_id = ?"; // contato principal do cartão
   const cards = new Map(
     scopedCardsFor(db, extra, id ?? "", viewer).map((c) => [c.id, c]),

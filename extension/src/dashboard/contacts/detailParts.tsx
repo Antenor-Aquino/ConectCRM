@@ -105,6 +105,11 @@ export function RelatedCards({ filter, onOpenCard }: { filter: { personId?: stri
               <span className="block truncate text-theme-sm font-medium text-brand-600">{c.title}</span>
               <span className="block text-theme-xs text-gray-500">
                 {KIND_LABEL[c.kind]} · {c.pipeline_name} · {c.stage_name}
+                {c.link_role && (
+                  <span className="ml-1.5 rounded bg-gray-100 px-1.5 py-0.5 text-gray-600 dark:bg-white/10 dark:text-gray-300" data-card-link-role>
+                    {({ pagador: "Pagador", mantenedora: "Mantenedora", cliente: "Unidade / escola", outra: "Vinculada" } as Record<string, string>)[c.link_role] ?? "Vinculada"}
+                  </span>
+                )}
               </span>
             </span>
             {c.status !== "open" && <TaBadge color={c.status === "won" ? "green" : "red"} label={OUTCOME_TEXT[PIPELINE_TYPE_BY_KIND[c.kind]][c.status]} />}
