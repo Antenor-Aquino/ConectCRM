@@ -5,6 +5,7 @@ import { insertRow, softDelete, updateRow, type DbContext } from "./repo";
 import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./sql";
 import { isValidCnpj, isValidCpf, normalizeCnpj, optionalText, requireText, ValidationError } from "../lib/validate";
 import { municipioPorIbge, municipioPorNome, servicoNacional } from "../lib/nfse/tabelas";
+import { brasiliaDate } from "../lib/nfse/dps";
 import { addDocumentVersion, contextLinks, createDocument, type FileRef } from "./documents";
 
 export type IssuerAccess = "a1" | "a3" | "govbr";
@@ -420,7 +421,7 @@ export function nfseDraftForCard(
     taker,
     services,
     productItems,
-    competence: today.toISOString().slice(0, 10),
+    competence: brasiliaDate(today),
     placeIbge: issuer?.city_ibge ?? null,
     issRetention: 1,
     texts,

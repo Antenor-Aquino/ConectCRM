@@ -81,6 +81,20 @@ describe("NFS-e API — DPS", () => {
     expect(brasiliaDateTime(new Date("2026-11-14T13:05:09Z"))).toBe("2026-11-14T10:05:09-03:00");
   });
 
+  it("depois das 21h de Brasília: competência é o dia de Brasília, nunca depois da emissão (E0015)", async () => {
+    const { db, ctx, card } = await setup();
+    // 15/11 às 23:30 em Brasília = 16/11 02:30 UTC.
+    const night = new Date("2026-11-16T02:30:00Z");
+    const d = nfseDraftForCard(db, card, { today: night });
+    expect(d.competence).toBe("2026-11-15");
+    const xml = buildDpsXml(d, { environment: "producao", issuedAt: night, ...reserveDpsNumber(db, ctx, card), appVersion: "x" });
+    expect(xml).toContain("<dhEmi>2026-11-15T23:30:00-03:00</dhEmi>");
+    expect(xml).toContain("<dCompet>2026-11-15</dCompet>");
+    // Rascunho antigo com a competência errada (dia seguinte): limitada ao dia da emissão.
+    const old = buildDpsXml({ ...d, competence: "2026-11-16" }, { environment: "producao", issuedAt: night, series: "1", number: 9, appVersion: "x" });
+    expect(old).toContain("<dCompet>2026-11-15</dCompet>");
+  });
+
   it.skipIf(!hasXmllint)("tomador organização (CNPJ e endereço): XML válido no XSD oficial", async () => {
     const { db, ctx, card } = await setup();
     const n = reserveDpsNumber(db, ctx, card);
