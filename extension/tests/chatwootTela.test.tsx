@@ -138,6 +138,20 @@ describe("Ativação no Chatwoot (tela)", () => {
     await act(async () => fireEvent.click(document.querySelector("[data-chatwoot-attach-send]")!));
     await waitFor(() => expect(document.querySelector("[data-chatwoot-attach-done]")).not.toBeNull());
     expect(calls.find((c) => c.method === "chatwoot.attachRecord")!.params).toEqual({ id: "c1", conversationId: 2316, names: ["Convocação.pdf"] });
+    // Responder ao cliente: modelo preenchido, troca de modelo, anexo e envio público.
+    posts.length = 0;
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    fireEvent.click(document.querySelector('[data-chatwoot-ticket="2316"] [data-chatwoot-reply]')!);
+    const text = document.querySelector("[data-chatwoot-reply-text]") as HTMLTextAreaElement;
+    expect(text.value).toContain("Olá, Rozi!");
+    expect(text.value).toContain("Seguem em anexo o boleto e a nota fiscal, no valor de R$ 495,00");
+    fireEvent.change(document.querySelector("[data-chatwoot-reply-template]")!, { target: { value: "ativacao" } });
+    expect(text.value).not.toContain("boleto");
+    fireEvent.click(document.querySelector('[data-chatwoot-reply-form] [data-chatwoot-doc="Contrato assinado"]')!);
+    await act(async () => fireEvent.click(document.querySelector("[data-chatwoot-reply-send]")!));
+    await waitFor(() => expect(calls.find((c) => c.method === "chatwoot.replyRecord")).toBeTruthy());
+    expect(calls.find((c) => c.method === "chatwoot.replyRecord")!.params).toMatchObject({ id: "c1", conversationId: 2316, to: "escola@educacao.mg.gov.br", names: ["Contrato assinado.pdf"] });
+    expect(posts).toEqual(["/conversations/2316/messages"]);
     posts.length = 0;
     fireEvent.click(document.querySelector('[data-chatwoot-ticket="2316"] [data-chatwoot-cancel]')!);
     const confirm = document.querySelector("[data-chatwoot-cancel-confirm]") as HTMLButtonElement;

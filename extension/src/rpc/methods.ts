@@ -378,6 +378,10 @@ export const methods = {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);
     chatwoot.recordChatwootAttachments(db, ctx, p.id, p);
   },
+  "chatwoot.replyRecord": (db: DatabaseSync, ctx: DbContext, p: Id & { conversationId: number; text: string; to?: string | null; names?: string[] }) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    chatwoot.recordChatwootReply(db, ctx, p.id, p);
+  },
   "chatwoot.cancelRecord": (db: DatabaseSync, ctx: DbContext, p: Id & { conversationId: number; note: string; by?: string | null }) => {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);
     chatwoot.recordChatwootCancel(db, ctx, p.id, p);

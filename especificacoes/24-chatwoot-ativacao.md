@@ -61,3 +61,17 @@ Outro endereço de Chatwoot exige incluir o host no manifesto.
 - Limite de 40 MB por arquivo (padrão do Chatwoot). Ler o arquivo conta como download na auditoria do documento.
 - No cartão: a nota do ticket lista os anexos; envio posterior gera nota própria.
 - Falha nos anexos ao abrir: a conversa já existe, o erro traz o link e o ticket fica registrado.
+
+## Responder ao cliente por e-mail (0.2.144)
+- Em cada conversa em andamento: **Responder ao cliente**. A mensagem é **pública**
+  (`private: false`) na conversa da inbox de e-mail; o Chatwoot envia por e-mail ao contato,
+  pelo endereço da inbox, com o assunto da conversa. Anexos do cartão vão no e-mail (multipart).
+- Modelos (`src/lib/chatwootReplies.ts`), editáveis antes de enviar:
+  1. Plataforma ativada + boleto e nota fiscal;
+  2. Plataforma ativada;
+  3. Envio do boleto e da nota fiscal;
+  4. Texto livre.
+  Variáveis: {primeiro_nome} {nome_responsavel} {nome_escola} {razao_social} {usuario}
+  {email_usuario} {plano} {qtd_turmas} {fim_vigencia} {valor} {vencimento_boleto} {email_financeiro}.
+- Avisa variável sem valor no cartão ou escrita errada; modelos com boleto/nota lembram de marcar os anexos.
+- Confirmação antes de enviar (vai para fora e não dá para desfazer). Nota no cartão com o texto e os anexos.

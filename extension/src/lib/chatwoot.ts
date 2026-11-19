@@ -283,12 +283,32 @@ export async function sendPrivateFiles(
   fetchFn: Fetch = fetch,
 ): Promise<void> {
   if (!files.length) return;
+  return sendMessage(s, conversationId, content, files, true, fetchFn);
+}
+
+/**
+ * Resposta ao cliente: mensagem pública na conversa da inbox de e-mail — o
+ * Chatwoot envia por e-mail ao contato, pelo endereço da inbox. Com arquivos,
+ * eles vão anexos no e-mail.
+ */
+export async function sendPublicReply(s: ChatwootSettings, conversationId: number, content: string, files: ChatwootFile[] = [], fetchFn: Fetch = fetch): Promise<void> {
+  if (!content.trim()) throw new ChatwootError("Escreva a mensagem para o cliente.");
+  if (!s.token.trim()) throw new ChatwootError("Configure o token do Chatwoot em Configurações → Integrações → Chatwoot.");
+  if (!files.length) {
+    await client(s, fetchFn)("POST", `/conversations/${conversationId}/messages`, { content, message_type: "outgoing", private: false });
+    return;
+  }
+  return sendMessage(s, conversationId, content, files, false, fetchFn);
+}
+
+/** Mensagem com arquivos (multipart: content, message_type, private, attachments[]). */
+async function sendMessage(s: ChatwootSettings, conversationId: number, content: string, files: ChatwootFile[], isPrivate: boolean, fetchFn: Fetch): Promise<void> {
   const big = files.find((f) => f.blob.size > CHATWOOT_FILE_MAX);
   if (big) throw new ChatwootError(`"${big.filename}" passa de 40 MB (limite de anexo do Chatwoot).`);
   const form = new FormData();
   form.append("content", content);
   form.append("message_type", "outgoing");
-  form.append("private", "true");
+  form.append("private", isPrivate ? "true" : "false");
   for (const f of files) form.append("attachments[]", f.blob, f.filename);
   const path = `/conversations/${conversationId}/messages`;
   let res: Response;
