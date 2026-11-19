@@ -63,6 +63,7 @@ export const DATA_TABLES = [
   "nfse_issuer",
   "nfse_draft",
   "payment_charge",
+  "chatwoot_ticket",
 ] as const;
 export type DataTable = (typeof DATA_TABLES)[number];
 

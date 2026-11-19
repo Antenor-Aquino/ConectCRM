@@ -21,6 +21,7 @@ import { PipedriveImportModal } from "./PipedriveImportModal";
 import { GestaoFinanceiraPanel } from "./GestaoFinanceiraPanel";
 import { CalendlyPanel } from "./CalendlyPanel";
 import { InterPanel } from "./InterPanel";
+import { ChatwootPanel } from "./ChatwootPanel";
 
 type Msg = { text: string; kind: "ok" | "err" } | null;
 
@@ -28,6 +29,7 @@ const INTEGRATIONS = [
   { id: "pipedrive", name: "Pipedrive", description: "Importar leads, contatos e organizações, com de-para dos campos.", logo: "p", bg: "bg-[#1a1a1a]" },
   { id: "gestao", name: "Gestão Financeira", description: "Receitas e despesas dos cartões na extensão Gestão Financeira deste Chrome.", logo: "$", bg: "bg-success-600" },
   { id: "calendly", name: "Calendly", description: "Link de agendamento nos cartões; as reuniões marcadas entram sozinhas no CRM.", logo: "C", bg: "bg-[#006bff]" },
+  { id: "chatwoot", name: "Chatwoot", description: "Ticket de ativação Powercubus a partir do cartão, com os dados na nota privada.", logo: "c", bg: "bg-[#1f93ff]" },
   { id: "inter", name: "Banco Inter", description: "Cobrança com boleto + Pix no botão Cobrança do cartão; a baixa vem sozinha.", logo: "i", bg: "bg-[#ff7a00]" },
 ] as const;
 type IntegrationId = (typeof INTEGRATIONS)[number]["id"];
@@ -83,6 +85,7 @@ export function IntegrationsSettings() {
       {selected === "gestao" && <GestaoFinanceiraPanel />}
       {selected === "calendly" && <CalendlyPanel />}
       {selected === "inter" && <InterPanel />}
+      {selected === "chatwoot" && <ChatwootPanel />}
     </>
   );
 }
