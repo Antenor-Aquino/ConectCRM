@@ -9,6 +9,7 @@ const dados: ChatwootData = {
   usuario: "cliente@escola.com.br",
   qtd_turmas: "10",
   plano: "Pro",
+  vencimento_boleto: "20/11/2026",
   fim_vigencia: "31/12/2027",
   valor: "R$ 1.000,00",
   razao_social: "Escola Exemplo LTDA",

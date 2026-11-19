@@ -18,6 +18,7 @@ export { CHATWOOT_FIELDS, CHATWOOT_FIELD_LABEL, chatwootMissing, chatwootNote, t
 export const CHATWOOT_CARD_FIELDS: { key: string; field: ChatwootField; name: string; type: CustomFieldType; description: string }[] = [
   { key: "qtd_turmas", field: "qtd_turmas", name: "Qtd de turmas", type: "number", description: "Quantidade de turmas contratadas (ativação Powercubus no Chatwoot)." },
   { key: "plano", field: "plano", name: "Plano", type: "text", description: "Plano contratado (ativação Powercubus no Chatwoot)." },
+  { key: "vencimento_boleto", field: "vencimento_boleto", name: "Vencimento do boleto", type: "date", description: "Data de vencimento do boleto; vazio = vencimento da última cobrança do cartão (ativação Powercubus no Chatwoot)." },
   { key: "fim_vigencia", field: "fim_vigencia", name: "Fim da vigência", type: "date", description: "Fim da vigência do contrato (ativação Powercubus no Chatwoot)." },
   { key: "usuario_powercubus", field: "usuario", name: "Usuário Powercubus", type: "text", description: "Usuário de acesso; vazio = e-mail do responsável." },
   { key: "email_financeiro", field: "email_financeiro", name: "E-mail financeiro", type: "email", description: "E-mail para envio de boletos e Nota Fiscal." },
@@ -119,12 +120,16 @@ export function chatwootContext(db: DatabaseSync, cardId: string): ChatwootConte
     return def!.type === "date" ? dmy(String(v)) : String(v);
   };
   const fiscal = payerIsSchool ? "organização principal" : "organização pagadora";
+  // Sem o campo preenchido: o vencimento da cobrança mais recente (não cancelada) do cartão.
+  const lastChargeDue =
+    one<{ d: string | null }>(db, "SELECT due_date AS d FROM payment_charge WHERE card_id = ? AND deleted_at IS NULL AND status <> 'canceled' AND due_date IS NOT NULL ORDER BY created_at DESC LIMIT 1", cardId)?.d ?? null;
   const data: ChatwootData = {
     email_cliente: person?.email ?? "",
     nome_responsavel: person?.name ?? "",
     usuario: fv("usuario") || person?.email || "",
     qtd_turmas: fv("qtd_turmas"),
     plano: fv("plano"),
+    vencimento_boleto: fv("vencimento_boleto") || (lastChargeDue ? dmy(lastChargeDue) : ""),
     fim_vigencia: fv("fim_vigencia"),
     valor: card.value_cents ? brl(card.value_cents) : "",
     razao_social: payer ? payer.legal_name || payer.name : "",
@@ -141,6 +146,11 @@ export function chatwootContext(db: DatabaseSync, cardId: string): ChatwootConte
     usuario: fv("usuario") ? field("usuario", "Usuário Powercubus") : "e-mail do contato principal",
     qtd_turmas: field("qtd_turmas", "Qtd de turmas"),
     plano: field("plano", "Plano"),
+    vencimento_boleto: fv("vencimento_boleto")
+      ? field("vencimento_boleto", "Vencimento do boleto")
+      : lastChargeDue
+        ? "vencimento da última cobrança do cartão"
+        : field("vencimento_boleto", "Vencimento do boleto"),
     fim_vigencia: field("fim_vigencia", "Fim da vigência"),
     valor: "valor do cartão",
     razao_social: fiscal,

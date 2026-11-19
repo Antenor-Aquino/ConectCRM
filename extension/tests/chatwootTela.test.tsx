@@ -24,6 +24,7 @@ const data = {
   usuario: "escola@educacao.mg.gov.br",
   qtd_turmas: "10",
   plano: "",
+  vencimento_boleto: "20/11/2026",
   fim_vigencia: "31/12/2027",
   valor: "R$ 495,00",
   razao_social: "CAIXA ESCOLAR",

@@ -17,11 +17,12 @@ Porte do pacote `chatwoot-ativacao` (memorial de 19/11/2026) para dentro do Cone
 | e-mail do cliente, nome do responsável | contato principal |
 | usuário | campo `{{usuario_powercubus}}`; vazio = e-mail do contato principal |
 | qtd de turmas, plano, fim da vigência, e-mail financeiro | campos `{{qtd_turmas}}`, `{{plano}}`, `{{fim_vigencia}}`, `{{email_financeiro}}` |
+| data de vencimento do boleto | campo `{{vencimento_boleto}}`; vazio = vencimento da última cobrança (não cancelada) do cartão |
 | valor | valor do cartão |
 | razão social, CNPJ, CEP, endereço | organização **pagadora** (sem pagador, a principal) |
 | nome da escola | organização principal |
 
-Os 5 campos são criados (negócio, só nos funis escolhidos) pelo botão das Configurações.
+Os 6 campos são criados (negócio, só nos funis escolhidos) pelo botão das Configurações.
 O que for alterado na janela pode ser salvo de volta nesses campos do cartão.
 
 ## Envio (`src/lib/chatwoot.ts`)
