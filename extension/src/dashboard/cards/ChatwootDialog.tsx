@@ -31,7 +31,7 @@ const isoDate = (v: string) => {
 };
 
 const GROUPS: { title: string; fields: ChatwootField[] }[] = [
-  { title: "Cliente", fields: ["nome_responsavel", "email_cliente", "usuario"] },
+  { title: "Cliente", fields: ["nome_responsavel", "email_cliente", "usuario", "email_usuario"] },
   { title: "Contratação", fields: ["plano", "vencimento_boleto", "qtd_turmas", "fim_vigencia", "valor"] },
   { title: "Dados para faturamento", fields: ["nome_escola", "razao_social", "cnpj", "cep", "endereco", "email_financeiro"] },
 ];
@@ -65,10 +65,10 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
   const customPatch = (): Record<string, unknown> => {
     if (!ctx || !data) return {};
     const out: Record<string, unknown> = {};
-    for (const f of ["qtd_turmas", "plano", "vencimento_boleto", "fim_vigencia", "usuario", "email_financeiro"] as ChatwootField[]) {
+    for (const f of ["qtd_turmas", "plano", "vencimento_boleto", "fim_vigencia", "usuario", "email_usuario", "email_financeiro"] as ChatwootField[]) {
       const def = ctx.fields[f];
       if (!def || data[f] === ctx.data[f]) continue;
-      if (f === "usuario" && data.usuario.trim() === data.email_cliente.trim()) continue;
+      if ((f === "usuario" || f === "email_usuario") && data[f].trim() === data.email_cliente.trim()) continue;
       const v = data[f].trim();
       out[def.id] = !v ? null : def.type === "number" ? Number(v.replace(",", ".")) : def.type === "date" ? isoDate(v) : v;
     }
@@ -198,7 +198,7 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
             <div className="flex flex-wrap items-center justify-between gap-2">
               <label className="flex items-center gap-2 text-theme-xs text-gray-600">
                 <input type="checkbox" checked={saveBack} onChange={(e) => setSaveBack(e.target.checked)} />
-                Salvar no cartão o que mudei em Plano, Vencimento do boleto, Qtd de turmas, Fim da vigência, Usuário e E-mail financeiro
+                Salvar no cartão o que mudei em Plano, Vencimento do boleto, Qtd de turmas, Fim da vigência, Usuário, E-mail do usuário e E-mail financeiro
               </label>
               <TaButton
                 startIcon={busy ? <RefreshCw size={15} className="animate-spin" /> : <MessageSquare size={15} />}

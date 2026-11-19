@@ -50,12 +50,12 @@ describe("Chatwoot: vencimento do boleto", () => {
 });
 
 describe("Chatwoot: dados da nota", () => {
-  it("cria os 6 campos só no funil escolhido, uma vez", async () => {
+  it("cria os 7 campos só no funil escolhido, uma vez", async () => {
     const { db, ctx, power, outro } = await setup();
-    expect(cw.ensureChatwootFields(db, ctx, [power]).created).toEqual(["Qtd de turmas", "Plano", "Vencimento do boleto", "Fim da vigência", "Usuário Powercubus", "E-mail financeiro"]);
+    expect(cw.ensureChatwootFields(db, ctx, [power]).created).toEqual(["Qtd de turmas", "Plano", "Vencimento do boleto", "Fim da vigência", "Usuário Powercubus", "E-mail do usuário PowerCubus", "E-mail financeiro"]);
     expect(cw.ensureChatwootFields(db, ctx, [power]).created).toEqual([]);
     expect(listCustomFields(db, "deal", { pipelineId: power }).map((f) => f.placeholder_key)).toEqual(
-      expect.arrayContaining(["qtd_turmas", "plano", "vencimento_boleto", "fim_vigencia", "usuario_powercubus", "email_financeiro"]),
+      expect.arrayContaining(["qtd_turmas", "plano", "vencimento_boleto", "fim_vigencia", "usuario_powercubus", "email_usuario_powercubus", "email_financeiro"]),
     );
     expect(listCustomFields(db, "deal", { pipelineId: outro })).toEqual([]);
   });
@@ -63,7 +63,7 @@ describe("Chatwoot: dados da nota", () => {
   it("pagador dá os dados fiscais; escola principal dá o nome; campos do cartão completam", async () => {
     const { db, ctx, power, card, caixa } = await setup();
     let c = cw.chatwootContext(db, card);
-    expect(c.missingFields).toHaveLength(6);
+    expect(c.missingFields).toHaveLength(7);
     expect(c.data).toMatchObject({ razao_social: "EE Doutor João Pinheiro", cnpj: "18.965.335/0001-00", usuario: "escola.190900@educacao.mg.gov.br" });
 
     cw.ensureChatwootFields(db, ctx, [power]);
@@ -76,6 +76,7 @@ describe("Chatwoot: dados da nota", () => {
       email_cliente: "escola.190900@educacao.mg.gov.br",
       nome_responsavel: "Rozi Souza",
       usuario: "escola.190900@educacao.mg.gov.br",
+      email_usuario: "escola.190900@educacao.mg.gov.br",
       qtd_turmas: "10",
       plano: "Pro",
       vencimento_boleto: "20/11/2026",
@@ -92,7 +93,7 @@ describe("Chatwoot: dados da nota", () => {
     expect(cw.chatwootMissing(c.data)).toEqual([]);
     expect(cw.chatwootMissing({ ...c.data, cnpj: " " })).toEqual(["cnpj"]);
     expect(cw.chatwootNote(c.data)).toContain(
-      "**Solicito ativação de conta**\n\nUsuário: escola.190900@educacao.mg.gov.br\nQtd de turmas: 10\nPlano: Pro\nData de Vencimento do Boleto: 20/11/2026\nFim da vigência: 31/12/2027\nValor: R$ 495,00",
+      "**Solicito ativação de conta**\n\nUsuário: escola.190900@educacao.mg.gov.br\nEmail usuário PowerCubus: escola.190900@educacao.mg.gov.br\nQtd de turmas: 10\nPlano: Pro\nData de Vencimento do Boleto: 20/11/2026\nFim da vigência: 31/12/2027\nValor: R$ 495,00",
     );
   });
 

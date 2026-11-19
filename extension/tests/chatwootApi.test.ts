@@ -7,6 +7,7 @@ const dados: ChatwootData = {
   email_cliente: "cliente@escola.com.br",
   nome_responsavel: "Nome do Responsável",
   usuario: "cliente@escola.com.br",
+  email_usuario: "cliente@escola.com.br",
   qtd_turmas: "10",
   plano: "Pro",
   vencimento_boleto: "20/11/2026",

@@ -21,6 +21,7 @@ export const CHATWOOT_CARD_FIELDS: { key: string; field: ChatwootField; name: st
   { key: "vencimento_boleto", field: "vencimento_boleto", name: "Vencimento do boleto", type: "date", description: "Data de vencimento do boleto; vazio = vencimento da última cobrança do cartão (ativação Powercubus no Chatwoot)." },
   { key: "fim_vigencia", field: "fim_vigencia", name: "Fim da vigência", type: "date", description: "Fim da vigência do contrato (ativação Powercubus no Chatwoot)." },
   { key: "usuario_powercubus", field: "usuario", name: "Usuário Powercubus", type: "text", description: "Usuário de acesso; vazio = e-mail do responsável." },
+  { key: "email_usuario_powercubus", field: "email_usuario", name: "E-mail do usuário PowerCubus", type: "email", description: "E-mail do usuário de acesso; vazio = e-mail do responsável." },
   { key: "email_financeiro", field: "email_financeiro", name: "E-mail financeiro", type: "email", description: "E-mail para envio de boletos e Nota Fiscal." },
 ];
 
@@ -127,6 +128,7 @@ export function chatwootContext(db: DatabaseSync, cardId: string): ChatwootConte
     email_cliente: person?.email ?? "",
     nome_responsavel: person?.name ?? "",
     usuario: fv("usuario") || person?.email || "",
+    email_usuario: fv("email_usuario") || person?.email || "",
     qtd_turmas: fv("qtd_turmas"),
     plano: fv("plano"),
     vencimento_boleto: fv("vencimento_boleto") || (lastChargeDue ? dmy(lastChargeDue) : ""),
@@ -144,6 +146,7 @@ export function chatwootContext(db: DatabaseSync, cardId: string): ChatwootConte
     email_cliente: "contato principal",
     nome_responsavel: "contato principal",
     usuario: fv("usuario") ? field("usuario", "Usuário Powercubus") : "e-mail do contato principal",
+    email_usuario: fv("email_usuario") ? field("email_usuario", "E-mail do usuário PowerCubus") : "e-mail do contato principal",
     qtd_turmas: field("qtd_turmas", "Qtd de turmas"),
     plano: field("plano", "Plano"),
     vencimento_boleto: fv("vencimento_boleto")

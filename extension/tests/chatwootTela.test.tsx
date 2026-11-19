@@ -22,6 +22,7 @@ const data = {
   email_cliente: "escola@educacao.mg.gov.br",
   nome_responsavel: "Rozi",
   usuario: "escola@educacao.mg.gov.br",
+  email_usuario: "escola@educacao.mg.gov.br",
   qtd_turmas: "10",
   plano: "",
   vencimento_boleto: "20/11/2026",
