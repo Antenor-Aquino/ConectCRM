@@ -374,6 +374,10 @@ export const methods = {
     const have = chatwoot.chatwootCardFields(db);
     return chatwoot.CHATWOOT_CARD_FIELDS.map((d) => ({ name: d.name, key: d.key, exists: !!have[d.field], pipelineIds: have[d.field]?.pipelineIds ?? [] }));
   },
+  "chatwoot.attachRecord": (db: DatabaseSync, ctx: DbContext, p: Id & { conversationId: number; names: string[] }) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    chatwoot.recordChatwootAttachments(db, ctx, p.id, p);
+  },
   "chatwoot.cancelRecord": (db: DatabaseSync, ctx: DbContext, p: Id & { conversationId: number; note: string; by?: string | null }) => {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);
     chatwoot.recordChatwootCancel(db, ctx, p.id, p);

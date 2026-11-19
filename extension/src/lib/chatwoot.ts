@@ -113,6 +113,8 @@ export async function openActivationTicket(
   s: ChatwootSettings,
   dados: ChatwootData,
   fetchFn: Fetch = fetch,
+  /** Documentos do cartão (contrato assinado, convocação…): vão numa nota privada logo depois. */
+  files: ChatwootFile[] = [],
 ): Promise<{ conversationId: number; link: string; contactCreated: boolean }> {
   if (!s.token.trim()) throw new ChatwootError("Configure o token do Chatwoot em Configurações → Integrações → Chatwoot.");
   const missing = chatwootMissing(dados);
@@ -150,6 +152,7 @@ export async function openActivationTicket(
   try {
     await api("POST", `/conversations/${conv.id}/messages`, { content: chatwootNote(dados), message_type: "outgoing", private: true });
     if (s.label.trim()) await api("POST", `/conversations/${conv.id}/labels`, { labels: [s.label.trim()] });
+    if (files.length) await sendPrivateFiles(s, conv.id, attachmentsNote(files.map((f) => f.filename)), files, fetchFn);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     throw new ChatwootError(`${msg} — a conversa ${conv.id} já foi criada (${link}); complete por lá e não reenvie.`, e instanceof ChatwootError ? e.status : undefined, link);
@@ -257,3 +260,54 @@ export async function cancelTicket(
   }
   return { conversationId, link, assigneeId, user: profile.name ?? "" };
 }
+
+// ---------- Anexos (documentos do cartão) ----------
+
+/** Limite por arquivo (o Chatwoot aceita até 40 MB por anexo na configuração padrão). */
+export const CHATWOOT_FILE_MAX = 40 * 1024 * 1024;
+
+export interface ChatwootFile {
+  blob: Blob;
+  filename: string;
+}
+
+/**
+ * Nota privada com arquivos (multipart: content, message_type, private,
+ * attachments[]). Usada ao abrir o ticket e depois, em conversa em andamento.
+ */
+export async function sendPrivateFiles(
+  s: ChatwootSettings,
+  conversationId: number,
+  content: string,
+  files: ChatwootFile[],
+  fetchFn: Fetch = fetch,
+): Promise<void> {
+  if (!files.length) return;
+  const big = files.find((f) => f.blob.size > CHATWOOT_FILE_MAX);
+  if (big) throw new ChatwootError(`"${big.filename}" passa de 40 MB (limite de anexo do Chatwoot).`);
+  const form = new FormData();
+  form.append("content", content);
+  form.append("message_type", "outgoing");
+  form.append("private", "true");
+  for (const f of files) form.append("attachments[]", f.blob, f.filename);
+  const path = `/conversations/${conversationId}/messages`;
+  let res: Response;
+  try {
+    // Sem Content-Type: o navegador põe o multipart com o boundary.
+    res = await fetchFn(`${s.baseUrl.replace(/\/+$/, "")}/api/v1/accounts/${s.accountId}${path}`, { method: "POST", headers: { api_access_token: s.token }, body: form });
+  } catch (e) {
+    throw new ChatwootError(`Sem conexão com o Chatwoot (${e instanceof Error ? e.message : String(e)}).`, undefined, conversationLink(s, conversationId));
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new ChatwootError(
+      `Chatwoot: POST ${path} (anexos) → HTTP ${res.status}${res.status === 413 ? " (arquivo grande demais para o servidor)" : ""}${text ? `: ${text.slice(0, 300)}` : ""}`,
+      res.status,
+      conversationLink(s, conversationId),
+    );
+  }
+}
+
+/** Texto da nota que leva os anexos. */
+export const attachmentsNote = (names: string[], extra?: string) =>
+  [`**Documentos anexos** (${names.length})`, "", ...names.map((n) => `- ${n}`), ...(extra?.trim() ? ["", extra.trim()] : [])].join("\n");

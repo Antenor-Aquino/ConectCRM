@@ -3,7 +3,7 @@
 // um — para revisar e abrir o ticket no Chatwoot. Os campos que vêm de campos
 // personalizados podem ser salvos de volta no cartão.
 import { useEffect, useState } from "react";
-import { AlertTriangle, Check, ExternalLink, MessageSquare, RefreshCw, XCircle } from "lucide-react";
+import { AlertTriangle, Check, ExternalLink, MessageSquare, Paperclip, RefreshCw, XCircle } from "lucide-react";
 import { TaButton, TaInput, TaModal, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { ChatwootContext, ChatwootTicket } from "../../db/chatwoot";
@@ -18,11 +18,17 @@ import {
   requestChatwootPermission,
   TICKET_STATUS_LABEL,
   ticketStates,
+  attachmentsNote,
+  CHATWOOT_FILE_MAX,
+  sendPrivateFiles,
+  type ChatwootFile,
   type ChatwootSettings,
   type TicketState,
 } from "../../lib/chatwoot";
 import { errorText } from "../../lib/errors";
 import { formatDateTime } from "../../lib/format";
+import { fetchVersion } from "../../lib/documentFiles";
+import { formatBytes } from "../../lib/files";
 
 const rpc = <T,>(m: string, p: Record<string, unknown>) => (call as unknown as (m: string, p: unknown) => Promise<T>)(m, p);
 
@@ -56,6 +62,9 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ link: string; conversationId: number } | null>(null);
+  /** Documentos do cartão (GED) e os escolhidos para ir junto com o ticket. */
+  const [docs, setDocs] = useState<CardDoc[]>([]);
+  const [chosen, setChosen] = useState<string[]>([]);
   /** Situação real das conversas no Chatwoot (null = consultando ou sem consulta). */
   const [states, setStates] = useState<TicketState[] | null>(null);
 
@@ -64,6 +73,22 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
     const settings = await loadChatwoot();
     if (!chatwootReady(settings)) return setStates(null);
     setStates(await ticketStates(settings, ids).catch(() => null));
+  };
+
+  /** Envia documentos do cartão a uma conversa em andamento (nota privada com os arquivos). */
+  const attach = async (conversationId: number, ids: string[], text: string): Promise<string | null> => {
+    const settings = await loadChatwoot();
+    if (!(await requestChatwootPermission(settings).catch(() => false))) return "Sem a permissão de acesso ao Chatwoot não dá para enviar. Tente de novo e escolha Permitir.";
+    try {
+      const list = docs.filter((d) => ids.includes(d.id));
+      const files = await readDocs(list);
+      await sendPrivateFiles(settings, conversationId, attachmentsNote(files.map((f) => f.filename), text), files);
+      await rpc("chatwoot.attachRecord", { id: cardId, conversationId, names: files.map((f) => f.filename) });
+      onChanged?.();
+      return null;
+    } catch (e) {
+      return errorText(e);
+    }
   };
 
   /** Cancela no Chatwoot (nota, devolve ao dono do token, resolve) e registra no cartão. */
@@ -90,6 +115,7 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
       setCtx(c);
       setData(c.data);
       void loadStates(c.tickets.map((t) => t.conversation_id));
+      void rpc<CardDoc[]>("documents.forEntity", { type: "deal", id: cardId }).then(setDocs).catch(() => setDocs([]));
     } catch (e) {
       setError(errorText(e));
     }
@@ -132,7 +158,7 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
       }
       let r: { conversationId: number; link: string; contactCreated: boolean };
       try {
-        r = await openActivationTicket(settings, data);
+        r = await openActivationTicket(settings, data, fetch, await readDocs(docs.filter((d) => chosen.includes(d.id))));
       } catch (e) {
         // Conversa criada, mas a nota/etiqueta falhou: registra para não duplicar.
         if (e instanceof ChatwootError && e.link) {
@@ -142,7 +168,14 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
         }
         throw e;
       }
-      await rpc("chatwoot.record", { id: cardId, conversationId: r.conversationId, link: r.link, data, contactCreated: r.contactCreated });
+      await rpc("chatwoot.record", {
+        id: cardId,
+        conversationId: r.conversationId,
+        link: r.link,
+        data,
+        contactCreated: r.contactCreated,
+        attachments: docs.filter((d) => chosen.includes(d.id)).map((d) => d.filename),
+      });
       setDone({ link: r.link, conversationId: r.conversationId });
       onChanged?.();
     } catch (e) {
@@ -182,6 +215,8 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
                 again={again}
                 onAgain={setAgain}
                 onCancel={cancel}
+                docs={docs}
+                onAttach={attach}
               />
             )}
 
@@ -207,6 +242,12 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
                 </div>
               </section>
             ))}
+
+            <section data-chatwoot-attachments>
+              <p className="mb-1 text-theme-xs font-semibold uppercase text-gray-500">Anexos (documentos do cartão)</p>
+              <DocPicker docs={docs} value={chosen} onChange={setChosen} />
+              {chosen.length > 0 && <p className="mt-1 text-theme-xs text-gray-500">Vão numa nota privada logo depois da nota de ativação (só a equipe vê).</p>}
+            </section>
 
             <section>
               <p className="mb-1 text-theme-xs font-semibold uppercase text-gray-500">Nota privada que vai para o Chatwoot</p>
@@ -248,6 +289,51 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
 
 export { CHATWOOT_FIELDS };
 
+/** Documento do cartão (GED) que pode ir para o Chatwoot. */
+interface CardDoc {
+  id: string;
+  name: string;
+  type_name: string | null;
+  version_id: string;
+  filename: string;
+  size_bytes: number;
+}
+
+/** Lê os arquivos dos documentos escolhidos (fica na auditoria de cada documento como download). */
+async function readDocs(list: CardDoc[]): Promise<ChatwootFile[]> {
+  const out: ChatwootFile[] = [];
+  for (const d of list) {
+    if (d.size_bytes > CHATWOOT_FILE_MAX) throw new Error(`"${d.name}" passa de 40 MB (limite de anexo do Chatwoot).`);
+    const f = await fetchVersion(d.version_id, "download");
+    out.push({ blob: f.blob, filename: f.filename });
+  }
+  return out;
+}
+
+function DocPicker({ docs, value, onChange }: { docs: CardDoc[]; value: string[]; onChange: (ids: string[]) => void }) {
+  if (!docs.length) return <p className="text-theme-xs text-gray-400">O cartão não tem documentos. Anexe na aba Documentos do cartão (ex.: contrato assinado, aviso de convocação).</p>;
+  return (
+    <ul className="max-h-44 space-y-1 overflow-y-auto rounded-lg border border-gray-200 p-2 dark:border-gray-800" data-chatwoot-docs>
+      {docs.map((d) => {
+        const on = value.includes(d.id);
+        const big = d.size_bytes > CHATWOOT_FILE_MAX;
+        return (
+          <li key={d.id}>
+            <label className={cn("flex items-center gap-2 text-theme-xs", big ? "text-gray-400" : "text-gray-700 dark:text-gray-300")}>
+              <input type="checkbox" checked={on} disabled={big} onChange={() => onChange(on ? value.filter((x) => x !== d.id) : [...value, d.id])} data-chatwoot-doc={d.name} />
+              <span className="truncate">{d.name}</span>
+              <span className="ml-auto shrink-0 text-gray-400">
+                {[d.type_name, formatBytes(d.size_bytes)].filter(Boolean).join(" · ")}
+                {big ? " · grande demais (40 MB)" : ""}
+              </span>
+            </label>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 /** Tickets já abertos pelo cartão: situação real, responsável e "Cancelar ticket" em cada um. */
 function TicketsSection({
   tickets,
@@ -256,6 +342,8 @@ function TicketsSection({
   again,
   onAgain,
   onCancel,
+  docs,
+  onAttach,
 }: {
   tickets: ChatwootTicket[];
   states: TicketState[] | null;
@@ -263,6 +351,8 @@ function TicketsSection({
   again: boolean;
   onAgain: (v: boolean) => void;
   onCancel: (conversationId: number, note: string) => Promise<string | null>;
+  docs: CardDoc[];
+  onAttach: (conversationId: number, ids: string[], text: string) => Promise<string | null>;
 }) {
   return (
     <div className={cn("rounded-lg border px-3 py-2", active ? "border-warning-200 bg-warning-50 text-warning-800" : "border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-800 dark:bg-white/5 dark:text-gray-300")} data-chatwoot-previous>
@@ -274,7 +364,15 @@ function TicketsSection({
       </p>
       <ul className="mt-1.5 space-y-1.5">
         {tickets.map((t) => (
-          <TicketRow key={t.id} ticket={t} state={states?.find((x) => x.id === t.conversation_id) ?? null} checking={states === null} onCancel={onCancel} />
+          <TicketRow
+            key={t.id}
+            ticket={t}
+            state={states?.find((x) => x.id === t.conversation_id) ?? null}
+            checking={states === null}
+            onCancel={onCancel}
+            docs={docs}
+            onAttach={onAttach}
+          />
         ))}
       </ul>
       {active > 0 && (
@@ -292,12 +390,20 @@ function TicketRow({
   state,
   checking,
   onCancel,
+  docs,
+  onAttach,
 }: {
   ticket: ChatwootTicket;
   state: TicketState | null;
   checking: boolean;
   onCancel: (conversationId: number, note: string) => Promise<string | null>;
+  docs: CardDoc[];
+  onAttach: (conversationId: number, ids: string[], text: string) => Promise<string | null>;
 }) {
+  const [attaching, setAttaching] = useState(false);
+  const [pick, setPick] = useState<string[]>([]);
+  const [attachText, setAttachText] = useState("");
+  const [sent, setSent] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -334,10 +440,15 @@ function TicketRow({
           {t.created_by_name ? ` · aberta por ${t.created_by_name}` : ""}
           {state?.assignee ? ` · com ${state.assignee}` : ""}
         </span>
-        {cancelable && !open && (
-          <button type="button" className="ml-auto inline-flex items-center gap-1 font-medium text-error-600 hover:underline" onClick={() => setOpen(true)} data-chatwoot-cancel>
-            <XCircle size={13} /> Cancelar ticket
-          </button>
+        {cancelable && !open && !attaching && (
+          <span className="ml-auto flex gap-3">
+            <button type="button" className="inline-flex items-center gap-1 font-medium text-brand-600 hover:underline" onClick={() => setAttaching(true)} data-chatwoot-attach>
+              <Paperclip size={13} /> Enviar documentos
+            </button>
+            <button type="button" className="inline-flex items-center gap-1 font-medium text-error-600 hover:underline" onClick={() => setOpen(true)} data-chatwoot-cancel>
+              <XCircle size={13} /> Cancelar ticket
+            </button>
+          </span>
         )}
       </div>
       {t.cancel_note && <p className="mt-0.5 text-gray-500">Observação do cancelamento: {t.cancel_note}</p>}
@@ -356,6 +467,37 @@ function TicketRow({
           </div>
         </div>
       )}
+      {attaching && (
+        <div className="mt-1.5 space-y-1.5" data-chatwoot-attach-form>
+          <DocPicker docs={docs} value={pick} onChange={setPick} />
+          <TaInput value={attachText} onChange={(e) => setAttachText(e.target.value)} placeholder="Comentário (opcional), ex.: contrato assinado pela diretora" aria-label="Comentário dos anexos" />
+          <div className="flex gap-2">
+            <TaButton
+              size="sm"
+              variant="primary"
+              disabled={busy || !pick.length}
+              onClick={async () => {
+                setBusy(true);
+                setError(null);
+                const err = await onAttach(t.conversation_id, pick, attachText);
+                setBusy(false);
+                if (err) return setError(err);
+                setSent(`${pick.length} documento${pick.length > 1 ? "s" : ""} enviado${pick.length > 1 ? "s" : ""} como nota privada.`);
+                setAttaching(false);
+                setPick([]);
+                setAttachText("");
+              }}
+              data-chatwoot-attach-send
+            >
+              {busy ? "Enviando…" : "Enviar ao Chatwoot"}
+            </TaButton>
+            <TaButton size="sm" disabled={busy} onClick={() => setAttaching(false)}>
+              Voltar
+            </TaButton>
+          </div>
+        </div>
+      )}
+      {sent && <p className="mt-1 text-success-700" data-chatwoot-attach-done>{sent}</p>}
       {error && <p className="mt-1 text-error-600" data-chatwoot-cancel-error>{error}</p>}
     </li>
   );

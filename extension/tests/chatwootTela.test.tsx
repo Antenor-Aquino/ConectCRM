@@ -12,9 +12,17 @@ vi.mock("../src/rpc/client", () => ({
   call: vi.fn(async (method: string, params: Record<string, unknown>) => {
     calls.push({ method, params });
     if (method === "chatwoot.context") return ctx.value;
+    if (method === "documents.forEntity")
+      return [
+        { id: "d1", name: "Contrato assinado", type_name: "Contrato", version_id: "v1", filename: "Contrato assinado.pdf", size_bytes: 1200 },
+        { id: "d2", name: "Aviso de convocação", type_name: null, version_id: "v2", filename: "Convocação.pdf", size_bytes: 800 },
+      ];
     return { ticketId: "t", activityId: "a" };
   }),
   DATA_CHANGED_EVENT: "x",
+}));
+vi.mock("../src/lib/documentFiles", () => ({
+  fetchVersion: vi.fn(async (versionId: string) => ({ blob: new Blob(["pdf"], { type: "application/pdf" }), filename: versionId === "v1" ? "Contrato assinado.pdf" : "Convocação.pdf", mime: "application/pdf" })),
 }));
 import { ChatwootDialog } from "../src/dashboard/cards/ChatwootDialog";
 
@@ -78,11 +86,15 @@ describe("Ativação no Chatwoot (tela)", () => {
     fireEvent.click(document.querySelector("[data-chatwoot-again]")!);
     expect(send.disabled).toBe(false);
     expect(document.querySelector("[data-chatwoot-preview]")!.textContent).toContain("Plano: Pro");
+    await waitFor(() => expect(document.querySelector('[data-chatwoot-attachments] [data-chatwoot-doc="Contrato assinado"]')).not.toBeNull());
+    fireEvent.click(document.querySelector('[data-chatwoot-attachments] [data-chatwoot-doc="Contrato assinado"]')!);
     await act(async () => fireEvent.click(send));
     await waitFor(() => expect(document.querySelector("[data-chatwoot-done]")).not.toBeNull());
     expect(screen.getByText(/conversa 2400/)).toBeTruthy();
     expect(calls.find((c) => c.method === "cards.update")!.params).toEqual({ id: "c1", patch: { customValues: { "f-plano": "Pro" } } });
-    expect(calls.find((c) => c.method === "chatwoot.record")!.params).toMatchObject({ id: "c1", conversationId: 2400, data: { plano: "Pro" } });
+    expect(calls.find((c) => c.method === "chatwoot.record")!.params).toMatchObject({ id: "c1", conversationId: 2400, data: { plano: "Pro" }, attachments: ["Contrato assinado.pdf"] });
+    const multipart = fetchMock.mock.calls.find(([, o]) => (o as RequestInit).body instanceof FormData)!;
+    expect(((multipart[1] as RequestInit).body as FormData).getAll("attachments[]").map((f) => (f as File).name)).toEqual(["Contrato assinado.pdf"]);
     expect(onChanged).toHaveBeenCalled();
   });
 
@@ -120,6 +132,13 @@ describe("Ativação no Chatwoot (tela)", () => {
     // Só a aberta tem "Cancelar ticket"; com ela em andamento, abrir outro pede confirmação.
     expect(document.querySelectorAll("[data-chatwoot-cancel]")).toHaveLength(1);
     expect((document.querySelector("[data-chatwoot-send]") as HTMLButtonElement).disabled).toBe(true);
+    // Enviar documentos à conversa em andamento.
+    fireEvent.click(document.querySelector('[data-chatwoot-ticket="2316"] [data-chatwoot-attach]')!);
+    fireEvent.click(document.querySelector('[data-chatwoot-attach-form] [data-chatwoot-doc="Aviso de convocação"]')!);
+    await act(async () => fireEvent.click(document.querySelector("[data-chatwoot-attach-send]")!));
+    await waitFor(() => expect(document.querySelector("[data-chatwoot-attach-done]")).not.toBeNull());
+    expect(calls.find((c) => c.method === "chatwoot.attachRecord")!.params).toEqual({ id: "c1", conversationId: 2316, names: ["Convocação.pdf"] });
+    posts.length = 0;
     fireEvent.click(document.querySelector('[data-chatwoot-ticket="2316"] [data-chatwoot-cancel]')!);
     const confirm = document.querySelector("[data-chatwoot-cancel-confirm]") as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);
