@@ -138,7 +138,11 @@ export function OrganizationFormModal({
     setLookingUp(false);
     setCnpjMsg(null);
     const digits = cnpjDigits(masked);
-    if (digits.length !== 14) return;
+    if (digits.length !== 14) {
+      // A consulta à Receita só dispara com os 14 dígitos.
+      if (digits.length) setCnpjMsg({ text: `Faltam ${14 - digits.length} dígito${14 - digits.length > 1 ? "s" : ""} para consultar a Receita (o CNPJ tem 14).`, busy: true });
+      return;
+    }
     await consultCnpj(digits);
   }
 
