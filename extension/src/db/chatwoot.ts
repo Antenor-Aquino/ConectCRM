@@ -223,7 +223,7 @@ export function recordChatwootTicket(
     if (venc) {
       const check = new Date(venc.y, venc.m - 1, venc.d + 1, 9, 0, 0, 0);
       paymentActivityId = createActivity(db, ctx, {
-        title: "Conferir pagamento do boleto",
+        title: PAYMENT_CHECK_TITLE,
         description: [
           `Boleto com vencimento em ${input.data.vencimento_boleto}${input.data.valor ? ` (${input.data.valor})` : ""}: confirme se o cliente pagou.`,
           `Escola: ${input.data.nome_escola || "-"} · Pagador: ${input.data.razao_social || "-"}`,
@@ -307,4 +307,94 @@ export function recordChatwootReply(db: DatabaseSync, ctx: DbContext, cardId: st
       ...(input.names?.length ? ["", `Anexos: ${input.names.join(", ")}`] : []),
     ].join("\n"),
   );
+}
+
+export const PAYMENT_CHECK_TITLE = "Conferir pagamento do boleto";
+
+export interface PaymentCheckPlan {
+  cardId: string;
+  cardTitle: string;
+  conversationId: number;
+  /** "dd/mm/aaaa" ou "" */
+  dueBoleto: string;
+  /** Data da atividade (aaaa-mm-dd) ou null quando não dá para criar. */
+  checkDate: string | null;
+  status: "criar" | "ja_existe" | "sem_vencimento" | "pago";
+}
+
+/**
+ * Rotina para tickets já abertos: em cada cartão com ticket de ativação não
+ * cancelado, cria "Conferir pagamento do boleto" um dia após o vencimento
+ * (campo do cartão ou última cobrança). Não repete se já existe a atividade
+ * no cartão; pula cobrança já paga. `dryRun` só mostra o plano.
+ */
+export function backfillPaymentChecks(db: DatabaseSync, ctx: DbContext, opts: { dryRun?: boolean } = {}): PaymentCheckPlan[] {
+  const rows = many<{ card_id: string; conversation_id: number; link: string; created_by: string | null }>(
+    db,
+    `SELECT t.card_id, t.conversation_id, t.link, t.created_by FROM chatwoot_ticket t
+     JOIN deal d ON d.id = t.card_id AND d.deleted_at IS NULL
+     WHERE t.deleted_at IS NULL AND t.canceled_at IS NULL
+       AND t.created_at = (SELECT MAX(x.created_at) FROM chatwoot_ticket x WHERE x.card_id = t.card_id AND x.deleted_at IS NULL AND x.canceled_at IS NULL)
+     ORDER BY t.created_at`,
+  );
+  const plans: PaymentCheckPlan[] = [];
+  const run = () => {
+    for (const r of rows) {
+      const c = chatwootContext(db, r.card_id);
+      // Vencimento: o enviado na nota do ticket (cartão); senão, o campo do cartão / a última cobrança.
+      const fromNote = ticketNoteDue(db, r.card_id, r.conversation_id);
+      if (fromNote) c.data.vencimento_boleto = fromNote;
+      const venc = parseBrDate(c.data.vencimento_boleto);
+      const base = { cardId: r.card_id, cardTitle: c.cardTitle, conversationId: r.conversation_id, dueBoleto: c.data.vencimento_boleto };
+      if (one(db, "SELECT 1 FROM activity WHERE deal_id = ? AND title = ? AND deleted_at IS NULL", r.card_id, PAYMENT_CHECK_TITLE)) {
+        plans.push({ ...base, checkDate: null, status: "ja_existe" });
+        continue;
+      }
+      const last = one<{ status: string }>(
+        db,
+        "SELECT status FROM payment_charge WHERE card_id = ? AND deleted_at IS NULL AND status <> 'canceled' ORDER BY created_at DESC LIMIT 1",
+        r.card_id,
+      );
+      if (last?.status === "paid") {
+        plans.push({ ...base, checkDate: null, status: "pago" });
+        continue;
+      }
+      if (!venc) {
+        plans.push({ ...base, checkDate: null, status: "sem_vencimento" });
+        continue;
+      }
+      const check = new Date(venc.y, venc.m - 1, venc.d + 1, 9, 0, 0, 0);
+      const checkDate = `${check.getFullYear()}-${String(check.getMonth() + 1).padStart(2, "0")}-${String(check.getDate()).padStart(2, "0")}`;
+      plans.push({ ...base, checkDate, status: "criar" });
+      if (opts.dryRun) continue;
+      const owner = r.created_by && one(db, "SELECT 1 FROM app_user WHERE id = ? AND deleted_at IS NULL", r.created_by) ? r.created_by : ctx.userId;
+      createActivity(db, ctx, {
+        title: PAYMENT_CHECK_TITLE,
+        description: [
+          `Boleto com vencimento em ${c.data.vencimento_boleto}${c.data.valor ? ` (${c.data.valor})` : ""}: confirme se o cliente pagou.`,
+          `Escola: ${c.data.nome_escola || "-"} · Pagador: ${c.data.razao_social || "-"}`,
+          `Ticket da ativação no Chatwoot: ${r.link}`,
+        ].join("\n"),
+        dueAt: check.toISOString(),
+        dealId: r.card_id,
+        ownerId: owner,
+      });
+    }
+  };
+  if (opts.dryRun) run();
+  else withTransaction(db, run);
+  return plans;
+}
+
+/** "Data de Vencimento do Boleto" gravada na nota do cartão quando o ticket foi aberto. */
+function ticketNoteDue(db: DatabaseSync, cardId: string, conversationId: number): string | null {
+  const n = one<{ body: string }>(
+    db,
+    `SELECT body FROM note WHERE entity_type = 'deal' AND entity_id = ? AND deleted_at IS NULL
+       AND body LIKE ? AND body LIKE '%Data de Vencimento do Boleto:%' ORDER BY created_at DESC LIMIT 1`,
+    cardId,
+    `Ticket de ativação aberto no Chatwoot (conversa ${conversationId}%`,
+  );
+  const m = n?.body.match(/Data de Vencimento do Boleto:\s*(\d{1,2}\/\d{1,2}\/\d{4})/);
+  return m ? m[1]! : null;
 }

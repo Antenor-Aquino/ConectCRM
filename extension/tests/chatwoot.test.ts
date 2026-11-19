@@ -130,3 +130,44 @@ describe("Chatwoot: dados da nota", () => {
     expect(bad.paymentActivityId).toBeNull();
   });
 });
+
+describe("rotina: conferir pagamento dos tickets já abertos", () => {
+  it("cria um dia após o vencimento (nota do ticket ou campo), não repete, pula pago/cancelado/sem vencimento", async () => {
+    const { db, ctx, power, card, escola } = await setup();
+    const { saveInterCharge, applyInterSituacao } = await import("../src/db/charges");
+    const link = (n: number) => `https://suporte.powercubus.com.br/app/accounts/1/conversations/${n}`;
+    const base = cw.chatwootContext(db, card).data;
+    // 1) Ticket com vencimento na nota (como os abertos pela 0.2.140+), sem atividade ainda.
+    cw.recordChatwootTicket(db, ctx, card, { conversationId: 10, link: link(10), data: { ...base, vencimento_boleto: "" } });
+    db.run("UPDATE note SET body = body || ? WHERE entity_type = 'deal' AND entity_id = ?", ["\nData de Vencimento do Boleto: 20/11/2026", card]);
+    // 2) Sem vencimento em lugar nenhum.
+    const c2 = createCard(db, ctx, { pipelineId: power, title: "Sem vencimento", organizationId: escola });
+    cw.recordChatwootTicket(db, ctx, c2, { conversationId: 11, link: link(11), data: base });
+    // 3) Cobrança já paga.
+    const c3 = createCard(db, ctx, { pipelineId: power, title: "Já pago", organizationId: escola });
+    const ch = saveInterCharge(db, ctx, c3, { env: "sandbox", seuNumero: "C3", codigoSolicitacao: "k3", situacao: "A_RECEBER", items: [{ description: "x", quantity: 1, priceCents: 1000 }], description: "B", dueDate: "2026-11-25" });
+    applyInterSituacao(db, ctx, ch, { situacao: "RECEBIDO" });
+    cw.recordChatwootTicket(db, ctx, c3, { conversationId: 12, link: link(12), data: base });
+    // 4) Ticket cancelado: fora da rotina.
+    const c4 = createCard(db, ctx, { pipelineId: power, title: "Cancelado", organizationId: escola });
+    cw.recordChatwootTicket(db, ctx, c4, { conversationId: 13, link: link(13), data: { ...base, vencimento_boleto: "20/11/2026" } });
+    db.run("UPDATE activity SET deleted_at = 'x' WHERE deal_id = ? AND title = ?", [c4, cw.PAYMENT_CHECK_TITLE]);
+    cw.recordChatwootCancel(db, ctx, c4, { conversationId: 13, note: "Cliente desistiu" });
+
+    const plan = cw.backfillPaymentChecks(db, ctx, { dryRun: true });
+    expect(plan.map((p) => [p.cardTitle, p.status, p.checkDate])).toEqual([
+      ["Licenças 2027", "criar", "2026-11-21"],
+      ["Sem vencimento", "sem_vencimento", null],
+      ["Já pago", "pago", null],
+    ]);
+    expect(listActivities(db, { dealId: card }).filter((a) => a.title === cw.PAYMENT_CHECK_TITLE)).toHaveLength(0);
+
+    cw.backfillPaymentChecks(db, ctx);
+    const acts = listActivities(db, { dealId: card }).filter((a) => a.title === cw.PAYMENT_CHECK_TITLE);
+    expect(acts).toHaveLength(1);
+    expect(new Date(acts[0]!.due_at).getDate()).toBe(21);
+    expect(acts[0]!.description).toContain("conversations/10");
+    // Segunda vez: não repete.
+    expect(cw.backfillPaymentChecks(db, ctx, { dryRun: true })[0]!.status).toBe("ja_existe");
+  });
+});
