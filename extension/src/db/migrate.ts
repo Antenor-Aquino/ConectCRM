@@ -46,6 +46,7 @@ import migration0043 from "./migrations/0043_cobranca_baixa_gf.sql?raw";
 import migration0044 from "./migrations/0044_cartao_organizacoes.sql?raw";
 import migration0045 from "./migrations/0045_organizacao_tipo.sql?raw";
 import migration0046 from "./migrations/0046_chatwoot_ticket.sql?raw";
+import migration0047 from "./migrations/0047_chatwoot_cancelamento.sql?raw";
 
 export const MIGRATIONS: { name: string; sql: string }[] = [
   { name: "0000_init.sql", sql: migration0000 },
@@ -95,6 +96,7 @@ export const MIGRATIONS: { name: string; sql: string }[] = [
   { name: "0044_cartao_organizacoes.sql", sql: migration0044 },
   { name: "0045_organizacao_tipo.sql", sql: migration0045 },
   { name: "0046_chatwoot_ticket.sql", sql: migration0046 },
+  { name: "0047_chatwoot_cancelamento.sql", sql: migration0047 },
 ];
 
 /** Aplica as migrations pendentes; devolve quantas rodaram. */

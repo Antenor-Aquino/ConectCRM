@@ -85,4 +85,51 @@ describe("Ativação no Chatwoot (tela)", () => {
     expect(calls.find((c) => c.method === "chatwoot.record")!.params).toMatchObject({ id: "c1", conversationId: 2400, data: { plano: "Pro" } });
     expect(onChanged).toHaveBeenCalled();
   });
+
+  it("cada conversa com a situação real; cancelar pede observação; tudo encerrado libera abrir outro", async () => {
+    calls.length = 0;
+    ctx.value = {
+      cardTitle: "Licenças",
+      pipelineId: "p",
+      data: { ...data, plano: "Pro" },
+      source,
+      fields: {},
+      missingFields: [],
+      tickets: [
+        { id: "a", conversation_id: 2316, link: "https://suporte.powercubus.com.br/app/accounts/1/conversations/2316", contact_email: null, created_at: "2026-11-19T10:00:00Z", created_by_name: "Antenor", canceled_at: null, cancel_note: null },
+        { id: "b", conversation_id: 2315, link: "https://suporte.powercubus.com.br/app/accounts/1/conversations/2315", contact_email: null, created_at: "2026-11-18T10:00:00Z", created_by_name: "Antenor", canceled_at: null, cancel_note: null },
+      ],
+    };
+    const statusOf: Record<string, string> = { "2316": "open", "2315": "resolved" };
+    const posts: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, opts: RequestInit = {}) => {
+        const ok = (b: unknown) => ({ ok: true, status: 200, text: async () => JSON.stringify(b), json: async () => b }) as Response;
+        if (url.endsWith("/api/v1/profile")) return ok({ id: 42, name: "Antenor Aquino" });
+        const m = url.match(/conversations\/(\d+)$/);
+        if (m && (opts.method ?? "GET") === "GET") return ok({ status: statusOf[m[1]!], meta: { assignee: { name: "Mauricio Vieira" } } });
+        posts.push(url.split("/accounts/1")[1]!);
+        if (url.endsWith("/toggle_status")) statusOf["2316"] = "resolved";
+        return ok({});
+      }),
+    );
+    render(<ChatwootDialog cardId="c1" onClose={() => {}} />);
+    await waitFor(() => expect(document.querySelector('[data-chatwoot-ticket="2316"] [data-chatwoot-status="open"]')).not.toBeNull());
+    expect(document.querySelector('[data-chatwoot-ticket="2315"] [data-chatwoot-status="resolved"]')!.textContent).toBe("Resolvida");
+    // Só a aberta tem "Cancelar ticket"; com ela em andamento, abrir outro pede confirmação.
+    expect(document.querySelectorAll("[data-chatwoot-cancel]")).toHaveLength(1);
+    expect((document.querySelector("[data-chatwoot-send]") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(document.querySelector('[data-chatwoot-ticket="2316"] [data-chatwoot-cancel]')!);
+    const confirm = document.querySelector("[data-chatwoot-cancel-confirm]") as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Observação do cancelamento"), { target: { value: "Cliente desistiu" } });
+    await act(async () => fireEvent.click(confirm));
+    await waitFor(() => expect(document.querySelector('[data-chatwoot-ticket="2316"] [data-chatwoot-status="resolved"]')).not.toBeNull());
+    expect(posts).toEqual(["/conversations/2316/messages", "/conversations/2316/assignments", "/conversations/2316/toggle_status"]);
+    expect(calls.find((c) => c.method === "chatwoot.cancelRecord")!.params).toEqual({ id: "c1", conversationId: 2316, note: "Cliente desistiu", by: "Antenor Aquino" });
+    // Tudo encerrado: sem a caixa "mesmo assim" e o botão de abrir fica livre.
+    expect(document.querySelector("[data-chatwoot-again]")).toBeNull();
+    expect((document.querySelector("[data-chatwoot-send]") as HTMLButtonElement).disabled).toBe(false);
+  });
 });
