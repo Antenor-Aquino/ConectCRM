@@ -44,6 +44,7 @@ import migration0041 from "./migrations/0041_lembrete_anexos.sql?raw";
 import migration0042 from "./migrations/0042_cobranca_inter.sql?raw";
 import migration0043 from "./migrations/0043_cobranca_baixa_gf.sql?raw";
 import migration0044 from "./migrations/0044_cartao_organizacoes.sql?raw";
+import migration0045 from "./migrations/0045_organizacao_tipo.sql?raw";
 
 export const MIGRATIONS: { name: string; sql: string }[] = [
   { name: "0000_init.sql", sql: migration0000 },
@@ -91,6 +92,7 @@ export const MIGRATIONS: { name: string; sql: string }[] = [
   { name: "0042_cobranca_inter.sql", sql: migration0042 },
   { name: "0043_cobranca_baixa_gf.sql", sql: migration0043 },
   { name: "0044_cartao_organizacoes.sql", sql: migration0044 },
+  { name: "0045_organizacao_tipo.sql", sql: migration0045 },
 ];
 
 /** Aplica as migrations pendentes; devolve quantas rodaram. */

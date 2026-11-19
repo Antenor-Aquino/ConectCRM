@@ -31,6 +31,8 @@ export interface ContactCard {
   legalName?: string | null;
   website?: string | null;
   segment?: string | null;
+  /** PJ: tipo da organização no CRM — "pagador", "mantenedora", "cliente" (unidade/escola) ou "outra". */
+  orgType?: string | null;
   address?: {
     cep?: string | null;
     street?: string | null;
@@ -51,7 +53,7 @@ export interface ContactCard {
 }
 
 /** Versão da ficha (sobe quando um campo novo entra). */
-export const CONTACT_CARD_VERSION = 1;
+export const CONTACT_CARD_VERSION = 2;
 
 /** Todos os campos da ficha — os testes de paridade dos dois sistemas usam esta lista. */
 export const CONTACT_CARD_FIELDS = [
@@ -65,6 +67,7 @@ export const CONTACT_CARD_FIELDS = [
   "legalName",
   "website",
   "segment",
+  "orgType",
   "address.cep",
   "address.street",
   "address.number",

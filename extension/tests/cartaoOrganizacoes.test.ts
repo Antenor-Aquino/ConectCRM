@@ -138,3 +138,19 @@ describe("organizações do cartão", () => {
     expect(co.listCardOrganizations(db, card).map((o) => o.id)).toEqual([escola, mant]);
   });
 });
+
+describe("tipo da organização no cadastro", () => {
+  it("vale como papel ao vincular (sem papel escolhido); papel escolhido manda; tipo inválido recusado", async () => {
+    const { db, ctx, card, caixa, mant, escola2 } = await setup();
+    const { updateOrganization } = await import("../src/db/contacts");
+    updateOrganization(db, ctx, caixa, { orgType: "pagador" });
+    updateOrganization(db, ctx, mant, { orgType: "mantenedora" });
+    co.addCardOrganization(db, ctx, card, caixa);
+    co.addCardOrganization(db, ctx, card, mant, "outra");
+    co.addCardOrganization(db, ctx, card, escola2);
+    const roles = Object.fromEntries(co.listCardOrganizations(db, card).map((o) => [o.id, o.role]));
+    expect(roles).toMatchObject({ [caixa]: "pagador", [escola2]: "outra", [mant]: "outra" });
+    expect(() => updateOrganization(db, ctx, caixa, { orgType: "dono" as never })).toThrow(/Tipo de organização inválido/);
+    updateOrganization(db, ctx, caixa, { orgType: null });
+  });
+});

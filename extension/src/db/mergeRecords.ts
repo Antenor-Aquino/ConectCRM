@@ -44,6 +44,7 @@ const GROUPS: Record<MergeEntity, FieldGroup[]> = {
     { key: "phone", label: "Telefone", cols: ["phone", "phone_country"] },
     { key: "website", label: "Site", cols: ["website"] },
     { key: "segment", label: "Segmento", cols: ["segment"] },
+    { key: "org_type", label: "Tipo de organização", cols: ["org_type"] },
     { key: "address", label: "Endereço", cols: ["cep", "street", "number", "complement", "district", "city", "state", "country"] },
     { key: "owner", label: "Responsável", cols: ["owner_id"] },
     { key: "logo", label: "Logo", cols: ["logo_id"] },

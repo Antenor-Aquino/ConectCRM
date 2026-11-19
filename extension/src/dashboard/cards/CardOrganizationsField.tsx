@@ -31,8 +31,8 @@ export function CardOrganizationsField({
   const others = organizations.filter((o) => o.role !== "principal");
   const hasPayer = others.some((o) => o.role === "pagador");
   const principal = organizations.find((o) => o.role === "principal");
+  /** null = pelo tipo do cadastro da organização. */
   const [newRole, setNewRole] = useState<CardOrgRole | null>(null);
-  const role = newRole ?? (hasPayer ? "mantenedora" : "pagador");
   return (
     <Field
       label={`Outras organizações${others.length ? ` (${others.length})` : ""}`}
@@ -41,7 +41,7 @@ export function CardOrganizationsField({
           ? principal && !hasPayer
             ? `Sem pagador: a cobrança e a nota fiscal saem em nome de ${principal.name}.`
             : undefined
-          : "Quem paga (ex.: o Caixa Escolar), a mantenedora ou outras escolas da rede. O pagador vai na cobrança, na nota fiscal e na Gestão Financeira."
+          : "Quem paga (ex.: o Caixa Escolar), a mantenedora ou outras escolas da rede. O papel vem do tipo no cadastro da organização (dá para trocar aqui). O pagador vai na cobrança, na nota fiscal e na Gestão Financeira."
       }
     >
       <div data-card-orgs>
@@ -90,10 +90,11 @@ export function CardOrganizationsField({
             aria-label="Vincular como"
             title="Papel da organização que vai ser vinculada"
             className="h-10 shrink-0 rounded-lg border border-gray-300 bg-white px-2 text-theme-xs dark:border-gray-700 dark:bg-gray-900"
-            value={role}
-            onChange={(e) => setNewRole(e.target.value as CardOrgRole)}
+            value={newRole ?? ""}
+            onChange={(e) => setNewRole((e.target.value || null) as CardOrgRole | null)}
             data-card-org-new-role
           >
+            <option value="">Pelo tipo do cadastro</option>
             {CARD_ORG_ROLES.map((r) => (
               <option key={r} value={r}>
                 {CARD_ORG_ROLE_LABEL[r]}
@@ -105,7 +106,7 @@ export function CardOrganizationsField({
               value={null}
               onChange={(i) =>
                 i &&
-                void run(() => call("cards.organizations.add", { id: cardId, organizationId: i.id, role })).then((ok) => ok && setNewRole(null))
+                void run(() => call("cards.organizations.add", { id: cardId, organizationId: i.id, role: newRole })).then((ok) => ok && setNewRole(null))
               }
               search={searchOrganizations}
               placeholder="Buscar organização"
@@ -113,7 +114,7 @@ export function CardOrganizationsField({
               createLabel="Criar organização"
               dashed={
                 <>
-                  <PlusCircle size={15} /> Adicionar organização ({CARD_ORG_ROLE_LABEL[role].toLowerCase()})
+                  <PlusCircle size={15} /> Adicionar organização{newRole ? ` (${CARD_ORG_ROLE_LABEL[newRole].toLowerCase()})` : ""}
                 </>
               }
             />
