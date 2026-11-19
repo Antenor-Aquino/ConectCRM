@@ -44,6 +44,14 @@ export function useChatwootButton(pipelineId: string, pipelineType: string | und
   return s!.pipelineIds.length ? s!.pipelineIds.includes(pipelineId) : pipelineType === "comercial";
 }
 
+/** "20/11/2026" → "21/11/2026". */
+const dayAfter = (v: string) => {
+  const m = v.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
+  const d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]) + 1);
+  return d.toLocaleDateString("pt-BR");
+};
+
 /** dd/mm/aaaa → aaaa-mm-dd (campo de data do cartão). */
 const isoDate = (v: string) => {
   const m = v.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
@@ -63,7 +71,7 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
   const [again, setAgain] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<{ link: string; conversationId: number } | null>(null);
+  const [done, setDone] = useState<{ link: string; conversationId: number; paymentCheck?: string | null } | null>(null);
   /** Documentos do cartão (GED) e os escolhidos para ir junto com o ticket. */
   const [docs, setDocs] = useState<CardDoc[]>([]);
   const [chosen, setChosen] = useState<string[]>([]);
@@ -185,7 +193,7 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
         }
         throw e;
       }
-      await rpc("chatwoot.record", {
+      const rec = await rpc<{ paymentActivityId: string | null }>("chatwoot.record", {
         id: cardId,
         conversationId: r.conversationId,
         link: r.link,
@@ -193,7 +201,7 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
         contactCreated: r.contactCreated,
         attachments: docs.filter((d) => chosen.includes(d.id)).map((d) => d.filename),
       });
-      setDone({ link: r.link, conversationId: r.conversationId });
+      setDone({ link: r.link, conversationId: r.conversationId, paymentCheck: rec?.paymentActivityId ? dayAfter(data.vencimento_boleto) : null });
       onChanged?.();
     } catch (e) {
       setError(errorText(e));
@@ -212,7 +220,8 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
             <p className="flex items-center gap-2 font-semibold">
               <Check size={16} /> Ticket aberto no Chatwoot (conversa {done.conversationId})
             </p>
-            <p className="mt-1 text-theme-xs">A nota privada com os dados ficou na conversa, atribuída ao financeiro. No cartão ficaram uma nota com o link e a atividade “Acompanhar ativação no Chatwoot” para daqui a 2 dias.</p>
+            <p className="mt-1 text-theme-xs">A nota privada com os dados ficou na conversa, atribuída ao financeiro. No cartão ficaram uma nota com o link, a atividade “Acompanhar ativação no Chatwoot” para daqui a 2 dias
+              {done.paymentCheck ? ` e “Conferir pagamento do boleto” para ${done.paymentCheck} (um dia após o vencimento)` : ""}.</p>
             <a className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-success-600 px-3 py-1.5 text-theme-xs font-medium text-white hover:bg-success-700" href={done.link} target="_blank" rel="noreferrer">
               <ExternalLink size={14} /> Abrir no Chatwoot
             </a>
@@ -275,6 +284,11 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
               </pre>
             </section>
 
+            {dayAfter(data.vencimento_boleto) && (
+              <p className="text-theme-xs text-gray-500" data-chatwoot-payment-check>
+                Ao abrir o ticket, o CRM cria a atividade “Conferir pagamento do boleto” para {dayAfter(data.vencimento_boleto)} (um dia após o vencimento).
+              </p>
+            )}
             {missing.length > 0 && (
               <p className="rounded-lg bg-warning-50 px-3 py-2 text-theme-xs text-warning-800" data-chatwoot-missing>
                 Preencha: {missing.map((k) => CHATWOOT_FIELD_LABEL[k]).join(", ")}.

@@ -75,3 +75,9 @@ Outro endereço de Chatwoot exige incluir o host no manifesto.
   {email_usuario} {plano} {qtd_turmas} {fim_vigencia} {valor} {vencimento_boleto} {email_financeiro}.
 - Avisa variável sem valor no cartão ou escrita errada; modelos com boleto/nota lembram de marcar os anexos.
 - Confirmação antes de enviar (vai para fora e não dá para desfazer). Nota no cartão com o texto e os anexos.
+
+## Conferir pagamento do boleto (0.2.145)
+- Ao abrir o ticket com "Data de Vencimento do Boleto" válida (dd/mm/aaaa), o CRM cria também a
+  atividade **"Conferir pagamento do boleto"** no cartão, **um dia após o vencimento, às 9h**,
+  do usuário que abriu, com vencimento, valor, escola, pagador e o link do ticket na descrição.
+- A janela avisa antes de abrir em que dia a atividade vai ficar.
