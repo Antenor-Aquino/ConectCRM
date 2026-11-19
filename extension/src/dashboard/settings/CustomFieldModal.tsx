@@ -7,7 +7,8 @@ import { TaButton, TaInput, TaSelect, TaTextarea } from "@tailadmin";
 import { GuardedModal } from "../ui/GuardedModal";
 import { call } from "../../rpc/client";
 import { CUSTOM_FIELD_TYPE_LABEL, type CustomField, type CustomFieldEntity, type CustomFieldGroup, type CustomFieldType } from "../../db/customFields";
-import type { Pipeline } from "../../db/pipelines";
+import type { Pipeline, PipelineType } from "../../db/pipelines";
+import { PIPELINE_TYPE_LABEL } from "../../lib/cardTypes";
 import { placeholderKeyFromName } from "../../lib/validate";
 import { ErrorText, Field, SectionLabel } from "../ui/form";
 import { Switch, SwitchRow } from "../ui/Switch";
@@ -24,6 +25,8 @@ export const ENTITY_LABEL: Record<CustomFieldEntity, string> = {
 };
 
 const PIPELINE_TYPE: Partial<Record<CustomFieldEntity, string>> = { deal: "comercial", ticket: "operacional", project: "projeto" };
+/** Entidades que podem ficar só em alguns funis (atividade: pelo funil do cartão dela, de qualquer tipo). */
+const BY_PIPELINE = (e: CustomFieldEntity) => !!PIPELINE_TYPE[e] || e === "activity";
 const isList = (t: CustomFieldType) => t === "select" || t === "multiselect";
 
 export function CustomFieldModal({
@@ -81,10 +84,18 @@ export function CustomFieldModal({
 
   // Chave sugerida a partir do nome até o usuário editá-la.
   const shownKey = keyEdited ? key : placeholderKeyFromName(name);
-  const pipelineOptions = pipelines.filter((p) => p.type === PIPELINE_TYPE[entity]);
+  // Funis do tipo da entidade (atividade: todos); arquivados só se já estavam marcados.
+  const pipelineOptions = pipelines
+    .filter((p) => (entity === "activity" || p.type === PIPELINE_TYPE[entity]) && (!p.archived_at || pipelineIds.includes(p.id)))
+    .sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name, "pt-BR"));
+  const [onlySome, setOnlySome] = useState((field?.pipelineIds.length ?? 0) > 0);
 
   async function save() {
     setError(null);
+    if (BY_PIPELINE(entity) && onlySome && pipelineIds.length === 0) {
+      setError("Marque pelo menos um funil (ou escolha “Todos os funis”).");
+      return;
+    }
     const common = {
       name,
       description,
@@ -95,7 +106,7 @@ export function CustomFieldModal({
       required,
       showWithName: withName,
       ...(isList(type) ? { options: options.filter((o) => o.label.trim()) } : {}),
-      ...(PIPELINE_TYPE[entity] ? { pipelineIds } : {}),
+      ...(BY_PIPELINE(entity) ? { pipelineIds: onlySome ? pipelineIds : [] } : {}),
       groupId: groupId || null,
     };
     try {
@@ -131,6 +142,7 @@ export function CustomFieldModal({
           onChange={(e) => {
             setEntity(e.target.value as CustomFieldEntity);
             setPipelineIds([]);
+            setOnlySome(false);
             setGroupId("");
           }}
         >
@@ -140,6 +152,55 @@ export function CustomFieldModal({
             </option>
           ))}
         </TaSelect>
+      </Field>
+      <Field
+        label="Disponível nos funis"
+        hint={
+          BY_PIPELINE(entity)
+            ? entity === "activity"
+              ? "Atividade: o campo aparece nas atividades ligadas a cartões dos funis escolhidos."
+              : undefined
+            : "Contatos, organizações e produtos não ficam em funil: o campo vale para todos os cadastros. Para um campo só de alguns funis, use Negócio, Ticket, Projeto ou Atividade."
+        }
+      >
+        {BY_PIPELINE(entity) ? (
+          <div className="rounded-lg border border-gray-200 p-3 dark:border-gray-800" data-field-pipelines>
+            <div className="flex flex-wrap gap-4 text-theme-sm text-gray-700 dark:text-gray-300">
+              <label className="flex items-center gap-2">
+                <input type="radio" name="field-pipelines" checked={!onlySome} onChange={() => setOnlySome(false)} data-field-pipelines-all />
+                Todos os funis{PIPELINE_TYPE[entity] ? ` (${PIPELINE_TYPE_LABEL[PIPELINE_TYPE[entity] as PipelineType].toLowerCase()})` : ""}
+              </label>
+              <label className="flex items-center gap-2">
+                <input type="radio" name="field-pipelines" checked={onlySome} onChange={() => setOnlySome(true)} data-field-pipelines-some />
+                Só nos funis escolhidos
+              </label>
+            </div>
+            {onlySome &&
+              (pipelineOptions.length === 0 ? (
+                <p className="mt-2 text-theme-sm text-gray-400">Nenhum funil deste tipo.</p>
+              ) : (
+                <div className="mt-2 grid max-h-48 grid-cols-2 gap-1 overflow-y-auto border-t border-gray-100 pt-2 dark:border-gray-800">
+                  {pipelineOptions.map((p) => (
+                    <label key={p.id} className="flex items-center gap-2 text-theme-sm text-gray-700 dark:text-gray-300">
+                      <input
+                        type="checkbox"
+                        checked={pipelineIds.includes(p.id)}
+                        onChange={(e) => setPipelineIds(e.target.checked ? [...pipelineIds, p.id] : pipelineIds.filter((x) => x !== p.id))}
+                        data-field-pipeline={p.name}
+                      />
+                      <span className="truncate">
+                        {p.name}
+                        {entity === "activity" && <span className="text-theme-xs text-gray-400"> · {PIPELINE_TYPE_LABEL[p.type]}</span>}
+                        {p.archived_at && <span className="text-theme-xs text-gray-400"> (arquivado)</span>}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              ))}
+          </div>
+        ) : (
+          <p className="rounded-lg bg-gray-50 px-3 py-2 text-theme-sm text-gray-500 dark:bg-white/5">Todos os cadastros</p>
+        )}
       </Field>
       <Field label="Categoria" hint="Agrupa os campos no cadastro. Sem categoria, o campo aparece junto com os demais.">
         <div className="flex gap-2">
@@ -231,26 +292,6 @@ export function CustomFieldModal({
           onChange={setWithName}
         />
       </div>
-
-      {PIPELINE_TYPE[entity] && (
-        <>
-          <SectionLabel>Funis</SectionLabel>
-          <p className="mb-2 text-theme-xs text-gray-500">Sem nenhum marcado, o campo vale para todos os funis deste tipo.</p>
-          {pipelineOptions.length === 0 && <p className="text-theme-sm text-gray-400">Nenhum funil deste tipo.</p>}
-          <div className="grid grid-cols-2 gap-1">
-            {pipelineOptions.map((p) => (
-              <label key={p.id} className="flex items-center gap-2 text-theme-sm text-gray-700 dark:text-gray-300">
-                <input
-                  type="checkbox"
-                  checked={pipelineIds.includes(p.id)}
-                  onChange={(e) => setPipelineIds(e.target.checked ? [...pipelineIds, p.id] : pipelineIds.filter((x) => x !== p.id))}
-                />
-                {p.name}
-              </label>
-            ))}
-          </div>
-        </>
-      )}
 
       {field && (
         <div className="mt-4 flex items-center justify-between rounded-xl border border-gray-200 px-4 py-3 text-theme-sm font-medium dark:border-gray-800">

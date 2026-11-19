@@ -245,7 +245,6 @@ export function TaskModal({
         });
       }
     });
-    void call("customFields.list", { entity: "activity" }).then(setFields);
     void loadNotifySettings(user.id).then((n) => {
       setNotify(activeSettings(n));
       if (!sourceId) setReminders(n.defaults);
@@ -315,6 +314,10 @@ export function TaskModal({
     titlePrefix.current = next;
   }, [type, sourceId]);
   const linkDealId = link?.id.startsWith("deal:") ? link.id.slice(5) : null;
+  // Campos da atividade: os de todos os funis + os do funil do cartão ligado.
+  useEffect(() => {
+    void call("customFields.list", { entity: "activity", dealId: linkDealId }).then(setFields);
+  }, [linkDealId]);
   const linkPersonId = link?.id.startsWith("person:") ? link.id.slice(7) : null;
 
   const owner = useMemo(() => users.find((u) => u.id === ownerId), [users, ownerId]);
