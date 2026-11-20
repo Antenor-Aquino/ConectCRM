@@ -899,8 +899,9 @@ export const methods = {
   },
 
   // Campos personalizados
-  "customFields.list": (db: DatabaseSync, _c: DbContext, p: { entity: cf.CustomFieldEntity; pipelineId?: string; includeInactive?: boolean }) =>
-    cf.listCustomFields(db, p.entity, p),
+  /** Atividade: com `dealId` (mesmo null), só os campos do funil do cartão dela. */
+  "customFields.list": (db: DatabaseSync, _c: DbContext, p: { entity: cf.CustomFieldEntity; pipelineId?: string; includeInactive?: boolean; dealId?: string | null }) =>
+    cf.listCustomFields(db, p.entity, p.dealId !== undefined ? { ...p, pipelineId: cf.dealPipelineId(db, p.dealId) } : p),
   "customFields.create": (db: DatabaseSync, ctx: DbContext, p: cf.CustomFieldInput) => {
     assertRole(db, ctx, ADMIN, "campos personalizados");
     return cf.createCustomField(db, ctx, p);

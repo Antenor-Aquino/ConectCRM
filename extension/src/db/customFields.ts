@@ -53,7 +53,8 @@ export const CUSTOM_FIELD_TYPE_LABEL: Record<CustomFieldType, string> = {
   document: "Documento (GED)",
 };
 
-const PIPELINE_ENTITIES: CustomFieldEntity[] = ["deal", "ticket", "project"];
+/** Entidades que podem ser restritas a funis (atividade: pelo funil do cartão dela). */
+export const PIPELINE_ENTITIES: CustomFieldEntity[] = ["deal", "ticket", "project", "activity"];
 const PIPELINE_TYPE_BY_ENTITY: Record<string, string> = { deal: "comercial", ticket: "operacional", project: "projeto" };
 
 export interface CustomFieldOption {
@@ -154,11 +155,14 @@ function withDetails(db: DatabaseSync, rows: FieldRow[]): CustomField[] {
   }));
 }
 
-/** Campos da entidade; com `pipelineId`, só os que valem para aquele funil. */
+/**
+ * Campos da entidade; com `pipelineId`, só os que valem para aquele funil;
+ * `pipelineId: null` (atividade sem cartão) = só os que valem para todos os funis.
+ */
 export function listCustomFields(
   db: DatabaseSync,
   entity: CustomFieldEntity,
-  opts: { pipelineId?: string; includeInactive?: boolean } = {},
+  opts: { pipelineId?: string | null; includeInactive?: boolean } = {},
 ): CustomField[] {
   const rows = many<FieldRow>(
     db,
@@ -167,8 +171,8 @@ export function listCustomFields(
     entity,
   );
   const fields = withDetails(db, rows);
-  if (!opts.pipelineId) return fields;
-  return fields.filter((f) => f.pipelineIds.length === 0 || f.pipelineIds.includes(opts.pipelineId!));
+  if (opts.pipelineId === undefined) return fields;
+  return fields.filter((f) => f.pipelineIds.length === 0 || (!!opts.pipelineId && f.pipelineIds.includes(opts.pipelineId)));
 }
 
 export function getCustomField(db: DatabaseSync, id: string): CustomField | undefined {
@@ -199,11 +203,12 @@ function resolveKey(db: DatabaseSync, name: string, given: string | null | undef
 
 function checkPipelines(db: DatabaseSync, entity: CustomFieldEntity, pipelineIds: string[]): void {
   if (pipelineIds.length === 0) return;
-  if (!PIPELINE_ENTITIES.includes(entity)) throw new ValidationError("Só campos de negócio, ticket ou projeto podem ser restritos a funis.");
+  if (!PIPELINE_ENTITIES.includes(entity)) throw new ValidationError("Só campos de negócio, ticket, projeto ou atividade podem ser restritos a funis.");
   for (const id of pipelineIds) {
     const p = one<{ type: string }>(db, "SELECT type FROM pipeline WHERE id = ? AND deleted_at IS NULL", id);
     if (!p) throw new ValidationError("Funil não encontrado.");
-    if (p.type !== PIPELINE_TYPE_BY_ENTITY[entity]) throw new ValidationError("O funil escolhido é de outro tipo.");
+    // Atividade: qualquer funil (vale pelo funil do cartão ligado a ela).
+    if (entity !== "activity" && p.type !== PIPELINE_TYPE_BY_ENTITY[entity]) throw new ValidationError("O funil escolhido é de outro tipo.");
   }
 }
 
@@ -470,6 +475,8 @@ export function setCustomValues(
 ): void {
   withTransaction(db, () => {
     const applicable = listCustomFields(db, entity, { pipelineId: opts.pipelineId });
+    // Atividade: os obrigatórios são os do funil do cartão dela (sem cartão, só os de todos os funis).
+    const required = entity === "activity" && opts.pipelineId === undefined ? listCustomFields(db, entity, { pipelineId: activityPipelineId(db, entityId) }) : applicable;
     const byId = new Map(applicable.map((f) => [f.id, f]));
     for (const [fieldId, value] of Object.entries(values)) {
       const field = byId.get(fieldId);
@@ -491,7 +498,7 @@ export function setCustomValues(
     }
     if (opts.checkRequired) {
       const filled = getCustomValues(db, entityId);
-      const missing = applicable.filter((f) => f.required && !f.hidden && filled[f.id] === undefined);
+      const missing = required.filter((f) => f.required && !f.hidden && filled[f.id] === undefined);
       if (missing.length > 0) {
         throw new ValidationError(`Preencha os campos obrigatórios: ${missing.map((f) => f.name).join(", ")}.`);
       }
@@ -507,4 +514,14 @@ export function customFieldUsage(db: DatabaseSync, id: string): number {
 /** Reordena os campos de uma entidade na ordem recebida. */
 export function reorderCustomFields(db: DatabaseSync, ctx: DbContext, ids: string[]): void {
   withTransaction(db, () => ids.forEach((id, i) => updateRow(db, ctx, "custom_field", id, { position: i })));
+}
+
+/** Funil do cartão de uma atividade (null = atividade sem cartão). */
+export function activityPipelineId(db: DatabaseSync, activityId: string): string | null {
+  return one<{ p: string | null }>(db, "SELECT d.pipeline_id AS p FROM activity a LEFT JOIN deal d ON d.id = a.deal_id AND d.deleted_at IS NULL WHERE a.id = ?", activityId)?.p ?? null;
+}
+
+/** Funil de um cartão (para os campos da atividade ligada a ele). */
+export function dealPipelineId(db: DatabaseSync, dealId: string | null | undefined): string | null {
+  return dealId ? (one<{ p: string }>(db, "SELECT pipeline_id AS p FROM deal WHERE id = ? AND deleted_at IS NULL", dealId)?.p ?? null) : null;
 }
