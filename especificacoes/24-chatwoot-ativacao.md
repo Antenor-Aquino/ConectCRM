@@ -51,3 +51,13 @@ Outro endereço de Chatwoot exige incluir o host no manifesto.
 - No CRM: `chatwoot_ticket.canceled_at` / `cancel_note` (migration 0047) e nota no cartão.
 - O aviso amarelo e a caixa "Abrir outro ticket mesmo assim" só aparecem com ticket **em andamento**;
   com tudo encerrado, abrir um novo fica livre. Sem consulta ao Chatwoot, vale o registro do CRM.
+
+## Anexos (0.2.143)
+- Documentos do cartão (GED) podem ir para o ticket: contrato assinado, aviso de convocação etc.
+- Ao abrir o ticket: seção "Anexos" na janela; os escolhidos vão numa **nota privada** logo depois da
+  nota de ativação e da etiqueta (`POST /conversations/{id}/messages` em multipart: `content`,
+  `message_type=outgoing`, `private=true`, `attachments[]`).
+- Depois: "Enviar documentos" em cada conversa em andamento, com comentário opcional.
+- Limite de 40 MB por arquivo (padrão do Chatwoot). Ler o arquivo conta como download na auditoria do documento.
+- No cartão: a nota do ticket lista os anexos; envio posterior gera nota própria.
+- Falha nos anexos ao abrir: a conversa já existe, o erro traz o link e o ticket fica registrado.

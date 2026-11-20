@@ -182,7 +182,7 @@ export function recordChatwootTicket(
   db: DatabaseSync,
   ctx: DbContext,
   cardId: string,
-  input: { conversationId: number; link: string; data: ChatwootData; contactCreated?: boolean },
+  input: { conversationId: number; link: string; data: ChatwootData; contactCreated?: boolean; attachments?: string[] },
   now = new Date(),
 ): { ticketId: string; activityId: string } {
   if (!Number.isInteger(input.conversationId) || input.conversationId <= 0) throw new ValidationError("Conversa do Chatwoot inválida.");
@@ -205,6 +205,7 @@ export function recordChatwootTicket(
         input.link,
         "",
         chatwootNote(input.data).replace(/\*\*/g, ""),
+        ...(input.attachments?.length ? ["", `Anexos enviados: ${input.attachments.join(", ")}`] : []),
       ].join("\n"),
     );
     const due = new Date(now.getTime() + 2 * 86400_000);
@@ -241,4 +242,17 @@ export function recordChatwootCancel(db: DatabaseSync, ctx: DbContext, cardId: s
       [`Ticket do Chatwoot cancelado (conversa ${input.conversationId}, resolvida${input.by ? ` e devolvida a ${input.by}` : ""}):`, t.link, "", `Observação: ${note}`].join("\n"),
     );
   });
+}
+
+/** Documentos enviados depois a uma conversa já aberta: nota no cartão. */
+export function recordChatwootAttachments(db: DatabaseSync, ctx: DbContext, cardId: string, input: { conversationId: number; names: string[] }): void {
+  if (!input.names.length) return;
+  const t = one<{ link: string }>(
+    db,
+    "SELECT link FROM chatwoot_ticket WHERE card_id = ? AND conversation_id = ? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1",
+    cardId,
+    input.conversationId,
+  );
+  if (!t) throw new ValidationError("Este ticket não está registrado neste cartão.");
+  addNote(db, ctx, "deal", cardId, [`Documentos enviados ao Chatwoot (conversa ${input.conversationId}):`, t.link, "", ...input.names.map((n) => `- ${n}`)].join("\n"));
 }
