@@ -378,6 +378,11 @@ export const methods = {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);
     chatwoot.recordChatwootAttachments(db, ctx, p.id, p);
   },
+  /** Rotina: atividade "Conferir pagamento do boleto" para tickets já abertos (dryRun = só o plano). */
+  "chatwoot.backfillPaymentChecks": (db: DatabaseSync, ctx: DbContext, p: { dryRun?: boolean }) => {
+    if (!p.dryRun) assertRole(db, ctx, ADMIN, "rotinas do Chatwoot");
+    return chatwoot.backfillPaymentChecks(db, ctx, p);
+  },
   "chatwoot.replyRecord": (db: DatabaseSync, ctx: DbContext, p: Id & { conversationId: number; text: string; to?: string | null; names?: string[] }) => {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);
     chatwoot.recordChatwootReply(db, ctx, p.id, p);

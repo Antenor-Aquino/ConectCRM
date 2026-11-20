@@ -81,3 +81,10 @@ Outro endereço de Chatwoot exige incluir o host no manifesto.
   atividade **"Conferir pagamento do boleto"** no cartão, **um dia após o vencimento, às 9h**,
   do usuário que abriu, com vencimento, valor, escola, pagador e o link do ticket na descrição.
 - A janela avisa antes de abrir em que dia a atividade vai ficar.
+
+## Rotina para tickets já abertos (0.2.146)
+- Configurações → Integrações → Chatwoot → "Tickets já abertos: conferir pagamento do boleto".
+- "Verificar tickets" mostra o plano por cartão (último ticket não cancelado): Criar para dd/mm,
+  Já tem a atividade, Sem vencimento do boleto ou Cobrança já paga. "Criar N atividades" (administrador) executa.
+- Vencimento: o da nota do ticket ("Data de Vencimento do Boleto"), senão o campo do cartão ou a última
+  cobrança. Atividade um dia após o vencimento, às 9h, para quem abriu o ticket. Não repete.

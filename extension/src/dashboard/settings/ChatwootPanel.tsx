@@ -6,6 +6,7 @@ import { CheckCircle2, Eye, EyeOff, ListPlus, MessageSquare } from "lucide-react
 import { TaBadge, TaButton, TaInput, TaPanel } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { Pipeline } from "../../db/pipelines";
+import type { PaymentCheckPlan } from "../../db/chatwoot";
 import { errorText } from "../../lib/errors";
 import { CHATWOOT_DEFAULTS, chatwootReady, loadChatwoot, requestChatwootPermission, saveChatwoot, testChatwoot, type ChatwootSettings } from "../../lib/chatwoot";
 import { Field } from "../ui/form";
@@ -124,6 +125,8 @@ export function ChatwootPanel() {
           {chatwootReady(s) ? <TaBadge color="green" label="Configurado" /> : <TaBadge color="slate" label="Falta o token" />}
         </div>
 
+        <PaymentChecksSection />
+
         <section className="border-t border-gray-100 pt-4 dark:border-gray-800" data-chatwoot-fields>
           <p className="mb-1 font-medium text-gray-800 dark:text-white/90">Campos do cartão usados na nota</p>
           <p className="mb-2 text-theme-xs text-gray-500">
@@ -149,5 +152,82 @@ export function ChatwootPanel() {
         </section>
       </div>
     </TaPanel>
+  );
+}
+
+const PLAN_LABEL: Record<PaymentCheckPlan["status"], string> = {
+  criar: "Criar",
+  ja_existe: "Já tem a atividade",
+  sem_vencimento: "Sem vencimento do boleto (preencha no cartão)",
+  pago: "Cobrança já paga",
+};
+
+/** Rotina: "Conferir pagamento do boleto" para os tickets abertos antes da 0.2.145. */
+function PaymentChecksSection() {
+  const [plan, setPlan] = useState<PaymentCheckPlan[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<Msg>(null);
+  const toCreate = plan?.filter((p) => p.status === "criar") ?? [];
+  const dmy = (iso: string | null) => (iso ? iso.split("-").reverse().join("/") : "");
+  const check = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      setPlan(await call("chatwoot.backfillPaymentChecks", { dryRun: true }));
+    } catch (e) {
+      setMsg({ text: errorText(e), kind: "err" });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const create = async () => {
+    if (!confirm(`Criar ${toCreate.length} atividade${toCreate.length > 1 ? "s" : ""} “Conferir pagamento do boleto”?`)) return;
+    setBusy(true);
+    try {
+      const done = (await call("chatwoot.backfillPaymentChecks", { dryRun: false })).filter((p) => p.status === "criar");
+      setMsg({ text: `${done.length} atividade${done.length === 1 ? " criada" : "s criadas"} (um dia após o vencimento de cada boleto, às 9h, para quem abriu o ticket).`, kind: "ok" });
+      setPlan(await call("chatwoot.backfillPaymentChecks", { dryRun: true }));
+    } catch (e) {
+      setMsg({ text: errorText(e), kind: "err" });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="border-t border-gray-100 pt-4 dark:border-gray-800" data-chatwoot-payment-backfill>
+      <p className="mb-1 font-medium text-gray-800 dark:text-white/90">Tickets já abertos: conferir pagamento do boleto</p>
+      <p className="mb-2 text-theme-xs text-gray-500">
+        Cria “Conferir pagamento do boleto” um dia após o vencimento nos cartões com ticket de ativação em andamento. O vencimento vem da nota do ticket, do campo
+        “Vencimento do boleto” ou da última cobrança do cartão. Não repete em cartão que já tem a atividade e pula cobrança já paga.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <TaButton variant="outline" disabled={busy} onClick={() => void check()} data-chatwoot-backfill-check>
+          Verificar tickets
+        </TaButton>
+        {toCreate.length > 0 && (
+          <TaButton disabled={busy} onClick={() => void create()} data-chatwoot-backfill-create>
+            Criar {toCreate.length} atividade{toCreate.length > 1 ? "s" : ""}
+          </TaButton>
+        )}
+      </div>
+      {plan && (
+        plan.length === 0 ? (
+          <p className="mt-2 text-theme-xs text-gray-500">Nenhum ticket de ativação em andamento.</p>
+        ) : (
+          <ul className="mt-2 divide-y divide-gray-100 rounded-lg border border-gray-200 text-theme-xs dark:divide-gray-800 dark:border-gray-800" data-chatwoot-backfill-plan>
+            {plan.map((p) => (
+              <li key={p.cardId} className="flex flex-wrap items-center gap-x-2 px-3 py-1.5">
+                <span className="font-medium text-gray-800 dark:text-white/90">{p.cardTitle}</span>
+                <span className="text-gray-500">· conversa {p.conversationId}{p.dueBoleto ? ` · vence ${p.dueBoleto}` : ""}</span>
+                <span className={p.status === "criar" ? "ml-auto text-success-700" : "ml-auto text-gray-500"} data-chatwoot-backfill-status={p.status}>
+                  {p.status === "criar" ? `Criar para ${dmy(p.checkDate)}` : PLAN_LABEL[p.status]}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )
+      )}
+      {msg && <p className={msg.kind === "ok" ? "mt-2 rounded-lg bg-success-50 px-3 py-2 text-success-700" : "mt-2 rounded-lg bg-error-50 px-3 py-2 text-error-700"}>{msg.text}</p>}
+    </section>
   );
 }
