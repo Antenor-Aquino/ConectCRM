@@ -4,6 +4,7 @@
 import { NfseDialog } from "./NfseDialog";
 import { CardOrganizationsField } from "./CardOrganizationsField";
 import { ChargeDialog } from "./ChargeDialog";
+import { ChatwootDialog, useChatwootButton } from "./ChatwootDialog";
 import { useGfActive } from "../useGfActive";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -26,7 +27,7 @@ import {
   Trash2,
   Trophy,
   X,
-  XCircle, Repeat, ListTodo, GitMerge, CalendarDays, Receipt, CreditCard } from "lucide-react";
+  XCircle, Repeat, ListTodo, GitMerge, CalendarDays, Receipt, CreditCard, MessageSquare } from "lucide-react";
 import { openUnifiedAgenda } from "../../lib/unifiedAgenda";
 import { CalendlyLinkButton } from "./CalendlyLinkButton";
 import { MergeDialog } from "../ui/MergeDialog";
@@ -119,6 +120,7 @@ function CardDetailInner({
   onGoToCard: onGoToCardRaw,
 }: CardDetailProps) {
   const text = CARD_TEXT[pipeline.type];
+  const showChatwoot = useChatwootButton(pipeline.id, pipeline.type);
   const [card, setCard] = useState<CardData | null>(null);
   const [stages, setStages] = useState<Stage[]>([]);
   const [fields, setFields] = useState<CustomField[]>([]);
@@ -127,6 +129,7 @@ function CardDetailInner({
   // Ao marcar como ganho: abrir já a receita na Gestão Financeira.
   const [launchIncome, setLaunchIncome] = useState<false | "card" | "custom" | LaunchPreset>(false);
   const [chargeOpen, setChargeOpen] = useState(false);
+  const [chatwootOpen, setChatwootOpen] = useState(false);
   /** Muda quando uma cobrança mexe na Gestão Financeira: a aba Financeiro lê de novo. */
   const [financeKey, setFinanceKey] = useState(0);
   // Ganhou/concluiu com valor: pergunta se registra no financeiro (pode não receber o valor todo).
@@ -357,6 +360,11 @@ function CardDetailInner({
         <TaButton variant="ghost" startIcon={<CreditCard size={15} />} data-card-charge title="Gerar a cobrança (link de pagamento InfinitePay) deste cartão" onClick={() => setChargeOpen(true)}>
           Cobrança
         </TaButton>
+        {showChatwoot && (
+          <TaButton variant="ghost" startIcon={<MessageSquare size={15} />} data-card-chatwoot title="Abrir o ticket de ativação no Chatwoot com os dados deste cartão" onClick={() => setChatwootOpen(true)}>
+            Ativação Chatwoot
+          </TaButton>
+        )}
         <CalendlyLinkButton cardId={cardId} pipelineId={card.pipeline_id} personId={card.person_id ?? null} />
         <TaButton variant="ghost" startIcon={<GitMerge size={15} />} data-card-merge title={`Juntar este ${text.noun} com outro duplicado`} onClick={() => setMerging(true)}>
           Mesclar
@@ -773,6 +781,17 @@ function CardDetailInner({
       {docOpen && <DocumentViewer documentId={docOpen} onClose={() => setDocOpen(null)} />}
       {leaveDialog}
       {nfseOpen && <NfseDialog cardId={cardId} onClose={() => setNfseOpen(false)} />}
+      {chatwootOpen && (
+        <ChatwootDialog
+          cardId={cardId}
+          onClose={() => setChatwootOpen(false)}
+          onChanged={() => {
+            void load();
+            onChanged();
+            recount();
+          }}
+        />
+      )}
       {chargeOpen && (
         <ChargeDialog
           cardId={cardId}

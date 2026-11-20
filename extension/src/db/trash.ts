@@ -373,6 +373,7 @@ const OWNED_BY: Partial<Record<DataTable, string[]>> = {
   deal_participant: ["deal_id", "person_id"],
   deal_org_link: ["deal_id", "organization_id"],
   deal_item: ["deal_id"],
+  chatwoot_ticket: ["card_id"],
   team_member: ["team_id"],
   person_organization: ["person_id", "organization_id"],
   entity_tag: ["tag_id"],

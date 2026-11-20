@@ -9,6 +9,7 @@ import * as attachments from "../db/attachments";
 import * as importer from "../db/importer";
 import * as cardImporter from "../db/cardImporter";
 import * as bulk from "../db/bulkCards";
+import * as chatwoot from "../db/chatwoot";
 import * as cardOrgs from "../db/cardOrganizations";
 import * as cardContacts from "../db/cardContacts";
 import * as notify from "../db/notifications";
@@ -359,6 +360,23 @@ export const methods = {
   "cards.contacts.setPrimary": (db: DatabaseSync, ctx: DbContext, p: Id & { personId: string }) => {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);
     cardContacts.setPrimaryCardContact(db, ctx, p.id, p.personId);
+  },
+  /** Chatwoot (spec 24): dados do cartão para a nota do ticket de ativação. */
+  "chatwoot.context": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    return chatwoot.chatwootContext(db, p.id);
+  },
+  "chatwoot.ensureFields": (db: DatabaseSync, ctx: DbContext, p: { pipelineIds: string[] }) => {
+    assertRole(db, ctx, ADMIN, "campos personalizados");
+    return chatwoot.ensureChatwootFields(db, ctx, p.pipelineIds ?? []);
+  },
+  "chatwoot.fieldsStatus": (db: DatabaseSync) => {
+    const have = chatwoot.chatwootCardFields(db);
+    return chatwoot.CHATWOOT_CARD_FIELDS.map((d) => ({ name: d.name, key: d.key, exists: !!have[d.field], pipelineIds: have[d.field]?.pipelineIds ?? [] }));
+  },
+  "chatwoot.record": (db: DatabaseSync, ctx: DbContext, p: Id & { conversationId: number; link: string; data: chatwoot.ChatwootData; contactCreated?: boolean }) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    return chatwoot.recordChatwootTicket(db, ctx, p.id, p);
   },
   /** Organizações do cartão: principal + vinculadas com papel (pagador, mantenedora, unidade, outra). */
   "cards.organizations.list": (db: DatabaseSync, ctx: DbContext, p: Id) => {
