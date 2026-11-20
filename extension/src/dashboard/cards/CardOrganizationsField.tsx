@@ -8,7 +8,7 @@ import { call } from "../../rpc/client";
 import { CARD_ORG_ROLE_LABEL, CARD_ORG_ROLES, type CardOrganization, type CardOrgRole } from "../../db/cardOrganizations";
 import { Combobox } from "../ui/Combobox";
 import { Field } from "../ui/form";
-import { createOrganizationQuick, searchOrganizations } from "./searchers";
+import { createOrganizationQuick, organizationCreateLabel, searchOrganizations } from "./searchers";
 
 const ROLE_HINT: Record<CardOrgRole, string> = {
   pagador: "Paga: vai na cobrança, na nota fiscal e na Gestão Financeira",
@@ -109,9 +109,10 @@ export function CardOrganizationsField({
                 void run(() => call("cards.organizations.add", { id: cardId, organizationId: i.id, role: newRole })).then((ok) => ok && setNewRole(null))
               }
               search={searchOrganizations}
-              placeholder="Buscar organização"
+              placeholder="Buscar organização ou digitar o CNPJ"
               onCreate={createOrganizationQuick}
               createLabel="Criar organização"
+              createLabelFor={organizationCreateLabel}
               dashed={
                 <>
                   <PlusCircle size={15} /> Adicionar organização{newRole ? ` (${CARD_ORG_ROLE_LABEL[newRole].toLowerCase()})` : ""}

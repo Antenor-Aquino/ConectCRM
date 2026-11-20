@@ -20,6 +20,7 @@ export function Combobox({
   placeholder,
   onCreate,
   createLabel = "Criar",
+  createLabelFor,
   dashed,
   emptyText = "Nada encontrado.",
   onOpenValue,
@@ -34,6 +35,8 @@ export function Combobox({
   /** Cria um registro com o texto digitado e devolve o item criado. */
   onCreate?: (text: string) => Promise<ComboItem>;
   createLabel?: string;
+  /** Texto do botão de criar conforme o que foi digitado (ex.: CNPJ → "Criar pela Receita"). */
+  createLabelFor?: (text: string) => string;
   /** Visual de botão tracejado quando vazio ("Vincular ou criar organização"). */
   dashed?: ReactNode;
   emptyText?: string;
@@ -49,6 +52,7 @@ export function Combobox({
   const [text, setText] = useState("");
   const [items, setItems] = useState<ComboItem[]>([]);
   const [busy, setBusy] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -160,17 +164,21 @@ export function Combobox({
             disabled={busy}
             onClick={async () => {
               setBusy(true);
+              setCreateError(null);
               try {
                 pick(await onCreate(text.trim()));
+              } catch (e) {
+                setCreateError(e instanceof Error ? e.message : String(e));
               } finally {
                 setBusy(false);
               }
             }}
             className="flex w-full items-center gap-2 border-t border-gray-100 px-3.5 py-2.5 text-left text-theme-sm font-medium text-brand-600 hover:bg-brand-50 dark:border-gray-800"
           >
-            <Plus size={14} /> {createLabel} "{text.trim()}"
+            <Plus size={14} /> {busy ? "Criando…" : `${createLabelFor?.(text.trim()) ?? createLabel} "${text.trim()}"`}
           </button>
         )}
+        {createError && <p className="border-t border-gray-100 px-3.5 py-2 text-theme-xs text-error-600 dark:border-gray-800">{createError}</p>}
       </Popover>
     </div>
   );

@@ -67,7 +67,7 @@ import { taskTiming } from "../../lib/taskTiming";
 import { ItemsEditor, type ItemDraft } from "./ItemsEditor";
 import { LostModal } from "./LostModal";
 import { ChangePipelineModal } from "./ChangePipelineModal";
-import { createOrganizationQuick, createPersonQuick, searchOrganizations, searchPersons } from "./searchers";
+import { createOrganizationQuick, createPersonQuick, organizationCreateLabel, searchOrganizations, searchPersons } from "./searchers";
 import { EmailLink, PhoneLink } from "../ui/ContactLinks";
 import { errorText } from "../../lib/errors";
 import { RECURRENCE_LABEL, type Recurrence } from "../../db/products";
@@ -594,9 +594,10 @@ function CardDetailInner({
               value={org}
               onChange={(i) => void update({ organizationId: i?.id ?? null })}
               search={searchOrganizations}
-              placeholder="Buscar organização"
+              placeholder="Buscar organização ou digitar o CNPJ"
               onCreate={createOrganizationQuick}
               createLabel="Criar organização"
+              createLabelFor={organizationCreateLabel}
               dashed={
                 <>
                   <PlusCircle size={15} /> Vincular ou criar organização
