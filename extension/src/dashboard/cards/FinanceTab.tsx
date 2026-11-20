@@ -5,6 +5,7 @@
 // é lida de novo. Sem a Gestão Financeira por perto, mostra a última cópia.
 // Modo pacote (Fase 4): sem a Gestão Financeira neste Chrome, os botões fazem
 // um pedido que vai num arquivo (Configurações → Integrações → Exportar pacote).
+import { syncGfPending } from "../../lib/interSync";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
 import { TaButton, TaInput, TaModal, TaTextarea, cn } from "@tailadmin";
@@ -100,6 +101,8 @@ export function FinanceTab({
       setLive("off");
       return;
     }
+    // Cobrança paga/cancelada antes de a receita estar lá (ou com a GF fechada): leva agora.
+    await syncGfPending((m, p) => (call as unknown as (m: string, p: unknown) => Promise<never>)(m, p), { cardId }).catch(() => undefined);
     try {
       const r = await listByOrigin(s.gfId, [cardId]);
       await call("finance.replace", { dealIds: [cardId], items: r.items, env: r.env, at: r.at });

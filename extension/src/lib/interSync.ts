@@ -2,11 +2,14 @@
 // avisos (webhooks) do Inter, o CRM consulta. Usado pelo botão "Atualizar
 // situação" e pelo service worker (a cada 30 min). Pago → cobrança paga e
 // receita "Recebida" na Gestão Financeira; cancelado/expirado → receita excluída.
-import type { InterOpenCharge, InterSituacaoChange } from "../db/charges";
+import type { GfPendingCharge, InterOpenCharge, InterSituacaoChange } from "../db/charges";
 import { loadGfSettings, removeLaunch, settleLaunch } from "./finance/gfBridge";
 import { getCobranca, type InterCobranca } from "./inter";
 
 type Rpc = <T>(method: string, params: Record<string, unknown>) => Promise<T>;
+
+/** Baixa pendente porque a receita desta cobrança nunca foi salva na Gestão Financeira. */
+export const GF_MISSING_RECEITA = "A receita desta cobrança não está na Gestão Financeira: lance a receita (a baixa vem sozinha em seguida) ou dispense, se ela não vai ser lançada.";
 
 export interface InterSyncResult {
   cobranca: InterCobranca;
@@ -32,20 +35,49 @@ export async function applyInterResult(
   const change = await rpc<InterSituacaoChange>("charges.interApply", { id, ...r });
   let gf: string | null = null;
   if (change.changed) {
-    const s = await loadGfSettings().catch(() => null);
-    if (s?.gfId && s.direct) {
-      try {
-        if (change.to === "paid") {
-          const x = await settleLaunch(s.gfId, change.cardId, change.orderNsu, true, change.paidDate);
-          gf = x.total ? "Receita marcada como Recebida na Gestão Financeira." : "Não achei a receita desta cobrança na Gestão Financeira.";
-        } else if (change.to === "canceled") {
-          const x = await removeLaunch(s.gfId, change.cardId, change.orderNsu);
-          gf = x.removed ? "Receita excluída da Gestão Financeira." : x.paid ? "A receita na Gestão Financeira já estava recebida: confira lá." : null;
-        }
-      } catch (e) {
-        gf = `A Gestão Financeira não foi atualizada: ${e instanceof Error ? e.message : String(e)}`;
-      }
-    }
+    const done = await syncGfPending(rpc, { cardId: change.cardId, chargeId: id });
+    gf = done[0]?.message ?? null;
   }
   return { change, gf };
+}
+
+/**
+ * Leva à Gestão Financeira as baixas/exclusões pendentes (cobrança paga antes
+ * de a receita ser salva lá, GF fechada…). Repetido pelo service worker até dar
+ * certo (ou desistir em 7 dias, com nota no cartão).
+ */
+export async function syncGfPending(rpc: Rpc, opts: { cardId?: string; chargeId?: string } = {}): Promise<{ id: string; done: boolean; message: string }[]> {
+  let list = await rpc<GfPendingCharge[]>("charges.gfPending", opts.cardId ? { cardId: opts.cardId } : {});
+  if (opts.chargeId) list = list.filter((c) => c.id === opts.chargeId);
+  if (!list.length) return [];
+  const s = await loadGfSettings().catch(() => null);
+  const out: { id: string; done: boolean; message: string }[] = [];
+  for (const c of list) {
+    let done = false;
+    let message: string;
+    if (!s?.gfId || !s.direct) {
+      // Sem a Gestão Financeira conectada neste Chrome: nada a fazer aqui.
+      done = true;
+      message = "";
+    } else {
+      try {
+        if (c.gf_sync === "paid") {
+          const x = await settleLaunch(s.gfId, c.card_id, c.order_nsu, true, c.paid_at ? c.paid_at.slice(0, 10) : null);
+          done = x.total > 0;
+          message = done
+            ? "Receita marcada como Recebida na Gestão Financeira."
+            : GF_MISSING_RECEITA;
+        } else {
+          const x = await removeLaunch(s.gfId, c.card_id, c.order_nsu);
+          done = true;
+          message = x.removed ? "Receita excluída da Gestão Financeira." : x.paid ? "A receita na Gestão Financeira já estava recebida: confira lá." : "";
+        }
+      } catch (e) {
+        message = `A Gestão Financeira não foi atualizada agora (tento de novo em alguns minutos): ${e instanceof Error ? e.message : String(e)}`;
+      }
+    }
+    await rpc("charges.gfSyncResult", { id: c.id, done, error: done ? null : message });
+    out.push({ id: c.id, done, message });
+  }
+  return out;
 }

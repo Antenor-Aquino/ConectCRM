@@ -24,7 +24,7 @@ import {
   type InterSettings,
   type InterSituacao,
 } from "../../lib/inter";
-import { applyInterResult, syncInterCharge } from "../../lib/interSync";
+import { applyInterResult, GF_MISSING_RECEITA, syncGfPending, syncInterCharge } from "../../lib/interSync";
 import { fiscalVersion } from "../../lib/nfse/fiscal";
 import { formatCepInput, lookupCep } from "../../lib/cep";
 import { prepareFile, saveBlobAs, saveContent } from "../../lib/documentFiles";
@@ -120,7 +120,9 @@ export function ChargeDialog({
     }
   };
   useEffect(() => {
-    void load(true);
+    void load(true).then(() => syncGfPending(rpcAny, { cardId }).then(async (r) => {
+        if (r.some((x) => x.done)) await load(false);
+      }).catch(() => undefined));
     void loadInfinitePay().then((s) => {
       setHandle(s.handle);
       setCompany(s.company);
@@ -609,6 +611,56 @@ export function ChargeDialog({
                         {c.due_date ? ` · vence ${day(c.due_date)}` : ""}
                         {c.paid_at ? ` · paga em ${day(c.paid_at)}` : ""}
                       </span>
+                      {c.gf_sync && (
+                        <span className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-warning-50 px-2.5 py-1.5 text-theme-xs text-warning-800" data-charge-gf-pending>
+                          {c.gf_sync_error === GF_MISSING_RECEITA ? (
+                            <span className="min-w-0 flex-1">
+                              Esta cobrança está paga, mas <b>a receita dela ({formatCents(c.amount_cents)}, pedido {c.order_nsu}) não existe na Gestão Financeira</b>.
+                            </span>
+                          ) : (
+                            <span className="min-w-0 flex-1">
+                              Gestão Financeira: {c.gf_sync === "paid" ? "baixa da receita pendente" : "exclusão da receita pendente"}
+                              {c.gf_sync_error ? ` — ${c.gf_sync_error}` : " (tento de novo sozinho a cada 5 min)"}
+                            </span>
+                          )}
+                          {c.gf_sync === "paid" && c.gf_sync_error === GF_MISSING_RECEITA && gfActive && (
+                            <button type="button" className="font-medium text-brand-600 hover:underline" onClick={() => onLaunchFinance(presetOf(c))} data-charge-gf-launch>
+                              Lançar receita
+                            </button>
+                          )}
+                          {c.gf_sync_error !== GF_MISSING_RECEITA && (
+                            <button
+                              type="button"
+                              className="font-medium text-brand-600 hover:underline"
+                              disabled={busyRow === c.id}
+                              onClick={async () => {
+                                setBusyRow(c.id);
+                                setInfo(null);
+                                const r = await syncGfPending(rpcAny, { cardId, chargeId: c.id }).catch((e) => [{ id: c.id, done: false, message: errorText(e) }]);
+                                setInfo(r[0]?.message || null);
+                                await load(false);
+                                onChanged?.();
+                                setBusyRow(null);
+                              }}
+                              data-charge-gf-retry
+                            >
+                              Tentar agora
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="font-medium text-gray-500 hover:underline"
+                            onClick={async () => {
+                              if (!confirm("Dispensar? O CRM para de tentar levar esta cobrança à Gestão Financeira (nada é lançado nem alterado lá).")) return;
+                              await rpcAny("charges.gfSyncResult", { id: c.id, done: true });
+                              await load(false);
+                            }}
+                            data-charge-gf-dismiss
+                          >
+                            Dispensar
+                          </button>
+                        </span>
+                      )}
                       {c.provider === "inter" ? (
                         <span className="ml-auto flex flex-wrap gap-1" data-charge-inter-actions>
                           {c.barcode && (

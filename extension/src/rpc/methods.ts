@@ -982,6 +982,12 @@ export const methods = {
     if (!card || !deals.getCard(db, card, viewer(db, ctx))) throw new ValidationError("Cobrança não encontrada.");
     return charges.interChargeRef(db, p.id);
   },
+  /** Baixa/exclusão pendente na Gestão Financeira (novas tentativas). */
+  "charges.gfPending": (db: DatabaseSync, ctx: DbContext, p: { cardId?: string } = {}) => {
+    if (p.cardId && !deals.getCard(db, p.cardId, viewer(db, ctx))) throw new ValidationError("Cartão não encontrado.");
+    return charges.gfPendingCharges(db, p.cardId);
+  },
+  "charges.gfSyncResult": (db: DatabaseSync, ctx: DbContext, p: Id & { done: boolean; error?: string | null }) => charges.gfSyncResult(db, ctx, p.id, p),
   /** Consulta periódica (service worker) e "Atualizar situação". */
   "charges.interOpen": (db: DatabaseSync) => charges.openInterCharges(db),
   "charges.interApply": (db: DatabaseSync, ctx: DbContext, p: Id & { situacao: string; dataSituacao?: string | null; receivedCents?: number | null }) =>
