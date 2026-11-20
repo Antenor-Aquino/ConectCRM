@@ -111,5 +111,22 @@ describe("Chatwoot: dados da nota", () => {
     expect(act.title).toBe("Acompanhar ativação no Chatwoot");
     expect(new Date(act.due_at).getDate()).toBe(21);
     expect(() => cw.recordChatwootTicket(db, ctx, card, { conversationId: 0, link: "x", data })).toThrow(/inválid/);
+    // Sem vencimento do boleto: só a atividade de acompanhamento.
+    expect(r.paymentActivityId).toBeNull();
+  });
+
+  it("vencimento do boleto informado: atividade para conferir o pagamento no dia seguinte", async () => {
+    const { db, ctx, card } = await setup();
+    const data = { ...cw.chatwootContext(db, card).data, vencimento_boleto: "30/11/2026", valor: "R$ 595,00", nome_escola: "EE Doutor João Pinheiro", razao_social: "CAIXA ESCOLAR" };
+    const r = cw.recordChatwootTicket(db, ctx, card, { conversationId: 2400, link: "https://suporte.powercubus.com.br/app/accounts/1/conversations/2400", data }, new Date("2026-11-19T15:00:00"));
+    const act = listActivities(db, { dealId: card }).find((a) => a.id === r.paymentActivityId)!;
+    expect(act.title).toBe("Conferir pagamento do boleto");
+    const due = new Date(act.due_at);
+    expect([due.getFullYear(), due.getMonth() + 1, due.getDate(), due.getHours()]).toEqual([2026, 12, 1, 9]);
+    expect(act.description).toContain("Boleto com vencimento em 30/11/2026 (R$ 595,00): confirme se o cliente pagou.");
+    expect(act.description).toContain("conversations/2400");
+    expect(cw.parseBrDate("31/02/2026")).toBeNull();
+    const bad = cw.recordChatwootTicket(db, ctx, card, { conversationId: 2401, link: "https://suporte.powercubus.com.br/app/accounts/1/conversations/2401", data: { ...data, vencimento_boleto: "31/02/2026" } });
+    expect(bad.paymentActivityId).toBeNull();
   });
 });

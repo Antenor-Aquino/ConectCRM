@@ -184,7 +184,7 @@ export function recordChatwootTicket(
   cardId: string,
   input: { conversationId: number; link: string; data: ChatwootData; contactCreated?: boolean; attachments?: string[] },
   now = new Date(),
-): { ticketId: string; activityId: string } {
+): { ticketId: string; activityId: string; paymentActivityId: string | null } {
   if (!Number.isInteger(input.conversationId) || input.conversationId <= 0) throw new ValidationError("Conversa do Chatwoot inválida.");
   if (!/^https:\/\//.test(input.link)) throw new ValidationError("Link da conversa inválido.");
   return withTransaction(db, () => {
@@ -217,8 +217,36 @@ export function recordChatwootTicket(
       dealId: cardId,
       ownerId: ctx.userId,
     });
-    return { ticketId, activityId };
+    // Vencimento do boleto informado: conferir o pagamento no dia seguinte (9h).
+    const venc = parseBrDate(input.data.vencimento_boleto);
+    let paymentActivityId: string | null = null;
+    if (venc) {
+      const check = new Date(venc.y, venc.m - 1, venc.d + 1, 9, 0, 0, 0);
+      paymentActivityId = createActivity(db, ctx, {
+        title: "Conferir pagamento do boleto",
+        description: [
+          `Boleto com vencimento em ${input.data.vencimento_boleto}${input.data.valor ? ` (${input.data.valor})` : ""}: confirme se o cliente pagou.`,
+          `Escola: ${input.data.nome_escola || "-"} · Pagador: ${input.data.razao_social || "-"}`,
+          `Ticket da ativação no Chatwoot: ${input.link}`,
+        ].join("\n"),
+        dueAt: check.toISOString(),
+        dealId: cardId,
+        ownerId: ctx.userId,
+      });
+    }
+    return { ticketId, activityId, paymentActivityId };
   });
+}
+
+/** "20/11/2026" → { y, m, d } (null se não for uma data válida). */
+export function parseBrDate(v: string | null | undefined): { y: number; m: number; d: number } | null {
+  const m = (v ?? "").trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
+  const d = Number(m[1]);
+  const mo = Number(m[2]);
+  const y = Number(m[3]);
+  const dt = new Date(y, mo - 1, d);
+  return dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d ? { y, m: mo, d } : null;
 }
 
 /** Ticket cancelado pela janela do cartão: guarda a observação e deixa nota no cartão. */
