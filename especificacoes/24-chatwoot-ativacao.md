@@ -40,3 +40,14 @@ mesmo assim (para não duplicar).
 ## Permissões
 `optional_host_permissions`: `https://suporte.powercubus.com.br/*` (pedida no 1º uso).
 Outro endereço de Chatwoot exige incluir o host no manifesto.
+
+## Tickets já abertos e cancelamento (0.2.142)
+- Ao abrir a janela, o CRM consulta no Chatwoot a situação real de cada conversa do cartão
+  (`GET /conversations/{id}`): Aberta, Pendente, Adiada, Resolvida ou Apagada (404), com o responsável.
+- Cada conversa é uma linha com o link e, se não estiver resolvida/apagada, **Cancelar ticket**:
+  observação obrigatória (mín. 3 letras) → nota privada "Ticket cancelado / Observação / Cancelado por"
+  → devolve a conversa ao **dono do token** (`GET /profile`; `reassignTo` opcional no código)
+  → resolve (`toggle_status`). Nada é apagado; o cliente não recebe e-mail (CSAT desligado na inbox 16).
+- No CRM: `chatwoot_ticket.canceled_at` / `cancel_note` (migration 0047) e nota no cartão.
+- O aviso amarelo e a caixa "Abrir outro ticket mesmo assim" só aparecem com ticket **em andamento**;
+  com tudo encerrado, abrir um novo fica livre. Sem consulta ao Chatwoot, vale o registro do CRM.

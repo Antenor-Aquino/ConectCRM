@@ -156,3 +156,104 @@ export async function openActivationTicket(
   }
   return { conversationId: conv.id, link, contactCreated };
 }
+
+// ---------- Situação e cancelamento dos tickets ----------
+
+export type TicketStatus = "open" | "pending" | "snoozed" | "resolved" | "deleted" | "unknown";
+export const TICKET_STATUS_LABEL: Record<TicketStatus, string> = {
+  open: "Aberta",
+  pending: "Pendente",
+  snoozed: "Adiada",
+  resolved: "Resolvida",
+  deleted: "Apagada",
+  unknown: "Situação não consultada",
+};
+
+export interface TicketState {
+  id: number;
+  status: TicketStatus;
+  /** Pode ser cancelado (ainda não resolvido nem apagado). */
+  cancelable: boolean;
+  assignee: string | null;
+  link: string;
+  error?: string;
+}
+
+export const conversationLink = (s: Pick<ChatwootSettings, "baseUrl" | "accountId">, id: number) => `${s.baseUrl.replace(/\/+$/, "")}/app/accounts/${s.accountId}/conversations/${id}`;
+
+/** Situação real das conversas no Chatwoot (404 = apagada; falha = não consultada). */
+export async function ticketStates(s: ChatwootSettings, ids: number[], fetchFn: Fetch = fetch): Promise<TicketState[]> {
+  const api = client(s, fetchFn);
+  return Promise.all(
+    ids.map(async (id): Promise<TicketState> => {
+      const link = conversationLink(s, id);
+      try {
+        const c = await api<{ status?: string; meta?: { assignee?: { name?: string } | null } }>("GET", `/conversations/${id}`);
+        const status = (["open", "pending", "snoozed", "resolved"].includes(String(c.status)) ? c.status : "unknown") as TicketStatus;
+        return { id, status, cancelable: status !== "resolved", assignee: c.meta?.assignee?.name ?? null, link };
+      } catch (e) {
+        if (e instanceof ChatwootError && e.status === 404) return { id, status: "deleted", cancelable: false, assignee: null, link };
+        return { id, status: "unknown", cancelable: false, assignee: null, link, error: e instanceof Error ? e.message : String(e) };
+      }
+    }),
+  );
+}
+
+/**
+ * Regra do aviso: há ticket em andamento? Sem consulta ao Chatwoot, vale o que
+ * o CRM guardou (cancelado pelo cartão = encerrado).
+ */
+export function activeTickets<T extends { conversation_id: number; canceled_at: string | null }>(tickets: T[], states: TicketState[] | null): T[] {
+  return tickets.filter((t) => {
+    const st = states?.find((x) => x.id === t.conversation_id);
+    if (st && st.status !== "unknown") return st.status !== "resolved" && st.status !== "deleted";
+    return !t.canceled_at;
+  });
+}
+
+/**
+ * Cancela o ticket: grava a observação como nota privada, devolve a conversa ao
+ * dono do token (ou a `reassignTo`) e resolve. Nada é apagado; resolver não envia
+ * e-mail ao cliente (CSAT desligado na inbox).
+ */
+export async function cancelTicket(
+  s: ChatwootSettings,
+  conversationId: number,
+  note: string,
+  fetchFn: Fetch = fetch,
+  reassignTo?: number | null,
+): Promise<{ conversationId: number; link: string; assigneeId: number; user: string }> {
+  const reason = note.trim();
+  if (reason.length < 3) throw new ChatwootError("Informe a observação do cancelamento (pelo menos 3 letras).");
+  if (!s.token.trim()) throw new ChatwootError("Configure o token do Chatwoot em Configurações → Integrações → Chatwoot.");
+  const api = client(s, fetchFn);
+  const link = conversationLink(s, conversationId);
+  const conv = await api<{ status?: string }>("GET", `/conversations/${conversationId}`);
+  if (conv.status === "resolved") throw new ChatwootError(`A conversa ${conversationId} já está resolvida no Chatwoot.`, undefined, link);
+  let profile: { id?: number; name?: string };
+  try {
+    const r = await fetchFn(`${s.baseUrl.replace(/\/+$/, "")}/api/v1/profile`, { headers: { api_access_token: s.token } });
+    if (!r.ok) throw new ChatwootError(`Chatwoot: GET /profile → HTTP ${r.status}`, r.status);
+    profile = (await r.json()) as { id?: number; name?: string };
+  } catch (e) {
+    if (e instanceof ChatwootError) throw e;
+    throw new ChatwootError(`Sem conexão com o Chatwoot (${e instanceof Error ? e.message : String(e)}).`);
+  }
+  const assigneeId = reassignTo ?? profile.id;
+  if (!assigneeId) throw new ChatwootError("O Chatwoot não informou o usuário dono do token.");
+  const when = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  const body = `**Ticket cancelado**\n\nObservação: ${reason}\nCancelado por: ${profile.name ?? "ConectCRM"} em ${when}`;
+  const done: string[] = [];
+  try {
+    await api("POST", `/conversations/${conversationId}/messages`, { content: body, message_type: "outgoing", private: true });
+    done.push("nota gravada");
+    await api("POST", `/conversations/${conversationId}/assignments`, { assignee_id: assigneeId });
+    done.push("devolvida ao seu usuário");
+    await api("POST", `/conversations/${conversationId}/toggle_status`, { status: "resolved" });
+    done.push("resolvida");
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new ChatwootError(`${msg} (já feito: ${done.join(", ") || "nada"}).`, e instanceof ChatwootError ? e.status : undefined, link);
+  }
+  return { conversationId, link, assigneeId, user: profile.name ?? "" };
+}

@@ -8,7 +8,7 @@ import { createActivity } from "./activities";
 import { payerOrganizationId } from "./cardOrganizations";
 import { createCustomField, getCustomValues, listCustomFields, type CustomFieldType } from "./customFields";
 import { addNote } from "./notes";
-import { insertRow, type DbContext } from "./repo";
+import { insertRow, updateRow, type DbContext } from "./repo";
 import { many, one, withTransaction, type DatabaseSync } from "./sql";
 import { ValidationError } from "../lib/validate";
 import { CHATWOOT_FIELDS, CHATWOOT_FIELD_LABEL, chatwootMissing, chatwootNote, type ChatwootData, type ChatwootField } from "../lib/chatwootNote";
@@ -64,12 +64,15 @@ export interface ChatwootTicket {
   contact_email: string | null;
   created_at: string;
   created_by_name: string | null;
+  /** Cancelado pelo cartão (resolvido no Chatwoot com observação). */
+  canceled_at: string | null;
+  cancel_note: string | null;
 }
 
 export function listChatwootTickets(db: DatabaseSync, cardId: string): ChatwootTicket[] {
   return many<ChatwootTicket>(
     db,
-    `SELECT t.id, t.conversation_id, t.link, t.contact_email, t.created_at, u.name AS created_by_name
+    `SELECT t.id, t.conversation_id, t.link, t.contact_email, t.created_at, u.name AS created_by_name, t.canceled_at, t.cancel_note
      FROM chatwoot_ticket t LEFT JOIN app_user u ON u.id = t.created_by
      WHERE t.card_id = ? AND t.deleted_at IS NULL ORDER BY t.created_at DESC`,
     cardId,
@@ -214,5 +217,28 @@ export function recordChatwootTicket(
       ownerId: ctx.userId,
     });
     return { ticketId, activityId };
+  });
+}
+
+/** Ticket cancelado pela janela do cartão: guarda a observação e deixa nota no cartão. */
+export function recordChatwootCancel(db: DatabaseSync, ctx: DbContext, cardId: string, input: { conversationId: number; note: string; by?: string | null }): void {
+  const note = input.note.trim();
+  if (note.length < 3) throw new ValidationError("Informe a observação do cancelamento.");
+  withTransaction(db, () => {
+    const t = one<{ id: string; link: string }>(
+      db,
+      "SELECT id, link FROM chatwoot_ticket WHERE card_id = ? AND conversation_id = ? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1",
+      cardId,
+      input.conversationId,
+    );
+    if (!t) throw new ValidationError("Este ticket não está registrado neste cartão.");
+    updateRow(db, ctx, "chatwoot_ticket", t.id, { canceled_at: new Date().toISOString(), cancel_note: note });
+    addNote(
+      db,
+      ctx,
+      "deal",
+      cardId,
+      [`Ticket do Chatwoot cancelado (conversa ${input.conversationId}, resolvida${input.by ? ` e devolvida a ${input.by}` : ""}):`, t.link, "", `Observação: ${note}`].join("\n"),
+    );
   });
 }
