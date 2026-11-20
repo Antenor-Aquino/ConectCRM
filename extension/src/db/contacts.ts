@@ -340,6 +340,8 @@ export interface OrganizationInput {
   cnpj?: string | null;
   website?: string | null;
   segment?: string | null;
+  /** Tipo: pagador, mantenedora, unidade/escola (cliente) ou outra. */
+  orgType?: OrgType | null;
   ownerId?: string | null;
   phone?: string | null;
   phoneCountry?: string | null;
@@ -361,6 +363,9 @@ export interface OrganizationInput {
   customValues?: Record<string, CustomValue>;
 }
 
+import { ORG_TYPE_LABEL, ORG_TYPES, type OrgType } from "../lib/orgType";
+export { ORG_TYPE_LABEL, ORG_TYPES, type OrgType };
+
 export interface Organization {
   id: string;
   name: string;
@@ -368,6 +373,7 @@ export interface Organization {
   cnpj: string | null;
   website: string | null;
   segment: string | null;
+  org_type: OrgType | null;
   owner_id: string | null;
   phone: string | null;
   phone_country: string | null;
@@ -393,7 +399,7 @@ export interface OrganizationDetail extends Organization {
 }
 
 const ORG_COLS =
-  "id, name, legal_name, cnpj, website, segment, owner_id, phone, phone_country, email, cep, street, number, complement, district, city, state, country, description, logo_id, version";
+  "id, name, legal_name, cnpj, website, segment, org_type, owner_id, phone, phone_country, email, cep, street, number, complement, district, city, state, country, description, logo_id, version";
 
 const ORG_TEXT_FIELDS: [keyof OrganizationInput, string][] = [
   ["legalName", "legal_name"],
@@ -413,6 +419,12 @@ function organizationData(db: DatabaseSync, input: Partial<OrganizationInput>, f
   if (full || input.name !== undefined) data.name = requireText(input.name, "Informe o nome da organização.");
   for (const [key, col] of ORG_TEXT_FIELDS) if (full || input[key] !== undefined) data[col] = optionalText(input[key] as string | null);
   if (full || input.segment !== undefined) data.segment = optionalText(input.segment)?.replace(/\s+/g, " ") ?? null;
+  // Só quando informado (cadastros antigos/importações não mexem no tipo).
+  if (input.orgType !== undefined) {
+    const t = optionalText(input.orgType);
+    if (t && !(ORG_TYPES as string[]).includes(t)) throw new ValidationError("Tipo de organização inválido.");
+    data.org_type = t;
+  }
   if (full || input.cnpj !== undefined) {
     data.cnpj = normalizeCnpj(input.cnpj);
     if (data.cnpj) {
@@ -501,6 +513,7 @@ export function getOrganization(db: DatabaseSync, id: string, viewer?: Viewer | 
 export interface OrganizationFilter {
   search?: string;
   segment?: string;
+  orgType?: OrgType;
   city?: string;
   state?: string;
   ownerId?: string;
@@ -522,7 +535,7 @@ function organizationWhere(f: OrganizationFilter): { sql: string; params: SqlVal
     params.push(like(f.search), like(f.search));
     if (digits.length >= 3) params.push(`%${digits}%`);
   }
-  for (const [key, col] of [["segment", "segment"], ["city", "city"], ["state", "state"]] as const) {
+  for (const [key, col] of [["segment", "segment"], ["orgType", "org_type"], ["city", "city"], ["state", "state"]] as const) {
     if (f[key]) {
       where.push(`o.${col} = ? COLLATE NOCASE`);
       params.push(f[key]!);

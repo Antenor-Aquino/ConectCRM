@@ -45,6 +45,7 @@ export const ORGANIZATION_COLUMNS: Record<string, ContactCardField | Excluded> =
   cnpj: "document",
   website: "website",
   segment: "segment",
+  org_type: "orgType",
   cep: "address.cep",
   street: "address.street",
   number: "address.number",
@@ -123,7 +124,7 @@ export function personCard(db: DatabaseSync, id: string): ContactCard | null {
 export function organizationCard(db: DatabaseSync, id: string): ContactCard | null {
   const o = one<Record<string, string | null> & { id: string; name: string }>(
     db,
-    `SELECT id, name, legal_name, cnpj, website, segment, phone, phone_country, email, cep, street, number, complement, district, city, state, country, description
+    `SELECT id, name, legal_name, cnpj, website, segment, org_type, phone, phone_country, email, cep, street, number, complement, district, city, state, country, description
      FROM organization WHERE id = ? AND deleted_at IS NULL`,
     id,
   );
@@ -139,6 +140,7 @@ export function organizationCard(db: DatabaseSync, id: string): ContactCard | nu
     legalName: o.legal_name,
     website: o.website,
     segment: o.segment,
+    orgType: o.org_type,
     address: { cep: o.cep, street: o.street, number: o.number, complement: o.complement, district: o.district, city: o.city, state: o.state, country: o.country },
     notes: o.description,
     tags: tagNames(db, id),

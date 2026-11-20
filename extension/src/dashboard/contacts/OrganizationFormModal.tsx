@@ -7,6 +7,7 @@ import { AlertTriangle, Loader2, Search, Star, X } from "lucide-react";
 import { TaButton, TaInput, TaTextarea } from "@tailadmin";
 import { GuardedModal } from "../ui/GuardedModal";
 import { call } from "../../rpc/client";
+import { ORG_TYPE_LABEL, ORG_TYPES, type OrgType } from "../../lib/orgType";
 import type { CustomField, CustomValue } from "../../db/customFields";
 import { formatCepInput, lookupCep } from "../../lib/cep";
 import { cnpjToOrganizationFields, formatCnpj, formatCnpjInput, lookupCnpj, type CnpjData } from "../../lib/cnpj";
@@ -31,6 +32,8 @@ type Form = {
   website: string;
   legalName: string;
   segment: string;
+  /** "" = não informado. */
+  orgType: string;
   email: string;
   phone: string;
   phoneCountry: string;
@@ -46,7 +49,7 @@ type Form = {
 };
 
 const EMPTY: Form = {
-  name: "", cnpj: "", website: "", legalName: "", segment: "", email: "", phone: "", phoneCountry: "BR",
+  name: "", cnpj: "", website: "", legalName: "", segment: "", orgType: "", email: "", phone: "", phoneCountry: "BR",
   cep: "", street: "", number: "", complement: "", district: "", city: "", state: "", country: "Brasil", description: "",
 };
 
@@ -103,6 +106,7 @@ export function OrganizationFormModal({
         website: o.website ?? "",
         legalName: o.legal_name ?? "",
         segment: o.segment ?? "",
+        orgType: o.org_type ?? "",
         email: o.email ?? "",
         phone: localPart(o.phone, o.phone_country ?? "BR"),
         phoneCountry: o.phone_country ?? "BR",
@@ -179,6 +183,7 @@ export function OrganizationFormModal({
       ...form,
       phone: form.phone || null,
       cnpj: form.cnpj || null,
+      orgType: (form.orgType || null) as OrgType | null,
       ownerId,
       logoId,
       tagIds,
@@ -253,6 +258,22 @@ export function OrganizationFormModal({
             </p>
           )}
           <Field label="Razão social">{text("legalName")}</Field>
+          <Field label="Tipo de organização" hint="Sugere o papel quando ela é vinculada a um cartão (pagador vai na cobrança, na nota fiscal e na Gestão Financeira).">
+            <select
+              className="h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-theme-sm text-gray-800 shadow-theme-xs dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+              value={form.orgType}
+              onChange={(e) => set({ orgType: e.target.value })}
+              aria-label="Tipo de organização"
+              data-org-type
+            >
+              <option value="">Não informado</option>
+              {ORG_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {ORG_TYPE_LABEL[t]}
+                </option>
+              ))}
+            </select>
+          </Field>
           <Field label="Segmento">
             <TaInput list="conectcrm-segments" value={form.segment} placeholder="Digite o segmento" onChange={(e) => set({ segment: e.target.value })} />
             <datalist id="conectcrm-segments">

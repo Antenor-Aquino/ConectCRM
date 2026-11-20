@@ -365,9 +365,9 @@ export const methods = {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);
     return cardOrgs.listCardOrganizations(db, p.id);
   },
-  "cards.organizations.add": (db: DatabaseSync, ctx: DbContext, p: Id & { organizationId: string; role?: cardOrgs.CardOrgRole }) => {
+  "cards.organizations.add": (db: DatabaseSync, ctx: DbContext, p: Id & { organizationId: string; role?: cardOrgs.CardOrgRole | null }) => {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);
-    cardOrgs.addCardOrganization(db, ctx, p.id, p.organizationId, p.role ?? "outra");
+    cardOrgs.addCardOrganization(db, ctx, p.id, p.organizationId, p.role ?? null);
   },
   "cards.organizations.remove": (db: DatabaseSync, ctx: DbContext, p: Id & { organizationId: string }) => {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);

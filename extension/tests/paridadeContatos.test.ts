@@ -33,7 +33,7 @@ describe("paridade de cadastros com a Gestão Financeira", () => {
     createCustomField(db, ctx, { entity: "person", name: "Interno", fieldType: "text", hidden: true });
     const tagOrg = createTag(db, ctx, { entity: "organization", name: "Prioridade" });
     const org = createOrganization(db, ctx, {
-      name: "AEB Sistemas", legalName: "AEB Sistemas LTDA", cnpj: "19.489.640/0001-35", website: "aeb.com.br", segment: "Saúde", phone: "31999998888",
+      name: "AEB Sistemas", legalName: "AEB Sistemas LTDA", cnpj: "19.489.640/0001-35", website: "aeb.com.br", segment: "Saúde", orgType: "pagador", phone: "31999998888",
       email: "contato@aeb.com.br", cep: "30130-000", street: "Av. Afonso Pena", number: "1000", complement: "Sala 2", district: "Centro", city: "Belo Horizonte",
       state: "MG", country: "Brasil", description: "Cliente desde 2020", tagIds: [tagOrg], customValues: { [area]: "Saúde" },
     });

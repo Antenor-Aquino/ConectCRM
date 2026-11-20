@@ -69,13 +69,19 @@ function clearOtherPayers(db: DatabaseSync, ctx: DbContext, dealId: string, exce
     updateRow(db, ctx, "deal_org_link", r.id, { role: "outra" });
 }
 
-/** Vincula mais uma organização. Sem principal, ela vira a principal (exceto pagador/mantenedora, que ficam com o papel). */
-export function addCardOrganization(db: DatabaseSync, ctx: DbContext, dealId: string, orgId: string, role: CardOrgRole = "outra"): void {
-  if (!isRole(role)) throw new ValidationError("Papel da organização inválido.");
+/**
+ * Vincula mais uma organização. Sem papel informado, vale o tipo do cadastro
+ * dela (sem tipo, "Outra"). Sem principal, ela vira a principal (exceto
+ * pagador/mantenedora, que ficam com o papel).
+ */
+export function addCardOrganization(db: DatabaseSync, ctx: DbContext, dealId: string, orgId: string, givenRole?: CardOrgRole | null): void {
+  if (givenRole != null && !isRole(givenRole)) throw new ValidationError("Papel da organização inválido.");
   withTransaction(db, () => {
     const deal = getRow(db, "deal", dealId) as { organization_id: string | null } | undefined;
     if (!deal) throw new ValidationError("Cartão não encontrado.");
-    if (!getRow(db, "organization", orgId)) throw new ValidationError("Organização não encontrada.");
+    const org = getRow(db, "organization", orgId) as { org_type: string | null } | undefined;
+    if (!org) throw new ValidationError("Organização não encontrada.");
+    const role: CardOrgRole = givenRole ?? (isRole(org.org_type) ? org.org_type : "outra");
     if (deal.organization_id === orgId) return;
     const cur = linkRow(db, dealId, orgId);
     if (cur) {

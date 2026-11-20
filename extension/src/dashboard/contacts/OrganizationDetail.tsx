@@ -1,4 +1,5 @@
 // Ficha da organização: dados da Receita, contatos, negócios, tarefas, notas e histórico.
+import { ORG_TYPE_LABEL } from "../../lib/orgType";
 import { useGfActive } from "../useGfActive";
 import { useCallback, useEffect, useState } from "react";
 import { Building2, ExternalLink, Merge, Pencil, Star, Trash2 } from "lucide-react";
@@ -128,6 +129,7 @@ export function OrganizationDetail({
         <div className="min-w-0">
           <SectionLabel className="mt-0">Empresa</SectionLabel>
           <InfoRow label="CNPJ">{o.cnpj && formatCnpj(o.cnpj)}</InfoRow>
+          <InfoRow label="Tipo">{o.org_type ? ORG_TYPE_LABEL[o.org_type] : null}</InfoRow>
           <InfoRow label="Segmento">{o.segment}</InfoRow>
           <InfoRow label="Site">
             {site && (

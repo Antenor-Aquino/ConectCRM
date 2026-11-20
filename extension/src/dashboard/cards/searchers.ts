@@ -1,4 +1,5 @@
 // Buscas usadas nos campos Contato / Organização dos formulários.
+import { ORG_TYPE_LABEL } from "../../lib/orgType";
 import { call } from "../../rpc/client";
 import type { ComboItem } from "../ui/Combobox";
 import { withExtra } from "../../lib/nameExtra";
@@ -30,7 +31,7 @@ export async function createPersonQuick(name: string): Promise<ComboItem> {
 
 export async function searchOrganizations(text: string): Promise<ComboItem[]> {
   const list = await call("organizations.list", { search: text, limit: 10 });
-  return list.map((o) => ({ id: o.id, label: withExtra(o.name, o.name_ext), sublabel: o.city }));
+  return list.map((o) => ({ id: o.id, label: withExtra(o.name, o.name_ext), sublabel: [o.org_type ? ORG_TYPE_LABEL[o.org_type] : null, o.city].filter(Boolean).join(" · ") || null }));
 }
 
 export async function createOrganizationQuick(name: string): Promise<ComboItem> {
