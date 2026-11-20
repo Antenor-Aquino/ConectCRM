@@ -35,6 +35,11 @@ const pct = (v: number) => (Math.round(v * 100) / 100).toFixed(2);
 const text = (s: string, max: number) => s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "").trim().slice(0, max);
 
 /** "2026-11-14T10:05:00-03:00" — horário de Brasília (sem horário de verão). */
+/** Data (AAAA-MM-DD) no horário de Brasília. */
+export function brasiliaDate(d: Date): string {
+  return new Date(d.getTime() - 3 * 3600_000).toISOString().slice(0, 10);
+}
+
 export function brasiliaDateTime(d: Date): string {
   const local = new Date(d.getTime() - 3 * 3600_000);
   return `${local.toISOString().slice(0, 19)}-03:00`;
@@ -100,7 +105,9 @@ export function buildDpsXml(d: NfseDraft, o: DpsOptions): string {
     `<trib><tribMun><tribISSQN>1</tribISSQN><tpRetISSQN>${d.issRetention}</tpRetISSQN>${issuer.iss_rate != null ? `<pAliq>${pct(issuer.iss_rate)}</pAliq>` : ""}</tribMun>` +
     `<totTrib>${totTrib}</totTrib></trib></valores>`;
 
-  const [y, m, dd] = d.competence.split("-");
+  // A competência não pode ser depois da emissão (E0015): limita ao dia da emissão em Brasília.
+  const emitDay = brasiliaDate(o.issuedAt);
+  const [y, m, dd] = (d.competence > emitDay ? emitDay : d.competence).split("-");
   return (
     `<?xml version="1.0" encoding="UTF-8"?>` +
     `<DPS xmlns="${DPS_NAMESPACE}" versao="${DPS_VERSION}"><infDPS Id="${id}">` +
