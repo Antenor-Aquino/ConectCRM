@@ -3,8 +3,8 @@
 // um — para revisar e abrir o ticket no Chatwoot. Os campos que vêm de campos
 // personalizados podem ser salvos de volta no cartão.
 import { useEffect, useState } from "react";
-import { AlertTriangle, Check, ExternalLink, MessageSquare, Paperclip, RefreshCw, XCircle } from "lucide-react";
-import { TaButton, TaInput, TaModal, cn } from "@tailadmin";
+import { AlertTriangle, Check, ExternalLink, Mail, MessageSquare, Paperclip, RefreshCw, XCircle } from "lucide-react";
+import { TaButton, TaInput, TaModal, TaTextarea, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { ChatwootContext, ChatwootTicket } from "../../db/chatwoot";
 import { CHATWOOT_FIELDS, CHATWOOT_FIELD_LABEL, chatwootMissing, chatwootNote, type ChatwootData, type ChatwootField } from "../../lib/chatwootNote";
@@ -21,6 +21,7 @@ import {
   attachmentsNote,
   CHATWOOT_FILE_MAX,
   sendPrivateFiles,
+  sendPublicReply,
   type ChatwootFile,
   type ChatwootSettings,
   type TicketState,
@@ -28,6 +29,7 @@ import {
 import { errorText } from "../../lib/errors";
 import { formatDateTime } from "../../lib/format";
 import { fetchVersion } from "../../lib/documentFiles";
+import { emptyVariables, leftoverVariables, renderReply, REPLY_TEMPLATES, REPLY_VARIABLES, type ReplyTemplate } from "../../lib/chatwootReplies";
 import { formatBytes } from "../../lib/files";
 
 const rpc = <T,>(m: string, p: Record<string, unknown>) => (call as unknown as (m: string, p: unknown) => Promise<T>)(m, p);
@@ -84,6 +86,21 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
       const files = await readDocs(list);
       await sendPrivateFiles(settings, conversationId, attachmentsNote(files.map((f) => f.filename), text), files);
       await rpc("chatwoot.attachRecord", { id: cardId, conversationId, names: files.map((f) => f.filename) });
+      onChanged?.();
+      return null;
+    } catch (e) {
+      return errorText(e);
+    }
+  };
+
+  /** E-mail ao cliente: resposta pública na conversa (com anexos opcionais). */
+  const reply = async (conversationId: number, text: string, ids: string[]): Promise<string | null> => {
+    const settings = await loadChatwoot();
+    if (!(await requestChatwootPermission(settings).catch(() => false))) return "Sem a permissão de acesso ao Chatwoot não dá para enviar. Tente de novo e escolha Permitir.";
+    try {
+      const files = await readDocs(docs.filter((d) => ids.includes(d.id)));
+      await sendPublicReply(settings, conversationId, text, files);
+      await rpc("chatwoot.replyRecord", { id: cardId, conversationId, text, to: data?.email_cliente ?? null, names: files.map((f) => f.filename) });
       onChanged?.();
       return null;
     } catch (e) {
@@ -217,6 +234,8 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
                 onCancel={cancel}
                 docs={docs}
                 onAttach={attach}
+                data={data}
+                onReply={reply}
               />
             )}
 
@@ -289,6 +308,89 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
 
 export { CHATWOOT_FIELDS };
 
+/** E-mail ao cliente: modelo (ou texto livre) já preenchido com os dados do cartão, anexos e confirmação. */
+function ReplyForm({
+  data,
+  docs,
+  onSend,
+  onCancel,
+}: {
+  data: ChatwootData;
+  docs: CardDoc[];
+  onSend: (text: string, ids: string[]) => Promise<string | null>;
+  onCancel: () => void;
+}) {
+  const [tpl, setTpl] = useState<ReplyTemplate["id"]>("ativacao_nota_boleto");
+  const template = REPLY_TEMPLATES.find((x) => x.id === tpl)!;
+  const [text, setText] = useState(() => renderReply(REPLY_TEMPLATES[0]!.text, data));
+  const [ids, setIds] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const empty = emptyVariables(template.text, data);
+  const leftover = leftoverVariables(text);
+  const choose = (id: ReplyTemplate["id"]) => {
+    const t = REPLY_TEMPLATES.find((x) => x.id === id)!;
+    if (text.trim() && text !== renderReply(template.text, data) && !window.confirm("Trocar o modelo? O texto editado será substituído.")) return;
+    setTpl(id);
+    setText(renderReply(t.text, data));
+  };
+  const send = async () => {
+    const what = `${ids.length ? ` com ${ids.length} anexo${ids.length > 1 ? "s" : ""}` : ""}`;
+    if (!window.confirm(`Enviar este e-mail ao cliente (${data.email_cliente})${what}?\n\nSai pelo Chatwoot, pelo e-mail da inbox, e não dá para desfazer.`)) return;
+    setBusy(true);
+    setError(null);
+    const err = await onSend(text, ids);
+    setBusy(false);
+    if (err) setError(err);
+  };
+  return (
+    <div className="mt-1.5 space-y-2 rounded-md border border-success-200 bg-success-25 p-2 dark:border-success-500/30 dark:bg-success-500/5" data-chatwoot-reply-form>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-medium">Modelo:</span>
+        <select
+          className="h-8 rounded-lg border border-gray-300 bg-white px-2 text-theme-xs dark:border-gray-700 dark:bg-gray-900"
+          value={tpl}
+          onChange={(e) => choose(e.target.value as ReplyTemplate["id"])}
+          aria-label="Modelo do e-mail"
+          data-chatwoot-reply-template
+        >
+          {REPLY_TEMPLATES.map((x) => (
+            <option key={x.id} value={x.id}>
+              {x.label}
+            </option>
+          ))}
+        </select>
+        <span className="text-gray-500">Para: {data.email_cliente || "(sem e-mail)"}</span>
+      </div>
+      <TaTextarea rows={12} value={text} onChange={(e) => setText(e.target.value)} aria-label="Mensagem para o cliente" data-chatwoot-reply-text />
+      <p className="text-gray-500">Variáveis: {REPLY_VARIABLES.map((v) => `{${v}}`).join(" ")}</p>
+      {empty.length > 0 && (
+        <p className="text-warning-700" data-chatwoot-reply-empty>
+          Sem valor no cartão: {empty.join(", ")}. Confira o texto antes de enviar.
+        </p>
+      )}
+      {leftover.length > 0 && <p className="text-warning-700">Variável não reconhecida no texto: {leftover.map((v) => `{${v}}`).join(", ")}.</p>}
+      <div>
+        <p className="mb-1 font-medium">
+          Anexos {template.withAttachments ? "(boleto e nota fiscal)" : "(opcional)"}
+        </p>
+        <DocPicker docs={docs} value={ids} onChange={setIds} />
+        {template.withAttachments && !ids.length && docs.length > 0 && <p className="mt-1 text-warning-700">Este modelo fala de anexos: marque o boleto e a nota fiscal.</p>}
+      </div>
+      <p className="text-gray-500">Vai por e-mail para o cliente, pelo endereço da inbox do Chatwoot, e fica na conversa como resposta (não é nota privada).</p>
+      {error && <p className="text-error-600" data-chatwoot-reply-error>{error}</p>}
+      <div className="flex gap-2">
+        <TaButton size="sm" variant="primary" disabled={busy || !text.trim() || !data.email_cliente} onClick={() => void send()} data-chatwoot-reply-send>
+          {busy ? "Enviando…" : "Enviar e-mail ao cliente"}
+        </TaButton>
+        <TaButton size="sm" disabled={busy} onClick={onCancel}>
+          Voltar
+        </TaButton>
+      </div>
+    </div>
+  );
+}
+
 /** Documento do cartão (GED) que pode ir para o Chatwoot. */
 interface CardDoc {
   id: string;
@@ -344,7 +446,11 @@ function TicketsSection({
   onCancel,
   docs,
   onAttach,
+  data,
+  onReply,
 }: {
+  data: ChatwootData;
+  onReply: (conversationId: number, text: string, ids: string[]) => Promise<string | null>;
   tickets: ChatwootTicket[];
   states: TicketState[] | null;
   active: number;
@@ -372,6 +478,8 @@ function TicketsSection({
             onCancel={onCancel}
             docs={docs}
             onAttach={onAttach}
+            data={data}
+            onReply={onReply}
           />
         ))}
       </ul>
@@ -392,7 +500,11 @@ function TicketRow({
   onCancel,
   docs,
   onAttach,
+  data,
+  onReply,
 }: {
+  data: ChatwootData;
+  onReply: (conversationId: number, text: string, ids: string[]) => Promise<string | null>;
   ticket: ChatwootTicket;
   state: TicketState | null;
   checking: boolean;
@@ -401,6 +513,7 @@ function TicketRow({
   onAttach: (conversationId: number, ids: string[], text: string) => Promise<string | null>;
 }) {
   const [attaching, setAttaching] = useState(false);
+  const [replying, setReplying] = useState(false);
   const [pick, setPick] = useState<string[]>([]);
   const [attachText, setAttachText] = useState("");
   const [sent, setSent] = useState<string | null>(null);
@@ -440,8 +553,11 @@ function TicketRow({
           {t.created_by_name ? ` · aberta por ${t.created_by_name}` : ""}
           {state?.assignee ? ` · com ${state.assignee}` : ""}
         </span>
-        {cancelable && !open && !attaching && (
+        {cancelable && !open && !attaching && !replying && (
           <span className="ml-auto flex gap-3">
+            <button type="button" className="inline-flex items-center gap-1 font-medium text-success-700 hover:underline" onClick={() => setReplying(true)} data-chatwoot-reply>
+              <Mail size={13} /> Responder ao cliente
+            </button>
             <button type="button" className="inline-flex items-center gap-1 font-medium text-brand-600 hover:underline" onClick={() => setAttaching(true)} data-chatwoot-attach>
               <Paperclip size={13} /> Enviar documentos
             </button>
@@ -496,6 +612,21 @@ function TicketRow({
             </TaButton>
           </div>
         </div>
+      )}
+      {replying && (
+        <ReplyForm
+          data={data}
+          docs={docs}
+          onCancel={() => setReplying(false)}
+          onSend={async (text, ids) => {
+            const err = await onReply(t.conversation_id, text, ids);
+            if (!err) {
+              setReplying(false);
+              setSent(`E-mail enviado ao cliente (${data.email_cliente})${ids.length ? ` com ${ids.length} anexo${ids.length > 1 ? "s" : ""}` : ""}.`);
+            }
+            return err;
+          }}
+        />
       )}
       {sent && <p className="mt-1 text-success-700" data-chatwoot-attach-done>{sent}</p>}
       {error && <p className="mt-1 text-error-600" data-chatwoot-cancel-error>{error}</p>}

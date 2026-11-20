@@ -256,3 +256,27 @@ export function recordChatwootAttachments(db: DatabaseSync, ctx: DbContext, card
   if (!t) throw new ValidationError("Este ticket não está registrado neste cartão.");
   addNote(db, ctx, "deal", cardId, [`Documentos enviados ao Chatwoot (conversa ${input.conversationId}):`, t.link, "", ...input.names.map((n) => `- ${n}`)].join("\n"));
 }
+
+/** E-mail enviado ao cliente pelo Chatwoot: nota no cartão com o texto e os anexos. */
+export function recordChatwootReply(db: DatabaseSync, ctx: DbContext, cardId: string, input: { conversationId: number; text: string; to?: string | null; names?: string[] }): void {
+  const t = one<{ link: string }>(
+    db,
+    "SELECT link FROM chatwoot_ticket WHERE card_id = ? AND conversation_id = ? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1",
+    cardId,
+    input.conversationId,
+  );
+  if (!t) throw new ValidationError("Este ticket não está registrado neste cartão.");
+  addNote(
+    db,
+    ctx,
+    "deal",
+    cardId,
+    [
+      `E-mail enviado ao cliente pelo Chatwoot${input.to ? ` (para ${input.to})` : ""}, conversa ${input.conversationId}:`,
+      t.link,
+      "",
+      input.text.trim(),
+      ...(input.names?.length ? ["", `Anexos: ${input.names.join(", ")}`] : []),
+    ].join("\n"),
+  );
+}
