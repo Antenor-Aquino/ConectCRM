@@ -15,6 +15,7 @@ import { DocumentViewer } from "../documents/DocumentViewer";
 import { FileTypeIcon } from "../documents/docUi";
 import { LinkedText } from "./LinkedText";
 import { useDraft } from "./unsaved";
+import { AudioNoteButton } from "./AudioNoteButton";
 
 type NoteDoc = Note["documents"][number];
 /** Imagem no editor: nova (arquivo colado) ou já guardada no GED (docId). */
@@ -136,6 +137,16 @@ export function NoteEditor({
     return { body, images };
   });
   const [body, setBody] = useState(startBody);
+  /** Último áudio ditado (pode ir para os Documentos junto com a nota). */
+  const [dictated, setDictated] = useState<{ audio: File; polished: boolean; raw: string; kept: boolean } | null>(null);
+  /** Texto ditado entra onde está o cursor (ou no fim), separado por linha em branco. */
+  const insertDictation = (text: string) => {
+    const el = textRef.current;
+    const at = el && document.activeElement === el ? el.selectionStart : body.length;
+    const before = body.slice(0, at).replace(/\s+$/, "");
+    const after = body.slice(at).replace(/^\s+/, "");
+    setBody([before, text, after].filter(Boolean).join("\n\n"));
+  };
   const [images, setImages] = useState<EditorImage[]>(startImages);
   /** Arquivos anexados (não imagem no texto): vão para o GED ao salvar. */
   const [attachments, setAttachments] = useState<File[]>([]);
@@ -252,6 +263,7 @@ export function NoteEditor({
       images.forEach((p) => p.file && p.url && URL.revokeObjectURL(p.url));
       setImages([]);
       setAttachments([]);
+      setDictated(null);
       setBody("");
       return true;
     } catch (e) {
@@ -325,9 +337,39 @@ export function NoteEditor({
           ))}
         </div>
       )}
+      {dictated && (
+        <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-theme-xs text-gray-500" data-note-dictated>
+          <span>{dictated.polished ? "Texto do áudio transcrito e ajustado pela IA: revise antes de salvar." : "Transcrição do áudio (o ajuste pela IA não respondeu): revise antes de salvar."}</span>
+          {dictated.polished && (
+            <button type="button" className="font-medium text-brand-600 hover:underline" onClick={() => setBody((b) => `${b.trim()}\n\nTranscrição original: ${dictated.raw}`.trim())}>
+              Incluir a transcrição original
+            </button>
+          )}
+          {allowFiles && !dictated.kept && (
+            <button
+              type="button"
+              className="font-medium text-brand-600 hover:underline"
+              onClick={() => {
+                setAttachments((l) => [...l, dictated.audio]);
+                setDictated({ ...dictated, kept: true });
+              }}
+              data-note-keep-audio
+            >
+              Guardar o áudio nos Documentos
+            </button>
+          )}
+        </p>
+      )}
       {error && <p className="mt-2 rounded-lg bg-error-50 px-3 py-2 text-theme-sm text-error-700">{error}</p>}
       <div className="mt-2 flex items-center justify-between gap-2">
         <span className="flex items-center gap-3 text-theme-xs text-gray-400">
+          <AudioNoteButton
+            onError={setError}
+            onText={(text, audio, info) => {
+              insertDictation(text);
+              setDictated({ audio, polished: info.polished, raw: info.raw, kept: false });
+            }}
+          />
           {allowFiles && (
             <>
               <input
