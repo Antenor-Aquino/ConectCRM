@@ -6,6 +6,7 @@ import { many, one, withTransaction, type DatabaseSync, type SqlValue } from "./
 import { isValidCnpj, isValidCpf, normalizeCnpj, optionalText, requireText, ValidationError } from "../lib/validate";
 import { municipioPorIbge, municipioPorNome, servicoNacional } from "../lib/nfse/tabelas";
 import { brasiliaDate } from "../lib/nfse/dps";
+import { payerOrganizationId } from "./cardOrganizations";
 import { addDocumentVersion, contextLinks, createDocument, type FileRef } from "./documents";
 
 export type IssuerAccess = "a1" | "a3" | "govbr";
@@ -326,11 +327,12 @@ export function nfseDraftForCard(
   if (opts.issuerId && !issuer) throw new ValidationError("Empresa emissora não encontrada ou inativa.");
 
   let taker: NfseDraft["taker"] = { kind: null, id: null, document: null, name: null, shortName: null, email: null, address: null };
-  if (card.organization_id) {
+  const takerOrg = payerOrganizationId(db, card.id);
+  if (takerOrg) {
     const o = one<{ id: string; name: string; legal_name: string | null; cnpj: string | null; email: string | null; cep: string | null; street: string | null; number: string | null; complement: string | null; district: string | null; city: string | null; state: string | null }>(
       db,
       "SELECT id, name, legal_name, cnpj, email, cep, street, number, complement, district, city, state FROM organization WHERE id = ? AND deleted_at IS NULL",
-      card.organization_id,
+      takerOrg,
     );
     if (o) {
       const hasAddress = !!(o.cep || o.street || o.city);
@@ -612,7 +614,7 @@ export function saveNfseDraft(
       throw new ValidationError("Empresa emissora não encontrada ou inativa.");
     const data = {
       issuer_id: input.issuerId ?? null,
-      taker_id: card.organization_id ?? card.person_id,
+      taker_id: payerOrganizationId(db, cardId) ?? card.person_id,
       description: input.description.trim(),
       notes: optionalText(input.notes),
       order_number: optionalText(input.orderNumber),

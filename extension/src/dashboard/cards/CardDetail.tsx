@@ -2,6 +2,7 @@
 // resolvido/não resolvido, concluído/não concluído conforme o tipo),
 // notas, tarefas e histórico de alterações.
 import { NfseDialog } from "./NfseDialog";
+import { CardOrganizationsField } from "./CardOrganizationsField";
 import { ChargeDialog } from "./ChargeDialog";
 import { useGfActive } from "../useGfActive";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -597,6 +598,13 @@ function CardDetailInner({
               openTitle="Editar o cadastro da organização"
             />
           </Field>
+
+          <CardOrganizationsField
+            cardId={cardId}
+            organizations={card.organizations}
+            run={run}
+            onOpen={(id) => setEditing({ kind: "organization", id })}
+          />
 
           <SectionLabel>Mais detalhes</SectionLabel>
           <Field label="Responsável">

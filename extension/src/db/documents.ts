@@ -514,9 +514,9 @@ export function whatsappRecipients(db: DatabaseSync, type: DocLinkType, id: stri
     const p = pid ? one<{ id: string; name: string; phone: string | null }>(db, "SELECT id, name, phone FROM person WHERE id = ? AND deleted_at IS NULL", pid) : undefined;
     if (p?.phone) add({ id: p.id, kind: "person", name: p.name, phone: p.phone, role });
   };
-  const org = (oid: string | null) => {
+  const org = (oid: string | null, role = "Organização") => {
     const o = oid ? one<{ id: string; name: string; phone: string | null }>(db, "SELECT id, name, phone FROM organization WHERE id = ? AND deleted_at IS NULL", oid) : undefined;
-    if (o?.phone) add({ id: o.id, kind: "organization", name: o.name, phone: o.phone, role: "Organização" });
+    if (o?.phone) add({ id: o.id, kind: "organization", name: o.name, phone: o.phone, role });
   };
   const card = (dealId: string) => {
     const d = one<{ person_id: string | null; organization_id: string | null }>(db, "SELECT person_id, organization_id FROM deal WHERE id = ?", dealId);
@@ -529,6 +529,8 @@ export function whatsappRecipients(db: DatabaseSync, type: DocLinkType, id: stri
     ))
       person(r.person_id, "Outro contato do cartão");
     org(d.organization_id);
+    for (const r of many<{ organization_id: string; role: string }>(db, "SELECT organization_id, role FROM deal_org_link WHERE deal_id = ? AND deleted_at IS NULL ORDER BY created_at", dealId))
+      org(r.organization_id, `Organização (${({ pagador: "pagador", mantenedora: "mantenedora", cliente: "unidade" } as Record<string, string>)[r.role] ?? "outra"})`);
   };
   if (type === "deal") card(id);
   else if (type === "person") person(id, "Contato");

@@ -27,6 +27,7 @@ export const DATA_TABLES = [
   "deal",
   "deal_stage_history",
   "deal_participant",
+  "deal_org_link",
   "product_category",
   "product",
   "deal_item",

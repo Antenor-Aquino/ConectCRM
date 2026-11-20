@@ -9,6 +9,7 @@ import * as attachments from "../db/attachments";
 import * as importer from "../db/importer";
 import * as cardImporter from "../db/cardImporter";
 import * as bulk from "../db/bulkCards";
+import * as cardOrgs from "../db/cardOrganizations";
 import * as cardContacts from "../db/cardContacts";
 import * as notify from "../db/notifications";
 import type { NotifySettings } from "../lib/notify/settings";
@@ -358,6 +359,27 @@ export const methods = {
   "cards.contacts.setPrimary": (db: DatabaseSync, ctx: DbContext, p: Id & { personId: string }) => {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);
     cardContacts.setPrimaryCardContact(db, ctx, p.id, p.personId);
+  },
+  /** Organizações do cartão: principal + vinculadas com papel (pagador, mantenedora, unidade, outra). */
+  "cards.organizations.list": (db: DatabaseSync, ctx: DbContext, p: Id) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    return cardOrgs.listCardOrganizations(db, p.id);
+  },
+  "cards.organizations.add": (db: DatabaseSync, ctx: DbContext, p: Id & { organizationId: string; role?: cardOrgs.CardOrgRole }) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    cardOrgs.addCardOrganization(db, ctx, p.id, p.organizationId, p.role ?? "outra");
+  },
+  "cards.organizations.remove": (db: DatabaseSync, ctx: DbContext, p: Id & { organizationId: string }) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    cardOrgs.removeCardOrganization(db, ctx, p.id, p.organizationId);
+  },
+  "cards.organizations.setPrimary": (db: DatabaseSync, ctx: DbContext, p: Id & { organizationId: string }) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    cardOrgs.setPrimaryCardOrganization(db, ctx, p.id, p.organizationId);
+  },
+  "cards.organizations.setRole": (db: DatabaseSync, ctx: DbContext, p: Id & { organizationId: string; role: cardOrgs.CardOrgRole }) => {
+    deals.assertCardAccess(db, viewer(db, ctx), p.id);
+    cardOrgs.setCardOrganizationRole(db, ctx, p.id, p.organizationId, p.role);
   },
   "cards.delete": (db: DatabaseSync, ctx: DbContext, p: Id) => {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);

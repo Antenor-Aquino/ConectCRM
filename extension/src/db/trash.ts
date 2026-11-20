@@ -371,6 +371,7 @@ const OWNED_BY: Partial<Record<DataTable, string[]>> = {
   stage: ["pipeline_id"],
   deal_stage_history: ["deal_id"],
   deal_participant: ["deal_id", "person_id"],
+  deal_org_link: ["deal_id", "organization_id"],
   deal_item: ["deal_id"],
   team_member: ["team_id"],
   person_organization: ["person_id", "organization_id"],
