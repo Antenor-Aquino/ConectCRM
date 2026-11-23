@@ -10,6 +10,11 @@ import type { Pipeline } from "../../db/pipelines";
 import { DEFAULT_CARD_FIELDS, parseCardFields } from "../../lib/cardFields";
 import { PIPELINE_TYPE_LABEL } from "../../lib/cardTypes";
 import { CardLayoutEditor } from "./CardLayoutEditor";
+import { CARD_TEXT } from "../../lib/cardTypes";
+import { DetailLayoutEditor } from "./DetailLayoutEditor";
+import { fieldGroups } from "../../lib/fieldGroups";
+import { isDefaultLayout, parseDetailLayout, resolveDetailLayout, type DetailItem } from "../../lib/detailLayout";
+import type { CustomField } from "../../db/customFields";
 import { ErrorText, Field, SectionLabel } from "../ui/form";
 import { colorLabel } from "../../lib/colors";
 import { StagesPreview } from "../ui/StageSelect";
@@ -32,8 +37,10 @@ export function PipelineSettingsModal({ pipeline, onClose, onSaved }: { pipeline
   const [original, setOriginal] = useState<{ id: string; name: string }[]>([]);
   const [moveTo, setMoveTo] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"etapas" | "cartao">("etapas");
+  const [tab, setTab] = useState<"etapas" | "cartao" | "ficha">("etapas");
   const [cardKeys, setCardKeys] = useState<string[]>([]);
+  const [detailFields, setDetailFields] = useState<CustomField[]>([]);
+  const [detail, setDetail] = useState<DetailItem[]>([]);
 
   useEffect(() => {
     if (!pipeline) return;
@@ -41,6 +48,12 @@ export function PipelineSettingsModal({ pipeline, onClose, onSaved }: { pipeline
     setCompany(pipeline.company_name ?? "");
     setTab("etapas");
     setCardKeys(parseCardFields(pipeline.card_fields, pipeline.type));
+    void call("customFields.list", { entity: CARD_TEXT[pipeline.type].kind, pipelineId: pipeline.id }).then((list) => {
+      // Mesma ordem da ficha: por categoria, como no cadastro.
+      const visible = fieldGroups(list.filter((f) => !f.hidden)).flatMap((g) => g.fields);
+      setDetailFields(visible);
+      setDetail(resolveDetailLayout(parseDetailLayout(pipeline.detail_layout), pipeline.type, visible.map((f) => f.id)));
+    });
     setError(null);
     setMoveTo({});
     void call("stages.list", { pipelineId: pipeline.id }).then((list) => {
@@ -67,7 +80,11 @@ export function PipelineSettingsModal({ pipeline, onClose, onSaved }: { pipeline
     setError(null);
     try {
       const isDefault = JSON.stringify(cardKeys) === JSON.stringify(DEFAULT_CARD_FIELDS[pipeline!.type]);
-      await call("pipelines.update", { id: pipeline!.id, patch: { name, companyName: company, cardFields: isDefault ? null : cardKeys } });
+      const detailDefault = isDefaultLayout(detail, pipeline!.type, detailFields.map((f) => f.id));
+      await call("pipelines.update", {
+        id: pipeline!.id,
+        patch: { name, companyName: company, cardFields: isDefault ? null : cardKeys, detailLayout: detail.length && !detailDefault ? detail : null },
+      });
       await call("stages.save", {
         pipelineId: pipeline!.id,
         stages: stages.map((s) => ({
@@ -100,6 +117,7 @@ export function PipelineSettingsModal({ pipeline, onClose, onSaved }: { pipeline
           [
             ["etapas", "Etapas"],
             ["cartao", "Cartão"],
+            ["ficha", "Ficha do cartão"],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -113,6 +131,7 @@ export function PipelineSettingsModal({ pipeline, onClose, onSaved }: { pipeline
         ))}
       </div>
 
+      {tab === "ficha" && <DetailLayoutEditor pipeline={pipeline} fields={detailFields} items={detail} onChange={setDetail} />}
       {tab === "cartao" && (
         <div className="mt-4">
           <CardLayoutEditor pipeline={pipeline} keys={cardKeys} onChange={setCardKeys} />

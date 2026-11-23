@@ -1,4 +1,5 @@
 import { isCardFieldKey, MAX_CARD_FIELDS } from "../lib/cardFields";
+import { isDetailKey, type DetailItem } from "../lib/detailLayout";
 import { PIPELINE_TYPE_ORDER } from "../lib/cardTypes";
 import { insertRow, softDelete, updateRow, type DbContext } from "./repo";
 import { moveToTrash, type TrashNotice } from "./trash";
@@ -24,6 +25,8 @@ export interface Pipeline {
   archived_at: string | null;
   /** JSON com os campos do cartão (lib/cardFields.ts); null = padrão. */
   card_fields: string | null;
+  /** JSON da ficha do cartão (lib/detailLayout.ts); null = padrão. */
+  detail_layout: string | null;
   /** Empresa que assina as mensagens dos cartões deste funil (lembrete por WhatsApp). */
   company_name: string | null;
   version: number;
@@ -52,7 +55,7 @@ export interface NewPipeline {
 export function listPipelines(db: DatabaseSync, opts: { includeArchived?: boolean } = {}): Pipeline[] {
   const rows = many<Pipeline>(
     db,
-    `SELECT id, name, type, icon, color, position, archived_at, card_fields, company_name, version FROM pipeline
+    `SELECT id, name, type, icon, color, position, archived_at, card_fields, detail_layout, company_name, version FROM pipeline
      WHERE deleted_at IS NULL ${opts.includeArchived ? "" : "AND archived_at IS NULL"}`,
   );
   return rows.sort((a, b) => PIPELINE_TYPE_ORDER.indexOf(a.type) - PIPELINE_TYPE_ORDER.indexOf(b.type) || a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" }));
@@ -109,7 +112,15 @@ export function updatePipeline(
   db: DatabaseSync,
   ctx: DbContext,
   id: string,
-  patch: { name?: string; icon?: string | null; color?: string | null; archived?: boolean; cardFields?: string[] | null; companyName?: string | null },
+  patch: {
+    name?: string;
+    icon?: string | null;
+    color?: string | null;
+    archived?: boolean;
+    cardFields?: string[] | null;
+    companyName?: string | null;
+    detailLayout?: DetailItem[] | null;
+  },
 ): void {
   const data: Record<string, string | null> = {};
   if (patch.name !== undefined) {
@@ -128,6 +139,14 @@ export function updatePipeline(
       if (bad) throw new Error(`Campo de cartão inválido: ${bad}`);
       if (patch.cardFields.length > MAX_CARD_FIELDS) throw new Error(`No máximo ${MAX_CARD_FIELDS} campos no cartão.`);
       data.card_fields = JSON.stringify([...new Set(patch.cardFields)]);
+    }
+  }
+  if (patch.detailLayout !== undefined) {
+    if (patch.detailLayout === null) data.detail_layout = null;
+    else {
+      const bad = patch.detailLayout.find((i) => !isDetailKey(i?.key));
+      if (bad) throw new Error(`Campo da ficha inválido: ${bad.key}`);
+      data.detail_layout = JSON.stringify(patch.detailLayout.map((i) => ({ key: i.key, ...(i.hidden ? { hidden: true } : {}) })));
     }
   }
   updateRow(db, ctx, "pipeline", id, data);
