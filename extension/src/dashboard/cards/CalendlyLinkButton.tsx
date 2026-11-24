@@ -2,7 +2,7 @@
 // já preenchido com o nome e o e-mail do contato e a marca deste cartão — a
 // reunião marcada por ele entra sozinha neste cartão. Copiar ou mandar pelo WhatsApp.
 import { useEffect, useState } from "react";
-import { CalendarPlus, Check, Copy, MessageCircle } from "lucide-react";
+import { CalendarPlus, Check, Copy, ExternalLink, MessageCircle } from "lucide-react";
 import { TaButton, TaModal, TaSelect } from "@tailadmin";
 import { call } from "../../rpc/client";
 import { accountForPipeline, bookingLink, loadCalendly, refreshCalendlyAccount, saveCalendly, type CalendlySettings } from "../../lib/calendly";
@@ -102,6 +102,16 @@ export function CalendlyLinkButton({ cardId, pipelineId, personId }: { cardId: s
                 }}
               >
                 {copied ? "Copiado" : "Copiar mensagem"}
+              </TaButton>
+              <TaButton
+                variant="outline"
+                startIcon={<ExternalLink size={15} />}
+                disabled={!link}
+                title="Abre a página de agendamento do Calendly numa aba nova (para marcar você mesmo)"
+                data-calendly-link-open
+                onClick={() => link && void chrome.tabs.create({ url: link })}
+              >
+                Abrir link
               </TaButton>
               <TaButton
                 variant="primary"
