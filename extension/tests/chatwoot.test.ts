@@ -97,6 +97,17 @@ describe("Chatwoot: dados da nota", () => {
     );
   });
 
+  it("memorando opcional vai no fim da nota privada e no histórico do cartão", async () => {
+    const { db, ctx, card } = await setup();
+    const data = cw.chatwootContext(db, card).data;
+    const memo = "U N I D A D E / T U R M A S\nCCJ – Brasília 15\nCNSA – Araçatuba 15\n\n";
+    const note = cw.chatwootNote(data, memo);
+    expect(note.endsWith(`Email para envio de boletos e Nota Fiscal: ${data.email_financeiro}\n\nU N I D A D E / T U R M A S\nCCJ – Brasília 15\nCNSA – Araçatuba 15`)).toBe(true);
+    expect(cw.chatwootNote(data, "  \n ")).toBe(cw.chatwootNote(data));
+    cw.recordChatwootTicket(db, ctx, card, { conversationId: 2400, link: "https://suporte.powercubus.com.br/app/accounts/1/conversations/2400", data, memo });
+    expect(listNotes(db, "deal", card)[0]!.body).toContain("CNSA – Araçatuba 15");
+  });
+
   it("registra o ticket: nota com o link, atividade em 2 dias e aviso de repetição", async () => {
     const { db, ctx, card } = await setup();
     const data = cw.chatwootContext(db, card).data;

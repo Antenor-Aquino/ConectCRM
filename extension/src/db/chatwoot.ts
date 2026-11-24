@@ -182,7 +182,7 @@ export function recordChatwootTicket(
   db: DatabaseSync,
   ctx: DbContext,
   cardId: string,
-  input: { conversationId: number; link: string; data: ChatwootData; contactCreated?: boolean; attachments?: string[] },
+  input: { conversationId: number; link: string; data: ChatwootData; contactCreated?: boolean; attachments?: string[]; memo?: string },
   now = new Date(),
 ): { ticketId: string; activityId: string; paymentActivityId: string | null } {
   if (!Number.isInteger(input.conversationId) || input.conversationId <= 0) throw new ValidationError("Conversa do Chatwoot inválida.");
@@ -204,7 +204,7 @@ export function recordChatwootTicket(
         `Ticket de ativação aberto no Chatwoot (conversa ${input.conversationId}${input.contactCreated ? ", contato criado lá" : ""}):`,
         input.link,
         "",
-        chatwootNote(input.data).replace(/\*\*/g, ""),
+        chatwootNote(input.data, input.memo ?? "").replace(/\*\*/g, ""),
         ...(input.attachments?.length ? ["", `Anexos enviados: ${input.attachments.join(", ")}`] : []),
       ].join("\n"),
     );

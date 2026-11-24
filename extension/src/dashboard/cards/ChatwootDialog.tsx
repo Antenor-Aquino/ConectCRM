@@ -75,6 +75,8 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
   /** Documentos do cartão (GED) e os escolhidos para ir junto com o ticket. */
   const [docs, setDocs] = useState<CardDoc[]>([]);
   const [chosen, setChosen] = useState<string[]>([]);
+  /** Memorando livre que segue no fim da nota privada (opcional). */
+  const [memo, setMemo] = useState("");
   /** Situação real das conversas no Chatwoot (null = consultando ou sem consulta). */
   const [states, setStates] = useState<TicketState[] | null>(null);
 
@@ -183,12 +185,12 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
       }
       let r: { conversationId: number; link: string; contactCreated: boolean };
       try {
-        r = await openActivationTicket(settings, data, fetch, await readDocs(docs.filter((d) => chosen.includes(d.id))));
+        r = await openActivationTicket(settings, data, fetch, await readDocs(docs.filter((d) => chosen.includes(d.id))), memo);
       } catch (e) {
         // Conversa criada, mas a nota/etiqueta falhou: registra para não duplicar.
         if (e instanceof ChatwootError && e.link) {
           const id = Number(e.link.split("/").pop());
-          if (id > 0) await rpc("chatwoot.record", { id: cardId, conversationId: id, link: e.link, data });
+          if (id > 0) await rpc("chatwoot.record", { id: cardId, conversationId: id, link: e.link, data, memo });
           onChanged?.();
         }
         throw e;
@@ -199,6 +201,7 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
         link: r.link,
         data,
         contactCreated: r.contactCreated,
+        memo,
         attachments: docs.filter((d) => chosen.includes(d.id)).map((d) => d.filename),
       });
       setDone({ link: r.link, conversationId: r.conversationId, paymentCheck: rec?.paymentActivityId ? dayAfter(data.vencimento_boleto) : null });
@@ -280,8 +283,23 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
             <section>
               <p className="mb-1 text-theme-xs font-semibold uppercase text-gray-500">Nota privada que vai para o Chatwoot</p>
               <pre className="whitespace-pre-wrap rounded-lg border border-gray-200 bg-gray-50 p-3 font-sans text-theme-xs text-gray-700 dark:border-gray-800 dark:bg-white/5 dark:text-gray-300" data-chatwoot-preview>
-                {chatwootNote(data)}
+                {chatwootNote(data, memo)}
               </pre>
+            </section>
+
+            <section>
+              <label className="mb-1 block text-theme-xs font-semibold uppercase text-gray-500" htmlFor="chatwoot-memo">
+                Memorando (opcional)
+              </label>
+              <textarea
+                id="chatwoot-memo"
+                data-chatwoot-memo
+                rows={5}
+                value={memo}
+                onChange={(e) => setMemo(e.target.value)}
+                placeholder={"Informação extra que segue no fim da nota privada. Ex.:\nUNIDADE / TURMAS\nCCJ – Brasília 15\nCNSA – Araçatuba 15"}
+                className="w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 font-mono text-theme-xs text-gray-800 focus:border-brand-300 focus:outline-none dark:border-gray-700 dark:text-white/90"
+              />
             </section>
 
             {dayAfter(data.vencimento_boleto) && (
