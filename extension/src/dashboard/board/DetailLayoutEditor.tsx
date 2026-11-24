@@ -1,6 +1,7 @@
 // Editar funil → Ficha do cartão: ordem e visibilidade dos campos da visão
 // completa do cartão (coluna de dados), inclusive cada campo personalizado.
-import { ArrowDown, ArrowUp, Eye, EyeOff, Heading, RotateCcw } from "lucide-react";
+import { Eye, EyeOff, Heading, RotateCcw } from "lucide-react";
+import { DragHandle, moveItem, useDragSort } from "../ui/dragSort";
 import { TaButton, cn } from "@tailadmin";
 import type { CustomField } from "../../db/customFields";
 import type { Pipeline } from "../../db/pipelines";
@@ -26,17 +27,14 @@ export function DetailLayoutEditor({
     return DETAIL_BLOCKS.find((b) => b.key === key)?.label ?? key;
   };
   const fieldOf = (key: string) => (key.startsWith("cf:") ? fields.find((x) => `cf:${x.id}` === key) : undefined);
-  const move = (i: number, j: number) => {
-    if (j < 0 || j >= items.length) return;
-    const c = [...items];
-    [c[i], c[j]] = [c[j]!, c[i]!];
-    onChange(c);
-  };
+  const drag = useDragSort({
+    onMove: (from, to) => onChange(moveItem(items, items.findIndex((x) => x.key === from), items.findIndex((x) => x.key === to))),
+  });
   const toggle = (i: number) => onChange(items.map((it, j) => (j === i ? { key: it.key, ...(it.hidden ? {} : { hidden: true }) } : it)));
   return (
     <div data-detail-layout-editor>
       <p className="mb-3 text-theme-xs text-gray-500">
-        Ordem dos campos na visão completa dos cartões deste funil (coluna da esquerda). Use as setas para mudar a posição e o olho para mostrar ou esconder. Campos
+        Ordem dos campos na visão completa dos cartões deste funil (coluna da esquerda). Arraste pela alça ⠿ para mudar a posição e use o olho para mostrar ou esconder. Campos
         personalizados novos entram no fim.
       </p>
       <ul className="space-y-1">
@@ -45,25 +43,23 @@ export function DetailLayoutEditor({
           const section = DETAIL_BLOCKS.find((b) => b.key === it.key)?.section;
           // Campo obrigatório não pode sumir da ficha (não daria para preenchê-lo).
           const lockHidden = !!f?.required;
+          const rp = drag.rowProps(it.key);
           return (
             <li
               key={it.key}
+              {...rp}
               className={cn(
+                rp.className,
                 "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-theme-sm",
                 it.hidden ? "border-dashed border-gray-200 text-gray-400 dark:border-gray-800" : "border-gray-200 text-gray-700 dark:border-gray-700 dark:text-gray-300",
                 section && !it.hidden && "bg-gray-50 dark:bg-white/5",
               )}
               data-detail-item={it.key}
             >
+              <DragHandle {...drag.handleProps(it.key, items[i - 1]?.key, items[i + 1]?.key)} />
               {section && <Heading size={13} className="shrink-0 text-gray-400" />}
               <span className={cn("min-w-0 flex-1 truncate", section && "text-theme-xs font-semibold uppercase tracking-wide")}>{label(it.key)}</span>
               {f && <span className="shrink-0 text-theme-xs text-gray-400">campo personalizado{f.required ? " · obrigatório" : ""}</span>}
-              <button type="button" title="Subir" disabled={i === 0} onClick={() => move(i, i - 1)} className="text-gray-400 hover:text-gray-700 disabled:opacity-30">
-                <ArrowUp size={15} />
-              </button>
-              <button type="button" title="Descer" disabled={i === items.length - 1} onClick={() => move(i, i + 1)} className="text-gray-400 hover:text-gray-700 disabled:opacity-30">
-                <ArrowDown size={15} />
-              </button>
               <button
                 type="button"
                 title={lockHidden ? "Campo obrigatório: fica sempre na ficha" : it.hidden ? "Mostrar na ficha" : "Esconder da ficha"}

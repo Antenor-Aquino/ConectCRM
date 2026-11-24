@@ -2,7 +2,8 @@
 // (grupos nos formulários), ordem, chave, marcações (sempre mostrar /
 // esconder / obrigatório) e funis.
 import { Fragment, useCallback, useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, FolderPlus, Pencil, Plus, Trash2 } from "lucide-react";
+import { FolderPlus, Pencil, Plus, Trash2 } from "lucide-react";
+import { DragHandle, moveKey, useDragSort } from "../ui/dragSort";
 import { TaBadge, TaButton, TaPanel, TaSelect, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import { CUSTOM_FIELD_ENTITIES, CUSTOM_FIELD_TYPE_LABEL, type CustomField, type CustomFieldEntity, type CustomFieldGroup } from "../../db/customFields";
@@ -55,28 +56,19 @@ export function CustomFieldsSettings() {
   ];
   const ordered = sections.flatMap((s) => s.fields);
 
-  /** Sobe/desce dentro da categoria. */
-  const move = (f: CustomField, dir: -1 | 1) =>
-    act(async () => {
-      const sec = sections.find((s) => s.fields.includes(f))!.fields;
-      const i = sec.indexOf(f);
-      const other = sec[i + dir];
-      if (!other) return;
-      const ids = ordered.map((x) => x.id);
-      const a = ids.indexOf(f.id);
-      const b = ids.indexOf(other.id);
-      [ids[a], ids[b]] = [ids[b]!, ids[a]!];
-      await call("customFields.reorder", { ids });
-    });
-
-  const moveGroup = (i: number, dir: -1 | 1) =>
-    act(async () => {
-      const ids = groups.map((g) => g.id);
-      const j = i + dir;
-      if (j < 0 || j >= ids.length) return;
-      [ids[i], ids[j]] = [ids[j]!, ids[i]!];
-      await call("fieldGroups.reorder", { ids });
-    });
+  /** Arrastar e soltar: campos dentro da mesma categoria; categorias entre si. */
+  const sectionOf = (id: string) => sections.findIndex((s) => s.fields.some((f) => f.id === id));
+  const fieldDrag = useDragSort({
+    canDrop: (from, to) => sectionOf(from) === sectionOf(to),
+    onMove: (from, to) =>
+      void act(async () => {
+        const ids = ordered.map((x) => x.id);
+        await call("customFields.reorder", { ids: moveKey(ids, from, to) });
+      }),
+  });
+  const groupDrag = useDragSort({
+    onMove: (from, to) => void act(() => call("fieldGroups.reorder", { ids: moveKey(groups.map((g) => g.id), from, to) })),
+  });
 
   const newGroup = () => {
     const name = prompt(`Nome da nova categoria de ${ENTITY_LABEL[entity].toLowerCase()} (ex.: Dados profissionais):`)?.trim();
@@ -158,17 +150,17 @@ export function CustomFieldsSettings() {
               ) : (
                 <Fragment key={group?.id ?? "geral"}>
                   {(group || list.length > 0) && (
-                    <tr className="bg-gray-50 dark:bg-white/[0.03]" data-field-group={group?.name ?? "Sem categoria"}>
+                    <tr
+                      {...(group && isAdmin ? groupDrag.rowProps(group.id) : {})}
+                      className={cn("bg-gray-50 dark:bg-white/[0.03]", group && isAdmin && groupDrag.rowProps(group.id).className)}
+                      data-field-group={group?.name ?? "Sem categoria"}
+                    >
                       <td className="py-2 pl-1">
                         {group && isAdmin && (
-                          <span className="flex">
-                            <button type="button" title="Subir categoria" className={iconBtn} onClick={() => void moveGroup(groups.indexOf(group), -1)}>
-                              <ArrowUp size={13} />
-                            </button>
-                            <button type="button" title="Descer categoria" className={iconBtn} onClick={() => void moveGroup(groups.indexOf(group), 1)}>
-                              <ArrowDown size={13} />
-                            </button>
-                          </span>
+                          <DragHandle
+                            {...groupDrag.handleProps(group.id, groups[groups.indexOf(group) - 1]?.id, groups[groups.indexOf(group) + 1]?.id)}
+                            label="Arraste para mudar a ordem da categoria (ou use ↑/↓ do teclado)"
+                          />
                         )}
                       </td>
                       <td colSpan={5} className="py-2 pr-3 text-theme-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -229,26 +221,10 @@ export function CustomFieldsSettings() {
 
   function row(f: CustomField, list: CustomField[]) {
     const i = list.indexOf(f);
+    const rp = isAdmin ? fieldDrag.rowProps(f.id) : null;
     return (
-      <tr key={f.id} className={cn("border-b border-gray-100 dark:border-gray-800", !f.active && "opacity-50")} data-field={f.name}>
-        <td className="py-2.5">
-          {isAdmin && (
-            <span className="flex">
-              <button type="button" title="Subir" disabled={i === 0} className={cn(iconBtn, "disabled:opacity-30")} onClick={() => void move(f, -1)}>
-                <ArrowUp size={14} />
-              </button>
-              <button
-                type="button"
-                title="Descer"
-                disabled={i === list.length - 1}
-                className={cn(iconBtn, "disabled:opacity-30")}
-                onClick={() => void move(f, 1)}
-              >
-                <ArrowDown size={14} />
-              </button>
-            </span>
-          )}
-        </td>
+      <tr key={f.id} {...(rp ?? {})} className={cn("border-b border-gray-100 dark:border-gray-800", !f.active && "opacity-50", rp?.className)} data-field={f.name}>
+        <td className="py-2.5 pl-1">{isAdmin && <DragHandle {...fieldDrag.handleProps(f.id, list[i - 1]?.id, list[i + 1]?.id)} />}</td>
         <td className="py-2.5 pr-3">
           <span className="font-medium text-gray-800 dark:text-white/90">{f.name}</span>
           {f.description && <span className="block text-theme-xs text-gray-500">{f.description}</span>}

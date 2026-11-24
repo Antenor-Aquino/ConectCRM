@@ -2,8 +2,9 @@
 // deste funil (do negócio, do contato, da organização e personalizados),
 // com prévia ao vivo no cartão mais recente do funil.
 import { useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, RotateCcw, X } from "lucide-react";
-import { TaButton, TaSelect } from "@tailadmin";
+import { RotateCcw, X } from "lucide-react";
+import { TaButton, TaSelect, cn } from "@tailadmin";
+import { DragHandle, moveKey, useDragSort } from "../ui/dragSort";
 import { call } from "../../rpc/client";
 import type { CardFieldValue } from "../../db/cardFieldValues";
 import type { Pipeline } from "../../db/pipelines";
@@ -26,12 +27,7 @@ export function CardLayoutEditor({ pipeline, keys, onChange }: { pipeline: Pipel
   const groupOf = (k: string) => options.find((x) => x.key === k)?.group ?? "";
   const available = options.filter((o) => !keys.includes(o.key));
   const groups = [...new Set(available.map((o) => o.group))];
-  const move = (i: number, j: number) => {
-    if (j < 0 || j >= keys.length) return;
-    const c = [...keys];
-    [c[i], c[j]] = [c[j]!, c[i]!];
-    onChange(c);
-  };
+  const drag = useDragSort({ onMove: (from, to) => onChange(moveKey(keys, from, to)) });
   const sample: Record<string, CardFieldValue> = Object.fromEntries(keys.map((k) => [k, k === "tags" ? { tags: [{ name: "Exemplo", color: "blue" }] } : { text: label(k), label: k.includes(":") ? label(k) : undefined }]));
 
   return (
@@ -41,24 +37,22 @@ export function CardLayoutEditor({ pipeline, keys, onChange }: { pipeline: Pipel
           O título aparece sempre. O valor fica no topo e o responsável no rodapé; os demais seguem a ordem abaixo. Campos sem valor não aparecem no cartão.
         </p>
         <ol className="space-y-1.5">
-          {keys.map((k, i) => (
-            <li key={k} className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 dark:border-gray-800 dark:bg-gray-900">
+          {keys.map((k, i) => {
+            const rp = drag.rowProps(k);
+            return (
+            <li key={k} {...rp} className={cn("flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 dark:border-gray-800 dark:bg-gray-900", rp.className)}>
+              <DragHandle {...drag.handleProps(k, keys[i - 1], keys[i + 1])} />
               <span className="w-5 text-theme-xs text-gray-400">{i + 1}</span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-theme-sm text-gray-800 dark:text-white/90">{label(k)}</span>
                 <span className="block text-[11px] text-gray-400">{groupOf(k)}</span>
               </span>
-              <button type="button" title="Subir" disabled={i === 0} onClick={() => move(i, i - 1)} className="text-gray-400 hover:text-gray-700 disabled:opacity-30">
-                <ArrowUp size={14} />
-              </button>
-              <button type="button" title="Descer" disabled={i === keys.length - 1} onClick={() => move(i, i + 1)} className="text-gray-400 hover:text-gray-700 disabled:opacity-30">
-                <ArrowDown size={14} />
-              </button>
               <button type="button" title="Remover do cartão" onClick={() => onChange(keys.filter((x) => x !== k))} className="text-gray-400 hover:text-error-600">
                 <X size={14} />
               </button>
             </li>
-          ))}
+            );
+          })}
           {keys.length === 0 && <li className="rounded-lg border border-dashed border-gray-300 px-3 py-3 text-theme-sm text-gray-400">Só o título será exibido.</li>}
         </ol>
         <div className="mt-3 flex flex-wrap items-center gap-2">

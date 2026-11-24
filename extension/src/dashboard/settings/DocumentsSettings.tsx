@@ -1,7 +1,8 @@
 // Configurações → Documentos (GED): onde guardar os arquivos (navegador ou
 // uma pasta do computador) e os tipos de documento (classificação).
 import { useCallback, useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, FileSearch, FolderOpen, HardDrive, History, KeyRound, Plus, SearchCheck, Trash2 } from "lucide-react";
+import {FileSearch, FolderOpen, HardDrive, History, KeyRound, Plus, SearchCheck, Trash2 } from "lucide-react";
+import { DragHandle, moveKey, useDragSort } from "../ui/dragSort";
 import { TaButton, TaInput, TaPanel, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
 import type { DocumentType } from "../../db/documents";
@@ -308,14 +309,19 @@ function TypesPanel() {
       setError(errorText(e));
     }
   };
-  const move = (i: number, dir: -1 | 1) => {
-    const j = i + dir;
-    if (j < 0 || j >= types.length) return;
-    void run(async () => {
-      await call("documentTypes.update", { id: types[i]!.id, patch: { position: j } });
-      await call("documentTypes.update", { id: types[j]!.id, patch: { position: i } });
-    });
-  };
+  /** Arrastar e soltar: grava a posição de cada tipo que mudou de lugar. */
+  const drag = useDragSort({
+    onMove: (from, to) => {
+      const ids = moveKey(
+        types.map((t) => t.id),
+        from,
+        to,
+      );
+      void run(async () => {
+        for (const [pos, id] of ids.entries()) if (types[pos]?.id !== id) await call("documentTypes.update", { id, patch: { position: pos } });
+      });
+    },
+  });
 
   return (
     <TaPanel
@@ -342,18 +348,11 @@ function TypesPanel() {
       )}
       {error && <p className="mb-3 rounded-lg bg-error-50 px-3 py-2 text-theme-sm text-error-700">{error}</p>}
       <ul className="divide-y divide-gray-100 dark:divide-gray-800">
-        {types.map((t, i) => (
-          <li key={t.id} className={cn("flex flex-wrap items-center gap-3 py-2", !t.active && "opacity-50")}>
-            {canEdit && (
-              <span className="flex gap-1 text-gray-400">
-                <button type="button" title="Subir" onClick={() => move(i, -1)}>
-                  <ArrowUp size={14} />
-                </button>
-                <button type="button" title="Descer" onClick={() => move(i, 1)}>
-                  <ArrowDown size={14} />
-                </button>
-              </span>
-            )}
+        {types.map((t, i) => {
+          const rp = canEdit ? drag.rowProps(t.id) : null;
+          return (
+          <li key={t.id} {...(rp ?? {})} className={cn("flex flex-wrap items-center gap-3 py-2", !t.active && "opacity-50", rp?.className)}>
+            {canEdit && <DragHandle {...drag.handleProps(t.id, types[i - 1]?.id, types[i + 1]?.id)} />}
             <TaInput
               className="max-w-xs"
               defaultValue={t.name}
@@ -399,7 +398,8 @@ function TypesPanel() {
               </button>
             )}
           </li>
-        ))}
+          );
+        })}
       </ul>
     </TaPanel>
   );
