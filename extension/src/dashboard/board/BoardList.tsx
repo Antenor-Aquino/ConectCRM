@@ -1,8 +1,8 @@
 // Visão em lista do funil (como a do Pipedrive): uma linha por cartão, com
 // colunas escolhidas pelo usuário (Personalizar colunas), ordenação pelo
 // cabeçalho e total no rodapé. Usa os mesmos filtros do quadro.
-import { useMemo, useState } from "react";
-import { Archive, ArrowDown, ArrowDownUp, ArrowUp, Check, Settings2, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Archive, ArrowDown, ArrowDownUp, ArrowUp, Check, Pencil, Settings2, X } from "lucide-react";
 import { badgePalette, cn, TaButton, type BadgeColor } from "@tailadmin";
 import { DragHandle, moveKey, useDragSort } from "../ui/dragSort";
 import type { CardFieldValue } from "../../db/cardFieldValues";
@@ -14,6 +14,7 @@ import { normalizeText } from "../../lib/search";
 import { Popover } from "../ui/Popover";
 import { StageDot } from "../ui/StageSelect";
 import type { FieldOption } from "./fieldOptions";
+import { isEditableListKey, ListCellEditor } from "./ListCellEditor";
 
 /** Coluna própria da lista (não é campo do cartão). */
 export const STAGE_COLUMN = "etapa";
@@ -50,6 +51,7 @@ export function BoardList({
   selected,
   onToggleSelect,
   onToggleMany,
+  onChanged,
 }: {
   pipeline: Pipeline;
   columns: BoardColumn[];
@@ -61,9 +63,26 @@ export function BoardList({
   selected: Set<string>;
   onToggleSelect: (id: string) => void;
   onToggleMany: (ids: string[]) => void;
+  /** Depois de editar uma célula: recarrega o quadro. */
+  onChanged?: () => void;
 }) {
   const [sort, setSort] = useState<SortState>(null);
   const [picker, setPicker] = useState(false);
+  const [editing, setEditing] = useState<{ cardId: string; key: string; anchor: DOMRect } | null>(null);
+  // Altura da tabela até o fim da tela: a barra de rolagem horizontal fica
+  // sempre visível (no rodapé da tabela) e o cabeçalho fica fixo no topo.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [maxH, setMaxH] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const fit = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      setMaxH(Math.max(260, Math.floor(window.innerHeight - el.getBoundingClientRect().top - 16)));
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, []);
   const text = CARD_TEXT[pipeline.type];
   const allOptions = useMemo(() => [{ key: STAGE_COLUMN, label: "Etapa", group: "Negócio" }, ...options], [options]);
   const label = (k: string) => allOptions.find((o) => o.key === k)?.label ?? "Campo removido";
@@ -110,7 +129,7 @@ export function BoardList({
   );
 
   return (
-    <div className="flex min-h-[60vh] flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="mb-2 flex items-center gap-3 text-theme-xs text-gray-500">
         <span>
           {rows.length} {rows.length === 1 ? text.noun : `${text.noun}s`}
@@ -138,7 +157,12 @@ export function BoardList({
           )}
         </div>
       </div>
-      <div className="flex-1 overflow-auto rounded-xl border border-gray-200 custom-scrollbar dark:border-gray-800">
+      <div
+        ref={scrollRef}
+        data-list-scroll
+        style={maxH ? { maxHeight: maxH } : undefined}
+        className="flex-1 overflow-auto rounded-xl border border-gray-200 custom-scrollbar dark:border-gray-800"
+      >
         <table className="w-full border-separate border-spacing-0 text-theme-sm">
           <thead className="sticky top-0 z-10 bg-gray-50 text-theme-xs text-gray-500 dark:bg-gray-800">
             <tr>
@@ -212,17 +236,33 @@ export function BoardList({
                     )}
                   </div>
                 </td>
-                {visible.map((k) => (
-                  <td
-                    key={k}
-                    className={cn(
-                      "max-w-[280px] border-b border-r border-gray-100 px-3 py-2 last:border-r-0 group-hover:bg-gray-50 dark:border-gray-800 dark:group-hover:bg-white/[0.03]",
-                      k === "valor" && "text-right",
-                    )}
-                  >
-                    <Cell k={k} row={r} />
-                  </td>
-                ))}
+                {visible.map((k) => {
+                  const editable = !selected.size && isEditableListKey(k);
+                  return (
+                    <td
+                      key={k}
+                      data-editable={editable || undefined}
+                      title={editable ? "Clique para editar" : undefined}
+                      onClick={
+                        editable
+                          ? (e) => {
+                              e.stopPropagation();
+                              setEditing({ cardId: r.id, key: k, anchor: e.currentTarget.getBoundingClientRect() });
+                            }
+                          : undefined
+                      }
+                      className={cn(
+                        "relative max-w-[280px] border-b border-r border-gray-100 px-3 py-2 last:border-r-0 group-hover:bg-gray-50 dark:border-gray-800 dark:group-hover:bg-white/[0.03]",
+                        k === "valor" && "text-right",
+                        editable && "cursor-text hover:!bg-brand-25 hover:ring-1 hover:ring-inset hover:ring-brand-300 dark:hover:!bg-brand-500/10 [&:hover>.edit-hint]:opacity-100",
+                        editing?.cardId === r.id && editing.key === k && "ring-2 ring-inset ring-brand-500",
+                      )}
+                    >
+                      <Cell k={k} row={r} />
+                      {editable && <Pencil size={11} className="edit-hint pointer-events-none absolute right-1 top-1 text-brand-400 opacity-0" />}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
             {rows.length === 0 && (
@@ -235,6 +275,18 @@ export function BoardList({
           </tbody>
         </table>
       </div>
+      {editing && (
+        <ListCellEditor
+          key={`${editing.cardId}:${editing.key}`}
+          cardId={editing.cardId}
+          fieldKey={editing.key}
+          label={editing.key === STAGE_COLUMN ? "Etapa" : label(editing.key)}
+          stages={columns.map((c) => ({ id: c.id, name: c.name }))}
+          anchor={editing.anchor}
+          onClose={() => setEditing(null)}
+          onSaved={() => onChanged?.()}
+        />
+      )}
     </div>
   );
 }
