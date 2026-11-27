@@ -186,14 +186,35 @@ export function radarDescricao(o: RadarOportunidade): string {
   return l.join("\n");
 }
 
-export function radarNotaMapa(o: RadarOportunidade): string | null {
+const RESULTADO: Partial<Record<RadarEstado, string>> = { ganha: "APROVADA", perdida: "RECUSADA", cancelada: "CANCELADA" };
+const temMapa = (o: RadarOportunidade) => !!o.apuracao?.participantes.length;
+
+/** Nota do resultado: status no portal e o resumo do mapa de apuração (se o Radar já leu). */
+export function radarNotaResultado(o: RadarOportunidade, e: RadarEstado): string | null {
+  const st = RESULTADO[e];
   const a = o.apuracao;
-  if (!a?.participantes.length) return null;
-  const l = [
-    `Mapa de apuração do portal (pedido ${o.pedido ?? o.id}): ${a.venci ? "você venceu" : `vencedor ${a.vencedor ?? "não informado"} (${moeda(a.valorVencedor)})`}` +
-      (a.posicao ? `; você ficou em ${a.posicao}º de ${a.total}.` : "."),
-  ];
-  for (const p of a.participantes) l.push(`${p.posicao}º ${p.nome}${p.eu ? " (você)" : ""} — ${moeda(p.valor)}${p.vencedor ? " · vencedor" : ""}`);
+  if (!st && !temMapa(o)) return null;
+  const l = [`Resultado no portal (pedido ${o.pedido ?? o.id}): ${st ?? "mapa de apuração publicado"}${e === "ganha" && a?.venci ? " — você venceu" : ""}`];
+  if (e === "cancelada") l.push(`Motivo: ${o.motivoCancelamento || "não informado pelo portal"}`);
+  if (a && temMapa(o)) {
+    const meu = a.meuValor ?? o.meuValor ?? null;
+    l.push(
+      [
+        a.posicao ? `Sua posição: ${a.posicao}º de ${a.total}` : `${a.total} participante(s)`,
+        meu != null && `seu valor ${moeda(meu)}`,
+        a.venci ? null : `vencedor ${a.vencedor ?? "não informado"} (${moeda(a.valorVencedor)})`,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    );
+    l.push("", "Mapa de apuração:");
+    for (const p of a.participantes) {
+      const dif = !p.eu && meu && p.valor != null ? ` (${p.valor >= meu ? "+" : ""}${(((p.valor - meu) / meu) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% do seu)` : "";
+      l.push(`${p.posicao}º ${p.nome}${p.eu ? " (você)" : ""}${p.vencedor ? " · vencedor" : ""} — ${moeda(p.valor)}${dif}`);
+    }
+  } else if (e !== "cancelada") {
+    l.push("O mapa de apuração ainda não foi lido pelo Radar; quando for, entra numa nota nova.");
+  }
   return l.join("\n");
 }
 
@@ -409,10 +430,10 @@ ${o.link}` : ""}`,
           aplicado.x = EXTRAS_VERSAO;
           if (e !== "entrada") aplicarEstado(db, ctx, cfg, dealId, o, e);
           aplicado.e = e;
-          const nota = radarNotaMapa(o);
+          const nota = radarNotaResultado(o, e);
           if (nota) {
             addNote(db, ctx, "deal", dealId, nota);
-            aplicado.m = true;
+            aplicado.m = temMapa(o);
           }
           link(db, ctx, "deal", extId, dealId, JSON.stringify(aplicado));
           out.created++;
@@ -437,8 +458,16 @@ ${o.link}` : ""}`,
           depois.x = EXTRAS_VERSAO;
           mudou = true;
         }
+        let notaFeita = false;
         if (RANK[e] > RANK[antes.e]) {
           aplicarEstado(db, ctx, cfg, r.local_id, o, e);
+          // Saiu o resultado (aprovada, recusada ou cancelada): nota nova com o resumo da apuração.
+          const notaRes = RESULTADO[e] ? radarNotaResultado(o, e) : null;
+          if (notaRes) {
+            addNote(db, ctx, "deal", r.local_id, notaRes);
+            if (temMapa(o)) depois.m = true;
+            notaFeita = true;
+          }
           if (antes.a && one(db, "SELECT 1 FROM activity WHERE id = ? AND done = 0 AND deleted_at IS NULL", antes.a))
             updateActivity(db, ctx, antes.a, { done: true });
           depois.e = e;
@@ -451,7 +480,8 @@ ${o.link}` : ""}`,
           depois.v = o.meuValor;
           mudou = true;
         }
-        const nota = !antes.m ? radarNotaMapa(o) : null;
+        // Mapa lido depois do resultado (ou numa leitura seguinte): nota com o resumo, uma vez.
+        const nota = !notaFeita && !antes.m && temMapa(o) ? radarNotaResultado(o, e) : null;
         if (nota) {
           addNote(db, ctx, "deal", r.local_id, nota);
           depois.m = true;

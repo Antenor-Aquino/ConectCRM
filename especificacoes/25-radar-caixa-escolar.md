@@ -1,4 +1,4 @@
-# 25 — Integração com o Radar Caixa Escolar MG (0.2.157; notas, campos e etiquetas na 0.2.158)
+# 25 — Integração com o Radar Caixa Escolar MG (0.2.157; notas, campos e etiquetas na 0.2.158; nota do resultado na 0.2.159)
 
 ## Objetivo
 O **Radar Caixa Escolar MG** é um robô local (Python, repositório
@@ -86,8 +86,14 @@ até o resultado, sem digitar nada.
   - aprovada: etapa configurada + **Ganho**;
   - recusada: **Perdido** com "Recusada no portal; vencedor X (R$ …)";
   - cancelada: **Perdido** com "Cancelado no portal: <motivo>".
-- **Mapa de apuração**: uma nota no cartão (posição, vencedor e cada
-  participante com o valor), uma vez só. Fica no banco local, como no Radar.
+- **Nota do resultado** (0.2.159): quando o status passa a aprovada,
+  recusada ou cancelada, entra uma nota nova "Resultado no portal": o status
+  (e "você venceu"), o motivo do cancelamento, sua posição, seu valor, o
+  vencedor e o mapa de apuração (cada participante com o valor e a diferença
+  em % para o seu). Se o mapa ainda não foi lido pelo Radar, a nota avisa, e o
+  mapa entra numa segunda nota quando chegar (uma vez só). Vale também para
+  cartão fechado à mão (só o status não é mexido). Fica no banco local, como
+  no Radar.
 - **Mão do usuário vale mais**: cartão já ganho ou perdido à mão não tem o
   status mudado; cartão movido para outro funil não é movido de etapa; cartão
   excluído não volta.

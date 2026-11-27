@@ -112,7 +112,7 @@ describe("Radar Caixa Escolar MG", () => {
     syncRadar(db, ctx, cfg, [op({ statusPortal: "APRO", foraDaListagem: true, meuValor: 887, apuracao: mapa })]);
     card = getCardRow(db, dealOf(401)!)!;
     expect(card).toMatchObject({ stage_id: st["Ganhos MG"], status: "won" });
-    const notas = listNotes(db, "deal", card.id).filter((n) => n.body.startsWith("Mapa de apuração"));
+    const notas = listNotes(db, "deal", card.id).filter((n) => n.body.startsWith("Resultado no portal"));
     expect(notas).toHaveLength(1);
     expect(notas[0]!.body).toContain("você venceu");
     // De novo (ou um status "anterior" vindo atrasado): nada muda, nota não repete.
@@ -205,5 +205,47 @@ describe("Radar Caixa Escolar MG", () => {
     expect(getCustomValues(db, id)).toMatchObject({ [fSgd]: "2026230001", [fTur]: 30 });
     expect(getEntityTags(db, id)).toHaveLength(2);
     expect(syncRadar(db, ctx, cfg, [op()])).toMatchObject({ updated: 0 });
+  });
+
+  it("enviada → recusada gera nota do resultado; o mapa lido depois vem numa nota nova, uma vez", async () => {
+    const { db, ctx, cfg, dealOf } = await setup();
+    syncRadar(db, ctx, cfg, [op({ statusPortal: "ENVI", foraDaListagem: true, meuValor: 945 })]);
+    const id = dealOf(401)!;
+    const resultados = () => listNotes(db, "deal", id).map((n) => n.body.replace(/ /g, " ")).filter((b) => b.startsWith("Resultado no portal"));
+    expect(resultados()).toHaveLength(0);
+    syncRadar(db, ctx, cfg, [op({ statusPortal: "RECU", foraDaListagem: true, meuValor: 945 })]);
+    expect(resultados()).toHaveLength(1);
+    expect(resultados()[0]).toContain("RECUSADA");
+    expect(resultados()[0]).toContain("ainda não foi lido");
+    const mapa = {
+      total: 3, posicao: 2, meuValor: 945, vencedor: "TEKIE", valorVencedor: 900, venci: false,
+      participantes: [
+        { nome: "TEKIE", valor: 900, posicao: 1, vencedor: true, eu: false },
+        { nome: "CLAUDIA TECNOLOGIA", valor: 945, posicao: 2, vencedor: false, eu: true },
+        { nome: "VIP TECNOLOGIA", valor: 1523.2, posicao: 3, vencedor: false, eu: false },
+      ],
+    };
+    syncRadar(db, ctx, cfg, [op({ statusPortal: "RECU", foraDaListagem: true, meuValor: 945, apuracao: mapa })]);
+    expect(resultados()).toHaveLength(2);
+    const ultima = resultados().find((b) => b.includes("Mapa de apuração"))!;
+    expect(ultima).toContain("Sua posição: 2º de 3");
+    expect(ultima).toContain("1º TEKIE · vencedor — R$ 900,00 (-4,8% do seu)");
+    expect(ultima).toContain("2º CLAUDIA TECNOLOGIA (você)");
+    syncRadar(db, ctx, cfg, [op({ statusPortal: "RECU", foraDaListagem: true, meuValor: 945, apuracao: mapa })]);
+    expect(resultados()).toHaveLength(2);
+  });
+
+  it("aprovada com o mapa já lido: uma nota só, com o resumo", async () => {
+    const { db, ctx, cfg, dealOf } = await setup();
+    syncRadar(db, ctx, cfg, [op({ statusPortal: "ENVI", foraDaListagem: true, meuValor: 945 })]);
+    const mapa = { total: 2, posicao: 1, meuValor: 945, vencedor: "CLAUDIA TECNOLOGIA", valorVencedor: 945, venci: true, participantes: [
+      { nome: "CLAUDIA TECNOLOGIA", valor: 945, posicao: 1, vencedor: true, eu: true },
+      { nome: "TEKIE", valor: 1129.04, posicao: 2, vencedor: false, eu: false },
+    ] };
+    syncRadar(db, ctx, cfg, [op({ statusPortal: "APRO", foraDaListagem: true, meuValor: 945, apuracao: mapa })]);
+    const res = listNotes(db, "deal", dealOf(401)!).map((n) => n.body.replace(/ /g, " ")).filter((b) => b.startsWith("Resultado no portal"));
+    expect(res).toHaveLength(1);
+    expect(res[0]).toContain("APROVADA — você venceu");
+    expect(res[0]).toContain("2º TEKIE — R$ 1.129,04 (+19,5% do seu)");
   });
 });
