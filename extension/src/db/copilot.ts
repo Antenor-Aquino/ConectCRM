@@ -193,9 +193,15 @@ export function cardDigest(db: DatabaseSync, viewer: Viewer | null, id: string, 
      WHERE l.entity_type = 'deal' AND l.entity_id = ? AND l.deleted_at IS NULL`,
     id,
   )[0]!.n;
+  const chatwoot = many<{ conversation_id: number; link: string; created_at: string; canceled_at: string | null }>(
+    db,
+    "SELECT conversation_id, link, created_at, canceled_at FROM chatwoot_ticket WHERE card_id = ? AND deleted_at IS NULL ORDER BY created_at DESC",
+    id,
+  ).map((t) => ({ conversa: t.conversation_id, link: t.link, abertoEm: date(t.created_at), ...(t.canceled_at ? { canceladoEm: date(t.canceled_at) } : {}) }));
   return {
     id,
     titulo: base.title,
+    ticketsChatwoot: chatwoot,
     tipo: KIND[base.kind],
     status: statusText(base.kind, base.status),
     funil: base.pipeline,
@@ -520,5 +526,99 @@ export function cardFinanceForCopilot(db: DatabaseSync, id: string) {
       categoria: e.category,
     })),
     lidoEm: f.syncedAt,
+  };
+}
+
+export interface ChatwootTicketSearch {
+  situacao?: "ativos" | "cancelados" | "todos";
+  de?: string;
+  ate?: string;
+  funil?: string;
+  responsavel?: string;
+  texto?: string;
+  limite?: number;
+}
+
+/** Tickets de ativação abertos no Chatwoot pelos cartões, com totais por cartão. */
+export function chatwootTicketsForCopilot(db: DatabaseSync, viewer: Viewer | null, f: ChatwootTicketSearch) {
+  const pipe = resolvePipeline(db, f.funil);
+  if (isErr(pipe)) return pipe;
+  const owner = resolveOwner(db, f.responsavel);
+  if (isErr(owner)) return owner;
+  const where = ["t.deleted_at IS NULL", "d.deleted_at IS NULL"];
+  const params: SqlValue[] = [];
+  const situacao = f.situacao ?? "ativos";
+  if (situacao === "ativos") where.push("t.canceled_at IS NULL");
+  if (situacao === "cancelados") where.push("t.canceled_at IS NOT NULL");
+  // Datas no horário local: início do dia "de" até o fim do dia "ate".
+  const day = (s: string | undefined, end: boolean) => {
+    const m = s?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + (end ? 1 : 0)).toISOString() : null;
+  };
+  const from = day(f.de, false);
+  const to = day(f.ate, true);
+  if (from) {
+    where.push("t.created_at >= ?");
+    params.push(from);
+  }
+  if (to) {
+    where.push("t.created_at < ?");
+    params.push(to);
+  }
+  if (pipe) {
+    where.push(`d.pipeline_id IN (${pipe.ids.map(() => "?").join(", ")})`);
+    params.push(...pipe.ids);
+  }
+  if (owner) {
+    where.push(`d.owner_id IN (${owner.ids.map(() => "?").join(", ")})`);
+    params.push(...owner.ids);
+  }
+  const scope = cardScope(db, viewer);
+  const all = many<{
+    card_id: string; title: string; pipeline: string; stage: string; organization: string | null; owner: string | null;
+    conversation_id: number; link: string; contact_email: string | null; created_at: string; created_by: string | null;
+    canceled_at: string | null; cancel_note: string | null;
+  }>(
+    db,
+    `SELECT d.id AS card_id, d.title, p.name AS pipeline, s.name AS stage, o.name AS organization, u.name AS owner,
+       t.conversation_id, t.link, t.contact_email, t.created_at, cu.name AS created_by, t.canceled_at, t.cancel_note
+     FROM chatwoot_ticket t JOIN deal d ON d.id = t.card_id JOIN pipeline p ON p.id = d.pipeline_id JOIN stage s ON s.id = d.stage_id
+     LEFT JOIN organization o ON o.id = d.organization_id LEFT JOIN app_user u ON u.id = d.owner_id
+     LEFT JOIN app_user cu ON cu.id = t.created_by
+     WHERE ${where.join(" AND ")}${scope.sql}
+     ORDER BY t.created_at DESC`,
+    ...params,
+    ...scope.params,
+  );
+  const q = f.texto?.trim() ? normalizeText(f.texto) : "";
+  const rows = q ? all.filter((r) => [r.title, r.organization, r.contact_email].some((v) => v && normalizeText(v).includes(q))) : all;
+  const limit = Math.min(Math.max(1, f.limite ?? 20), MAX_ROWS);
+  const porFunil: Record<string, number> = {};
+  for (const id of new Set(rows.map((r) => r.card_id))) {
+    const r = rows.find((x) => x.card_id === id)!;
+    porFunil[r.pipeline] = (porFunil[r.pipeline] ?? 0) + 1;
+  }
+  return {
+    situacao,
+    cartoesComTicket: new Set(rows.map((r) => r.card_id)).size,
+    tickets: rows.length,
+    ativos: rows.filter((r) => !r.canceled_at).length,
+    cancelados: rows.filter((r) => r.canceled_at).length,
+    cartoesPorFunil: porFunil,
+    mostrando: Math.min(limit, rows.length),
+    lista: rows.slice(0, limit).map((r) => ({
+      cartaoId: r.card_id,
+      cartao: r.title,
+      funil: r.pipeline,
+      etapa: r.stage,
+      organizacao: r.organization,
+      responsavel: r.owner ?? "Sem responsável",
+      conversa: r.conversation_id,
+      link: r.link,
+      emailContato: r.contact_email,
+      abertoEm: date(r.created_at),
+      abertoPor: r.created_by,
+      ...(r.canceled_at ? { canceladoEm: date(r.canceled_at), motivoCancelamento: r.cancel_note } : {}),
+    })),
   };
 }

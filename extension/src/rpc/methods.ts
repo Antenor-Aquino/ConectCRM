@@ -880,6 +880,7 @@ export const methods = {
   },
   "copilot.finance": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof copilot.financeSummaryForCopilot>[2]) => copilot.financeSummaryForCopilot(db, viewer(db, ctx), p),
   "copilot.financeAlerts": (db: DatabaseSync, ctx: DbContext, p: { responsavel?: string }) => copilot.financeAlertsForCopilot(db, viewer(db, ctx), p),
+  "copilot.chatwootTickets": (db: DatabaseSync, ctx: DbContext, p: copilot.ChatwootTicketSearch) => copilot.chatwootTicketsForCopilot(db, viewer(db, ctx), p),
   "copilot.stale": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof copilot.staleDeals>[2]) => copilot.staleDeals(db, viewer(db, ctx), p),
   "copilot.todo": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof todo.todoForCopilot>[2]) => todo.todoForCopilot(db, ctx, p),
   "copilot.tasks": (db: DatabaseSync, ctx: DbContext, p: Parameters<typeof copilot.tasksForCopilot>[2]) => copilot.tasksForCopilot(db, viewer(db, ctx), p),
