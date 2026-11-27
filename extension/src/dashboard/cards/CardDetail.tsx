@@ -2,11 +2,13 @@
 // resolvido/não resolvido, concluído/não concluído conforme o tipo),
 // notas, tarefas e histórico de alterações.
 import { NfseDialog } from "./NfseDialog";
+import { parseDetailLayout, resolveDetailLayout } from "../../lib/detailLayout";
+import { fieldGroups } from "../../lib/fieldGroups";
 import { CardOrganizationsField } from "./CardOrganizationsField";
 import { ChargeDialog } from "./ChargeDialog";
 import { ChatwootDialog, useChatwootButton } from "./ChatwootDialog";
 import { useGfActive } from "../useGfActive";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -44,7 +46,7 @@ import type { Pipeline, Stage } from "../../db/pipelines";
 import { CARD_TEXT, OUTCOME_TEXT } from "../../lib/cardTypes";
 import { formatCents, formatDateTime, formatPhone, fromDateInput, toDateInput } from "../../lib/format";
 import { Combobox, type ComboItem } from "../ui/Combobox";
-import { CustomFieldsForm } from "../ui/CustomFieldsForm";
+import { FieldInput } from "../ui/CustomFieldsForm";
 import { ErrorText, Field, SectionLabel } from "../ui/form";
 import { MoneyInput } from "../ui/MoneyInput";
 import { SlaPicker } from "../ui/SlaPicker";
@@ -250,6 +252,306 @@ function CardDetailInner({
   const others = card.contacts.filter((c) => !c.is_primary);
   const primary = card.contacts.find((c) => c.is_primary);
   const org: ComboItem | null = card.organization_id ? { id: card.organization_id, label: card.organization_name ?? "" } : null;
+
+  // Ficha do cartão: ordem e visibilidade por funil (Editar funil → Ficha do cartão).
+  const visibleFields = fields.filter((f) => !f.hidden);
+  const fieldById = new Map(visibleFields.map((f) => [f.id, f]));
+  const detailItems = resolveDetailLayout(
+    parseDetailLayout(pipeline.detail_layout),
+    pipeline.type,
+    fieldGroups(visibleFields).flatMap((g) => g.fields.map((f) => f.id)),
+  ).filter((it) => !it.hidden);
+  const renderBlock = (key: string, prevKey?: string): ReactNode => {
+    if (key.startsWith("cf:")) {
+      const f = fieldById.get(key.slice(3));
+      if (!f) return null;
+      // Categoria: o título aparece quando muda em relação ao campo anterior.
+      const prev = prevKey?.startsWith("cf:") ? fieldById.get(prevKey.slice(3)) : undefined;
+      const group = f.group_id && f.group_name ? f.group_id : null;
+      const showGroup = !!group && (!prev || (prev.group_id && prev.group_name ? prev.group_id : null) !== group);
+      return (
+        <>
+          {showGroup && (
+            <p className="mb-2 mt-3 border-b border-gray-100 pb-1 text-theme-xs font-semibold uppercase tracking-wide text-gray-500 dark:border-gray-800" data-field-group={f.group_name}>
+              {f.group_name}
+            </p>
+          )}
+          <Field label={f.name} required={!!f.required} hint={f.description}>
+            <FieldInput field={f} value={card.customValues[f.id]} onChange={(v) => setCard({ ...card, customValues: { ...card.customValues, [f.id]: v } })} />
+          </Field>
+        </>
+      );
+    }
+    switch (key) {
+      case "valor":
+        return (
+          <>
+          {/* Valor e produtos/serviços em todos os tipos de funil. */}
+          {
+            <>
+              <SectionLabel className="mt-0">Valor</SectionLabel>
+              <div className="flex items-center gap-3">
+                <div className="w-1/2">
+                  {card.value_from_items ? (
+                    <div className="flex h-10 items-center rounded-lg bg-gray-50 px-3.5 text-theme-sm dark:bg-white/5">{formatCents(card.value_cents)}</div>
+                  ) : (
+                    <MoneyInput value={card.value_cents} onChange={(c) => c !== card.value_cents && void update({ valueCents: c })} />
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 text-theme-sm font-medium text-brand-600 hover:underline"
+                  onClick={() => setItemsOpen(true)}
+                >
+                  <PlusCircle size={16} />
+                  {card.items.length ? `${card.items.length} produto(s)` : "Adicionar"}
+                </button>
+              </div>
+              {card.items.length > 0 && <ItemsSummary items={card.items} onEdit={() => setItemsOpen(true)} />}
+              {gfActive && finance && finance.entries.length > 0 && (
+                <button
+                  type="button"
+                  data-card-result
+                  onClick={() => setTab("financeiro")}
+                  className="mt-2 flex w-full flex-wrap items-center gap-x-3 gap-y-0.5 rounded-lg bg-gray-50 px-3 py-2 text-left text-theme-xs text-gray-600 hover:bg-gray-100 dark:bg-white/5 dark:text-gray-400"
+                  title="Lançamentos na Gestão Financeira (ver aba Financeiro)"
+                >
+                  <span>Receitas <b className="text-success-600">{formatCents(finance.summary.incomeCents)}</b></span>
+                  <span>Despesas <b className="text-error-600">{formatCents(finance.summary.expenseCents)}</b></span>
+                  <span>
+                    Resultado{" "}
+                    <b className={finance.summary.resultCents >= 0 ? "text-success-600" : "text-error-600"}>{formatCents(finance.summary.resultCents)}</b>
+                    {finance.summary.incomeCents > 0 && ` (${Math.round((finance.summary.resultCents / finance.summary.incomeCents) * 100)}%)`}
+                  </span>
+                  {finance.summary.overdueCount > 0 && <span className="font-medium text-error-600">{finance.summary.overdueCount} atrasado(s)</span>}
+                </button>
+              )}
+            </>
+          }
+          </>
+        );
+      case "descricao":
+        return (
+          <>
+          {pipeline.type !== "comercial" && (
+            <Field label="Descrição">
+              <LinkedTextarea
+                className="min-h-[84px] w-full rounded-lg border border-gray-300 bg-transparent px-3.5 py-2.5 text-theme-sm text-gray-800 shadow-theme-xs outline-none focus:border-brand-300 focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:text-white/90"
+                value={description}
+                onChange={setDescription}
+                onBlur={() => description !== (card.description ?? "") && void update({ description })}
+              />
+            </Field>
+          )}
+          </>
+        );
+      case "sla":
+        return (
+          <>
+          {pipeline.type === "operacional" && (
+            <Field label="SLA">
+              <SlaPicker value={card.sla_at} onChange={(v) => void update({ slaAt: v })} />
+            </Field>
+          )}
+          </>
+        );
+      case "datas":
+        return (
+          <>
+          {pipeline.type === "projeto" && (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Início">
+                <TaInput type="date" value={toDateInput(card.start_at)} onChange={(e) => void update({ startAt: fromDateInput(e.target.value) })} />
+              </Field>
+              <Field label="Prazo">
+                <TaInput type="date" value={toDateInput(card.due_at)} onChange={(e) => void update({ dueAt: fromDateInput(e.target.value) })} />
+              </Field>
+            </div>
+          )}
+          </>
+        );
+      case "secao:relacionamento":
+        return (
+          <>
+          <SectionLabel>Relacionamento</SectionLabel>
+          </>
+        );
+      case "contato":
+        return (
+          <>
+          <Field label="Contato">
+            <Combobox
+              value={person}
+              onChange={(i) => void update({ personId: i?.id ?? null })}
+              search={searchPersons}
+              placeholder="Buscar por nome, telefone ou e-mail"
+              onCreate={createPersonQuick}
+              createLabel="Criar contato"
+              onOpenValue={(i) => setEditing({ kind: "person", id: i.id })}
+              openTitle="Editar o cadastro do contato"
+              sublabelBelow
+              valueActions={
+                primary && (primary.phone || primary.email) ? (
+                  <span className="flex items-center gap-2.5 pr-1" data-primary-contact-actions>
+                    {primary.phone && (
+                      <PhoneLink phone={primary.phone} className="text-gray-400 hover:text-success-600 hover:no-underline">
+                        <MessageCircle size={15} />
+                      </PhoneLink>
+                    )}
+                    {primary.email && (
+                      <EmailLink iconOnly email={primary.email} className="text-gray-400 hover:no-underline">
+                        <Mail size={15} />
+                      </EmailLink>
+                    )}
+                  </span>
+                ) : null
+              }
+            />
+          </Field>
+          </>
+        );
+      case "outros_contatos":
+        return (
+          <>
+          <Field
+            label={`Outros contatos${others.length ? ` (${others.length})` : ""}`}
+            hint={others.length ? undefined : "Decisor, financeiro, técnico… Todos aparecem no cartão e na ficha de cada contato."}
+          >
+            {others.map((c) => (
+              <div key={c.id} className="mb-1.5 flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-700" data-card-contact={c.name}>
+                <button
+                  type="button"
+                  title="Editar o cadastro do contato"
+                  onClick={() => setEditing({ kind: "person", id: c.id })}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <span className="block truncate text-theme-sm font-medium text-brand-600 hover:underline">
+                    {c.name}
+                    {c.name_ext && <span className="font-normal text-gray-500"> - {c.name_ext}</span>}
+                  </span>
+                  {(c.organization_name || c.phone || c.email) && (
+                    <span className="block truncate text-theme-xs text-gray-500">{[c.organization_name, formatPhone(c.phone), c.email].filter(Boolean).join(" · ")}</span>
+                  )}
+                </button>
+                {c.phone && (
+                  <PhoneLink phone={c.phone} className="text-gray-400 hover:text-success-600 hover:no-underline">
+                    <MessageCircle size={15} />
+                  </PhoneLink>
+                )}
+                {c.email && (
+                  <EmailLink iconOnly email={c.email} className="text-gray-400 hover:no-underline">
+                    <Mail size={15} />
+                  </EmailLink>
+                )}
+                <button
+                  type="button"
+                  title="Tornar o contato principal"
+                  onClick={() => void run(() => call("cards.contacts.setPrimary", { id: cardId, personId: c.id }))}
+                  className="text-gray-400 hover:text-warning-500"
+                >
+                  <Star size={15} />
+                </button>
+                <button
+                  type="button"
+                  title="Remover do cartão"
+                  onClick={() => void run(() => call("cards.contacts.remove", { id: cardId, personId: c.id }))}
+                  className="text-gray-400 hover:text-error-600"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            ))}
+            <Combobox
+              value={null}
+              onChange={(i) => i && void run(() => call("cards.contacts.add", { id: cardId, personId: i.id }))}
+              search={searchPersons}
+              placeholder="Buscar por nome, telefone ou e-mail"
+              onCreate={createPersonQuick}
+              createLabel="Criar contato"
+              dashed={
+                <>
+                  <PlusCircle size={15} /> Adicionar outro contato
+                </>
+              }
+            />
+          </Field>
+          </>
+        );
+      case "organizacao":
+        return (
+          <>
+          <Field label="Organização">
+            <Combobox
+              value={org}
+              onChange={(i) => void update({ organizationId: i?.id ?? null })}
+              search={searchOrganizations}
+              placeholder="Buscar organização ou digitar o CNPJ"
+              onCreate={createOrganizationQuick}
+              createLabel="Criar organização"
+              createLabelFor={organizationCreateLabel}
+              dashed={
+                <>
+                  <PlusCircle size={15} /> Vincular ou criar organização
+                </>
+              }
+              onOpenValue={(i) => setEditing({ kind: "organization", id: i.id })}
+              openTitle="Editar o cadastro da organização"
+            />
+          </Field>
+          </>
+        );
+      case "outras_organizacoes":
+        return (
+          <>
+          <CardOrganizationsField
+            cardId={cardId}
+            organizations={card.organizations}
+            run={run}
+            onOpen={(id) => setEditing({ kind: "organization", id })}
+          />
+          </>
+        );
+      case "secao:detalhes":
+        return (
+          <>
+          <SectionLabel>Mais detalhes</SectionLabel>
+          </>
+        );
+      case "responsavel":
+        return (
+          <>
+          <Field label="Responsável">
+            <div className="flex items-center gap-1.5">
+              <div className="min-w-0 flex-1">
+                <UserSelect value={card.owner_id} onChange={(id) => void update({ ownerId: id })} />
+              </div>
+              {/* Usuários: administrador edita qualquer um; os demais, só o próprio cadastro. */}
+              {card.owner_id && (me.role === "admin" || me.id === card.owner_id) && (
+                <button
+                  type="button"
+                  title="Editar o cadastro do responsável"
+                  onClick={() => setEditing({ kind: "user", id: card.owner_id! })}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-gray-300 text-gray-500 hover:text-brand-600 dark:border-gray-700"
+                >
+                  <Pencil size={15} />
+                </button>
+              )}
+            </div>
+          </Field>
+          </>
+        );
+      case "tags":
+        return (
+          <>
+          <Field label="Tags">
+            <TagPicker entity={text.kind} value={card.tags.map((t) => t.id)} onChange={(ids) => void update({ tagIds: ids })} />
+          </Field>
+          </>
+        );
+      default:
+        return null;
+    }
+  };
   const items: ItemDraft[] = card.items.map((i) => ({
     id: i.id,
     productId: i.product_id,
@@ -429,221 +731,9 @@ function CardDetailInner({
       <div className="grid gap-6 @3xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] @6xl:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
         {/* Dados */}
         <div>
-          {/* Valor e produtos/serviços em todos os tipos de funil. */}
-          {
-            <>
-              <SectionLabel className="mt-0">Valor</SectionLabel>
-              <div className="flex items-center gap-3">
-                <div className="w-1/2">
-                  {card.value_from_items ? (
-                    <div className="flex h-10 items-center rounded-lg bg-gray-50 px-3.5 text-theme-sm dark:bg-white/5">{formatCents(card.value_cents)}</div>
-                  ) : (
-                    <MoneyInput value={card.value_cents} onChange={(c) => c !== card.value_cents && void update({ valueCents: c })} />
-                  )}
-                </div>
-                <button
-                  type="button"
-                  className="flex items-center gap-1.5 text-theme-sm font-medium text-brand-600 hover:underline"
-                  onClick={() => setItemsOpen(true)}
-                >
-                  <PlusCircle size={16} />
-                  {card.items.length ? `${card.items.length} produto(s)` : "Adicionar"}
-                </button>
-              </div>
-              {card.items.length > 0 && <ItemsSummary items={card.items} onEdit={() => setItemsOpen(true)} />}
-              {gfActive && finance && finance.entries.length > 0 && (
-                <button
-                  type="button"
-                  data-card-result
-                  onClick={() => setTab("financeiro")}
-                  className="mt-2 flex w-full flex-wrap items-center gap-x-3 gap-y-0.5 rounded-lg bg-gray-50 px-3 py-2 text-left text-theme-xs text-gray-600 hover:bg-gray-100 dark:bg-white/5 dark:text-gray-400"
-                  title="Lançamentos na Gestão Financeira (ver aba Financeiro)"
-                >
-                  <span>Receitas <b className="text-success-600">{formatCents(finance.summary.incomeCents)}</b></span>
-                  <span>Despesas <b className="text-error-600">{formatCents(finance.summary.expenseCents)}</b></span>
-                  <span>
-                    Resultado{" "}
-                    <b className={finance.summary.resultCents >= 0 ? "text-success-600" : "text-error-600"}>{formatCents(finance.summary.resultCents)}</b>
-                    {finance.summary.incomeCents > 0 && ` (${Math.round((finance.summary.resultCents / finance.summary.incomeCents) * 100)}%)`}
-                  </span>
-                  {finance.summary.overdueCount > 0 && <span className="font-medium text-error-600">{finance.summary.overdueCount} atrasado(s)</span>}
-                </button>
-              )}
-            </>
-          }
-          {pipeline.type !== "comercial" && (
-            <Field label="Descrição">
-              <LinkedTextarea
-                className="min-h-[84px] w-full rounded-lg border border-gray-300 bg-transparent px-3.5 py-2.5 text-theme-sm text-gray-800 shadow-theme-xs outline-none focus:border-brand-300 focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:text-white/90"
-                value={description}
-                onChange={setDescription}
-                onBlur={() => description !== (card.description ?? "") && void update({ description })}
-              />
-            </Field>
-          )}
-          {pipeline.type === "operacional" && (
-            <Field label="SLA">
-              <SlaPicker value={card.sla_at} onChange={(v) => void update({ slaAt: v })} />
-            </Field>
-          )}
-          {pipeline.type === "projeto" && (
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Início">
-                <TaInput type="date" value={toDateInput(card.start_at)} onChange={(e) => void update({ startAt: fromDateInput(e.target.value) })} />
-              </Field>
-              <Field label="Prazo">
-                <TaInput type="date" value={toDateInput(card.due_at)} onChange={(e) => void update({ dueAt: fromDateInput(e.target.value) })} />
-              </Field>
-            </div>
-          )}
-
-          <SectionLabel>Relacionamento</SectionLabel>
-          <Field label="Contato">
-            <Combobox
-              value={person}
-              onChange={(i) => void update({ personId: i?.id ?? null })}
-              search={searchPersons}
-              placeholder="Buscar por nome, telefone ou e-mail"
-              onCreate={createPersonQuick}
-              createLabel="Criar contato"
-              onOpenValue={(i) => setEditing({ kind: "person", id: i.id })}
-              openTitle="Editar o cadastro do contato"
-              sublabelBelow
-              valueActions={
-                primary && (primary.phone || primary.email) ? (
-                  <span className="flex items-center gap-2.5 pr-1" data-primary-contact-actions>
-                    {primary.phone && (
-                      <PhoneLink phone={primary.phone} className="text-gray-400 hover:text-success-600 hover:no-underline">
-                        <MessageCircle size={15} />
-                      </PhoneLink>
-                    )}
-                    {primary.email && (
-                      <EmailLink iconOnly email={primary.email} className="text-gray-400 hover:no-underline">
-                        <Mail size={15} />
-                      </EmailLink>
-                    )}
-                  </span>
-                ) : null
-              }
-            />
-          </Field>
-          <Field
-            label={`Outros contatos${others.length ? ` (${others.length})` : ""}`}
-            hint={others.length ? undefined : "Decisor, financeiro, técnico… Todos aparecem no cartão e na ficha de cada contato."}
-          >
-            {others.map((c) => (
-              <div key={c.id} className="mb-1.5 flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-700" data-card-contact={c.name}>
-                <button
-                  type="button"
-                  title="Editar o cadastro do contato"
-                  onClick={() => setEditing({ kind: "person", id: c.id })}
-                  className="min-w-0 flex-1 text-left"
-                >
-                  <span className="block truncate text-theme-sm font-medium text-brand-600 hover:underline">
-                    {c.name}
-                    {c.name_ext && <span className="font-normal text-gray-500"> - {c.name_ext}</span>}
-                  </span>
-                  {(c.organization_name || c.phone || c.email) && (
-                    <span className="block truncate text-theme-xs text-gray-500">{[c.organization_name, formatPhone(c.phone), c.email].filter(Boolean).join(" · ")}</span>
-                  )}
-                </button>
-                {c.phone && (
-                  <PhoneLink phone={c.phone} className="text-gray-400 hover:text-success-600 hover:no-underline">
-                    <MessageCircle size={15} />
-                  </PhoneLink>
-                )}
-                {c.email && (
-                  <EmailLink iconOnly email={c.email} className="text-gray-400 hover:no-underline">
-                    <Mail size={15} />
-                  </EmailLink>
-                )}
-                <button
-                  type="button"
-                  title="Tornar o contato principal"
-                  onClick={() => void run(() => call("cards.contacts.setPrimary", { id: cardId, personId: c.id }))}
-                  className="text-gray-400 hover:text-warning-500"
-                >
-                  <Star size={15} />
-                </button>
-                <button
-                  type="button"
-                  title="Remover do cartão"
-                  onClick={() => void run(() => call("cards.contacts.remove", { id: cardId, personId: c.id }))}
-                  className="text-gray-400 hover:text-error-600"
-                >
-                  <X size={15} />
-                </button>
-              </div>
-            ))}
-            <Combobox
-              value={null}
-              onChange={(i) => i && void run(() => call("cards.contacts.add", { id: cardId, personId: i.id }))}
-              search={searchPersons}
-              placeholder="Buscar por nome, telefone ou e-mail"
-              onCreate={createPersonQuick}
-              createLabel="Criar contato"
-              dashed={
-                <>
-                  <PlusCircle size={15} /> Adicionar outro contato
-                </>
-              }
-            />
-          </Field>
-          <Field label="Organização">
-            <Combobox
-              value={org}
-              onChange={(i) => void update({ organizationId: i?.id ?? null })}
-              search={searchOrganizations}
-              placeholder="Buscar organização ou digitar o CNPJ"
-              onCreate={createOrganizationQuick}
-              createLabel="Criar organização"
-              createLabelFor={organizationCreateLabel}
-              dashed={
-                <>
-                  <PlusCircle size={15} /> Vincular ou criar organização
-                </>
-              }
-              onOpenValue={(i) => setEditing({ kind: "organization", id: i.id })}
-              openTitle="Editar o cadastro da organização"
-            />
-          </Field>
-
-          <CardOrganizationsField
-            cardId={cardId}
-            organizations={card.organizations}
-            run={run}
-            onOpen={(id) => setEditing({ kind: "organization", id })}
-          />
-
-          <SectionLabel>Mais detalhes</SectionLabel>
-          <Field label="Responsável">
-            <div className="flex items-center gap-1.5">
-              <div className="min-w-0 flex-1">
-                <UserSelect value={card.owner_id} onChange={(id) => void update({ ownerId: id })} />
-              </div>
-              {/* Usuários: administrador edita qualquer um; os demais, só o próprio cadastro. */}
-              {card.owner_id && (me.role === "admin" || me.id === card.owner_id) && (
-                <button
-                  type="button"
-                  title="Editar o cadastro do responsável"
-                  onClick={() => setEditing({ kind: "user", id: card.owner_id! })}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-gray-300 text-gray-500 hover:text-brand-600 dark:border-gray-700"
-                >
-                  <Pencil size={15} />
-                </button>
-              )}
-            </div>
-          </Field>
-          <Field label="Tags">
-            <TagPicker entity={text.kind} value={card.tags.map((t) => t.id)} onChange={(ids) => void update({ tagIds: ids })} />
-          </Field>
-          <CustomFieldsForm
-            fields={fields}
-            values={card.customValues}
-            onChange={(values: Record<string, CustomValue>) => {
-              setCard({ ...card, customValues: values });
-            }}
-          />
+          {detailItems.map((it, idx) => (
+            <Fragment key={it.key}>{renderBlock(it.key, detailItems[idx - 1]?.key)}</Fragment>
+          ))}
           {fields.some((f) => !f.hidden) && (
             <TaButton size="sm" onClick={() => void update({ customValues: card.customValues })}>
               Salvar campos personalizados
