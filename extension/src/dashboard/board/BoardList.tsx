@@ -4,6 +4,7 @@
 import { useMemo, useState } from "react";
 import { Archive, ArrowDown, ArrowDownUp, ArrowUp, Check, Settings2, X } from "lucide-react";
 import { badgePalette, cn, TaButton, type BadgeColor } from "@tailadmin";
+import { DragHandle, moveKey, useDragSort } from "../ui/dragSort";
 import type { CardFieldValue } from "../../db/cardFieldValues";
 import type { BoardCard, BoardColumn } from "../../db/deals";
 import type { Pipeline, PipelineType } from "../../db/pipelines";
@@ -293,12 +294,7 @@ function ColumnPicker({
   const byKey = (k: string) => options.find((o) => o.key === k);
   const hidden = options.filter((o) => !draft.includes(o.key) && match(o));
   const groups = [...new Set(hidden.map((o) => o.group))];
-  const move = (i: number, j: number) => {
-    if (j < 0 || j >= draft.length) return;
-    const c = [...draft];
-    [c[i], c[j]] = [c[j]!, c[i]!];
-    setDraft(c);
-  };
+  const drag = useDragSort({ onMove: (from, to) => setDraft((d) => moveKey(d, from, to)) });
   return (
     <Popover open onClose={onClose} className="left-auto right-0 flex max-h-[70vh] w-80 flex-col">
       <div className="border-b border-gray-100 p-3 dark:border-gray-800">
@@ -320,28 +316,12 @@ function ColumnPicker({
           {draft.map((k, i) => {
             const o = byKey(k);
             if (!o || !match(o)) return null;
+            const rp = drag.rowProps(k);
             return (
-              <li key={k} className="flex items-center gap-2 px-3 py-1.5 text-theme-sm hover:bg-gray-50 dark:hover:bg-white/5">
+              <li key={k} {...rp} className={cn("flex items-center gap-2 px-3 py-1.5 text-theme-sm hover:bg-gray-50 dark:hover:bg-white/5", rp.className)}>
+                <DragHandle {...drag.handleProps(k, draft[i - 1], draft[i + 1])} label="Arraste para mudar a ordem da coluna (ou use ↑/↓ do teclado)" />
                 <input type="checkbox" checked onChange={() => setDraft(draft.filter((x) => x !== k))} />
                 <span className="min-w-0 flex-1 truncate text-gray-800 dark:text-white/90">{o.label}</span>
-                <button
-                  type="button"
-                  title="Mover para a esquerda"
-                  disabled={i === 0}
-                  onClick={() => move(i, i - 1)}
-                  className="text-gray-400 hover:text-gray-700 disabled:opacity-30"
-                >
-                  <ArrowUp size={13} />
-                </button>
-                <button
-                  type="button"
-                  title="Mover para a direita"
-                  disabled={i === draft.length - 1}
-                  onClick={() => move(i, i + 1)}
-                  className="text-gray-400 hover:text-gray-700 disabled:opacity-30"
-                >
-                  <ArrowDown size={13} />
-                </button>
               </li>
             );
           })}

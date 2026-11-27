@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// Editar funil → Ficha do cartão: subir/descer, esconder, obrigatório fixo, restaurar.
+// Editar funil → Ficha do cartão: arrastar e soltar, teclado, esconder, obrigatório fixo, restaurar.
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -27,10 +27,17 @@ describe("Ficha do cartão (editor)", () => {
     render(<Host onItems={(i) => (items = i)} />);
     const row = (key: string) => document.querySelector(`[data-detail-item="${key}"]`)!;
     expect(row("cf:a").textContent).toContain("Qtd de turmas");
-    // Organização sobe duas posições.
-    fireEvent.click(row("organizacao").querySelector('[title="Subir"]')!);
-    fireEvent.click(row("organizacao").querySelector('[title="Subir"]')!);
+    // Organização: arrastar e soltar sobre "Contato" (sobe duas posições).
+    fireEvent.mouseDown(row("organizacao").querySelector("[data-drag-handle]")!);
+    const dt = { setData: () => {}, effectAllowed: "", dropEffect: "" };
+    fireEvent.dragStart(row("organizacao"), { dataTransfer: dt });
+    fireEvent.dragOver(row("contato"), { dataTransfer: dt });
+    fireEvent.drop(row("contato"), { dataTransfer: dt });
     expect(items.map((i) => i.key).slice(1, 5)).toEqual(["secao:relacionamento", "organizacao", "contato", "outros_contatos"]);
+    // Teclado na alça: ↓ desce uma posição.
+    fireEvent.keyDown(row("valor").querySelector("[data-drag-handle]")!, { key: "ArrowDown" });
+    expect(items[0]!.key).toBe("secao:relacionamento");
+    fireEvent.keyDown(row("valor").querySelector("[data-drag-handle]")!, { key: "ArrowUp" });
     fireEvent.click(row("tags").querySelector("[data-detail-toggle]")!);
     expect(items.find((i) => i.key === "tags")).toEqual({ key: "tags", hidden: true });
     expect((row("cf:b").querySelector("[data-detail-toggle]") as HTMLButtonElement).disabled).toBe(true);

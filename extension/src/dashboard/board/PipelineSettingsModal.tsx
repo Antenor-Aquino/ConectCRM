@@ -2,8 +2,9 @@
 // dias para "parado"), excluir etapa movendo os cartões, campos exibidos no
 // cartão (aba Cartão) e arquivar o funil.
 import { useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
-import { TaButton, TaInput, TaSelect, badgePalette, type BadgeColor } from "@tailadmin";
+import { Plus, Trash2 } from "lucide-react";
+import { DragHandle, moveItem, useDragSort } from "../ui/dragSort";
+import { TaButton, TaInput, TaSelect, badgePalette, type BadgeColor, cn } from "@tailadmin";
 import { GuardedModal } from "../ui/GuardedModal";
 import { call } from "../../rpc/client";
 import type { Pipeline } from "../../db/pipelines";
@@ -24,6 +25,8 @@ const COLORS = Object.keys(badgePalette) as BadgeColor[];
 
 interface Draft {
   id?: string;
+  /** Chave estável na tela (arrastar e soltar), também para etapas novas. */
+  uid: string;
   name: string;
   color: string;
   probability: string;
@@ -59,7 +62,7 @@ export function PipelineSettingsModal({ pipeline, onClose, onSaved }: { pipeline
     void call("stages.list", { pipelineId: pipeline.id }).then((list) => {
       setOriginal(list.map((s) => ({ id: s.id, name: s.name })));
       setStages(
-        list.map((s) => ({ id: s.id, name: s.name, color: s.color ?? "slate", probability: s.probability?.toString() ?? "", staleDays: s.stale_days?.toString() ?? "" })),
+        list.map((s) => ({ id: s.id, uid: s.id, name: s.name, color: s.color ?? "slate", probability: s.probability?.toString() ?? "", staleDays: s.stale_days?.toString() ?? "" })),
       );
     });
   }, [pipeline]);
@@ -68,13 +71,9 @@ export function PipelineSettingsModal({ pipeline, onClose, onSaved }: { pipeline
   const removed = original.filter((o) => !stages.some((s) => s.id === o.id));
   const keptIds = stages.filter((s) => s.id);
   const set = (i: number, patch: Partial<Draft>) => setStages((l) => l.map((s, j) => (j === i ? { ...s, ...patch } : s)));
-  const swap = (i: number, j: number) =>
-    setStages((l) => {
-      if (j < 0 || j >= l.length) return l;
-      const c = [...l];
-      [c[i], c[j]] = [c[j]!, c[i]!];
-      return c;
-    });
+  const drag = useDragSort({
+    onMove: (from, to) => setStages((l) => moveItem(l, l.findIndex((x) => x.uid === from), l.findIndex((x) => x.uid === to))),
+  });
 
   async function save() {
     setError(null);
@@ -140,15 +139,19 @@ export function PipelineSettingsModal({ pipeline, onClose, onSaved }: { pipeline
 
       <div className={tab === "etapas" ? "" : "hidden"}>
       <SectionLabel>Etapas</SectionLabel>
-      <div className="grid grid-cols-[128px_1fr_90px_90px_64px] gap-2 text-theme-xs text-gray-500">
+      <div className="grid grid-cols-[20px_128px_1fr_90px_90px_28px] gap-2 text-theme-xs text-gray-500">
+        <span />
         <span>Cor</span>
         <span>Nome</span>
         <span>{pipeline.type === "comercial" ? "Prob. %" : ""}</span>
         <span>Parado após (dias)</span>
         <span />
       </div>
-      {stages.map((s, i) => (
-        <div key={s.id ?? `new-${i}`} className="mt-2 grid grid-cols-[128px_1fr_90px_90px_64px] items-center gap-2">
+      {stages.map((s, i) => {
+        const rp = drag.rowProps(s.uid);
+        return (
+        <div key={s.uid} {...rp} className={cn("mt-2 grid grid-cols-[20px_128px_1fr_90px_90px_28px] items-center gap-2 rounded-lg", rp.className)}>
+          <DragHandle {...drag.handleProps(s.uid, stages[i - 1]?.uid, stages[i + 1]?.uid)} />
           <TaSelect value={s.color} onChange={(e) => set(i, { color: e.target.value })} style={{ color: badgePalette[s.color as BadgeColor]?.fg }}>
             {COLORS.map((c) => (
               <option key={c} value={c} style={{ color: badgePalette[c].fg }}>
@@ -164,15 +167,14 @@ export function PipelineSettingsModal({ pipeline, onClose, onSaved }: { pipeline
           )}
           <TaInput type="number" min={1} value={s.staleDays} onChange={(e) => set(i, { staleDays: e.target.value })} />
           <div className="flex items-center gap-1 text-gray-400">
-            <button type="button" title="Subir" onClick={() => swap(i, i - 1)}><ArrowUp size={14} /></button>
-            <button type="button" title="Descer" onClick={() => swap(i, i + 1)}><ArrowDown size={14} /></button>
             <button type="button" title="Remover" disabled={stages.length === 1} className="hover:text-error-600 disabled:opacity-30" onClick={() => setStages((l) => l.filter((_, j) => j !== i))}>
               <Trash2 size={14} />
             </button>
           </div>
         </div>
-      ))}
-      <TaButton variant="ghost" className="mt-2" startIcon={<Plus size={14} />} onClick={() => setStages((l) => [...l, { name: "", color: COLORS[l.length % COLORS.length]!, probability: "", staleDays: "" }])}>
+        );
+      })}
+      <TaButton variant="ghost" className="mt-2" startIcon={<Plus size={14} />} onClick={() => setStages((l) => [...l, { uid: crypto.randomUUID(), name: "", color: COLORS[l.length % COLORS.length]!, probability: "", staleDays: "" }])}>
         Adicionar etapa
       </TaButton>
       <StagesPreview stages={stages} />

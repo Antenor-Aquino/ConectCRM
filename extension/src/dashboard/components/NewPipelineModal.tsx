@@ -2,7 +2,8 @@
 // e etapas com cor.
 import { useEffect, useState } from "react";
 import { Trash2, Plus } from "lucide-react";
-import { TaButton, TaInput, TaSelect, badgePalette, type BadgeColor } from "@tailadmin";
+import { TaButton, TaInput, TaSelect, badgePalette, cn, type BadgeColor } from "@tailadmin";
+import { DragHandle, moveItem, useDragSort } from "../ui/dragSort";
 import { GuardedModal } from "../ui/GuardedModal";
 import { call } from "../../rpc/client";
 import type { PipelineType } from "../../db/pipelines";
@@ -20,12 +21,14 @@ const DEFAULT_STAGES: Record<PipelineType, string[]> = {
 };
 
 interface DraftStage {
+  /** Chave estável na tela (arrastar e soltar). */
+  uid: string;
   name: string;
   color: BadgeColor;
 }
 
 function defaultsFor(type: PipelineType): DraftStage[] {
-  return DEFAULT_STAGES[type].map((name, i) => ({ name, color: STAGE_COLORS[i % STAGE_COLORS.length]! }));
+  return DEFAULT_STAGES[type].map((name, i) => ({ uid: crypto.randomUUID(), name, color: STAGE_COLORS[i % STAGE_COLORS.length]! }));
 }
 
 export function NewPipelineModal({
@@ -40,6 +43,7 @@ export function NewPipelineModal({
   const [name, setName] = useState("");
   const [type, setType] = useState<PipelineType>("comercial");
   const [stages, setStages] = useState<DraftStage[]>(defaultsFor("comercial"));
+  const drag = useDragSort({ onMove: (from, to) => setStages((l) => moveItem(l, l.findIndex((x) => x.uid === from), l.findIndex((x) => x.uid === to))) });
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -58,7 +62,7 @@ export function NewPipelineModal({
   async function save() {
     setSaving(true);
     try {
-      const id = await call("pipelines.create", { name, type, stages });
+      const id = await call("pipelines.create", { name, type, stages: stages.map(({ name: n, color }) => ({ name: n, color })) });
       onCreated(id);
     } catch (err) {
       setError(errorText(err));
@@ -93,8 +97,11 @@ export function NewPipelineModal({
         <div>
           <span className="mb-1.5 block text-theme-sm font-medium text-gray-700 dark:text-gray-300">Etapas</span>
           <div className="space-y-2">
-            {stages.map((s, i) => (
-              <div key={i} className="flex items-center gap-2">
+            {stages.map((s, i) => {
+              const rp = drag.rowProps(s.uid);
+              return (
+              <div key={s.uid} {...rp} className={cn("flex items-center gap-2 rounded-lg", rp.className)}>
+                <DragHandle {...drag.handleProps(s.uid, stages[i - 1]?.uid, stages[i + 1]?.uid)} />
                 <TaSelect
                   value={s.color}
                   onChange={(e) => updateStage(i, { color: e.target.value as BadgeColor })}
@@ -118,13 +125,14 @@ export function NewPipelineModal({
                   <Trash2 size={16} />
                 </button>
               </div>
-            ))}
+              );
+            })}
           </div>
           <TaButton
             variant="ghost"
             className="mt-2"
             startIcon={<Plus size={14} />}
-            onClick={() => setStages((list) => [...list, { name: "", color: STAGE_COLORS[list.length % STAGE_COLORS.length]! }])}
+            onClick={() => setStages((list) => [...list, { uid: crypto.randomUUID(), name: "", color: STAGE_COLORS[list.length % STAGE_COLORS.length]! }])}
           >
             Adicionar etapa
           </TaButton>
