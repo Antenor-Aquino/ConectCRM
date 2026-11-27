@@ -689,15 +689,40 @@ function boardWhere(db: DatabaseSync, pipelineId: string, opts: BoardFilterOpts)
   if (opts.search?.trim()) {
     const q = `%${opts.search.trim()}%`;
     const ticket = ticketNumberQuery(opts.search);
-    // Também pelos outros contatos do cartão.
+    // Número (CNPJ, CPF, telefone) vale com ou sem pontuação.
+    const digits = /^[\d\s.\-/()+]+$/.test(opts.search.trim()) ? opts.search.replace(/\D/g, "") : "";
+    const dq = digits.length >= 4 ? `%${digits}%` : null;
+    // Palavra-chave em qualquer dado do cartão: título, descrição, origem,
+    // contatos (nome, e-mail, telefone, CPF), organizações (nome, razão social,
+    // CNPJ, e-mail, cidade), tags e campos personalizados do cartão, do
+    // contato e da organização (inclusive o nome da opção escolhida).
+    const cfMatch = `EXISTS (SELECT 1 FROM custom_field_value cv
+                 WHERE cv.deleted_at IS NULL AND cv.entity_id IN (d.id, d.person_id, d.organization_id)
+                   AND (cv.value LIKE ? OR EXISTS (SELECT 1 FROM custom_field_option co
+                        WHERE co.field_id = cv.field_id AND co.deleted_at IS NULL AND co.label LIKE ? AND instr(cv.value, co.id) > 0)))`;
     where.push(
-      `(d.title LIKE ? OR p.name LIKE ? OR o.name LIKE ?${ticket !== null ? " OR d.ticket_number = ?" : ""}
+      `(d.title LIKE ? OR d.description LIKE ? OR d.origin LIKE ?
+        OR p.name LIKE ? OR p.email LIKE ? OR o.name LIKE ? OR o.legal_name LIKE ? OR o.email LIKE ? OR o.city LIKE ?
+        ${ticket !== null ? "OR d.ticket_number = ?" : ""}
+        ${dq ? "OR p.phone LIKE ? OR p.cpf LIKE ? OR o.cnpj LIKE ? OR o.phone LIKE ?" : ""}
         OR EXISTS (SELECT 1 FROM deal_participant dp JOIN person pp ON pp.id = dp.person_id AND pp.deleted_at IS NULL
-                   WHERE dp.deal_id = d.id AND dp.deleted_at IS NULL AND pp.name LIKE ?)
+                   WHERE dp.deal_id = d.id AND dp.deleted_at IS NULL AND (pp.name LIKE ? OR pp.email LIKE ?${dq ? " OR pp.phone LIKE ?" : ""}))
         OR EXISTS (SELECT 1 FROM deal_org_link xo JOIN organization oo ON oo.id = xo.organization_id AND oo.deleted_at IS NULL
-                   WHERE xo.deal_id = d.id AND xo.deleted_at IS NULL AND (oo.name LIKE ? OR oo.legal_name LIKE ?)))`,
+                   WHERE xo.deal_id = d.id AND xo.deleted_at IS NULL AND (oo.name LIKE ? OR oo.legal_name LIKE ?${dq ? " OR oo.cnpj LIKE ?" : ""}))
+        OR EXISTS (SELECT 1 FROM entity_tag st JOIN tag tg ON tg.id = st.tag_id AND tg.deleted_at IS NULL
+                   WHERE st.entity_id = d.id AND st.deleted_at IS NULL AND tg.name LIKE ?)
+        OR ${cfMatch})`,
     );
-    params.push(q, q, q, ...(ticket !== null ? [ticket] : []), q, q, q);
+    params.push(
+      q, q, q,
+      q, q, q, q, q, q,
+      ...(ticket !== null ? [ticket] : []),
+      ...(dq ? [dq, dq, dq, dq] : []),
+      q, q, ...(dq ? [dq] : []),
+      q, q, ...(dq ? [dq] : []),
+      q,
+      q, q,
+    );
   }
   return { where, params };
 }

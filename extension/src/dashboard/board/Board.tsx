@@ -660,6 +660,7 @@ export function Board({
           selected={selected}
           onToggleSelect={toggleSelect}
           onToggleMany={toggleMany}
+          onChanged={() => void load()}
         />
       ) : (
         /* Colunas */
