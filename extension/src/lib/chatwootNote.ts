@@ -39,8 +39,9 @@ export const CHATWOOT_FIELD_LABEL: Record<ChatwootField, string> = {
   email_financeiro: "E-mail para boletos e Nota Fiscal",
 };
 
-/** Texto da nota privada (igual ao módulo chatwoot-ativacao). */
-export function chatwootNote(d: ChatwootData): string {
+/** Texto da nota privada (igual ao módulo chatwoot-ativacao), com o memorando opcional no fim. */
+export function chatwootNote(d: ChatwootData, memo = ""): string {
+  const extra = memo.replace(/\s+$/, "").replace(/^\s*\n/, "");
   return [
     "**Solicito ativação de conta**",
     "",
@@ -59,6 +60,7 @@ export function chatwootNote(d: ChatwootData): string {
     `Endereço: ${d.endereco}`,
     `Nome do responsável: ${d.nome_responsavel}`,
     `Email para envio de boletos e Nota Fiscal: ${d.email_financeiro}`,
+    ...(extra.trim() ? ["", extra] : []),
   ].join("\n");
 }
 

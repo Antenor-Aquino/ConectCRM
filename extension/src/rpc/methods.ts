@@ -391,7 +391,7 @@ export const methods = {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);
     chatwoot.recordChatwootCancel(db, ctx, p.id, p);
   },
-  "chatwoot.record": (db: DatabaseSync, ctx: DbContext, p: Id & { conversationId: number; link: string; data: chatwoot.ChatwootData; contactCreated?: boolean }) => {
+  "chatwoot.record": (db: DatabaseSync, ctx: DbContext, p: Id & { conversationId: number; link: string; data: chatwoot.ChatwootData; contactCreated?: boolean; attachments?: string[]; memo?: string }) => {
     deals.assertCardAccess(db, viewer(db, ctx), p.id);
     return chatwoot.recordChatwootTicket(db, ctx, p.id, p);
   },

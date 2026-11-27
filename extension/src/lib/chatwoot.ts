@@ -115,6 +115,8 @@ export async function openActivationTicket(
   fetchFn: Fetch = fetch,
   /** Documentos do cartão (contrato assinado, convocação…): vão numa nota privada logo depois. */
   files: ChatwootFile[] = [],
+  /** Memorando livre que segue no fim da nota privada (ex.: turmas por unidade). */
+  memo = "",
 ): Promise<{ conversationId: number; link: string; contactCreated: boolean }> {
   if (!s.token.trim()) throw new ChatwootError("Configure o token do Chatwoot em Configurações → Integrações → Chatwoot.");
   const missing = chatwootMissing(dados);
@@ -150,7 +152,7 @@ export async function openActivationTicket(
   });
   const link = `${s.baseUrl.replace(/\/+$/, "")}/app/accounts/${s.accountId}/conversations/${conv.id}`;
   try {
-    await api("POST", `/conversations/${conv.id}/messages`, { content: chatwootNote(dados), message_type: "outgoing", private: true });
+    await api("POST", `/conversations/${conv.id}/messages`, { content: chatwootNote(dados, memo), message_type: "outgoing", private: true });
     if (s.label.trim()) await api("POST", `/conversations/${conv.id}/labels`, { labels: [s.label.trim()] });
     if (files.length) await sendPrivateFiles(s, conv.id, attachmentsNote(files.map((f) => f.filename)), files, fetchFn);
   } catch (e) {
