@@ -97,6 +97,20 @@ describe("Chatwoot: dados da nota", () => {
     );
   });
 
+  it("E-mail do cliente vai para o contato principal sem e-mail (não troca o que já tem)", async () => {
+    const { db, ctx, power } = await setup();
+    const nestor = createPerson(db, ctx, { name: "Nestor Rodrigues" });
+    const card = createCard(db, ctx, { pipelineId: power, title: "Cisipho", personId: nestor });
+    const data = { ...cw.chatwootContext(db, card).data, email_cliente: "escola.15342@educacao.mg.gov.br" };
+    const link = (n: number) => `https://suporte.powercubus.com.br/app/accounts/1/conversations/${n}`;
+    expect(cw.recordChatwootTicket(db, ctx, card, { conversationId: 2407, link: link(2407), data, saveContactEmail: true }).contactEmailSaved).toBe(true);
+    expect(cw.chatwootContext(db, card).data).toMatchObject({ email_cliente: "escola.15342@educacao.mg.gov.br", usuario: "escola.15342@educacao.mg.gov.br" });
+    // Já tem e-mail: fica o do cadastro.
+    const r = cw.recordChatwootTicket(db, ctx, card, { conversationId: 2408, link: link(2408), data: { ...data, email_cliente: "outro@x.com" }, saveContactEmail: true });
+    expect(r.contactEmailSaved).toBe(false);
+    expect(cw.chatwootContext(db, card).data.email_cliente).toBe("escola.15342@educacao.mg.gov.br");
+  });
+
   it("memorando opcional vai no fim da nota privada e no histórico do cartão", async () => {
     const { db, ctx, card } = await setup();
     const data = cw.chatwootContext(db, card).data;
