@@ -136,6 +136,11 @@ export interface RadarSyncResult {
   parecidos: RadarParecido[];
   /** Cartões fechados pelo Radar antes da 0.2.160 que voltaram para Pendente. */
   convertidos: number;
+  /** Quantos ficaram de fora, por motivo. */
+  fora: Partial<Record<RadarMotivo, number>>;
+  /** Quantos o Radar mandou e quantos já tinham cartão. */
+  recebidos: number;
+  comCartao: number;
 }
 
 export function radarEstado(o: Pick<RadarOportunidade, "statusPortal">): RadarEstado {
@@ -162,18 +167,35 @@ export function radarTemTermo(o: Pick<RadarOportunidade, "termos">, termos: stri
   return o.termos.some((t) => quer.includes(semAcento(t)));
 }
 
-/** Pode virar cartão novo, conforme as configurações (o que já tem cartão segue sempre). */
-export function radarElegivel(o: RadarOportunidade, cfg: RadarSyncConfig): boolean {
-  if (o.situacao === "descartada") return false;
-  if (o.arquivado && !o.statusPortal) return false;
-  if (!radarTemTermo(o, cfg.termos)) return false;
-  if (cfg.inicio === "historico") return true;
+/** Por que um orçamento ficou de fora (para a tela de configurações). */
+export type RadarMotivo = "descartada" | "arquivada" | "termos" | "inicio" | "excluido" | "parecido" | "ignorado";
+export const RADAR_MOTIVO_TEXTO: Record<RadarMotivo, string> = {
+  descartada: "descartado(s) no Radar",
+  arquivada: "arquivado(s) no Radar sem proposta enviada",
+  termos: "sem as palavras-chave marcadas",
+  inicio: "anteriores ao ponto de partida escolhido",
+  excluido: "com cartão excluído no CRM",
+  parecido: "aguardando a sua confirmação (cartão parecido)",
+  ignorado: "marcado(s) como Não criar",
+};
+
+/** Motivo para não virar cartão novo, ou null se pode (o que já tem cartão segue sempre). */
+export function radarMotivoFora(o: RadarOportunidade, cfg: RadarSyncConfig): RadarMotivo | null {
+  if (o.situacao === "descartada") return "descartada";
+  if (o.arquivado && !o.statusPortal) return "arquivada";
+  if (!radarTemTermo(o, cfg.termos)) return "termos";
+  if (cfg.inicio === "historico") return null;
   const nova = !!o.encontradoEm && new Date(o.encontradoEm).getTime() >= new Date(cfg.ativadoEm).getTime();
-  if (nova) return true;
-  if (cfg.inicio === "novas") return false;
+  if (nova) return null;
+  if (cfg.inicio === "novas") return "inicio";
   // "abertas": ainda no prazo na listagem do portal, ou proposta enviada aguardando resultado.
   const noPrazo = !o.foraDaListagem && (!o.prazoEnvio || new Date(o.prazoEnvio).getTime() > Date.now());
-  return noPrazo || o.statusPortal === "ENVI";
+  return noPrazo || o.statusPortal === "ENVI" ? null : "inicio";
+}
+
+/** Pode virar cartão novo, conforme as configurações. */
+export function radarElegivel(o: RadarOportunidade, cfg: RadarSyncConfig): boolean {
+  return radarMotivoFora(o, cfg) === null;
 }
 
 const moeda = (v: number | null | undefined) =>
@@ -477,7 +499,11 @@ export function radarConverterFechados(db: DatabaseSync, ctx: DbContext): number
 
 /** Cria ou atualiza os cartões. Repetir a mesma lista não muda nada. */
 export function syncRadar(db: DatabaseSync, ctx: DbContext, cfg: RadarSyncConfig, lista: RadarOportunidade[]): RadarSyncResult {
-  const out: RadarSyncResult = { created: 0, updated: 0, skipped: 0, items: [], errors: [], parecidos: [], convertidos: 0 };
+  const out: RadarSyncResult = { created: 0, updated: 0, skipped: 0, items: [], errors: [], parecidos: [], convertidos: 0, fora: {}, recebidos: lista.length, comCartao: 0 };
+  const fora = (m: RadarMotivo) => {
+    out.skipped++;
+    out.fora[m] = (out.fora[m] ?? 0) + 1;
+  };
   if (!one(db, "SELECT 1 FROM pipeline WHERE id = ? AND deleted_at IS NULL AND archived_at IS NULL", cfg.pipelineId))
     throw new Error("O funil escolhido para o Radar não existe mais ou está arquivado. Escolha outro em Configurações → Integrações → Radar.");
   out.convertidos = radarConverterFechados(db, ctx);
@@ -491,7 +517,7 @@ export function syncRadar(db: DatabaseSync, ctx: DbContext, cfg: RadarSyncConfig
           // "Todo o histórico": cartão de nome parecido que não veio do Radar → pergunta antes.
           const dec = cfg.decisoes?.[extId];
           if (dec === "ignorar") {
-            out.skipped++;
+            fora("ignorado");
             return;
           }
           if (dec?.startsWith("usar:")) {
@@ -504,14 +530,15 @@ export function syncRadar(db: DatabaseSync, ctx: DbContext, cfg: RadarSyncConfig
             const cartoes = radarCartoesParecidos(db, o);
             if (cartoes.length) {
               out.parecidos.push({ id: o.id, pedido: o.pedido, escola: o.escola, municipio: o.municipio, cartoes });
-              out.skipped++;
+              fora("parecido");
               return;
             }
           }
         }
         if (!r) {
-          if (!radarElegivel(o, cfg)) {
-            out.skipped++;
+          const motivo = radarMotivoFora(o, cfg);
+          if (motivo) {
+            fora(motivo);
             return;
           }
           const orgId = organizacaoDaEscola(db, ctx, o);
@@ -552,9 +579,10 @@ ${o.link}` : ""}`,
         }
         // Já tem cartão: só avança.
         if (!one(db, "SELECT 1 FROM deal WHERE id = ? AND deleted_at IS NULL", r.local_id)) {
-          out.skipped++; // excluído no CRM: não volta
+          fora("excluido"); // excluído no CRM: não volta
           return;
         }
+        out.comCartao++;
         let antes: RadarAplicado;
         try {
           antes = JSON.parse(r.source_updated_at ?? "") as RadarAplicado;

@@ -22,7 +22,7 @@ export interface RadarSettings {
   ativadoEm: string | null;
   lastSyncAt: string | null;
   lastError: string | null;
-  lastResult: Pick<RadarSyncResult, "created" | "updated" | "skipped"> & { errors: number } | null;
+  lastResult: (Pick<RadarSyncResult, "created" | "updated" | "skipped"> & { errors: number } & Partial<Pick<RadarSyncResult, "fora" | "recebidos" | "comCartao">>) | null;
   /** Do último contato com o Radar. */
   radarVersao: string | null;
   termosRadar: string[];

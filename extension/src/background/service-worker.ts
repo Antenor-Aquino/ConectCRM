@@ -504,7 +504,7 @@ async function syncRadarBg(userId: string | null, force = false): Promise<RadarS
       ...(await loadRadar()),
       lastSyncAt: new Date().toISOString(),
       lastError: r.errors.length ? `${r.errors.length} orçamento(s) não entraram: ${r.errors[0]!.error}` : null,
-      lastResult: { created: r.created, updated: r.updated, skipped: r.skipped, errors: r.errors.length },
+      lastResult: { created: r.created, updated: r.updated, skipped: r.skipped, errors: r.errors.length, fora: r.fora, recebidos: r.recebidos, comCartao: r.comCartao },
       radarVersao: dados.radar.versao,
       termosRadar: dados.radar.termos,
       parecidos: r.parecidos,

@@ -8,7 +8,7 @@ import { call } from "../../rpc/client";
 import { errorText } from "../../lib/errors";
 import { formatDateTime } from "../../lib/format";
 import { fetchRadar, loadRadar, radarBaseUrl, requestRadarPermission, saveRadar, type RadarSettings } from "../../lib/radar";
-import type { RadarDecisao } from "../../db/radar";
+import { RADAR_MOTIVO_TEXTO, type RadarDecisao, type RadarMotivo } from "../../db/radar";
 import type { RadarInicio, RadarSyncResult } from "../../db/radar";
 import { useSession } from "../session";
 import { Field } from "../ui/form";
@@ -209,6 +209,16 @@ export function RadarPanel() {
             {s.lastSyncAt && ` Última leitura: ${formatDateTime(s.lastSyncAt)}.`}
             {resumo && resumo.cartoes > 0 && ` ${resumo.cartoes} cartão(ões) vieram do Radar (${resumo.abertos} em aberto).`}
           </span>
+          {s.lastResult?.recebidos != null && (
+            <span className="w-full text-theme-xs text-gray-600 dark:text-gray-400" data-radar-resumo-leitura>
+              Na última leitura o Radar mandou {s.lastResult.recebidos} orçamento(s): {s.lastResult.comCartao ?? 0} já com cartão, {s.lastResult.created} novo(s)
+              {Object.entries(s.lastResult.fora ?? {}).length > 0 &&
+                `; ficaram de fora ${Object.entries(s.lastResult.fora ?? {})
+                  .map(([m, n]) => `${n} ${RADAR_MOTIVO_TEXTO[m as RadarMotivo]}`)
+                  .join(", ")}`}
+              .
+            </span>
+          )}
           {s.lastError && <span className="w-full rounded-lg bg-error-50 px-3 py-2 text-theme-xs text-error-700">Última tentativa: {s.lastError}</span>}
         </div>
 

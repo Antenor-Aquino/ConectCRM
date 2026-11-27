@@ -163,6 +163,9 @@ describe("Radar Caixa Escolar MG", () => {
     expect(await ids("novas")).toEqual([7]);
     expect(await ids("abertas")).toEqual([4, 6, 7]);
     expect(await ids("historico")).toEqual([4, 5, 6, 7]);
+    const { db, ctx, cfg } = await setup({ inicio: "novas", termos: ["Grade Horaria"] });
+    const r = syncRadar(db, ctx, cfg, lista);
+    expect(r).toMatchObject({ recebidos: 7, created: 1, fora: { termos: 1, descartada: 1, arquivada: 1, inicio: 3 } });
   });
 
   it("histórico: encerrado entra já Pendente; funil inexistente dá erro claro", async () => {

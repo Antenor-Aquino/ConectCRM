@@ -1,4 +1,4 @@
-# 25 — Integração com o Radar Caixa Escolar MG (0.2.157; notas, campos e etiquetas na 0.2.158; nota do resultado na 0.2.159; Pendente na 0.2.160; parecidos e conversão na 0.2.161)
+# 25 — Integração com o Radar Caixa Escolar MG (0.2.157; notas, campos e etiquetas na 0.2.158; nota do resultado na 0.2.159; Pendente na 0.2.160; parecidos e conversão na 0.2.161; motivos na 0.2.162)
 
 ## Objetivo
 O **Radar Caixa Escolar MG** é um robô local (Python, repositório
@@ -39,7 +39,7 @@ até o resultado, sem digitar nada.
   surgirem daqui para frente, ou todo o histórico (os encerrados entram já
   ganhos ou perdidos). "Surgir" = o Radar analisou o orçamento depois da data
   em que a integração foi ligada (`ativadoEm`).
-- **Ligar/Desligar integração**, **Sincronizar agora**, última leitura, erro da
+- **Ligar/Desligar integração**, **Sincronizar agora**, última leitura (0.2.162: quantos o Radar mandou, quantos já tinham cartão, quantos novos e, por motivo, quantos ficaram de fora), erro da
   última tentativa e quantos cartões vieram do Radar.
 - Tudo fica em `chrome.storage.local` (`conectcrm-radar`) e vai no arquivo de
   configurações do backup (não há senha).
