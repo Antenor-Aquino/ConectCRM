@@ -41,10 +41,16 @@ export const CARD_TEXT: Record<
 
 /** Desfecho do cartão por tipo de funil. No banco é sempre won/lost; só os
  * termos mudam: Ganho/Perdido (comercial), Resolvido/Não resolvido
- * (operacional), Concluído/Não concluído (projeto). Verde e vermelho em todos. */
+ * (operacional), Concluído/Não concluído (projeto). Verde e vermelho em todos.
+ * "Pendente" (amarelo) é igual nos três: aguarda a avaliação do usuário para o
+ * desfecho final e não conta como fechado. */
 export interface OutcomeText {
   won: string;
   lost: string;
+  pending: string;
+  pendingPlural: string;
+  markPending: string;
+  markedPending: string;
   wonPlural: string;
   lostPlural: string;
   /** "Marcar como perdido" / "Marcar como não resolvido"... */
@@ -63,6 +69,10 @@ export interface OutcomeText {
 export const OUTCOME_TEXT: Record<PipelineType, OutcomeText> = {
   comercial: {
     won: "Ganho",
+    pending: "Pendente",
+    pendingPlural: "Pendentes",
+    markPending: "Marcar como pendente",
+    markedPending: "Marcou como pendente",
     lost: "Perdido",
     wonPlural: "Ganhos",
     lostPlural: "Perdidos",
@@ -77,6 +87,10 @@ export const OUTCOME_TEXT: Record<PipelineType, OutcomeText> = {
   },
   operacional: {
     won: "Resolvido",
+    pending: "Pendente",
+    pendingPlural: "Pendentes",
+    markPending: "Marcar como pendente",
+    markedPending: "Marcou como pendente",
     lost: "Não resolvido",
     wonPlural: "Resolvidos",
     lostPlural: "Não resolvidos",
@@ -91,6 +105,10 @@ export const OUTCOME_TEXT: Record<PipelineType, OutcomeText> = {
   },
   projeto: {
     won: "Concluído",
+    pending: "Pendente",
+    pendingPlural: "Pendentes",
+    markPending: "Marcar como pendente",
+    markedPending: "Marcou como pendente",
     lost: "Não concluído",
     wonPlural: "Concluídos",
     lostPlural: "Não concluídos",
@@ -107,7 +125,7 @@ export const OUTCOME_TEXT: Record<PipelineType, OutcomeText> = {
 
 export const PIPELINE_TYPE_BY_KIND: Record<DealKind, PipelineType> = { deal: "comercial", ticket: "operacional", project: "projeto" };
 
-/** Termo do status de um cartão ("Ganho", "Resolvido", "Não concluído"...); null se aberto. */
-export function outcomeLabel(type: PipelineType, status: "open" | "won" | "lost"): string | null {
+/** Termo do status de um cartão ("Ganho", "Resolvido", "Pendente"...); null se aberto. */
+export function outcomeLabel(type: PipelineType, status: "open" | "pending" | "won" | "lost"): string | null {
   return status === "open" ? null : OUTCOME_TEXT[type][status];
 }

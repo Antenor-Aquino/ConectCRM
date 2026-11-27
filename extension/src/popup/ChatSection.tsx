@@ -225,7 +225,7 @@ export function ChatSection({
                           {KIND[c.kind]} · {c.pipeline_name} › {c.stage_name}
                         </span>
                       </span>
-                      {c.status !== "open" && <TaBadge color={c.status === "won" ? "green" : "red"} label={OUTCOME_TEXT[PIPELINE_TYPE_BY_KIND[c.kind]][c.status]} />}
+                      {c.status !== "open" && <TaBadge color={c.status === "won" ? "green" : c.status === "pending" ? "amber" : "red"} label={OUTCOME_TEXT[PIPELINE_TYPE_BY_KIND[c.kind]][c.status]} />}
                       {c.kind === "deal" && c.value_cents > 0 && <span className="text-gray-600">{formatCents(c.value_cents)}</span>}
                     </button>
                   </li>

@@ -61,7 +61,7 @@ function findDeal(db: DatabaseSync, dealId: string | null, personId: string | nu
   const open = many<{ id: string }>(
     db,
     `SELECT DISTINCT d.id FROM deal d LEFT JOIN deal_participant dp ON dp.deal_id = d.id AND dp.deleted_at IS NULL
-     WHERE d.deleted_at IS NULL AND d.archived_at IS NULL AND d.status = 'open' AND (d.person_id = ? OR dp.person_id = ?)`,
+     WHERE d.deleted_at IS NULL AND d.archived_at IS NULL AND d.status IN ('open', 'pending') AND (d.person_id = ? OR dp.person_id = ?)`,
     personId,
     personId,
   );

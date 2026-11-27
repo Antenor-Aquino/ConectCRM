@@ -1,4 +1,4 @@
-# 25 — Integração com o Radar Caixa Escolar MG (0.2.157; notas, campos e etiquetas na 0.2.158; nota do resultado na 0.2.159)
+# 25 — Integração com o Radar Caixa Escolar MG (0.2.157; notas, campos e etiquetas na 0.2.158; nota do resultado na 0.2.159; Pendente na 0.2.160)
 
 ## Objetivo
 O **Radar Caixa Escolar MG** é um robô local (Python, repositório
@@ -32,7 +32,7 @@ até o resultado, sem digitar nada.
 - **Funil dos cartões** (só comerciais) e as etapas:
   - **orçamentos novos** (padrão: primeira etapa);
   - **ao enviar a proposta no portal** (vazio = não move);
-  - **ao aprovar no portal** (vazio = não move; o cartão fica Ganho onde estiver).
+  - **ao aprovar no portal** (vazio = não move; o cartão fica Pendente onde estiver).
 - **Palavras-chave que viram cartão**: as do Radar, com caixa de marcar
   (nenhuma = todas). Ignora caixa e acento.
 - **Ao ligar, trazer**: os abertos agora e os que surgirem (padrão), só os que
@@ -83,9 +83,10 @@ até o resultado, sem digitar nada.
 - **Só avança**: entrada → proposta enviada → resultado.
   - enviada: move para a etapa configurada e o valor passa a ser o da
     proposta;
-  - aprovada: etapa configurada + **Ganho**;
-  - recusada: **Perdido** com "Recusada no portal; vencedor X (R$ …)";
-  - cancelada: **Perdido** com "Cancelado no portal: <motivo>".
+  - aprovada: etapa configurada + **Pendente** (0.2.160; antes, Ganho);
+  - recusada ou cancelada: **Pendente** (0.2.160; antes, Perdido). O motivo
+    e o vencedor vão na nota "Resultado no portal";
+  - o desfecho final (ganho/perdido) é decisão do usuário (spec 26).
 - **Nota do resultado** (0.2.159): quando o status passa a aprovada,
   recusada ou cancelada, entra uma nota nova "Resultado no portal": o status
   (e "você venceu"), o motivo do cancelamento, sua posição, seu valor, o

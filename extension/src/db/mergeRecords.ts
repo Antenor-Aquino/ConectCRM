@@ -97,6 +97,7 @@ function display(db: DatabaseSync, entity: MergeEntity, g: FieldGroup, r: Row): 
       return `${name(db, "pipeline", "name", v("pipeline_id")) ?? "?"} › ${name(db, "stage", "name", v("stage_id")) ?? "?"}`;
     case "status": {
       const s = v("status");
+      if (s === "pending") return "Pendente";
       if (s === "won") return `Ganho${dmy(v("closed_at")) ? ` em ${dmy(v("closed_at"))}` : ""}`;
       if (s === "lost") return `Perdido${name(db, "loss_reason", "name", v("loss_reason_id")) ? ` (${name(db, "loss_reason", "name", v("loss_reason_id"))})` : ""}`;
       return "Aberto";

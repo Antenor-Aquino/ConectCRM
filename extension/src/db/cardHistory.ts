@@ -126,7 +126,7 @@ export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
   const kind = many<{ kind: DealKind }>(db, "SELECT kind FROM deal WHERE id = ?", cardId)[0]?.kind ?? "deal";
   const outcome = OUTCOME_TEXT[PIPELINE_TYPE_BY_KIND[kind]];
   const dealFields = { ...DEAL_FIELDS, loss_reason_id: outcome.lossReason, loss_note: outcome.lossNote };
-  const statusName: Record<string, string> = { open: "aberto", won: outcome.won.toLowerCase(), lost: outcome.lost.toLowerCase() };
+  const statusName: Record<string, string> = { open: "aberto", pending: outcome.pending.toLowerCase(), won: outcome.won.toLowerCase(), lost: outcome.lost.toLowerCase() };
   const users = lookup(db, "app_user");
   const stages = lookup(db, "stage");
   const persons = lookup(db, "person");
@@ -221,7 +221,7 @@ export function cardHistory(db: DatabaseSync, cardId: string): HistoryEvent[] {
       if (ch.archived_at) out.push(ch.archived_at[1] ? "Arquivou o cartão" : "Desarquivou o cartão");
       if (ch.status) {
         const [a, b] = ch.status as [string, string];
-        out.push(b === "won" ? outcome.markedWon : b === "lost" ? outcome.markedLost : `Reabriu (estava ${statusName[a] ?? a})`);
+        out.push(b === "won" ? outcome.markedWon : b === "lost" ? outcome.markedLost : b === "pending" ? outcome.markedPending : `Reabriu (estava ${statusName[a] ?? a})`);
       }
       out.push(...fieldChanges(ch, dealFields, fmtDeal, ch.pipeline_id ? new Set([...DEAL_SKIP, "pipeline_id"]) : DEAL_SKIP));
       return out;

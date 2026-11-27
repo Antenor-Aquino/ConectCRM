@@ -9,8 +9,10 @@
 //   - organization: external_id = "inep:<INEP>" ou "email:<e-mail>" da escola.
 // O prazo de envio da proposta vira a atividade "Enviar proposta no portal"
 // (lembrete 1 dia antes), concluída sozinha quando a proposta aparece enviada.
-// Regras: o cartão só avança (entrada → proposta enviada → resultado); se o
-// usuário já ganhou/perdeu o cartão à mão, o Radar não mexe no status; cartão
+// Regras: o cartão só avança (entrada → proposta enviada → resultado). Com o
+// resultado no portal (aprovada, recusada ou cancelada) o cartão fica
+// "Pendente": o desfecho final (ganho/perdido) é decisão do usuário. Se o
+// usuário já fechou o cartão à mão, o Radar não mexe no status; cartão
 // excluído no CRM não volta.
 import { createActivity, updateActivity } from "./activities";
 import { createOrganization, findOrganizationByCnpj } from "./contacts";
@@ -369,21 +371,15 @@ function stageDoFunil(db: DatabaseSync, pipelineId: string, stageId: string | nu
   return listStages(db, pipelineId).some((s) => s.id === stageId) ? stageId : null;
 }
 
-function motivoPerda(o: RadarOportunidade, e: RadarEstado): string {
-  if (e === "cancelada") return `Cancelado no portal${o.motivoCancelamento ? `: ${o.motivoCancelamento}` : " (motivo não informado)"}.`;
-  const a = o.apuracao;
-  return `Recusada no portal${a?.vencedor ? `; vencedor ${a.vencedor} (${moeda(a.valorVencedor)})` : ""}.`;
-}
-
-/** Leva o cartão ao estado novo: etapa (se configurada) e ganho/perdido. Não mexe em cartão já fechado à mão. */
+/** Leva o cartão ao estado novo: etapa (se configurada) e, com o resultado no portal, Pendente
+ * (o usuário avalia e define ganho/perdido). Não mexe em cartão já fechado à mão. */
 function aplicarEstado(db: DatabaseSync, ctx: DbContext, cfg: RadarSyncConfig, dealId: string, o: RadarOportunidade, e: RadarEstado): void {
   const card = getCardRow(db, dealId);
   if (!card || card.status !== "open") return;
   const alvo =
     e === "enviada" ? stageDoFunil(db, cfg.pipelineId, cfg.stageEnviada) : e === "ganha" ? stageDoFunil(db, cfg.pipelineId, cfg.stageGanha) : null;
   if (alvo && card.pipeline_id === cfg.pipelineId && card.stage_id !== alvo) moveCard(db, ctx, dealId, { stageId: alvo });
-  if (e === "ganha") setCardStatus(db, ctx, dealId, { status: "won" });
-  if (e === "perdida" || e === "cancelada") setCardStatus(db, ctx, dealId, { status: "lost", lossNote: motivoPerda(o, e) });
+  if (RESULTADO[e]) setCardStatus(db, ctx, dealId, { status: "pending" });
 }
 
 const ITEM_KIND: Record<RadarEstado, RadarSyncItem["kind"] | null> = { entrada: null, enviada: "sent", ganha: "won", perdida: "lost", cancelada: "canceled" };
@@ -503,7 +499,7 @@ ${o.link}` : ""}`,
 export function radarResumo(db: DatabaseSync): { cartoes: number; abertos: number } {
   const r = one<{ n: number; abertos: number }>(
     db,
-    `SELECT COUNT(*) AS n, SUM(CASE WHEN d.status = 'open' THEN 1 ELSE 0 END) AS abertos
+    `SELECT COUNT(*) AS n, SUM(CASE WHEN d.status IN ('open', 'pending') THEN 1 ELSE 0 END) AS abertos
      FROM external_ref x JOIN deal d ON d.id = x.local_id AND d.deleted_at IS NULL
      WHERE x.provider = ? AND x.entity_type = 'deal' AND x.deleted_at IS NULL`,
     RADAR_PROVIDER,

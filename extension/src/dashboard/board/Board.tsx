@@ -46,9 +46,9 @@ const SORT_LABEL: Record<BoardSort, string> = {
   manual: "Ordem manual",
   value: "Maior valor",
   title: "Nome (A–Z)",
-  status: "Abertos, ganhos e perdidos (A–Z)",
+  status: "Abertos, pendentes, ganhos e perdidos (A–Z)",
 };
-const STATUS_LABEL: Record<BoardStatusFilter, string> = { open: "Abertos", won: "Ganhos", lost: "Perdidos", all: "Todos", archived: "Arquivados" };
+const STATUS_LABEL: Record<BoardStatusFilter, string> = { open: "Abertos", pending: "Pendentes", won: "Ganhos", lost: "Perdidos", all: "Todos", archived: "Arquivados" };
 /** Status do filtro com os termos do tipo de funil (Ganhos / Resolvidos / Concluídos...). */
 const statusLabels = (type: PipelineType): Record<BoardStatusFilter, string> => ({
   ...STATUS_LABEL,
@@ -608,7 +608,7 @@ export function Board({
             </button>
           )}
           <Menu value={view} labels={VIEW_LABEL} onChange={setView} />
-          <Menu value={sort} labels={{ ...SORT_LABEL, status: `Abertos, ${OUTCOME_TEXT[pipeline.type].wonPlural.toLowerCase()} e ${OUTCOME_TEXT[pipeline.type].lostPlural.toLowerCase()} (A–Z)` }} onChange={setSort} />
+          <Menu value={sort} labels={{ ...SORT_LABEL, status: `Abertos, pendentes, ${OUTCOME_TEXT[pipeline.type].wonPlural.toLowerCase()} e ${OUTCOME_TEXT[pipeline.type].lostPlural.toLowerCase()} (A–Z)` }} onChange={setSort} />
         </div>
       </div>
 

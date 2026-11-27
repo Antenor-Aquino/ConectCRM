@@ -123,8 +123,8 @@ export function RadarPanel() {
       <div className="space-y-5 text-theme-sm" data-radar-panel>
         <div className="rounded-lg bg-gray-50 px-3 py-2 text-theme-xs text-gray-600 dark:bg-white/5 dark:text-gray-400">
           O Radar precisa estar ligado neste computador (versão 1.16 ou mais nova). O ConectCRM só <b>lê</b> os orçamentos dele: nada é alterado no Radar nem
-          no portal. Cada orçamento vira um cartão uma vez só; depois o cartão só avança (proposta enviada → aprovada ou recusada/cancelada) e, se você já
-          ganhou ou perdeu o cartão à mão, o Radar não mexe.
+          no portal. Cada orçamento vira um cartão uma vez só; depois o cartão só avança (proposta enviada → resultado no portal, quando fica Pendente para a
+          sua avaliação) e, se você já ganhou ou perdeu o cartão à mão, o Radar não mexe.
         </div>
 
         <div className="flex items-end gap-2">
@@ -153,7 +153,7 @@ export function RadarPanel() {
           </Field>
           {stageSelect("Etapa dos orçamentos novos", "stageEntrada", "Primeira etapa do funil")}
           {stageSelect("Ao enviar a proposta no portal", "stageEnviada", "Não mover")}
-          {stageSelect("Ao aprovar no portal", "stageGanha", "Não mover", "O cartão fica Ganho; recusado ou cancelado fica Perdido, com o motivo.")}
+          {stageSelect("Ao aprovar no portal", "stageGanha", "Não mover", "Aprovada, recusada ou cancelada no portal: o cartão fica Pendente (amarelo) e você decide se foi ganho ou perdido.")}
         </div>
 
         <div className="space-y-2">

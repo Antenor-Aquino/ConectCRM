@@ -95,7 +95,7 @@ export function TargetSection({
             <div className="min-w-0 flex-1">
               <p className="flex items-center gap-1.5 text-theme-sm font-semibold text-gray-800 dark:text-white/90">
                 <span className="truncate">{card.title}</span>
-                {card.status !== "open" && <TaBadge color={card.status === "won" ? "green" : "red"} label={OUTCOME_TEXT[PIPELINE_TYPE_BY_KIND[card.kind]][card.status]} />}
+                {card.status !== "open" && <TaBadge color={card.status === "won" ? "green" : card.status === "pending" ? "amber" : "red"} label={OUTCOME_TEXT[PIPELINE_TYPE_BY_KIND[card.kind]][card.status]} />}
               </p>
               <p className="truncate text-theme-xs text-gray-500">
                 {KIND[card.kind]} · {pipelineName} › {stageName}

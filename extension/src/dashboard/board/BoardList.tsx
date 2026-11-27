@@ -212,6 +212,7 @@ export function BoardList({
                         "truncate font-medium",
                         r.status === "open" && "text-brand-600 dark:text-brand-400",
                         r.status === "won" && "text-success-700 dark:text-success-400",
+                        r.status === "pending" && "text-yellow-800 dark:text-yellow-300",
                         r.status === "lost" && "text-error-700 dark:text-error-400",
                       )}
                       title={r.title}
@@ -223,7 +224,7 @@ export function BoardList({
                       <span
                         className={cn(
                           "shrink-0 rounded-full px-1.5 py-px text-[10px] font-medium",
-                          r.status === "won" ? "bg-success-50 text-success-700" : "bg-error-50 text-error-700",
+                          r.status === "won" ? "bg-success-50 text-success-700" : r.status === "pending" ? "bg-yellow-100 text-yellow-800" : "bg-error-50 text-error-700",
                         )}
                       >
                         {outcome[r.status]}

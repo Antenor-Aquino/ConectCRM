@@ -29,7 +29,7 @@ import {
   Trash2,
   Trophy,
   X,
-  XCircle, Repeat, ListTodo, GitMerge, CalendarDays, Receipt, CreditCard, MessageSquare } from "lucide-react";
+  XCircle, Repeat, ListTodo, GitMerge, Hourglass, CalendarDays, Receipt, CreditCard, MessageSquare } from "lucide-react";
 import { openUnifiedAgenda } from "../../lib/unifiedAgenda";
 import { CalendlyLinkButton } from "./CalendlyLinkButton";
 import { MergeDialog } from "../ui/MergeDialog";
@@ -263,7 +263,10 @@ function CardDetailInner({
   }
 
   const outcome = OUTCOME_TEXT[pipeline.type];
-  const status = card.status === "open" ? null : { color: card.status === "won" ? ("green" as const) : ("red" as const), label: outcome[card.status] };
+  const status =
+    card.status === "open"
+      ? null
+      : { color: card.status === "won" ? ("green" as const) : card.status === "pending" ? ("amber" as const) : ("red" as const), label: outcome[card.status] };
   const primaryContact = card.contacts.find((c) => c.is_primary);
   // Telefone e e-mail do contato principal, embaixo do nome.
   const person: ComboItem | null = card.person_id
@@ -645,7 +648,7 @@ function CardDetailInner({
       </div>
 
       <div className="mb-4 flex flex-wrap gap-2">
-        {card.status === "open" ? (
+        {card.status === "open" || card.status === "pending" ? (
           <>
             <TaButton
               className="!bg-success-600 !text-white !ring-0 hover:!bg-success-700"
@@ -664,6 +667,21 @@ function CardDetailInner({
             <TaButton variant="danger" startIcon={<XCircle size={15} />} onClick={() => setLostOpen(true)}>
               {outcome.lost}
             </TaButton>
+            {card.status === "open" ? (
+              <TaButton
+                className="!bg-yellow-400 !text-yellow-950 !ring-0 hover:!bg-yellow-500"
+                startIcon={<Hourglass size={15} />}
+                title="Aguardando a sua avaliação para o desfecho final"
+                data-card-pending
+                onClick={() => void run(() => call("cards.setStatus", { id: cardId, status: "pending" }))}
+              >
+                {outcome.pending}
+              </TaButton>
+            ) : (
+              <TaButton startIcon={<RotateCcw size={15} />} onClick={() => void run(() => call("cards.setStatus", { id: cardId, status: "open" }))}>
+                Reabrir
+              </TaButton>
+            )}
           </>
         ) : (
           <TaButton startIcon={<RotateCcw size={15} />} onClick={() => void run(() => call("cards.setStatus", { id: cardId, status: "open" }))}>
@@ -729,19 +747,24 @@ function CardDetailInner({
         <div
           className={cn(
             "mb-4 flex items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-theme-sm",
-            card.status === "won" ? "border-success-200 bg-success-50 text-success-800" : "border-error-200 bg-error-50 text-error-800",
+            card.status === "won"
+              ? "border-success-200 bg-success-50 text-success-800"
+              : card.status === "pending"
+                ? "border-yellow-300 bg-yellow-50 text-yellow-900 dark:border-yellow-500/40 dark:bg-yellow-500/10 dark:text-yellow-200"
+                : "border-error-200 bg-error-50 text-error-800",
           )}
         >
           <span
             className={cn(
               "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white",
-              card.status === "won" ? "bg-success-500" : "bg-error-500",
+              card.status === "won" ? "bg-success-500" : card.status === "pending" ? "bg-yellow-400" : "bg-error-500",
             )}
           >
-            {card.status === "won" ? <Check size={13} strokeWidth={3} /> : <X size={13} strokeWidth={3} />}
+            {card.status === "won" ? <Check size={13} strokeWidth={3} /> : card.status === "pending" ? <Hourglass size={12} strokeWidth={2.5} /> : <X size={13} strokeWidth={3} />}
           </span>
           <span>
             <b>{outcome[card.status]}</b>
+            {card.status === "pending" && ": aguardando a sua avaliação para definir o desfecho final."}
             {card.closed_at && ` em ${formatDateTime(card.closed_at)}`}
             {card.status === "lost" && card.loss_reason_name && (
               <span className="block">

@@ -190,7 +190,7 @@ export const methods = {
     const scope = deals.cardScope(db, viewer(db, ctx));
     const card = one<{ id: string; title: string }>(
       db,
-      `SELECT d.id, d.title FROM deal d WHERE d.pipeline_id = ? AND d.deleted_at IS NULL${scope.sql} ORDER BY d.status = 'open' DESC, d.updated_at DESC LIMIT 1`,
+      `SELECT d.id, d.title FROM deal d WHERE d.pipeline_id = ? AND d.deleted_at IS NULL${scope.sql} ORDER BY d.status IN ('open', 'pending') DESC, d.updated_at DESC LIMIT 1`,
       p.pipelineId,
       ...scope.params,
     );

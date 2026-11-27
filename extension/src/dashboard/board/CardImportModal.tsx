@@ -43,7 +43,8 @@ interface Target {
 }
 
 const STATUS_ALIASES: Record<DealStatus, string[]> = {
-  open: ["aberto", "aberta", "em aberto", "em andamento", "andamento", "ativo", "open", "pendente", "novo"],
+  open: ["aberto", "aberta", "em aberto", "em andamento", "andamento", "ativo", "open", "novo"],
+  pending: ["pendente", "pending", "aguardando avaliação", "aguardando avaliacao", "em avaliação", "em avaliacao"],
   won: ["ganho", "ganha", "vendido", "fechado", "won", "resolvido", "concluido", "concluída", "finalizado", "sucesso"],
   lost: ["perdido", "perdida", "lost", "cancelado", "não resolvido", "nao resolvido", "não concluído", "nao concluido", "recusado"],
 };

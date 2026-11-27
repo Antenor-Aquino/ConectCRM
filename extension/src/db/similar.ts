@@ -96,7 +96,7 @@ export function similarCards(
     p.kind,
     ...scope.params,
   );
-  const STATUS = { open: "Em aberto", won: "Encerrado", lost: "Encerrado" } as const;
+  const STATUS = { open: "Em aberto", pending: "Pendente", won: "Encerrado", lost: "Encerrado" } as const;
   const out: SimilarCard[] = [];
   for (const r of rows) {
     const score = p.title.trim() ? nameSimilarity(p.title, r.name) : 0;

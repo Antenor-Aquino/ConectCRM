@@ -23,7 +23,7 @@ const DAY = 86_400_000;
 const MAX_ROWS = 30;
 const KIND = { deal: "negócio", ticket: "ticket", project: "etapa de projeto" } as const;
 /** Situação com o termo do tipo: ganho/perdido, resolvido/não resolvido, concluído/não concluído. */
-const statusText = (kind: DealKind, status: "open" | "won" | "lost") => (status === "open" ? "aberto" : OUTCOME_TEXT[PIPELINE_TYPE_BY_KIND[kind]][status].toLowerCase());
+const statusText = (kind: DealKind, status: "open" | "pending" | "won" | "lost") => (status === "open" ? "aberto" : OUTCOME_TEXT[PIPELINE_TYPE_BY_KIND[kind]][status].toLowerCase());
 
 const days = (iso: string | null, now: Date) => (iso ? Math.max(0, Math.floor((now.getTime() - new Date(iso).getTime()) / DAY)) : null);
 const date = (iso: string | null) => (iso ? formatDateTime(iso) : null);
@@ -60,7 +60,7 @@ const isErr = (r: Resolved | null): r is { erro: string; opcoes: string[] } => !
 
 export interface CardSearch {
   texto?: string;
-  status?: "open" | "won" | "lost" | "all";
+  status?: "open" | "pending" | "won" | "lost" | "all";
   funil?: string;
   responsavel?: string;
   limite?: number;
@@ -104,7 +104,7 @@ export function searchCardsForCopilot(db: DatabaseSync, viewer: Viewer | null, f
      LEFT JOIN person pe ON pe.id = d.person_id LEFT JOIN organization o ON o.id = d.organization_id
      LEFT JOIN app_user u ON u.id = d.owner_id
      WHERE ${where.join(" AND ")}${scope.sql}
-     ORDER BY d.status = 'open' DESC, d.value_cents DESC, d.updated_at DESC`,
+     ORDER BY d.status IN ('open', 'pending') DESC, d.value_cents DESC, d.updated_at DESC`,
     ...overdueParams(now),
     ...params,
     ...scope.params,
@@ -239,7 +239,7 @@ export function staleDeals(db: DatabaseSync, viewer: Viewer | null, f: { dias?: 
   if (isErr(pipe)) return pipe;
   const owner = resolveOwner(db, f.responsavel);
   if (isErr(owner)) return owner;
-  const where = ["d.deleted_at IS NULL", "d.status = 'open'"];
+  const where = ["d.deleted_at IS NULL", "d.status IN ('open', 'pending')"];
   const params: SqlValue[] = [];
   if (pipe) {
     where.push(`d.pipeline_id IN (${pipe.ids.map(() => "?").join(", ")})`);
@@ -371,7 +371,7 @@ export function contactsForCopilot(db: DatabaseSync, viewer: Viewer | null, text
     many<{ id: string; title: string; stage: string; value_cents: number }>(
       db,
       `SELECT d.id, d.title, s.name AS stage, d.value_cents FROM deal d JOIN stage s ON s.id = d.stage_id
-       WHERE d.${col} = ? AND d.deleted_at IS NULL AND d.status = 'open'${scope.sql} ORDER BY d.updated_at DESC LIMIT 10`,
+       WHERE d.${col} = ? AND d.deleted_at IS NULL AND d.status IN ('open', 'pending')${scope.sql} ORDER BY d.updated_at DESC LIMIT 10`,
       id,
       ...scope.params,
     ).map((c) => ({ id: c.id, titulo: c.title, etapa: c.stage, valor: formatCents(c.value_cents) }));

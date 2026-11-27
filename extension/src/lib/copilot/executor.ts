@@ -12,7 +12,7 @@ export const rpcExecutor: ToolExecutor = async (name, a) => {
     case "buscar_cartoes":
       return call("copilot.searchCards", {
         texto: str(a.texto),
-        status: (["open", "won", "lost", "all"] as const).find((s) => s === a.status),
+        status: (["open", "pending", "won", "lost", "all"] as const).find((s) => s === a.status),
         funil: str(a.funil),
         responsavel: str(a.responsavel),
         limite: num(a.limite),

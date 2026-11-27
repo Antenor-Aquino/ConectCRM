@@ -94,7 +94,7 @@ describe("Radar Caixa Escolar MG", () => {
     expect(getCardRow(db, dealOf(401)!)!.organization_id).toBe(getCardRow(db, dealOf(402)!)!.organization_id);
   });
 
-  it("proposta enviada move para Proposta com o valor; aprovada vira Ganho em Ganhos MG; nunca volta", async () => {
+  it("proposta enviada move para Proposta com o valor; aprovada vai para Ganhos MG como Pendente; nunca volta", async () => {
     const { db, ctx, st, cfg, dealOf } = await setup();
     syncRadar(db, ctx, cfg, [op()]);
     const enviada = syncRadar(db, ctx, cfg, [op({ statusPortal: "ENVI", foraDaListagem: true, meuValor: 887 })]);
@@ -111,25 +111,27 @@ describe("Radar Caixa Escolar MG", () => {
     };
     syncRadar(db, ctx, cfg, [op({ statusPortal: "APRO", foraDaListagem: true, meuValor: 887, apuracao: mapa })]);
     card = getCardRow(db, dealOf(401)!)!;
-    expect(card).toMatchObject({ stage_id: st["Ganhos MG"], status: "won" });
+    expect(card).toMatchObject({ stage_id: st["Ganhos MG"], status: "pending", closed_at: null });
     const notas = listNotes(db, "deal", card.id).filter((n) => n.body.startsWith("Resultado no portal"));
     expect(notas).toHaveLength(1);
     expect(notas[0]!.body).toContain("você venceu");
     // De novo (ou um status "anterior" vindo atrasado): nada muda, nota não repete.
     expect(syncRadar(db, ctx, cfg, [op({ statusPortal: "ENVI", foraDaListagem: true, meuValor: 887, apuracao: mapa })])).toMatchObject({ updated: 0 });
-    expect(getCardRow(db, card.id)).toMatchObject({ stage_id: st["Ganhos MG"], status: "won" });
+    expect(getCardRow(db, card.id)).toMatchObject({ stage_id: st["Ganhos MG"], status: "pending" });
     expect(listNotes(db, "deal", card.id)).toHaveLength(4); // 3 do orçamento + mapa, sem repetir
   });
 
-  it("recusada e cancelada ficam Perdido com o motivo", async () => {
+  it("recusada e cancelada ficam Pendente, com o motivo na nota do resultado", async () => {
     const { db, ctx, cfg, dealOf } = await setup();
     syncRadar(db, ctx, cfg, [op(), op({ id: 402, pedido: "2026230002" })]);
     syncRadar(db, ctx, cfg, [
       op({ statusPortal: "RECU", foraDaListagem: true, apuracao: { total: 2, posicao: 2, meuValor: 900, vencedor: "CONCORRENTE X", valorVencedor: 850, venci: false, participantes: [] } }),
       op({ id: 402, pedido: "2026230002", statusPortal: "CANC", foraDaListagem: true, motivoCancelamento: "Escola desistiu da compra" }),
     ]);
-    expect(getCardRow(db, dealOf(401)!)).toMatchObject({ status: "lost", loss_note: expect.stringContaining("vencedor CONCORRENTE X") });
-    expect(getCardRow(db, dealOf(402)!)).toMatchObject({ status: "lost", loss_note: "Cancelado no portal: Escola desistiu da compra." });
+    expect(getCardRow(db, dealOf(401)!)).toMatchObject({ status: "pending", loss_note: null });
+    expect(getCardRow(db, dealOf(402)!)).toMatchObject({ status: "pending" });
+    expect(listNotes(db, "deal", dealOf(401)!).some((n) => n.body.includes("RECUSADA"))).toBe(true);
+    expect(listNotes(db, "deal", dealOf(402)!).some((n) => n.body.includes("Motivo: Escola desistiu da compra"))).toBe(true);
   });
 
   it("cartão fechado à mão não é alterado; cartão excluído não volta", async () => {
@@ -163,10 +165,10 @@ describe("Radar Caixa Escolar MG", () => {
     expect(await ids("historico")).toEqual([4, 5, 6, 7]);
   });
 
-  it("histórico: encerrado entra já fechado; funil inexistente dá erro claro", async () => {
+  it("histórico: encerrado entra já Pendente; funil inexistente dá erro claro", async () => {
     const { db, ctx, cfg, dealOf } = await setup({ inicio: "historico" });
     syncRadar(db, ctx, cfg, [op({ statusPortal: "APRO", foraDaListagem: true, meuValor: 500 })]);
-    expect(getCardRow(db, dealOf(401)!)).toMatchObject({ status: "won", value_cents: 50000 });
+    expect(getCardRow(db, dealOf(401)!)).toMatchObject({ status: "pending", value_cents: 50000 });
     expect(() => syncRadar(db, ctx, { ...cfg, pipelineId: "nao-existe" }, [op()])).toThrow(/funil/);
   });
 
