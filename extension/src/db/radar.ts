@@ -14,9 +14,11 @@
 // excluído no CRM não volta.
 import { createActivity, updateActivity } from "./activities";
 import { createOrganization, findOrganizationByCnpj } from "./contacts";
+import { getCustomValues, listCustomFields, setCustomValues, type CustomValue } from "./customFields";
 import { createCard, getCardRow, moveCard, setCardStatus, updateCard } from "./deals";
 import { addNote } from "./notes";
 import { listStages } from "./pipelines";
+import { createTag, getEntityTags, listTags, setEntityTags } from "./tags";
 import { insertRow, updateRow, type DbContext } from "./repo";
 import { one, withTransaction, type DatabaseSync } from "./sql";
 
@@ -38,7 +40,7 @@ export interface RadarOportunidade {
   censo?: { inep: string; nome?: string | null; turmas?: number | null; endereco?: string | null; telefone?: string | null } | null;
   termos: string[];
   iniciativa?: string | null;
-  itens: { descricao?: string | null; tipo?: string | null; quantidade?: string | null; unidade?: string | null }[];
+  itens: { descricao?: string | null; tipo?: string | null; quantidade?: string | null; unidade?: string | null; garantia?: string | null }[];
   valorEstimado?: number | null;
   prazoEnvio?: string | null;
   entrega?: string | null;
@@ -91,7 +93,13 @@ interface RadarAplicado {
   m?: boolean;
   /** Atividade "Enviar proposta no portal" criada pelo Radar. */
   a?: string | null;
+  /** Notas, campos (Processo SGD, Qtd Turmas) e etiquetas (MG, Pública) já aplicados. */
+  x?: number;
 }
+
+/** Versão do pacote "notas + campos + etiquetas"; cartões com x menor recebem uma vez. */
+const EXTRAS_VERSAO = 1;
+export const RADAR_TAGS = ["MG", "Pública"];
 
 export interface RadarSyncItem {
   kind: "created" | "sent" | "won" | "lost" | "canceled";
@@ -187,6 +195,85 @@ export function radarNotaMapa(o: RadarOportunidade): string | null {
   ];
   for (const p of a.participantes) l.push(`${p.posicao}º ${p.nome}${p.eu ? " (você)" : ""} — ${moeda(p.valor)}${p.vencedor ? " · vencedor" : ""}`);
   return l.join("\n");
+}
+
+const dataHora = (iso: string | null | undefined) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+};
+
+const limpo = (t: string | null | undefined) => (t ?? "").trim();
+
+/** Um texto por item; com mais de um item, numera. Vazio se nenhum item tem o campo. */
+function porItem(o: RadarOportunidade, campo: "descricao" | "garantia"): string {
+  const itens = o.itens.map((i, n) => ({ n: n + 1, tipo: limpo(i.tipo), texto: limpo(i[campo]) })).filter((i) => i.texto);
+  if (!itens.length) return "";
+  if (o.itens.length === 1) return itens[0]!.texto;
+  return itens.map((i) => `Item ${i.n}${i.tipo ? ` (${i.tipo})` : ""}: ${i.texto}`).join("\n\n");
+}
+
+/** As três notas do orçamento: descrição do processo, garantia exigida e contato/prazos. */
+export function radarNotas(o: RadarOportunidade): string[] {
+  const ped = o.pedido ?? String(o.id);
+  const notas: string[] = [];
+  const desc = porItem(o, "descricao");
+  if (desc) notas.push(`Descrição do processo (pedido ${ped}):\n${desc}`);
+  const gar = porItem(o, "garantia");
+  if (gar) notas.push(`Garantia exigida (pedido ${ped}):\n${gar}`);
+  const emails = (o.emailEscola ?? "").split(/[;,\s]+/).filter(Boolean);
+  notas.push(
+    [
+      `Contato e prazos (pedido ${ped}):`,
+      `E-mail da escola: ${emails.join("; ") || "não informado"}`,
+      `Envio da proposta: ${dataHora(o.prazoEnvio)}`,
+      `Entrega: ${dataHora(o.entrega)}`,
+    ].join("\n"),
+  );
+  return notas;
+}
+
+const chaveNome = (s: string) => semAcento(s).replace(/\s+/g, " ");
+
+/** Preenche Processo SGD e Qtd Turmas (campos do cartão achados pelo nome), sem apagar o que o usuário digitou. */
+function preencherCampos(db: DatabaseSync, ctx: DbContext, dealId: string, pipelineId: string, o: RadarOportunidade): void {
+  const campos = listCustomFields(db, "deal", { pipelineId });
+  const atuais = getCustomValues(db, dealId);
+  const valores: Record<string, CustomValue> = {};
+  const por = (nomes: string[]) => campos.find((f) => nomes.includes(chaveNome(f.name)));
+  const poe = (nomes: string[], v: string | number | null | undefined) => {
+    const f = por(nomes);
+    if (!f || v == null || v === "" || atuais[f.id] !== undefined) return;
+    if (f.field_type === "number") valores[f.id] = Number(v);
+    else if (["text", "textarea"].includes(f.field_type)) valores[f.id] = String(v);
+  };
+  poe(["processo sgd"], o.pedido);
+  poe(["qtd turmas", "qtd. turmas", "quantidade de turmas", "turmas"], o.censo?.turmas ?? null);
+  for (const [id, v] of Object.entries(valores)) {
+    try {
+      setCustomValues(db, ctx, "deal", dealId, { [id]: v }, { pipelineId });
+    } catch {
+      // Valor fora do formato do campo: fica em branco, sem impedir o resto.
+    }
+  }
+}
+
+/** Acrescenta as etiquetas MG e Pública (cria se não existirem), mantendo as que o cartão já tem. */
+function vincularEtiquetas(db: DatabaseSync, ctx: DbContext, dealId: string): void {
+  const todas = listTags(db, "deal", { includeInactive: true });
+  const ids = RADAR_TAGS.map((nome) => todas.find((t) => chaveNome(t.name) === chaveNome(nome))?.id ?? createTag(db, ctx, { entity: "deal", name: nome }));
+  const atuais = getEntityTags(db, dealId).map((t) => t.id);
+  if (ids.every((id) => atuais.includes(id))) return;
+  setEntityTags(db, ctx, "deal", dealId, [...new Set([...atuais, ...ids])]);
+}
+
+/** Notas, campos e etiquetas: uma vez por cartão (cartões antigos recebem na próxima leitura). */
+function aplicarExtras(db: DatabaseSync, ctx: DbContext, dealId: string, o: RadarOportunidade): void {
+  const card = getCardRow(db, dealId);
+  if (!card) return;
+  for (const n of radarNotas(o)) addNote(db, ctx, "deal", dealId, n);
+  preencherCampos(db, ctx, dealId, card.pipeline_id, o);
+  vincularEtiquetas(db, ctx, dealId);
 }
 
 function ref(db: DatabaseSync, entity: "deal" | "organization", externalId: string) {
@@ -318,6 +405,8 @@ ${o.link}` : ""}`,
               reminderMin: 24 * 60,
               dealId,
             });
+          aplicarExtras(db, ctx, dealId, o);
+          aplicado.x = EXTRAS_VERSAO;
           if (e !== "entrada") aplicarEstado(db, ctx, cfg, dealId, o, e);
           aplicado.e = e;
           const nota = radarNotaMapa(o);
@@ -343,6 +432,11 @@ ${o.link}` : ""}`,
         }
         const depois: RadarAplicado = { ...antes };
         let mudou = false;
+        if ((antes.x ?? 0) < EXTRAS_VERSAO) {
+          aplicarExtras(db, ctx, r.local_id, o);
+          depois.x = EXTRAS_VERSAO;
+          mudou = true;
+        }
         if (RANK[e] > RANK[antes.e]) {
           aplicarEstado(db, ctx, cfg, r.local_id, o, e);
           if (antes.a && one(db, "SELECT 1 FROM activity WHERE id = ? AND done = 0 AND deleted_at IS NULL", antes.a))

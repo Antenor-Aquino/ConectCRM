@@ -1,6 +1,9 @@
 // Radar Caixa Escolar MG (spec 25): orçamentos viram cartões, sem duplicar, e só avançam até o resultado.
 import { describe, expect, it } from "vitest";
 import { listActivities } from "../src/db/activities";
+import { createCustomField, getCustomValues, setCustomValues } from "../src/db/customFields";
+import { updateRow } from "../src/db/repo";
+import { createTag, getEntityTags } from "../src/db/tags";
 import { getOrganization } from "../src/db/contacts";
 import { deleteCard, getCardRow, setCardStatus } from "../src/db/deals";
 import { listNotes } from "../src/db/notes";
@@ -25,7 +28,7 @@ const op = (over: Partial<RadarOportunidade> = {}): RadarOportunidade => ({
   censo: { inep: "31248479", nome: "EE DR ANTONIO", turmas: 22, endereco: "R DAS FLORES, 10, CENTRO - Juiz de Fora/MG, CEP 36010-000", telefone: "(32) 33351195" },
   termos: ["grade horária"],
   iniciativa: "",
-  itens: [{ descricao: "Software de grade horária escolar", tipo: "Software", quantidade: "1.00", unidade: "Unidade" }],
+  itens: [{ descricao: "Software de grade horária escolar", tipo: "Software", quantidade: "1.00", unidade: "Unidade", garantia: "Suporte técnico por 12 meses" }],
   valorEstimado: 1,
   prazoEnvio: FUTURO,
   entrega: FUTURO,
@@ -61,7 +64,10 @@ async function setup(over: Partial<RadarSyncConfig> = {}) {
   };
   const dealOf = (id: number) =>
     one<{ local_id: string }>(db, "SELECT local_id FROM external_ref WHERE provider = 'radar' AND entity_type = 'deal' AND external_id = ? AND deleted_at IS NULL", String(id))?.local_id;
-  return { db, ctx, pid, st, cfg, dealOf };
+  const fSgd = createCustomField(db, ctx, { entity: "deal", name: "Processo SGD", fieldType: "text" });
+  const fTur = createCustomField(db, ctx, { entity: "deal", name: "Qtd Turmas", fieldType: "number" });
+  const tagMG = createTag(db, ctx, { entity: "deal", name: "MG" });
+  return { db, ctx, pid, st, cfg, dealOf, fSgd, fTur, tagMG };
 }
 
 describe("Radar Caixa Escolar MG", () => {
@@ -106,13 +112,13 @@ describe("Radar Caixa Escolar MG", () => {
     syncRadar(db, ctx, cfg, [op({ statusPortal: "APRO", foraDaListagem: true, meuValor: 887, apuracao: mapa })]);
     card = getCardRow(db, dealOf(401)!)!;
     expect(card).toMatchObject({ stage_id: st["Ganhos MG"], status: "won" });
-    const notas = listNotes(db, "deal", card.id);
+    const notas = listNotes(db, "deal", card.id).filter((n) => n.body.startsWith("Mapa de apuração"));
     expect(notas).toHaveLength(1);
     expect(notas[0]!.body).toContain("você venceu");
     // De novo (ou um status "anterior" vindo atrasado): nada muda, nota não repete.
     expect(syncRadar(db, ctx, cfg, [op({ statusPortal: "ENVI", foraDaListagem: true, meuValor: 887, apuracao: mapa })])).toMatchObject({ updated: 0 });
     expect(getCardRow(db, card.id)).toMatchObject({ stage_id: st["Ganhos MG"], status: "won" });
-    expect(listNotes(db, "deal", card.id)).toHaveLength(1);
+    expect(listNotes(db, "deal", card.id)).toHaveLength(4); // 3 do orçamento + mapa, sem repetir
   });
 
   it("recusada e cancelada ficam Perdido com o motivo", async () => {
@@ -162,5 +168,42 @@ describe("Radar Caixa Escolar MG", () => {
     syncRadar(db, ctx, cfg, [op({ statusPortal: "APRO", foraDaListagem: true, meuValor: 500 })]);
     expect(getCardRow(db, dealOf(401)!)).toMatchObject({ status: "won", value_cents: 50000 });
     expect(() => syncRadar(db, ctx, { ...cfg, pipelineId: "nao-existe" }, [op()])).toThrow(/funil/);
+  });
+
+  it("notas do processo, garantia e contato; Processo SGD, Qtd Turmas e etiquetas MG e Pública", async () => {
+    const { db, ctx, cfg, dealOf, fSgd, fTur, tagMG } = await setup();
+    syncRadar(db, ctx, cfg, [op()]);
+    const id = dealOf(401)!;
+    const notas = listNotes(db, "deal", id).map((n) => n.body);
+    expect(notas).toHaveLength(3);
+    expect(notas.find((b) => b.startsWith("Descrição do processo"))).toContain("Software de grade horária escolar");
+    expect(notas.find((b) => b.startsWith("Garantia exigida"))).toContain("Suporte técnico por 12 meses");
+    const contato = notas.find((b) => b.startsWith("Contato e prazos"))!;
+    expect(contato).toContain("E-mail da escola: escola.248479@educacao.mg.gov.br");
+    expect(contato).toMatch(/Envio da proposta: \d{2}\/\d{2}\/\d{4}/);
+    expect(contato).toMatch(/Entrega: \d{2}\/\d{2}\/\d{4}/);
+    expect(getCustomValues(db, id)).toMatchObject({ [fSgd]: "2026230001", [fTur]: 22 });
+    const tags = getEntityTags(db, id);
+    expect(tags.map((t) => t.name).sort()).toEqual(["MG", "Pública"]);
+    expect(tags.find((t) => t.name === "MG")!.id).toBe(tagMG); // usa a etiqueta que já existe
+    syncRadar(db, ctx, cfg, [op()]);
+    expect(listNotes(db, "deal", id)).toHaveLength(3); // não repete
+  });
+
+  it("cartões importados antes recebem notas, campos e etiquetas uma vez, sem apagar o que o usuário preencheu", async () => {
+    const { db, ctx, cfg, dealOf, fSgd, fTur } = await setup();
+    syncRadar(db, ctx, cfg, [op()]);
+    const id = dealOf(401)!;
+    // Simula um cartão da versão anterior: sem o marcador x, sem notas, campos e etiquetas.
+    const r = one<{ id: string; source_updated_at: string }>(db, "SELECT id, source_updated_at FROM external_ref WHERE provider = 'radar' AND entity_type = 'deal'")!;
+    const { x: _x, ...antes } = JSON.parse(r.source_updated_at) as Record<string, unknown>;
+    updateRow(db, ctx, "external_ref", r.id, { source_updated_at: JSON.stringify(antes) });
+    db.exec("UPDATE note SET deleted_at = '2026-01-01' ; UPDATE entity_tag SET deleted_at = '2026-01-01'; UPDATE custom_field_value SET deleted_at = '2026-01-01'");
+    setCustomValues(db, ctx, "deal", id, { [fTur]: 30 });
+    expect(syncRadar(db, ctx, cfg, [op()])).toMatchObject({ updated: 1 });
+    expect(listNotes(db, "deal", id)).toHaveLength(3);
+    expect(getCustomValues(db, id)).toMatchObject({ [fSgd]: "2026230001", [fTur]: 30 });
+    expect(getEntityTags(db, id)).toHaveLength(2);
+    expect(syncRadar(db, ctx, cfg, [op()])).toMatchObject({ updated: 0 });
   });
 });

@@ -1,4 +1,4 @@
-# 25 — Integração com o Radar Caixa Escolar MG (0.2.157)
+# 25 — Integração com o Radar Caixa Escolar MG (0.2.157; notas, campos e etiquetas na 0.2.158)
 
 ## Objetivo
 O **Radar Caixa Escolar MG** é um robô local (Python, repositório
@@ -60,6 +60,19 @@ até o resultado, sem digitar nada.
   quando a escola não estima vira 0), previsão de fechamento = data de
   entrega, descrição com pedido, município, grupo, turmas e INEP (Censo),
   palavras-chave, itens e o link do portal.
+- **Notas do orçamento** (0.2.158), cada uma separada: **Descrição do
+  processo** (descrição de cada item), **Garantia exigida** (garantia de cada
+  item; só se houver; Radar 1.16 manda `itens[].garantia`) e **Contato e
+  prazos** (e-mail da escola, envio da proposta e entrega, em dd/mm/aaaa hh:mm).
+- **Campos do cartão** (0.2.158), achados pelo nome (ignora caixa e acento):
+  **Processo SGD** = nº do pedido; **Qtd Turmas** = turmas do Censo. Só
+  campos de texto ou número; não sobrescreve o que já estiver preenchido. Sem
+  o campo no funil, nada acontece.
+- **Etiquetas** (0.2.158): **MG** e **Pública** são acrescentadas às que o
+  cartão já tem (criadas se não existirem).
+- **Cartões importados antes** recebem notas, campos e etiquetas uma vez, na
+  leitura seguinte (marcador `x` no JSON do vínculo). Se o usuário tirar uma
+  etiqueta ou apagar uma nota depois, o Radar não repõe.
 - **Organização**: a já vinculada; senão a de mesmo CNPJ ou mesmo nome e
   cidade; senão é criada como *Unidade / escola* com e-mail institucional,
   telefone, endereço e CEP do Censo, cidade e `MG`. Dado fora do formato
@@ -86,7 +99,8 @@ até o resultado, sem digitar nada.
 `extension/tests/radar.test.ts`: cartão e organização, sem duplicar, mesma
 escola em dois orçamentos, avanço até ganho com nota única, recusada e
 cancelada, cartão fechado à mão e excluído, filtros e ponto de partida,
-histórico e funil inexistente. Conferido também com as 229 oportunidades de
+histórico e funil inexistente, notas/campos/etiquetas no cartão novo e nos
+já importados (sem apagar campo preenchido pelo usuário). Conferido também com as 229 oportunidades de
 uma cópia da base real do Radar (histórico completo: 182 cartões, 174 escolas,
 123 notas de mapa e 31 tarefas de prazo, sem erro; a segunda leitura não muda
 nada).
