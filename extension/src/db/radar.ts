@@ -22,7 +22,8 @@ import { addNote } from "./notes";
 import { listStages } from "./pipelines";
 import { createTag, getEntityTags, listTags, setEntityTags } from "./tags";
 import { insertRow, updateRow, type DbContext } from "./repo";
-import { one, withTransaction, type DatabaseSync } from "./sql";
+import { many, one, withTransaction, type DatabaseSync } from "./sql";
+import { isSimilar, nameSimilarity } from "../lib/similarity";
 
 export const RADAR_PROVIDER = "radar";
 export const RADAR_ORIGIN = "Radar Caixa Escolar MG";
@@ -81,6 +82,20 @@ export interface RadarSyncConfig {
   inicio: RadarInicio;
   /** Quando a integração foi ligada (ISO): referência de "novas" e "abertas". */
   ativadoEm: string;
+  /** Decisões do usuário sobre orçamentos parecidos com cartões que já existem (por idBudget). */
+  decisoes?: Record<string, RadarDecisao>;
+}
+
+/** "criar" = cartão novo mesmo assim; "ignorar" = não criar; "usar:<id>" = vincular ao cartão existente. */
+export type RadarDecisao = "criar" | "ignorar" | `usar:${string}`;
+
+/** Orçamento que não virou cartão porque há cartão de nome parecido: aguarda a decisão do usuário. */
+export interface RadarParecido {
+  id: number;
+  pedido: string | null;
+  escola: string;
+  municipio: string;
+  cartoes: { id: string; titulo: string; funil: string; etapa: string; status: string; score: number }[];
 }
 
 export type RadarEstado = "entrada" | "enviada" | "ganha" | "perdida" | "cancelada";
@@ -95,6 +110,8 @@ interface RadarAplicado {
   m?: boolean;
   /** Atividade "Enviar proposta no portal" criada pelo Radar. */
   a?: string | null;
+  /** 0.2.161: já conferido se o Radar tinha fechado o cartão (ganho/perdido) para virar Pendente. */
+  p?: number;
   /** Notas, campos (Processo SGD, Qtd Turmas) e etiquetas (MG, Pública) já aplicados. */
   x?: number;
 }
@@ -115,6 +132,10 @@ export interface RadarSyncResult {
   skipped: number;
   items: RadarSyncItem[];
   errors: { id: number; error: string }[];
+  /** Esperando a confirmação do usuário (cartão de nome parecido; só em "Todo o histórico"). */
+  parecidos: RadarParecido[];
+  /** Cartões fechados pelo Radar antes da 0.2.160 que voltaram para Pendente. */
+  convertidos: number;
 }
 
 export function radarEstado(o: Pick<RadarOportunidade, "statusPortal">): RadarEstado {
@@ -384,17 +405,110 @@ function aplicarEstado(db: DatabaseSync, ctx: DbContext, cfg: RadarSyncConfig, d
 
 const ITEM_KIND: Record<RadarEstado, RadarSyncItem["kind"] | null> = { entrada: null, enviada: "sent", ganha: "won", perdida: "lost", cancelada: "canceled" };
 
+
+/** Cartões que não vieram do Radar com nome parecido com a escola (ou com o nº do pedido no título). */
+export function radarCartoesParecidos(db: DatabaseSync, o: RadarOportunidade): RadarParecido["cartoes"] {
+  const rows = many<{ id: string; title: string; funil: string; etapa: string; status: string }>(
+    db,
+    `SELECT d.id, d.title, p.name AS funil, s.name AS etapa, d.status FROM deal d
+     JOIN pipeline p ON p.id = d.pipeline_id JOIN stage s ON s.id = d.stage_id
+     WHERE d.deleted_at IS NULL AND d.kind = 'deal'
+       AND d.id NOT IN (SELECT local_id FROM external_ref WHERE provider = ? AND entity_type = 'deal' AND deleted_at IS NULL)`,
+    RADAR_PROVIDER,
+  );
+  const pedido = (o.pedido ?? "").trim();
+  return rows
+    .map((r) => ({ ...r, score: pedido.length >= 6 && r.title.includes(pedido) ? 1 : o.escola ? nameSimilarity(o.escola, r.title) : 0 }))
+    .filter((r) => r.score === 1 || isSimilar(r.score))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5)
+    .map((r) => ({ id: r.id, titulo: r.title, funil: r.funil, etapa: r.etapa, status: r.status, score: Math.round(r.score * 100) }));
+}
+
+/**
+ * Uma vez por cartão: o que o Radar fechou como ganho/perdido antes da 0.2.160
+ * volta para Pendente (o desfecho final é do usuário). Reconhece pelo registro de
+ * alterações: a mudança de status foi gravada no mesmo instante que a atualização
+ * do vínculo do Radar; perdido também pelo motivo que o Radar escrevia.
+ * Cartão fechado à mão fica como está.
+ */
+export function radarConverterFechados(db: DatabaseSync, ctx: DbContext): number {
+  const refs = many<{ id: string; local_id: string; source_updated_at: string | null; status: string; loss_note: string | null }>(
+    db,
+    `SELECT x.id, x.local_id, x.source_updated_at, d.status, d.loss_note FROM external_ref x
+     JOIN deal d ON d.id = x.local_id AND d.deleted_at IS NULL
+     WHERE x.provider = ? AND x.entity_type = 'deal' AND x.deleted_at IS NULL`,
+    RADAR_PROVIDER,
+  );
+  let n = 0;
+  for (const r of refs) {
+    let m: RadarAplicado;
+    try {
+      m = JSON.parse(r.source_updated_at ?? "") as RadarAplicado;
+    } catch {
+      continue;
+    }
+    if (m.p) continue;
+    withTransaction(db, () => {
+      if (RESULTADO[m.e] && (r.status === "won" || r.status === "lost")) {
+        const nota = r.loss_note ?? "";
+        let peloRadar = r.status === "lost" && (nota.startsWith("Recusada no portal") || nota.startsWith("Cancelado no portal"));
+        if (!peloRadar) {
+          const st = many<{ at: string; changes: string }>(db, "SELECT at, changes FROM change_log WHERE table_name = 'deal' AND row_id = ? ORDER BY at DESC", r.local_id).find(
+            (c) => /"status"\s*:/.test(c.changes),
+          );
+          if (st) {
+            const t = new Date(st.at).getTime();
+            peloRadar = many<{ at: string }>(db, "SELECT at FROM change_log WHERE table_name = 'external_ref' AND row_id = ?", r.id).some(
+              (c) => Math.abs(new Date(c.at).getTime() - t) < 5000,
+            );
+          }
+        }
+        if (peloRadar) {
+          setCardStatus(db, ctx, r.local_id, { status: "pending" });
+          n++;
+        }
+      }
+      updateRow(db, ctx, "external_ref", r.id, { source_updated_at: JSON.stringify({ ...m, p: 1 }) });
+    });
+  }
+  return n;
+}
+
 /** Cria ou atualiza os cartões. Repetir a mesma lista não muda nada. */
 export function syncRadar(db: DatabaseSync, ctx: DbContext, cfg: RadarSyncConfig, lista: RadarOportunidade[]): RadarSyncResult {
-  const out: RadarSyncResult = { created: 0, updated: 0, skipped: 0, items: [], errors: [] };
+  const out: RadarSyncResult = { created: 0, updated: 0, skipped: 0, items: [], errors: [], parecidos: [], convertidos: 0 };
   if (!one(db, "SELECT 1 FROM pipeline WHERE id = ? AND deleted_at IS NULL AND archived_at IS NULL", cfg.pipelineId))
     throw new Error("O funil escolhido para o Radar não existe mais ou está arquivado. Escolha outro em Configurações → Integrações → Radar.");
+  out.convertidos = radarConverterFechados(db, ctx);
   for (const o of lista) {
     try {
       withTransaction(db, () => {
         const extId = String(o.id);
-        const r = ref(db, "deal", extId);
+        let r = ref(db, "deal", extId);
         const e = radarEstado(o);
+        if (!r && radarElegivel(o, cfg)) {
+          // "Todo o histórico": cartão de nome parecido que não veio do Radar → pergunta antes.
+          const dec = cfg.decisoes?.[extId];
+          if (dec === "ignorar") {
+            out.skipped++;
+            return;
+          }
+          if (dec?.startsWith("usar:")) {
+            const alvo = dec.slice(5);
+            if (one(db, "SELECT 1 FROM deal WHERE id = ? AND deleted_at IS NULL", alvo)) {
+              link(db, ctx, "deal", extId, alvo, JSON.stringify({ e: "entrada", p: 1 } satisfies RadarAplicado));
+              r = ref(db, "deal", extId);
+            }
+          } else if (!dec && cfg.inicio === "historico") {
+            const cartoes = radarCartoesParecidos(db, o);
+            if (cartoes.length) {
+              out.parecidos.push({ id: o.id, pedido: o.pedido, escola: o.escola, municipio: o.municipio, cartoes });
+              out.skipped++;
+              return;
+            }
+          }
+        }
         if (!r) {
           if (!radarElegivel(o, cfg)) {
             out.skipped++;
@@ -412,7 +526,7 @@ export function syncRadar(db: DatabaseSync, ctx: DbContext, cfg: RadarSyncConfig
             organizationId: orgId,
             origin: RADAR_ORIGIN,
           });
-          const aplicado: RadarAplicado = { e: "entrada", v: o.meuValor ?? null };
+          const aplicado: RadarAplicado = { e: "entrada", v: o.meuValor ?? null, p: 1 };
           if (e === "entrada" && o.prazoEnvio && new Date(o.prazoEnvio).getTime() > Date.now())
             aplicado.a = createActivity(db, ctx, {
               title: `Enviar proposta no portal — pedido ${o.pedido ?? o.id}`,

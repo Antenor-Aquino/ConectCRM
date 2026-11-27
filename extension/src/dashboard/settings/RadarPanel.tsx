@@ -8,6 +8,7 @@ import { call } from "../../rpc/client";
 import { errorText } from "../../lib/errors";
 import { formatDateTime } from "../../lib/format";
 import { fetchRadar, loadRadar, radarBaseUrl, requestRadarPermission, saveRadar, type RadarSettings } from "../../lib/radar";
+import type { RadarDecisao } from "../../db/radar";
 import type { RadarInicio, RadarSyncResult } from "../../db/radar";
 import { useSession } from "../session";
 import { Field } from "../ui/form";
@@ -18,7 +19,11 @@ type Opt = { id: string; name: string };
 const INICIO: { value: RadarInicio; label: string; hint: string }[] = [
   { value: "abertas", label: "Os abertos agora e os que surgirem", hint: "Orçamentos ainda no prazo, propostas enviadas aguardando resultado e os novos." },
   { value: "novas", label: "Só os que surgirem daqui para frente", hint: "Nada do que o Radar já tinha antes de ligar." },
-  { value: "historico", label: "Todo o histórico do Radar", hint: "Inclusive os encerrados (entram já como ganhos ou perdidos)." },
+  {
+    value: "historico",
+    label: "Todo o histórico do Radar",
+    hint: "Inclusive os encerrados (entram como Pendente, para a sua avaliação). Se já houver cartão de nome parecido, o ConectCRM pergunta antes de criar.",
+  },
 ];
 
 export function RadarPanel() {
@@ -83,7 +88,7 @@ export function RadarPanel() {
       setMsg({
         kind: x?.errors.length ? "err" : "ok",
         text: x
-          ? `${x.created} cartão(ões) novo(s), ${x.updated} atualizado(s).${x.errors.length ? ` ${x.errors.length} não entraram: ${x.errors[0]!.error}` : ""}`
+          ? `${x.created} cartão(ões) novo(s), ${x.updated} atualizado(s).${x.convertidos ? ` ${x.convertidos} voltaram para Pendente.` : ""}${x.parecidos.length ? ` ${x.parecidos.length} aguardam a sua confirmação (abaixo).` : ""}${x.errors.length ? ` ${x.errors.length} não entraram: ${x.errors[0]!.error}` : ""}`
           : "Nada a fazer.",
       });
       void call("radar.resumo").then(setResumo);
@@ -93,6 +98,13 @@ export function RadarPanel() {
       setBusy(null);
       setS(await loadRadar());
     }
+  };
+
+  /** Decisão sobre um orçamento parecido com cartão existente; já sincroniza para aplicar. */
+  const decidir = async (id: number, d: RadarDecisao) => {
+    const atual = await loadRadar();
+    await save({ decisoes: { ...atual.decisoes, [String(id)]: d }, parecidos: atual.parecidos.filter((p) => p.id !== id) });
+    await syncNow();
   };
 
   const toggleTermo = (t: string, on: boolean) => {
@@ -199,6 +211,45 @@ export function RadarPanel() {
           </span>
           {s.lastError && <span className="w-full rounded-lg bg-error-50 px-3 py-2 text-theme-xs text-error-700">Última tentativa: {s.lastError}</span>}
         </div>
+
+        {s.parecidos.length > 0 && (
+          <div className="space-y-3 rounded-lg border border-yellow-300 bg-yellow-50 p-3 dark:border-yellow-500/40 dark:bg-yellow-500/10" data-radar-parecidos>
+            <p className="font-medium text-yellow-900 dark:text-yellow-200">
+              {s.parecidos.length} orçamento(s) parecido(s) com cartões que já existem. Prosseguir?
+            </p>
+            {s.parecidos.map((p) => (
+              <div key={p.id} className="space-y-2 rounded-lg bg-white p-3 dark:bg-gray-900" data-radar-parecido={p.id}>
+                <p>
+                  <b>{p.escola}</b> — {p.municipio}
+                  {p.pedido && ` · pedido ${p.pedido}`}
+                </p>
+                <ul className="list-disc pl-5 text-theme-xs text-gray-600 dark:text-gray-400">
+                  {p.cartoes.map((c) => (
+                    <li key={c.id}>
+                      <b>{c.titulo}</b> ({c.funil} › {c.etapa}) · {c.score}% parecido
+                      <button
+                        type="button"
+                        className="ml-2 text-brand-600 underline disabled:opacity-50"
+                        disabled={!!busy}
+                        onClick={() => void decidir(p.id, `usar:${c.id}`)}
+                      >
+                        usar este cartão
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex flex-wrap gap-2">
+                  <TaButton size="sm" disabled={!!busy} onClick={() => void decidir(p.id, "criar")}>
+                    Prosseguir: criar cartão novo
+                  </TaButton>
+                  <TaButton size="sm" variant="outline" disabled={!!busy} onClick={() => void decidir(p.id, "ignorar")}>
+                    Não criar
+                  </TaButton>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {msg && (
           <p className={msg.kind === "ok" ? "rounded-lg bg-success-50 px-3 py-2 text-success-700" : "rounded-lg bg-error-50 px-3 py-2 text-error-700"} data-radar-msg>

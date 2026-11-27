@@ -3,7 +3,7 @@
 // O ConectCRM lê a rota /api/crm/oportunidades dele (só leitura, no mesmo
 // computador) e o service worker transforma em cartões a cada 10 min. O Radar
 // só aceita a origem desta extensão (ID fixo pelo "key" do manifest).
-import type { RadarInicio, RadarOportunidade, RadarSyncConfig, RadarSyncResult } from "../db/radar";
+import type { RadarDecisao, RadarInicio, RadarOportunidade, RadarParecido, RadarSyncConfig, RadarSyncResult } from "../db/radar";
 
 export const RADAR_DEFAULT_URL = "http://127.0.0.1:8765";
 const KEY = "conectcrm-radar";
@@ -26,6 +26,10 @@ export interface RadarSettings {
   /** Do último contato com o Radar. */
   radarVersao: string | null;
   termosRadar: string[];
+  /** Orçamentos parecidos com cartões existentes, aguardando a decisão (da última leitura). */
+  parecidos: RadarParecido[];
+  /** Decisões já tomadas, por idBudget. */
+  decisoes: Record<string, RadarDecisao>;
 }
 
 const DEFAULTS: RadarSettings = {
@@ -43,6 +47,8 @@ const DEFAULTS: RadarSettings = {
   lastResult: null,
   radarVersao: null,
   termosRadar: [],
+  parecidos: [],
+  decisoes: {},
 };
 
 export async function loadRadar(): Promise<RadarSettings> {
@@ -108,5 +114,6 @@ export function radarSyncConfig(s: RadarSettings): RadarSyncConfig | null {
     termos: s.termos,
     inicio: s.inicio,
     ativadoEm: s.ativadoEm,
+    decisoes: s.decisoes,
   };
 }

@@ -5,7 +5,7 @@ import { createCustomField, getCustomValues, setCustomValues } from "../src/db/c
 import { updateRow } from "../src/db/repo";
 import { createTag, getEntityTags } from "../src/db/tags";
 import { getOrganization } from "../src/db/contacts";
-import { deleteCard, getCardRow, setCardStatus } from "../src/db/deals";
+import { createCard, deleteCard, getCardRow, setCardStatus } from "../src/db/deals";
 import { listNotes } from "../src/db/notes";
 import { createPipeline, listStages } from "../src/db/pipelines";
 import { radarResumo, syncRadar, type RadarOportunidade, type RadarSyncConfig } from "../src/db/radar";
@@ -249,5 +249,55 @@ describe("Radar Caixa Escolar MG", () => {
     expect(res).toHaveLength(1);
     expect(res[0]).toContain("APROVADA — você venceu");
     expect(res[0]).toContain("2º TEKIE — R$ 1.129,04 (+19,5% do seu)");
+  });
+
+  it("cartões que o Radar fechou antes da 0.2.160 voltam para Pendente; fechado à mão fica", async () => {
+    const { db, ctx, cfg, dealOf } = await setup();
+    syncRadar(db, ctx, cfg, [op({ id: 1 }), op({ id: 2 }), op({ id: 3 })]);
+    // Simula a versão anterior: marcador sem "p", estado de resultado e o cartão fechado.
+    const antigo = (id: number, e: string) => {
+      const r = one<{ id: string; source_updated_at: string }>(db, "SELECT id, source_updated_at FROM external_ref WHERE provider = 'radar' AND entity_type = 'deal' AND external_id = ?", String(id))!;
+      const { p: _p, ...m } = JSON.parse(r.source_updated_at) as Record<string, unknown>;
+      updateRow(db, ctx, "external_ref", r.id, { source_updated_at: JSON.stringify({ ...m, e }) });
+    };
+    setCardStatus(db, ctx, dealOf(1)!, { status: "won" }); // pelo Radar: mesmo instante que o vínculo
+    antigo(1, "ganha");
+    setCardStatus(db, ctx, dealOf(2)!, { status: "lost", lossNote: "Recusada no portal; vencedor X (R$ 900,00)." });
+    antigo(2, "perdida");
+    setCardStatus(db, ctx, dealOf(3)!, { status: "won" }); // à mão, bem antes do resultado chegar
+    db.exec(`UPDATE change_log SET at = '2026-01-01T00:00:00.000Z' WHERE table_name = 'deal' AND row_id = '${dealOf(3)!}' AND changes LIKE '%"status"%'`);
+    antigo(3, "ganha");
+    const r = syncRadar(db, ctx, cfg, [op({ id: 1 }), op({ id: 2 }), op({ id: 3 })]);
+    expect(r.convertidos).toBe(2);
+    expect(getCardRow(db, dealOf(1)!)).toMatchObject({ status: "pending", closed_at: null });
+    expect(getCardRow(db, dealOf(2)!)).toMatchObject({ status: "pending", loss_note: null });
+    expect(getCardRow(db, dealOf(3)!)!.status).toBe("won");
+    // Uma vez só: se o usuário decidir ganho, a leitura seguinte não volta para Pendente.
+    setCardStatus(db, ctx, dealOf(1)!, { status: "won" });
+    expect(syncRadar(db, ctx, cfg, [op({ id: 1 })]).convertidos).toBe(0);
+    expect(getCardRow(db, dealOf(1)!)!.status).toBe("won");
+  });
+
+  it("todo o histórico: cartão de nome parecido pergunta antes; prosseguir, não criar ou usar o existente", async () => {
+    const { db, ctx, pid, cfg, dealOf } = await setup({ inicio: "historico" });
+    const meu = createCard(db, ctx, { pipelineId: pid, title: "EE Dr Antonio Batista do Nascimento - PowerCubus" });
+    const lista = [op({ id: 1 }), op({ id: 2, pedido: "2026230002" }), op({ id: 3, pedido: "2026230003" }), op({ id: 4, escola: "EE SAO GABRIEL", pedido: "2026230004" })];
+    const r = syncRadar(db, ctx, cfg, lista);
+    expect(r.parecidos.map((p) => p.id)).toEqual([1, 2, 3]);
+    expect(r.parecidos[0]!.cartoes[0]).toMatchObject({ id: meu, titulo: "EE Dr Antonio Batista do Nascimento - PowerCubus" });
+    expect(dealOf(4)).toBeTruthy(); // sem parecido: cria direto
+    expect(dealOf(1)).toBeUndefined();
+    const r2 = syncRadar(db, ctx, { ...cfg, decisoes: { "1": "criar", "2": "ignorar", "3": `usar:${meu}` } }, lista);
+    expect(r2.parecidos).toEqual([]);
+    expect(dealOf(1)).toBeTruthy();
+    expect(dealOf(1)).not.toBe(meu);
+    expect(dealOf(2)).toBeUndefined();
+    expect(dealOf(3)).toBe(meu);
+    expect(listNotes(db, "deal", meu).some((n) => n.body.startsWith("Contato e prazos (pedido 2026230003)"))).toBe(true);
+    // Fora de "Todo o histórico" não pergunta.
+    const s2 = await setup({ inicio: "abertas" });
+    createCard(s2.db, s2.ctx, { pipelineId: s2.pid, title: "EE Dr Antonio Batista do Nascimento" });
+    expect(syncRadar(s2.db, s2.ctx, s2.cfg, [op()]).parecidos).toEqual([]);
+    expect(s2.dealOf(401)).toBeTruthy();
   });
 });

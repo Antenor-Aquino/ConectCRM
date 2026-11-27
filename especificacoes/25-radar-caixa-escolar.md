@@ -1,4 +1,4 @@
-# 25 — Integração com o Radar Caixa Escolar MG (0.2.157; notas, campos e etiquetas na 0.2.158; nota do resultado na 0.2.159; Pendente na 0.2.160)
+# 25 — Integração com o Radar Caixa Escolar MG (0.2.157; notas, campos e etiquetas na 0.2.158; nota do resultado na 0.2.159; Pendente na 0.2.160; parecidos e conversão na 0.2.161)
 
 ## Objetivo
 O **Radar Caixa Escolar MG** é um robô local (Python, repositório
@@ -95,6 +95,21 @@ até o resultado, sem digitar nada.
   mapa entra numa segunda nota quando chegar (uma vez só). Vale também para
   cartão fechado à mão (só o status não é mexido). Fica no banco local, como
   no Radar.
+- **Cartão parecido** (0.2.161, só em "Todo o histórico"): antes de criar,
+  o ConectCRM procura cartões comerciais que **não** vieram do Radar com nome
+  parecido com a escola (mesma regra de semelhança do cadastro) ou com o nº do
+  pedido no título. Achando, não cria: o orçamento aparece na tela do Radar
+  ("Prosseguir?") com os cartões parecidos e as opções **Prosseguir: criar
+  cartão novo**, **usar este cartão** (o Radar passa a acompanhar o cartão
+  existente: notas, campos, etiquetas e status) ou **Não criar**. A decisão
+  fica em `decisoes` (por idBudget) e vale para sempre; aviso no Chrome e no
+  sino quando aparece orçamento novo para confirmar.
+- **Conversão para Pendente** (0.2.161, uma vez por cartão, marcador `p`): os
+  cartões que o Radar fechou como ganho/perdido antes da 0.2.160 voltam para
+  Pendente. Reconhece pelo registro de alterações (a mudança de status foi
+  gravada no mesmo instante que o vínculo do Radar) e, no perdido, pelo motivo
+  que o Radar escrevia ("Recusada no portal…", "Cancelado no portal…").
+  Cartão fechado à mão fica como está.
 - **Mão do usuário vale mais**: cartão já ganho ou perdido à mão não tem o
   status mudado; cartão movido para outro funil não é movido de etapa; cartão
   excluído não volta.

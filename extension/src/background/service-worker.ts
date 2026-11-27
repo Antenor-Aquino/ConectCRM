@@ -507,7 +507,20 @@ async function syncRadarBg(userId: string | null, force = false): Promise<RadarS
       lastResult: { created: r.created, updated: r.updated, skipped: r.skipped, errors: r.errors.length },
       radarVersao: dados.radar.versao,
       termosRadar: dados.radar.termos,
+      parecidos: r.parecidos,
     });
+    // Parecidos com cartões que já existem: avisa uma vez por orçamento novo na lista.
+    const novosParecidos = r.parecidos.filter((p) => !s.parecidos.some((x) => x.id === p.id));
+    if (novosParecidos.length) {
+      const msg = `${novosParecidos.length} orçamento(s) parecido(s) com cartões que já existem. Confirme em Configurações → Integrações → Radar.`;
+      chromeNotify(`notify:radar-parecidos-${Date.now()}`, "Radar: confirmar antes de criar", msg, false);
+      await addNotification({ kind: "info", title: "Radar: confirmar antes de criar", message: msg });
+    }
+    if (r.convertidos) {
+      const msg = `${r.convertidos} cartão(ões) que o Radar tinha fechado voltaram para Pendente, para a sua avaliação.`;
+      chromeNotify(`notify:radar-pendentes-${Date.now()}`, "Radar Caixa Escolar MG", msg, false);
+      await addNotification({ kind: "info", title: "Radar Caixa Escolar MG", message: msg });
+    }
     // Muitos de uma vez (primeira carga): um aviso só.
     if (r.items.length > 5) {
       const msg = `${r.created} cartão(ões) novo(s) e ${r.updated} atualizado(s).`;
