@@ -130,3 +130,22 @@ describe("cartões do Kanban", () => {
     expect(getBoard(db, pipelineId, { search: "bia" })[0]!.count).toBe(1);
   });
 });
+
+describe("ordenar por situação", () => {
+  it("abertos, ganhos e perdidos; em cada grupo por nome", async () => {
+    const { db, ctx, pipelineId } = await setup();
+    const mk = (title: string, status?: "won" | "lost") => {
+      const id = createCard(db, ctx, { pipelineId, title });
+      if (status) setCardStatus(db, ctx, id, status === "lost" ? { status } : { status });
+      return id;
+    };
+    mk("Zeta", "won");
+    mk("beta");
+    mk("Alfa", "lost");
+    mk("Gama", "won");
+    mk("Delta");
+    mk("Ômega", "lost");
+    const titles = getBoard(db, pipelineId, { sort: "status", status: "all" })[0]!.cards.map((c) => c.title);
+    expect(titles).toEqual(["beta", "Delta", "Gama", "Zeta", "Alfa", "Ômega"]);
+  });
+});

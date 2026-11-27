@@ -597,7 +597,7 @@ export function getCard(db: DatabaseSync, id: string, viewer?: Viewer | null): C
 }
 
 export type BoardView = "all" | "mine" | "team";
-export type BoardSort = "recent" | "manual" | "value" | "title" | "updated";
+export type BoardSort = "recent" | "manual" | "value" | "title" | "updated" | "status";
 
 export interface BoardCard {
   id: string;
@@ -651,6 +651,8 @@ const SORT_SQL: Record<BoardSort, string> = {
   manual: "d.position",
   value: "d.value_cents DESC",
   title: "d.title COLLATE NOCASE",
+  // Abertos, depois ganhos, depois perdidos; em cada grupo, por nome (A–Z).
+  status: "CASE d.status WHEN 'open' THEN 0 WHEN 'won' THEN 1 ELSE 2 END, d.title COLLATE NOCASE",
 };
 
 /** Quadro do funil: colunas com quantidade, soma e cartões (spec 01, tela inicial).
