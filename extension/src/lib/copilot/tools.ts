@@ -145,6 +145,25 @@ export const DATA_TOOLS: ToolDef[] = [
     parameters: { type: "object", properties: { responsavel: str("Nome do usuário ou da equipe (opcional)") } },
   },
   {
+    name: "tickets_chatwoot",
+    description:
+      "Tickets de ativação abertos no Chatwoot pelos cartões (botão Ativação Chatwoot): quantos cartões têm ticket, quantos tickets, ativos e cancelados, " +
+      "e a lista com cartão, funil, etapa, organização, conversa, link, quem abriu e quando. Use para 'quantos cartões têm ticket no Chatwoot', " +
+      "'tickets abertos hoje/esta semana', 'quais escolas já foram para ativação'. A situação aberta/resolvida dentro do Chatwoot não é consultada aqui.",
+    parameters: {
+      type: "object",
+      properties: {
+        situacao: str("ativos (padrão: não cancelados pelo CRM), cancelados ou todos", { enum: ["ativos", "cancelados", "todos"] }),
+        de: str("Aberto a partir de, AAAA-MM-DD (opcional)"),
+        ate: str("Aberto até (inclusive), AAAA-MM-DD (opcional)"),
+        funil: str("Nome (ou parte) do funil (opcional)"),
+        responsavel: str("Responsável do cartão: nome do usuário ou da equipe (opcional)"),
+        texto: str("Parte do título do cartão, da organização ou do e-mail do contato (opcional)"),
+        limite: { type: "integer", description: "Máximo de itens na lista (1 a 30; padrão 20). Os totais contam todos." },
+      },
+    },
+  },
+  {
     name: "estrutura_do_crm",
     description: "Funis com etapas (probabilidade, limite de dias parado), usuários com papel, equipes com membros, motivos de perda e tipos de atividade.",
     parameters: { type: "object", properties: {} },

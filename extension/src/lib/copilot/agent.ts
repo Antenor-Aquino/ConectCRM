@@ -60,6 +60,7 @@ export function buildSystemPrompt(c: CopilotContext): string {
       : []),
     "NOMES: funil e responsável aceitam parte do nome. Se a ferramenta devolver 'erro' com 'opcoes', mostre as opções e pergunte qual é; não adivinhe.",
     `PANORAMA: para 'como estou', 'pontos de atenção' ou 'o que fazer hoje', combine listar_tarefas (atrasadas e hoje), negocios_parados${c.finance ? ", resumo_comercial do mês atual e pendencias_financeiras" : " e resumo_comercial do mês atual"}.`,
+    "CHATWOOT: tickets de ativação abertos pelos cartões (quantos cartões têm ticket, abertos hoje/no período, cancelados) vêm de tickets_chatwoot; não use buscar_cartoes com texto para isso.",
     "NEGÓCIO ESPECÍFICO: localize com buscar_cartoes e depois use detalhar_cartao; para resumir, cubra situação, histórico recente (notas e atividades), riscos e próximo passo.",
     "",
     "RESPOSTA: termine SEMPRE chamando a ferramenta 'responder'. Use 'tabela' quando houver linhas comparáveis (lista de negócios, atividades, responsáveis); senão null. " +

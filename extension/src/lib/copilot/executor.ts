@@ -49,6 +49,16 @@ export const rpcExecutor: ToolExecutor = async (name, a) => {
     case "pendencias_financeiras":
       await syncAllFinance();
       return call("copilot.financeAlerts", { responsavel: str(a.responsavel) });
+    case "tickets_chatwoot":
+      return call("copilot.chatwootTickets", {
+        situacao: (["ativos", "cancelados", "todos"] as const).find((x) => x === a.situacao),
+        de: str(a.de),
+        ate: str(a.ate),
+        funil: str(a.funil),
+        responsavel: str(a.responsavel),
+        texto: str(a.texto),
+        limite: num(a.limite),
+      });
     case "estrutura_do_crm":
       return call("copilot.structure");
     default:
