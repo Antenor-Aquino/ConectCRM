@@ -20,6 +20,8 @@ import { nfseAssistant } from "../lib/nfse/assistant";
 import { PORTAL_BASE, type PortalPayload } from "../lib/nfse/portalSteps";
 import { fetchCalendlyBookings, loadCalendly, markCalendlySeen, refreshCalendlyAccount, saveCalendly } from "../lib/calendly";
 import type { CalendlyImportResult } from "../db/calendly";
+import { fetchRadar, loadRadar, radarSyncConfig, saveRadar } from "../lib/radar";
+import type { RadarSyncResult } from "../db/radar";
 import { OFFSCREEN_PATH, type EnsureOffscreenMessage, type RpcRequest, type RpcResponse } from "../rpc/protocol";
 
 let creating: Promise<void> | null = null;
@@ -64,6 +66,15 @@ chrome.runtime.onMessage.addListener((msg: ClipStartMessage, _sender, sendRespon
 chrome.runtime.onMessage.addListener((msg: { target?: string; kind?: string; userId?: string | null }, _sender, sendResponse) => {
   if (msg?.target !== "background" || msg.kind !== "calendly-sync") return false;
   syncCalendly(msg.userId ?? null, true)
+    .then((r) => sendResponse({ ok: true, result: r }))
+    .catch((err: unknown) => sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) }));
+  return true;
+});
+
+// "Sincronizar agora" do Radar Caixa Escolar MG (Configurações → Integrações).
+chrome.runtime.onMessage.addListener((msg: { target?: string; kind?: string; userId?: string | null }, _sender, sendResponse) => {
+  if (msg?.target !== "background" || msg.kind !== "radar-sync") return false;
+  syncRadarBg(msg.userId ?? null, true)
     .then((r) => sendResponse({ ok: true, result: r }))
     .catch((err: unknown) => sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) }));
   return true;
@@ -463,6 +474,61 @@ async function syncCalendly(userId: string | null, force = false): Promise<Calen
   }
 }
 
+// Radar Caixa Escolar MG (spec 25): lê o robô local a cada 10 min (ele consulta
+// o portal a cada 30) e cria/avança os cartões. Erro fica guardado para a tela.
+const RADAR_SYNC_KEY = "conectcrm-radar-bg-sync";
+const RADAR_TITLES: Record<string, string> = {
+  created: "Novo orçamento do Radar",
+  sent: "Proposta enviada no portal",
+  won: "Proposta aprovada no portal",
+  lost: "Proposta recusada no portal",
+  canceled: "Orçamento cancelado no portal",
+};
+async function syncRadarBg(userId: string | null, force = false): Promise<RadarSyncResult | null> {
+  if (!userId) return null;
+  const s = await loadRadar();
+  const config = radarSyncConfig(s);
+  if (!config) {
+    if (force) throw new Error("Ligue a integração e escolha o funil antes de sincronizar.");
+    return null;
+  }
+  if (!force) {
+    const last = (await chrome.storage.local.get(RADAR_SYNC_KEY))[RADAR_SYNC_KEY] as number | undefined;
+    if (last && Date.now() - last < 10 * 60_000) return null;
+  }
+  await chrome.storage.local.set({ [RADAR_SYNC_KEY]: Date.now() });
+  try {
+    const dados = await fetchRadar(s.url);
+    const r = await rpc<RadarSyncResult>("radar.sync", { config, oportunidades: dados.oportunidades }, userId);
+    await saveRadar({
+      ...(await loadRadar()),
+      lastSyncAt: new Date().toISOString(),
+      lastError: r.errors.length ? `${r.errors.length} orçamento(s) não entraram: ${r.errors[0]!.error}` : null,
+      lastResult: { created: r.created, updated: r.updated, skipped: r.skipped, errors: r.errors.length },
+      radarVersao: dados.radar.versao,
+      termosRadar: dados.radar.termos,
+    });
+    // Muitos de uma vez (primeira carga): um aviso só.
+    if (r.items.length > 5) {
+      const msg = `${r.created} cartão(ões) novo(s) e ${r.updated} atualizado(s).`;
+      chromeNotify(`notify:radar-${Date.now()}`, "Radar Caixa Escolar MG", msg, false);
+      await addNotification({ kind: "info", title: "Radar Caixa Escolar MG", message: msg });
+    } else {
+      for (const it of r.items) {
+        const title = RADAR_TITLES[it.kind] ?? "Radar Caixa Escolar MG";
+        chromeNotify(`notify:radar-${Date.now()}-${Math.random()}`, title, it.title, false);
+        await addNotification({ kind: "info", title, message: it.title });
+      }
+    }
+    return r;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    await saveRadar({ ...(await loadRadar()), lastError: msg });
+    if (force) throw e;
+    return null;
+  }
+}
+
 async function runNotifications(): Promise<void> {
   if (running) return;
   running = true;
@@ -480,6 +546,7 @@ async function runNotifications(): Promise<void> {
     await refreshFinanceCopy(userId);
     await runInterSync(userId).catch((e) => console.warn("Banco Inter:", e));
     await syncCalendly(userId).catch((e) => console.warn("Calendly:", e));
+    await syncRadarBg(userId).catch((e) => console.warn("Radar:", e));
     const settings = Object.fromEntries(Object.entries(await loadAllNotifySettings()).map(([id, x]) => [id, activeSettings(x)]));
     // Alertas financeiros do resumo diário só com a integração com a Gestão Financeira ativada.
     const finance = gfIntegrationActive(await loadGfSettings());

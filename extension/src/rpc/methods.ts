@@ -52,6 +52,7 @@ import * as users from "../db/users";
 import * as nfse from "../db/nfse";
 import * as charges from "../db/charges";
 import { importCalendlyBookings, linkCalendlyEvent, type CalendlyBooking } from "../db/calendly";
+import { radarResumo, syncRadar, type RadarOportunidade, type RadarSyncConfig } from "../db/radar";
 
 type Handler = (db: DatabaseSync, ctx: DbContext, params: never) => unknown;
 type Id = { id: string };
@@ -297,6 +298,9 @@ export const methods = {
   // Calendly (spec 18): agendamentos lidos pelo service worker viram reuniões.
   "calendly.import": (db: DatabaseSync, ctx: DbContext, p: { bookings: CalendlyBooking[] }) => importCalendlyBookings(db, ctx, p.bookings),
   "calendly.link": (db: DatabaseSync, ctx: DbContext, p: { activityId: string; eventUri: string }) => linkCalendlyEvent(db, ctx, p.activityId, p.eventUri),
+  // Radar Caixa Escolar MG (spec 25): orçamentos lidos pelo service worker viram cartões.
+  "radar.sync": (db: DatabaseSync, ctx: DbContext, p: { config: RadarSyncConfig; oportunidades: RadarOportunidade[] }) => syncRadar(db, ctx, p.config, p.oportunidades),
+  "radar.resumo": (db: DatabaseSync) => radarResumo(db),
   "integrations.importOrganizations": (db: DatabaseSync, ctx: DbContext, p: ext.ExternalImportInput<ext.ExternalOrganizationRow>) => {
     assertIntegrations(db, ctx);
     return ext.importExternalOrganizations(db, ctx, p);

@@ -75,6 +75,7 @@ const SPECS: Spec[] = [
       return { ...v, accounts: v.accounts.map((a: Obj) => (a.token ? a : { ...a, token: old.find((o) => o.email === a.email)?.token ?? "" })) };
     },
   },
+  { key: "conectcrm-radar", label: "Radar Caixa Escolar MG (endereço, funil e etapas)" },
   { key: "conectcrm-auto-backup", label: "Backup do banco (frequência e retenção)" },
   { key: "conectcrm-doc-backup", label: "Backup dos documentos" },
   { key: "conectcrm-license", label: "Licença", secretOnly: true },

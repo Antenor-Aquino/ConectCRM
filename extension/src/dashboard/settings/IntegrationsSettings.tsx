@@ -1,6 +1,6 @@
 // Configurações → Integrações (spec 09): uma entrada por integração, com os
 // parâmetros de cada uma: Pipedrive (chave da API, endereço da conta e o
-// botão para importar), Gestão Financeira (spec 13) e Calendly (spec 18). Só administradores.
+// botão para importar), Gestão Financeira (spec 13), Calendly (spec 18) e Radar Caixa Escolar MG (spec 25). Só administradores.
 import { useEffect, useState } from "react";
 import { CheckCircle2, Download, Eye, EyeOff, Plug, Unplug } from "lucide-react";
 import { TaBadge, TaButton, TaInput, TaPanel, cn } from "@tailadmin";
@@ -22,6 +22,7 @@ import { GestaoFinanceiraPanel } from "./GestaoFinanceiraPanel";
 import { CalendlyPanel } from "./CalendlyPanel";
 import { InterPanel } from "./InterPanel";
 import { ChatwootPanel } from "./ChatwootPanel";
+import { RadarPanel } from "./RadarPanel";
 
 type Msg = { text: string; kind: "ok" | "err" } | null;
 
@@ -30,6 +31,7 @@ const INTEGRATIONS = [
   { id: "gestao", name: "Gestão Financeira", description: "Receitas e despesas dos cartões na extensão Gestão Financeira deste Chrome.", logo: "$", bg: "bg-success-600" },
   { id: "calendly", name: "Calendly", description: "Link de agendamento nos cartões; as reuniões marcadas entram sozinhas no CRM.", logo: "C", bg: "bg-[#006bff]" },
   { id: "chatwoot", name: "Chatwoot", description: "Ticket de ativação Powercubus a partir do cartão, com os dados na nota privada.", logo: "c", bg: "bg-[#1f93ff]" },
+  { id: "radar", name: "Radar Caixa Escolar MG", description: "Orçamentos do portal Caixa Escolar (SEE-MG) viram cartões e acompanham a proposta até o resultado.", logo: "R", bg: "bg-[#7f1a6b]" },
   { id: "inter", name: "Banco Inter", description: "Cobrança com boleto + Pix no botão Cobrança do cartão; a baixa vem sozinha.", logo: "i", bg: "bg-[#ff7a00]" },
 ] as const;
 type IntegrationId = (typeof INTEGRATIONS)[number]["id"];
@@ -86,6 +88,7 @@ export function IntegrationsSettings() {
       {selected === "calendly" && <CalendlyPanel />}
       {selected === "inter" && <InterPanel />}
       {selected === "chatwoot" && <ChatwootPanel />}
+      {selected === "radar" && <RadarPanel />}
     </>
   );
 }
