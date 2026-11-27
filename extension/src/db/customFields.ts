@@ -478,9 +478,17 @@ export function setCustomValues(
     // Atividade: os obrigatórios são os do funil do cartão dela (sem cartão, só os de todos os funis).
     const required = entity === "activity" && opts.pipelineId === undefined ? listCustomFields(db, entity, { pipelineId: activityPipelineId(db, entityId) }) : applicable;
     const byId = new Map(applicable.map((f) => [f.id, f]));
+    let stored: Record<string, CustomValue> | null = null;
     for (const [fieldId, value] of Object.entries(values)) {
       const field = byId.get(fieldId);
-      if (!field) throw new ValidationError("Campo personalizado não encontrado para este cadastro.");
+      if (!field) {
+        // Valor antigo de campo que deixou de valer aqui (restrito a outro
+        // funil ou desativado) e que veio sem mudança junto com os demais: fica
+        // como está, sem impedir de gravar os outros.
+        stored ??= getCustomValues(db, entityId);
+        if (JSON.stringify(stored[fieldId] ?? null) === JSON.stringify(value ?? null)) continue;
+        throw new ValidationError("Campo personalizado não encontrado para este cadastro.");
+      }
       const encoded = encodeValue(db, field, value);
       const existing = one<{ id: string }>(
         db,

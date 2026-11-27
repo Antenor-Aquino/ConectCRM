@@ -202,6 +202,30 @@ function CardDetailInner({
     }
   };
   const update = (patch: Record<string, unknown>) => run(() => call("cards.update", { id: cardId, patch }));
+  const [savingCustom, setSavingCustom] = useState(false);
+  const [customMsg, setCustomMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  /** Grava só os campos deste funil que mudaram; o resultado aparece junto do botão. */
+  const saveCustom = async () => {
+    if (!card) return;
+    const before = JSON.parse(savedCustom.current ?? "{}") as Record<string, unknown>;
+    const changed = Object.fromEntries(
+      fields
+        .filter((f) => JSON.stringify(card.customValues[f.id] ?? null) !== JSON.stringify(before[f.id] ?? null))
+        .map((f) => [f.id, card.customValues[f.id] ?? null]),
+    );
+    setSavingCustom(true);
+    setCustomMsg(null);
+    try {
+      if (Object.keys(changed).length) await call("cards.update", { id: cardId, patch: { customValues: changed } });
+      await load();
+      onChanged();
+      setCustomMsg({ ok: true, text: Object.keys(changed).length ? "Campos salvos." : "Nada mudou." });
+    } catch (e) {
+      setCustomMsg({ ok: false, text: errorText(e) });
+    } finally {
+      setSavingCustom(false);
+    }
+  };
 
   /** Cartão com financeiro não se exclui (só arquiva): confere ao vivo antes de perguntar. */
   async function requestDelete() {
@@ -277,7 +301,10 @@ function CardDetailInner({
             </p>
           )}
           <Field label={f.name} required={!!f.required} hint={f.description}>
-            <FieldInput field={f} value={card.customValues[f.id]} onChange={(v) => setCard({ ...card, customValues: { ...card.customValues, [f.id]: v } })} />
+            <FieldInput field={f} value={card.customValues[f.id]} onChange={(v) => {
+              setCustomMsg(null);
+              setCard({ ...card, customValues: { ...card.customValues, [f.id]: v } });
+            }} />
           </Field>
         </>
       );
@@ -735,9 +762,16 @@ function CardDetailInner({
             <Fragment key={it.key}>{renderBlock(it.key, detailItems[idx - 1]?.key)}</Fragment>
           ))}
           {fields.some((f) => !f.hidden) && (
-            <TaButton size="sm" onClick={() => void update({ customValues: card.customValues })}>
-              Salvar campos personalizados
-            </TaButton>
+            <div className="flex flex-wrap items-center gap-3" data-save-custom>
+              <TaButton size="sm" disabled={savingCustom} onClick={() => void saveCustom()}>
+                Salvar campos personalizados
+              </TaButton>
+              {customMsg && (
+                <span className={cn("text-theme-xs", customMsg.ok ? "text-success-600" : "text-error-600")} data-save-custom-msg>
+                  {customMsg.text}
+                </span>
+              )}
+            </div>
           )}
         </div>
 
