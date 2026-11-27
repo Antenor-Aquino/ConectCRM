@@ -163,7 +163,8 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
     for (const f of ["qtd_turmas", "plano", "vencimento_boleto", "fim_vigencia", "usuario", "email_usuario", "email_financeiro"] as ChatwootField[]) {
       const def = ctx.fields[f];
       if (!def || data[f] === ctx.data[f]) continue;
-      if ((f === "usuario" || f === "email_usuario") && data[f].trim() === data.email_cliente.trim()) continue;
+      // Usuário igual ao e-mail do contato que já estava no cadastro: é o padrão, não precisa gravar.
+      if ((f === "usuario" || f === "email_usuario") && ctx.data.email_cliente.trim() && data[f].trim() === ctx.data.email_cliente.trim()) continue;
       const v = data[f].trim();
       out[def.id] = !v ? null : def.type === "number" ? Number(v.replace(",", ".")) : def.type === "date" ? isoDate(v) : v;
     }
@@ -190,7 +191,7 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
         // Conversa criada, mas a nota/etiqueta falhou: registra para não duplicar.
         if (e instanceof ChatwootError && e.link) {
           const id = Number(e.link.split("/").pop());
-          if (id > 0) await rpc("chatwoot.record", { id: cardId, conversationId: id, link: e.link, data, memo });
+          if (id > 0) await rpc("chatwoot.record", { id: cardId, conversationId: id, link: e.link, data, memo, saveContactEmail: saveBack });
           onChanged?.();
         }
         throw e;
@@ -202,6 +203,7 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
         data,
         contactCreated: r.contactCreated,
         memo,
+        saveContactEmail: saveBack,
         attachments: docs.filter((d) => chosen.includes(d.id)).map((d) => d.filename),
       });
       setDone({ link: r.link, conversationId: r.conversationId, paymentCheck: rec?.paymentActivityId ? dayAfter(data.vencimento_boleto) : null });
@@ -320,7 +322,7 @@ export function ChatwootDialog({ cardId, onClose, onChanged }: { cardId: string;
             <div className="flex flex-wrap items-center justify-between gap-2">
               <label className="flex items-center gap-2 text-theme-xs text-gray-600">
                 <input type="checkbox" checked={saveBack} onChange={(e) => setSaveBack(e.target.checked)} />
-                Salvar no cartão o que mudei em Plano, Vencimento do boleto, Qtd de turmas, Fim da vigência, Usuário, E-mail do usuário e E-mail financeiro
+                Salvar no cartão o que mudei em Plano, Vencimento do boleto, Qtd de turmas, Fim da vigência, Usuário, E-mail do usuário e E-mail financeiro (e o E-mail do cliente no contato principal, se ele não tiver)
               </label>
               <TaButton
                 startIcon={busy ? <RefreshCw size={15} className="animate-spin" /> : <MessageSquare size={15} />}

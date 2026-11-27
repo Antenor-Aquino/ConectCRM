@@ -7,6 +7,7 @@ import { formatCnpj } from "../lib/cnpj";
 import { createActivity } from "./activities";
 import { payerOrganizationId } from "./cardOrganizations";
 import { createCustomField, getCustomValues, listCustomFields, type CustomFieldType } from "./customFields";
+import { updatePerson } from "./contacts";
 import { addNote } from "./notes";
 import { insertRow, updateRow, type DbContext } from "./repo";
 import { many, one, withTransaction, type DatabaseSync } from "./sql";
@@ -182,13 +183,38 @@ export function recordChatwootTicket(
   db: DatabaseSync,
   ctx: DbContext,
   cardId: string,
-  input: { conversationId: number; link: string; data: ChatwootData; contactCreated?: boolean; attachments?: string[]; memo?: string },
+  input: {
+    conversationId: number;
+    link: string;
+    data: ChatwootData;
+    contactCreated?: boolean;
+    attachments?: string[];
+    memo?: string;
+    /** Grava o "E-mail do cliente" no contato principal do cartão, se ele ainda não tiver e-mail. */
+    saveContactEmail?: boolean;
+  },
   now = new Date(),
-): { ticketId: string; activityId: string; paymentActivityId: string | null } {
+): { ticketId: string; activityId: string; paymentActivityId: string | null; contactEmailSaved: boolean } {
   if (!Number.isInteger(input.conversationId) || input.conversationId <= 0) throw new ValidationError("Conversa do Chatwoot inválida.");
   if (!/^https:\/\//.test(input.link)) throw new ValidationError("Link da conversa inválido.");
   return withTransaction(db, () => {
-    if (!one(db, "SELECT 1 FROM deal WHERE id = ? AND deleted_at IS NULL", cardId)) throw new ValidationError("Cartão não encontrado.");
+    const deal = one<{ person_id: string | null }>(db, "SELECT person_id FROM deal WHERE id = ? AND deleted_at IS NULL", cardId);
+    if (!deal) throw new ValidationError("Cartão não encontrado.");
+    // E-mail informado para o ticket vai para o contato principal que não tinha
+    // (não troca um e-mail que o contato já tem).
+    let contactEmailSaved = false;
+    const email = input.data.email_cliente.trim();
+    if (input.saveContactEmail && deal.person_id && email) {
+      const current = one<{ email: string | null }>(db, "SELECT email FROM person WHERE id = ? AND deleted_at IS NULL", deal.person_id);
+      if (current && !current.email?.trim()) {
+        try {
+          updatePerson(db, ctx, deal.person_id, { email });
+          contactEmailSaved = true;
+        } catch {
+          /* e-mail recusado pelo cadastro: o ticket segue registrado */
+        }
+      }
+    }
     const ticketId = insertRow(db, ctx, "chatwoot_ticket", {
       card_id: cardId,
       conversation_id: input.conversationId,
@@ -234,7 +260,7 @@ export function recordChatwootTicket(
         ownerId: ctx.userId,
       });
     }
-    return { ticketId, activityId, paymentActivityId };
+    return { ticketId, activityId, paymentActivityId, contactEmailSaved };
   });
 }
 
