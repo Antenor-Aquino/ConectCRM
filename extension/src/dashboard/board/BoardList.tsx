@@ -166,7 +166,7 @@ export function BoardList({
         <table className="w-full border-separate border-spacing-0 text-theme-sm">
           <thead className="sticky top-0 z-10 bg-gray-50 text-theme-xs text-gray-500 dark:bg-gray-800">
             <tr>
-              <th className="sticky left-0 z-20 w-9 border-b border-gray-200 bg-gray-50 pl-3 dark:border-gray-800 dark:bg-gray-800">
+              <th className="sticky left-0 z-30 w-9 border-b border-gray-200 bg-gray-50 pl-3 dark:border-gray-800 dark:bg-gray-800">
                 <input
                   type="checkbox"
                   aria-label="Selecionar todos"
@@ -179,7 +179,7 @@ export function BoardList({
                   className="h-4 w-4 cursor-pointer accent-brand-500"
                 />
               </th>
-              {header("titulo", "Título", "sticky left-9 z-10 min-w-[220px] bg-gray-50 dark:bg-gray-800")}
+              {header("titulo", "Título", "sticky left-9 z-30 min-w-[220px] bg-gray-50 shadow-[2px_0_4px_-2px_rgba(16,24,40,0.12)] dark:bg-gray-800")}
               {visible.map((k) => header(k, label(k), k === "valor" ? "text-right" : undefined))}
             </tr>
           </thead>
@@ -195,7 +195,7 @@ export function BoardList({
                 data-archived={r.archived_at ? true : undefined}
                 onClick={() => (selected.size ? onToggleSelect(r.id) : onOpenCard(r.id))}
               >
-                <td className="sticky left-0 w-9 border-b border-gray-100 bg-white pl-3 group-hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:group-hover:bg-gray-800">
+                <td className="sticky left-0 z-[5] w-9 border-b border-gray-100 bg-white pl-3 group-hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:group-hover:bg-gray-800">
                   <input
                     type="checkbox"
                     aria-label={`Selecionar ${r.title}`}
@@ -205,7 +205,7 @@ export function BoardList({
                     className="h-4 w-4 cursor-pointer accent-brand-500"
                   />
                 </td>
-                <td className="sticky left-9 max-w-[320px] border-b border-r border-gray-100 bg-white px-3 py-2 group-hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:group-hover:bg-gray-800">
+                <td data-sticky-title className="sticky left-9 z-[5] min-w-[220px] max-w-[320px] shadow-[2px_0_4px_-2px_rgba(16,24,40,0.12)] border-b border-r border-gray-100 bg-white px-3 py-2 group-hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:group-hover:bg-gray-800">
                   <div className="flex items-center gap-2">
                     <span
                       className={cn(
