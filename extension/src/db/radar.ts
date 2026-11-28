@@ -9,8 +9,8 @@
 //   - organization: external_id = "inep:<INEP>" ou "email:<e-mail>" da escola.
 // O prazo de envio da proposta vira a atividade "Enviar proposta no portal"
 // (lembrete 1 dia antes), concluída sozinha quando a proposta aparece enviada.
-// Regras: o cartão só avança (entrada → proposta enviada → resultado). Com o
-// resultado no portal (aprovada, recusada ou cancelada) o cartão fica
+// Regras: o cartão só avança (entrada → proposta enviada → resultado). Com a
+// proposta enviada ou o resultado no portal (aprovada, recusada ou cancelada) o cartão fica
 // "Pendente": o desfecho final (ganho/perdido) é decisão do usuário. Se o
 // usuário já fechou o cartão à mão, o Radar não mexe no status; cartão
 // excluído no CRM não volta.
@@ -19,7 +19,7 @@ import { createOrganization, findOrganizationByCnpj } from "./contacts";
 import { getCustomValues, listCustomFields, setCustomValues, type CustomValue } from "./customFields";
 import { createCard, getCardRow, moveCard, setCardStatus, updateCard } from "./deals";
 import { defaultChoices, mergeRecords } from "./mergeRecords";
-import { addNote } from "./notes";
+import { addNote, listNotes, updateNote } from "./notes";
 import { listStages } from "./pipelines";
 import { createTag, getEntityTags, listTags, setEntityTags } from "./tags";
 import { insertRow, updateRow, type DbContext } from "./repo";
@@ -117,6 +117,10 @@ interface RadarAplicado {
   d?: number;
   /** Notas, campos (Processo SGD, Qtd Turmas) e etiquetas (MG, Pública) já aplicados. */
   x?: number;
+  /** 0.2.164: link da oportunidade já posto na nota "Contato e prazos". */
+  l?: number;
+  /** 0.2.164: já conferido se o cartão com proposta enviada devia estar Pendente. */
+  q?: number;
 }
 
 /** Versão do pacote "notas + campos + etiquetas"; cartões com x menor recebem uma vez. */
@@ -297,6 +301,7 @@ export function radarNotas(o: RadarOportunidade): string[] {
       `E-mail da escola: ${emails.join("; ") || "não informado"}`,
       `Envio da proposta: ${dataHora(o.prazoEnvio)}`,
       `Entrega: ${dataHora(o.entrega)}`,
+      ...(o.link ? [`Link da oportunidade: ${o.link}`] : []),
     ].join("\n"),
   );
   return notas;
@@ -334,6 +339,18 @@ function vincularEtiquetas(db: DatabaseSync, ctx: DbContext, dealId: string): vo
   const atuais = getEntityTags(db, dealId).map((t) => t.id);
   if (ids.every((id) => atuais.includes(id))) return;
   setEntityTags(db, ctx, "deal", dealId, [...new Set([...atuais, ...ids])]);
+}
+
+/**
+ * Cartões criados antes da 0.2.164: acrescenta o link da oportunidade à nota
+ * "Contato e prazos" que o Radar criou (se o usuário apagou a nota, não recria).
+ */
+function linkNaNotaContato(db: DatabaseSync, ctx: DbContext, dealId: string, o: RadarOportunidade): void {
+  if (!o.link) return;
+  const ped = o.pedido ?? String(o.id);
+  const nota = listNotes(db, "deal", dealId).find((n) => n.body.startsWith(`Contato e prazos (pedido ${ped}):`));
+  if (!nota || nota.body.includes(o.link)) return;
+  updateNote(db, ctx, nota.id, { body: `${nota.body.trimEnd()}\nLink da oportunidade: ${o.link}` });
 }
 
 /** Notas, campos e etiquetas: uma vez por cartão (cartões antigos recebem na próxima leitura). */
@@ -417,16 +434,19 @@ function stageDoFunil(db: DatabaseSync, pipelineId: string, stageId: string | nu
   return listStages(db, pipelineId).some((s) => s.id === stageId) ? stageId : null;
 }
 
-/** Leva o cartão ao estado novo: etapa (se configurada) e, com o resultado no portal, Pendente
- * (o usuário avalia e define ganho/perdido). Não mexe em cartão já fechado à mão. */
+/** Leva o cartão ao estado novo: etapa (se configurada) e, com a proposta enviada ou o resultado
+ * no portal, Pendente (o usuário avalia e define ganho/perdido). Não mexe em cartão já fechado à mão. */
 function aplicarEstado(db: DatabaseSync, ctx: DbContext, cfg: RadarSyncConfig, dealId: string, o: RadarOportunidade, e: RadarEstado): void {
   const card = getCardRow(db, dealId);
-  if (!card || card.status !== "open") return;
+  if (!card || (card.status !== "open" && card.status !== "pending")) return;
   const alvo =
     e === "enviada" ? stageDoFunil(db, cfg.pipelineId, cfg.stageEnviada) : e === "ganha" ? stageDoFunil(db, cfg.pipelineId, cfg.stageGanha) : null;
   if (alvo && card.pipeline_id === cfg.pipelineId && card.stage_id !== alvo) moveCard(db, ctx, dealId, { stageId: alvo });
-  if (RESULTADO[e]) setCardStatus(db, ctx, dealId, { status: "pending" });
+  if (PENDENTE[e] && card.status !== "pending") setCardStatus(db, ctx, dealId, { status: "pending" });
 }
+
+/** Estados do portal que deixam o cartão Pendente: proposta enviada e resultado. */
+const PENDENTE: Record<RadarEstado, boolean> = { entrada: false, enviada: true, ganha: true, perdida: true, cancelada: true };
 
 const ITEM_KIND: Record<RadarEstado, RadarSyncItem["kind"] | null> = { entrada: null, enviada: "sent", ganha: "won", perdida: "lost", cancelada: "canceled" };
 
@@ -557,7 +577,7 @@ export function syncRadar(db: DatabaseSync, ctx: DbContext, cfg: RadarSyncConfig
             origin: RADAR_ORIGIN,
           });
           // Criado agora: já passou pela pergunta de parecidos (ou não havia).
-          const aplicado: RadarAplicado = { e: "entrada", v: o.meuValor ?? null, p: 1, d: 1 };
+          const aplicado: RadarAplicado = { e: "entrada", v: o.meuValor ?? null, p: 1, d: 1, l: 1, q: 1 };
           if (e === "entrada" && o.prazoEnvio && new Date(o.prazoEnvio).getTime() > Date.now())
             aplicado.a = createActivity(db, ctx, {
               title: `Enviar proposta no portal — pedido ${o.pedido ?? o.id}`,
@@ -598,6 +618,17 @@ ${o.link}` : ""}`,
         if ((antes.x ?? 0) < EXTRAS_VERSAO) {
           aplicarExtras(db, ctx, r.local_id, o);
           depois.x = EXTRAS_VERSAO;
+          depois.l = 1;
+          mudou = true;
+        } else if (!antes.l) {
+          linkNaNotaContato(db, ctx, r.local_id, o);
+          depois.l = 1;
+          mudou = true;
+        }
+        if (!antes.q) {
+          // 0.2.164: proposta enviada também fica Pendente (cartões que já estavam em "enviada" e abertos).
+          if (antes.e === "enviada" && getCardRow(db, r.local_id)?.status === "open") setCardStatus(db, ctx, r.local_id, { status: "pending" });
+          depois.q = 1;
           mudou = true;
         }
         let notaFeita = false;

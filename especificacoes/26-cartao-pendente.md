@@ -33,8 +33,8 @@ Pendente conta como **aberto** (previsão, abertos por responsável, tempo na
 etapa) e nunca como ganho/perdido nem na taxa de conversão.
 
 ## Radar Caixa Escolar MG (spec 25)
-Aprovada, recusada ou cancelada no portal → cartão **Pendente** (antes: Ganho
-ou Perdido). A etapa "ao aprovar" continua valendo; o resultado vai na nota
+Enviada (desde a 0.2.164), aprovada, recusada ou cancelada no portal → cartão
+**Pendente** (antes: Ganho ou Perdido). A etapa "ao aprovar" continua valendo; o resultado vai na nota
 "Resultado no portal".
 
 ## Testes

@@ -1,4 +1,4 @@
-# 25 — Integração com o Radar Caixa Escolar MG (0.2.157; notas, campos e etiquetas na 0.2.158; nota do resultado na 0.2.159; Pendente na 0.2.160; parecidos e conversão na 0.2.161; motivos na 0.2.162; duplicados na 0.2.163)
+# 25 — Integração com o Radar Caixa Escolar MG (0.2.157; notas, campos e etiquetas na 0.2.158; nota do resultado na 0.2.159; Pendente na 0.2.160; parecidos e conversão na 0.2.161; motivos na 0.2.162; duplicados na 0.2.163; link na nota e enviada Pendente na 0.2.164)
 
 ## Objetivo
 O **Radar Caixa Escolar MG** é um robô local (Python, repositório
@@ -63,7 +63,10 @@ até o resultado, sem digitar nada.
 - **Notas do orçamento** (0.2.158), cada uma separada: **Descrição do
   processo** (descrição de cada item), **Garantia exigida** (garantia de cada
   item; só se houver; Radar 1.16 manda `itens[].garantia`) e **Contato e
-  prazos** (e-mail da escola, envio da proposta e entrega, em dd/mm/aaaa hh:mm).
+  prazos** (e-mail da escola, envio da proposta e entrega, em dd/mm/aaaa hh:mm,
+  e, desde a 0.2.164, o **link da oportunidade** no portal; nos cartões
+  anteriores o link é acrescentado à nota existente uma vez, marcador `l`; se a
+  nota foi apagada, não é recriada).
 - **Campos do cartão** (0.2.158), achados pelo nome (ignora caixa e acento):
   **Processo SGD** = nº do pedido; **Qtd Turmas** = turmas do Censo. Só
   campos de texto ou número; não sobrescreve o que já estiver preenchido. Sem
@@ -81,8 +84,9 @@ até o resultado, sem digitar nada.
   cartão, com lembrete 1 dia antes, só para orçamento ainda no prazo. É
   concluída sozinha quando a proposta aparece como enviada.
 - **Só avança**: entrada → proposta enviada → resultado.
-  - enviada: move para a etapa configurada e o valor passa a ser o da
-    proposta;
+  - enviada: move para a etapa configurada, o valor passa a ser o da
+    proposta e o cartão fica **Pendente** (0.2.164; os cartões já em
+    "enviada" e abertos passam a Pendente uma vez, marcador `q`);
   - aprovada: etapa configurada + **Pendente** (0.2.160; antes, Ganho);
   - recusada ou cancelada: **Pendente** (0.2.160; antes, Perdido). O motivo
     e o vencedor vão na nota "Resultado no portal";

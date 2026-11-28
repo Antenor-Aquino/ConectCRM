@@ -94,13 +94,13 @@ describe("Radar Caixa Escolar MG", () => {
     expect(getCardRow(db, dealOf(401)!)!.organization_id).toBe(getCardRow(db, dealOf(402)!)!.organization_id);
   });
 
-  it("proposta enviada move para Proposta com o valor; aprovada vai para Ganhos MG como Pendente; nunca volta", async () => {
+  it("proposta enviada move para Proposta com o valor e fica Pendente; aprovada vai para Ganhos MG como Pendente; nunca volta", async () => {
     const { db, ctx, st, cfg, dealOf } = await setup();
     syncRadar(db, ctx, cfg, [op()]);
     const enviada = syncRadar(db, ctx, cfg, [op({ statusPortal: "ENVI", foraDaListagem: true, meuValor: 887 })]);
     expect(enviada.items.map((i) => i.kind)).toEqual(["sent"]);
     let card = getCardRow(db, dealOf(401)!)!;
-    expect(card).toMatchObject({ stage_id: st["Proposta"], value_cents: 88700, status: "open" });
+    expect(card).toMatchObject({ stage_id: st["Proposta"], value_cents: 88700, status: "pending", closed_at: null });
     expect(listActivities(db, { dealId: card.id })[0]).toMatchObject({ done: 1 }); // tarefa do prazo concluída
     const mapa = {
       total: 2, posicao: 1, meuValor: 887, vencedor: "MINHA EMPRESA", valorVencedor: 887, venci: true,
@@ -187,6 +187,7 @@ describe("Radar Caixa Escolar MG", () => {
     expect(contato).toContain("E-mail da escola: escola.248479@educacao.mg.gov.br");
     expect(contato).toMatch(/Envio da proposta: \d{2}\/\d{2}\/\d{4}/);
     expect(contato).toMatch(/Entrega: \d{2}\/\d{2}\/\d{4}/);
+    expect(contato).toContain(`Link da oportunidade: ${op().link}`);
     expect(getCustomValues(db, id)).toMatchObject({ [fSgd]: "2026230001", [fTur]: 22 });
     const tags = getEntityTags(db, id);
     expect(tags.map((t) => t.name).sort()).toEqual(["MG", "Pública"]);
@@ -210,6 +211,31 @@ describe("Radar Caixa Escolar MG", () => {
     expect(getCustomValues(db, id)).toMatchObject({ [fSgd]: "2026230001", [fTur]: 30 });
     expect(getEntityTags(db, id)).toHaveLength(2);
     expect(syncRadar(db, ctx, cfg, [op()])).toMatchObject({ updated: 0 });
+  });
+
+  it("cartões de antes da 0.2.164: link na nota de contato e enviada aberta vira Pendente, uma vez", async () => {
+    const { db, ctx, cfg, dealOf } = await setup();
+    syncRadar(db, ctx, cfg, [op(), op({ id: 402, pedido: "2026230002", statusPortal: "ENVI", foraDaListagem: true })]);
+    // Simula cartões da 0.2.163: sem os marcadores l e q, nota sem link, enviada ainda aberta.
+    for (const x of many<{ id: string; source_updated_at: string }>(db, "SELECT id, source_updated_at FROM external_ref WHERE provider = 'radar' AND entity_type = 'deal'")) {
+      const { l: _l, q: _q, ...m } = JSON.parse(x.source_updated_at) as Record<string, unknown>;
+      updateRow(db, ctx, "external_ref", x.id, { source_updated_at: JSON.stringify(m) });
+    }
+    for (const n of many<{ id: string; body: string }>(db, "SELECT id, body FROM note WHERE body LIKE 'Contato e prazos%'"))
+      updateRow(db, ctx, "note", n.id, { body: n.body.replace(/\nLink da oportunidade: .*$/, "") });
+    setCardStatus(db, ctx, dealOf(402)!, { status: "open" });
+    const a = dealOf(401)!;
+    expect(listNotes(db, "deal", a).find((n) => n.body.startsWith("Contato e prazos"))!.body).not.toContain("Link da oportunidade");
+    expect(syncRadar(db, ctx, cfg, [op(), op({ id: 402, pedido: "2026230002", statusPortal: "ENVI", foraDaListagem: true })])).toMatchObject({ updated: 2 });
+    const contato = listNotes(db, "deal", a).filter((n) => n.body.startsWith("Contato e prazos"));
+    expect(contato).toHaveLength(1); // atualiza a mesma nota, não cria outra
+    expect(contato[0]!.body.endsWith(`Link da oportunidade: ${op().link}`)).toBe(true);
+    expect(getCardRow(db, a)!.status).toBe("open"); // ainda não enviada
+    expect(getCardRow(db, dealOf(402)!)!.status).toBe("pending");
+    // O usuário reabre: o Radar não insiste.
+    setCardStatus(db, ctx, dealOf(402)!, { status: "open" });
+    expect(syncRadar(db, ctx, cfg, [op(), op({ id: 402, pedido: "2026230002", statusPortal: "ENVI", foraDaListagem: true })])).toMatchObject({ updated: 0 });
+    expect(getCardRow(db, dealOf(402)!)!.status).toBe("open");
   });
 
   it("enviada → recusada gera nota do resultado; o mapa lido depois vem numa nota nova, uma vez", async () => {

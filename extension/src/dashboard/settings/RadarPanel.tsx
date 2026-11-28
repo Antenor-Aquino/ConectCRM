@@ -184,7 +184,7 @@ export function RadarPanel() {
           </Field>
           {stageSelect("Etapa dos orçamentos novos", "stageEntrada", "Primeira etapa do funil")}
           {stageSelect("Ao enviar a proposta no portal", "stageEnviada", "Não mover")}
-          {stageSelect("Ao aprovar no portal", "stageGanha", "Não mover", "Aprovada, recusada ou cancelada no portal: o cartão fica Pendente (amarelo) e você decide se foi ganho ou perdido.")}
+          {stageSelect("Ao aprovar no portal", "stageGanha", "Não mover", "Enviada, aprovada, recusada ou cancelada no portal: o cartão fica Pendente (amarelo) e você decide se foi ganho ou perdido.")}
         </div>
 
         <div className="space-y-2">
