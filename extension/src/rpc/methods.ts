@@ -52,7 +52,7 @@ import * as users from "../db/users";
 import * as nfse from "../db/nfse";
 import * as charges from "../db/charges";
 import { importCalendlyBookings, linkCalendlyEvent, type CalendlyBooking } from "../db/calendly";
-import { radarResumo, syncRadar, type RadarOportunidade, type RadarSyncConfig } from "../db/radar";
+import { radarDuplicados, radarResolverDuplicado, radarResumo, syncRadar, type RadarOportunidade, type RadarSyncConfig } from "../db/radar";
 
 type Handler = (db: DatabaseSync, ctx: DbContext, params: never) => unknown;
 type Id = { id: string };
@@ -301,6 +301,11 @@ export const methods = {
   // Radar Caixa Escolar MG (spec 25): orçamentos lidos pelo service worker viram cartões.
   "radar.sync": (db: DatabaseSync, ctx: DbContext, p: { config: RadarSyncConfig; oportunidades: RadarOportunidade[] }) => syncRadar(db, ctx, p.config, p.oportunidades),
   "radar.resumo": (db: DatabaseSync) => radarResumo(db),
+  "radar.duplicados": (db: DatabaseSync) => radarDuplicados(db),
+  "radar.resolverDuplicado": (db: DatabaseSync, ctx: DbContext, p: { dealId: string; acao: { juntarEm: string } | "diferentes" }) => {
+    if (p.acao !== "diferentes") assertMergeAccess(db, ctx, "deal", [p.dealId, p.acao.juntarEm]);
+    radarResolverDuplicado(db, ctx, p.dealId, p.acao);
+  },
   "integrations.importOrganizations": (db: DatabaseSync, ctx: DbContext, p: ext.ExternalImportInput<ext.ExternalOrganizationRow>) => {
     assertIntegrations(db, ctx);
     return ext.importExternalOrganizations(db, ctx, p);

@@ -1,4 +1,4 @@
-# 25 — Integração com o Radar Caixa Escolar MG (0.2.157; notas, campos e etiquetas na 0.2.158; nota do resultado na 0.2.159; Pendente na 0.2.160; parecidos e conversão na 0.2.161; motivos na 0.2.162)
+# 25 — Integração com o Radar Caixa Escolar MG (0.2.157; notas, campos e etiquetas na 0.2.158; nota do resultado na 0.2.159; Pendente na 0.2.160; parecidos e conversão na 0.2.161; motivos na 0.2.162; duplicados na 0.2.163)
 
 ## Objetivo
 O **Radar Caixa Escolar MG** é um robô local (Python, repositório
@@ -95,7 +95,7 @@ até o resultado, sem digitar nada.
   mapa entra numa segunda nota quando chegar (uma vez só). Vale também para
   cartão fechado à mão (só o status não é mexido). Fica no banco local, como
   no Radar.
-- **Cartão parecido** (0.2.161, só em "Todo o histórico"): antes de criar,
+- **Cartão parecido** (0.2.161; desde a 0.2.163 em qualquer ponto de partida): antes de criar,
   o ConectCRM procura cartões comerciais que **não** vieram do Radar com nome
   parecido com a escola (mesma regra de semelhança do cadastro) ou com o nº do
   pedido no título. Achando, não cria: o orçamento aparece na tela do Radar
@@ -104,6 +104,12 @@ até o resultado, sem digitar nada.
   existente: notas, campos, etiquetas e status) ou **Não criar**. A decisão
   fica em `decisoes` (por idBudget) e vale para sempre; aviso no Chrome e no
   sino quando aparece orçamento novo para confirmar.
+- **Duplicados já criados** (0.2.163): cartões do Radar com cartão parecido
+  feito à mão (criados antes da pergunta existir) aparecem na tela do Radar
+  ("Juntar?"): **Juntar neste cartão** usa a mesclagem de cartões (fica o
+  cartão feito à mão; notas, tarefas, etiquetas, campos vazios e o vínculo do
+  Radar vêm do cartão do Radar, que sai) ou **São diferentes: manter os
+  dois**. Decidido, não pergunta mais (marcador `d`).
 - **Conversão para Pendente** (0.2.161, uma vez por cartão, marcador `p`): os
   cartões que o Radar fechou como ganho/perdido antes da 0.2.160 voltam para
   Pendente. Reconhece pelo registro de alterações (a mudança de status foi

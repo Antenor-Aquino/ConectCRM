@@ -8,7 +8,7 @@ import { call } from "../../rpc/client";
 import { errorText } from "../../lib/errors";
 import { formatDateTime } from "../../lib/format";
 import { fetchRadar, loadRadar, radarBaseUrl, requestRadarPermission, saveRadar, type RadarSettings } from "../../lib/radar";
-import { RADAR_MOTIVO_TEXTO, type RadarDecisao, type RadarMotivo } from "../../db/radar";
+import { RADAR_MOTIVO_TEXTO, type RadarDecisao, type RadarDuplicado, type RadarMotivo } from "../../db/radar";
 import type { RadarInicio, RadarSyncResult } from "../../db/radar";
 import { useSession } from "../session";
 import { Field } from "../ui/form";
@@ -22,7 +22,7 @@ const INICIO: { value: RadarInicio; label: string; hint: string }[] = [
   {
     value: "historico",
     label: "Todo o histórico do Radar",
-    hint: "Inclusive os encerrados (entram como Pendente, para a sua avaliação). Se já houver cartão de nome parecido, o ConectCRM pergunta antes de criar.",
+    hint: "Inclusive os encerrados (entram como Pendente, para a sua avaliação).",
   },
 ];
 
@@ -32,6 +32,7 @@ export function RadarPanel() {
   const [pipelines, setPipelines] = useState<Opt[]>([]);
   const [stages, setStages] = useState<Opt[]>([]);
   const [resumo, setResumo] = useState<{ cartoes: number; abertos: number } | null>(null);
+  const [duplicados, setDuplicados] = useState<RadarDuplicado[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<Msg>(null);
 
@@ -39,6 +40,7 @@ export function RadarPanel() {
     void loadRadar().then(setS);
     void call("pipelines.list", {}).then((p) => setPipelines(p.filter((x) => x.type === "comercial").map((x) => ({ id: x.id, name: x.name }))));
     void call("radar.resumo").then(setResumo);
+    void call("radar.duplicados").then(setDuplicados);
   }, []);
 
   useEffect(() => {
@@ -92,6 +94,7 @@ export function RadarPanel() {
           : "Nada a fazer.",
       });
       void call("radar.resumo").then(setResumo);
+      void call("radar.duplicados").then(setDuplicados);
     } catch (e) {
       setMsg({ kind: "err", text: errorText(e) });
     } finally {
@@ -105,6 +108,22 @@ export function RadarPanel() {
     const atual = await loadRadar();
     await save({ decisoes: { ...atual.decisoes, [String(id)]: d }, parecidos: atual.parecidos.filter((p) => p.id !== id) });
     await syncNow();
+  };
+
+  /** Possível duplicado já criado: juntar no cartão feito à mão ou marcar como diferentes. */
+  const resolver = async (dealId: string, acao: { juntarEm: string } | "diferentes") => {
+    setMsg(null);
+    setBusy("dup");
+    try {
+      await call("radar.resolverDuplicado", { dealId, acao });
+      setMsg({ kind: "ok", text: acao === "diferentes" ? "Certo: ficam os dois cartões." : "Cartões juntados: o Radar passa a acompanhar o cartão que você já tinha." });
+      setDuplicados(await call("radar.duplicados"));
+      setResumo(await call("radar.resumo"));
+    } catch (e) {
+      setMsg({ kind: "err", text: errorText(e) });
+    } finally {
+      setBusy(null);
+    }
   };
 
   const toggleTermo = (t: string, on: boolean) => {
@@ -182,7 +201,10 @@ export function RadarPanel() {
           ) : (
             <p className="text-theme-xs text-gray-500">Teste a conexão para ver as palavras-chave do Radar.</p>
           )}
-          <p className="text-theme-xs text-gray-500">Nenhuma marcada = todos os orçamentos do Radar. Os descartados no Radar não viram cartão.</p>
+          <p className="text-theme-xs text-gray-500">
+            Nenhuma marcada = todos os orçamentos do Radar. Os descartados no Radar não viram cartão. Se já houver cartão de nome parecido feito à mão, o
+            ConectCRM pergunta antes de criar.
+          </p>
         </div>
 
         <Field label="Ao ligar, trazer" hint={INICIO.find((x) => x.value === s.inicio)?.hint}>
@@ -256,6 +278,36 @@ export function RadarPanel() {
                     Não criar
                   </TaButton>
                 </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {duplicados.length > 0 && (
+          <div className="space-y-3 rounded-lg border border-yellow-300 bg-yellow-50 p-3 dark:border-yellow-500/40 dark:bg-yellow-500/10" data-radar-duplicados>
+            <p className="font-medium text-yellow-900 dark:text-yellow-200">
+              {duplicados.length} cartão(ões) do Radar parecido(s) com cartões que você já tinha. Juntar?
+            </p>
+            {duplicados.map((d) => (
+              <div key={d.dealId} className="space-y-2 rounded-lg bg-white p-3 dark:bg-gray-900" data-radar-duplicado={d.dealId}>
+                <p>
+                  <b>{d.titulo}</b> <span className="text-theme-xs text-gray-500">({d.funil} › {d.etapa}, criado pelo Radar)</span>
+                </p>
+                <ul className="space-y-1 text-theme-xs text-gray-600 dark:text-gray-400">
+                  {d.cartoes.map((c) => (
+                    <li key={c.id} className="flex flex-wrap items-center gap-2">
+                      <span>
+                        <b>{c.titulo}</b> ({c.funil} › {c.etapa}) · {c.score}% parecido
+                      </span>
+                      <TaButton size="sm" variant="outline" disabled={!!busy} onClick={() => void resolver(d.dealId, { juntarEm: c.id })}>
+                        Juntar neste cartão
+                      </TaButton>
+                    </li>
+                  ))}
+                </ul>
+                <TaButton size="sm" variant="outline" disabled={!!busy} onClick={() => void resolver(d.dealId, "diferentes")}>
+                  São diferentes: manter os dois
+                </TaButton>
               </div>
             ))}
           </div>

@@ -8,8 +8,8 @@ import { getOrganization } from "../src/db/contacts";
 import { createCard, deleteCard, getCardRow, setCardStatus } from "../src/db/deals";
 import { listNotes } from "../src/db/notes";
 import { createPipeline, listStages } from "../src/db/pipelines";
-import { radarResumo, syncRadar, type RadarOportunidade, type RadarSyncConfig } from "../src/db/radar";
-import { one } from "../src/db/sql";
+import { radarDuplicados, radarResolverDuplicado, radarResumo, syncRadar, type RadarOportunidade, type RadarSyncConfig } from "../src/db/radar";
+import { many, one } from "../src/db/sql";
 import { createUser } from "../src/db/users";
 import { freshDb } from "./helpers";
 
@@ -297,10 +297,38 @@ describe("Radar Caixa Escolar MG", () => {
     expect(dealOf(2)).toBeUndefined();
     expect(dealOf(3)).toBe(meu);
     expect(listNotes(db, "deal", meu).some((n) => n.body.startsWith("Contato e prazos (pedido 2026230003)"))).toBe(true);
-    // Fora de "Todo o histórico" não pergunta.
+    // Vale também fora de "Todo o histórico".
     const s2 = await setup({ inicio: "abertas" });
     createCard(s2.db, s2.ctx, { pipelineId: s2.pid, title: "EE Dr Antonio Batista do Nascimento" });
-    expect(syncRadar(s2.db, s2.ctx, s2.cfg, [op()]).parecidos).toEqual([]);
-    expect(s2.dealOf(401)).toBeTruthy();
+    expect(syncRadar(s2.db, s2.ctx, s2.cfg, [op()]).parecidos.map((x) => x.id)).toEqual([401]);
+    expect(s2.dealOf(401)).toBeUndefined();
+  });
+
+  it("duplicados já criados: juntar no cartão feito à mão (o Radar segue acompanhando) ou manter os dois", async () => {
+    const { db, ctx, pid, cfg, dealOf } = await setup();
+    syncRadar(db, ctx, cfg, [op({ id: 1 }), op({ id: 2, escola: "EE VISCONDE DE ARANTES", pedido: "2026230002" })]);
+    // Simula cartões criados antes da pergunta existir (sem o marcador d).
+    for (const x of many<{ id: string; source_updated_at: string }>(db, "SELECT id, source_updated_at FROM external_ref WHERE provider = 'radar' AND entity_type = 'deal'")) {
+      const { d: _d, ...m } = JSON.parse(x.source_updated_at) as Record<string, unknown>;
+      updateRow(db, ctx, "external_ref", x.id, { source_updated_at: JSON.stringify(m) });
+    }
+    const meu1 = createCard(db, ctx, { pipelineId: pid, title: "EE Dr Antonio Batista do Nascimento" });
+    const meu2 = createCard(db, ctx, { pipelineId: pid, title: "EE VISCONDE DE ARANTES" });
+    const dups = radarDuplicados(db);
+    expect(dups.map((d) => [d.dealId, d.cartoes[0]!.id])).toEqual([
+      [dealOf(1), meu1],
+      [dealOf(2), meu2],
+    ]);
+    const radar2 = dealOf(2)!;
+    radarResolverDuplicado(db, ctx, radar2, { juntarEm: meu2 });
+    radarResolverDuplicado(db, ctx, dealOf(1)!, "diferentes");
+    expect(radarDuplicados(db)).toEqual([]);
+    expect(dealOf(2)).toBe(meu2); // o vínculo passou para o cartão feito à mão
+    expect(getCardRow(db, radar2)).toBeUndefined();
+    expect(getEntityTags(db, meu2).map((t) => t.name).sort()).toEqual(["MG", "Pública"]);
+    expect(listNotes(db, "deal", meu2).length).toBeGreaterThanOrEqual(3);
+    // O Radar continua acompanhando o cartão juntado.
+    syncRadar(db, ctx, cfg, [op({ id: 2, escola: "EE VISCONDE DE ARANTES", pedido: "2026230002", statusPortal: "RECU", foraDaListagem: true })]);
+    expect(getCardRow(db, meu2)!.status).toBe("pending");
   });
 });

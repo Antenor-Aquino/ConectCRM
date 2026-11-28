@@ -18,6 +18,7 @@ import { createActivity, updateActivity } from "./activities";
 import { createOrganization, findOrganizationByCnpj } from "./contacts";
 import { getCustomValues, listCustomFields, setCustomValues, type CustomValue } from "./customFields";
 import { createCard, getCardRow, moveCard, setCardStatus, updateCard } from "./deals";
+import { defaultChoices, mergeRecords } from "./mergeRecords";
 import { addNote } from "./notes";
 import { listStages } from "./pipelines";
 import { createTag, getEntityTags, listTags, setEntityTags } from "./tags";
@@ -112,6 +113,8 @@ interface RadarAplicado {
   a?: string | null;
   /** 0.2.161: já conferido se o Radar tinha fechado o cartão (ganho/perdido) para virar Pendente. */
   p?: number;
+  /** 0.2.163: o usuário já disse que não é duplicado de nenhum cartão (ou já juntou). */
+  d?: number;
   /** Notas, campos (Processo SGD, Qtd Turmas) e etiquetas (MG, Pública) já aplicados. */
   x?: number;
 }
@@ -132,7 +135,7 @@ export interface RadarSyncResult {
   skipped: number;
   items: RadarSyncItem[];
   errors: { id: number; error: string }[];
-  /** Esperando a confirmação do usuário (cartão de nome parecido; só em "Todo o histórico"). */
+  /** Esperando a confirmação do usuário (cartão de nome parecido que não veio do Radar). */
   parecidos: RadarParecido[];
   /** Cartões fechados pelo Radar antes da 0.2.160 que voltaram para Pendente. */
   convertidos: number;
@@ -429,7 +432,7 @@ const ITEM_KIND: Record<RadarEstado, RadarSyncItem["kind"] | null> = { entrada: 
 
 
 /** Cartões que não vieram do Radar com nome parecido com a escola (ou com o nº do pedido no título). */
-export function radarCartoesParecidos(db: DatabaseSync, o: RadarOportunidade): RadarParecido["cartoes"] {
+export function radarCartoesParecidos(db: DatabaseSync, o: Pick<RadarOportunidade, "escola" | "pedido">): RadarParecido["cartoes"] {
   const rows = many<{ id: string; title: string; funil: string; etapa: string; status: string }>(
     db,
     `SELECT d.id, d.title, p.name AS funil, s.name AS etapa, d.status FROM deal d
@@ -514,7 +517,7 @@ export function syncRadar(db: DatabaseSync, ctx: DbContext, cfg: RadarSyncConfig
         let r = ref(db, "deal", extId);
         const e = radarEstado(o);
         if (!r && radarElegivel(o, cfg)) {
-          // "Todo o histórico": cartão de nome parecido que não veio do Radar → pergunta antes.
+          // Cartão de nome parecido que não veio do Radar → pergunta antes (qualquer ponto de partida).
           const dec = cfg.decisoes?.[extId];
           if (dec === "ignorar") {
             fora("ignorado");
@@ -523,10 +526,10 @@ export function syncRadar(db: DatabaseSync, ctx: DbContext, cfg: RadarSyncConfig
           if (dec?.startsWith("usar:")) {
             const alvo = dec.slice(5);
             if (one(db, "SELECT 1 FROM deal WHERE id = ? AND deleted_at IS NULL", alvo)) {
-              link(db, ctx, "deal", extId, alvo, JSON.stringify({ e: "entrada", p: 1 } satisfies RadarAplicado));
+              link(db, ctx, "deal", extId, alvo, JSON.stringify({ e: "entrada", p: 1, d: 1 } satisfies RadarAplicado));
               r = ref(db, "deal", extId);
             }
-          } else if (!dec && cfg.inicio === "historico") {
+          } else if (!dec) {
             const cartoes = radarCartoesParecidos(db, o);
             if (cartoes.length) {
               out.parecidos.push({ id: o.id, pedido: o.pedido, escola: o.escola, municipio: o.municipio, cartoes });
@@ -553,7 +556,8 @@ export function syncRadar(db: DatabaseSync, ctx: DbContext, cfg: RadarSyncConfig
             organizationId: orgId,
             origin: RADAR_ORIGIN,
           });
-          const aplicado: RadarAplicado = { e: "entrada", v: o.meuValor ?? null, p: 1 };
+          // Criado agora: já passou pela pergunta de parecidos (ou não havia).
+          const aplicado: RadarAplicado = { e: "entrada", v: o.meuValor ?? null, p: 1, d: 1 };
           if (e === "entrada" && o.prazoEnvio && new Date(o.prazoEnvio).getTime() > Date.now())
             aplicado.a = createActivity(db, ctx, {
               title: `Enviar proposta no portal — pedido ${o.pedido ?? o.id}`,
@@ -635,6 +639,69 @@ ${o.link}` : ""}`,
     }
   }
   return out;
+}
+
+/** Cartão do Radar que pode ser duplicado de um cartão feito à mão. */
+export interface RadarDuplicado {
+  dealId: string;
+  titulo: string;
+  funil: string;
+  etapa: string;
+  status: string;
+  cartoes: RadarParecido["cartoes"];
+}
+
+/** Cartões criados pelo Radar com cartão parecido feito à mão (ainda sem decisão do usuário). */
+export function radarDuplicados(db: DatabaseSync): RadarDuplicado[] {
+  const rows = many<{ local_id: string; source_updated_at: string | null; title: string; funil: string; etapa: string; status: string }>(
+    db,
+    `SELECT x.local_id, x.source_updated_at, d.title, p.name AS funil, s.name AS etapa, d.status FROM external_ref x
+     JOIN deal d ON d.id = x.local_id AND d.deleted_at IS NULL
+     JOIN pipeline p ON p.id = d.pipeline_id JOIN stage s ON s.id = d.stage_id
+     WHERE x.provider = ? AND x.entity_type = 'deal' AND x.deleted_at IS NULL ORDER BY d.title`,
+    RADAR_PROVIDER,
+  );
+  const out: RadarDuplicado[] = [];
+  for (const r of rows) {
+    try {
+      if ((JSON.parse(r.source_updated_at ?? "{}") as RadarAplicado).d) continue;
+    } catch {
+      /* marcador antigo: confere */
+    }
+    const m = /^(.*?) — Pedido (\S+)$/.exec(r.title);
+    const cartoes = radarCartoesParecidos(db, { escola: m ? m[1]! : r.title, pedido: m ? m[2]! : null });
+    if (cartoes.length) out.push({ dealId: r.local_id, titulo: r.title, funil: r.funil, etapa: r.etapa, status: r.status, cartoes });
+  }
+  return out;
+}
+
+/**
+ * Decisão sobre um possível duplicado: "juntar" no cartão feito à mão (o Radar
+ * passa a acompanhar esse cartão; notas, tarefas, etiquetas e campos vazios vêm
+ * do cartão do Radar, que sai) ou "diferentes" (não pergunta mais).
+ */
+export function radarResolverDuplicado(db: DatabaseSync, ctx: DbContext, dealId: string, acao: { juntarEm: string } | "diferentes"): void {
+  withTransaction(db, () => {
+    let alvo = dealId;
+    if (acao !== "diferentes") {
+      mergeRecords(db, ctx, { entity: "deal", keepId: acao.juntarEm, removeId: dealId, ...defaultChoices(db, "deal", acao.juntarEm, dealId) });
+      alvo = acao.juntarEm;
+    }
+    for (const x of many<{ id: string; source_updated_at: string | null }>(
+      db,
+      "SELECT id, source_updated_at FROM external_ref WHERE provider = ? AND entity_type = 'deal' AND local_id = ? AND deleted_at IS NULL",
+      RADAR_PROVIDER,
+      alvo,
+    )) {
+      let m: RadarAplicado;
+      try {
+        m = JSON.parse(x.source_updated_at ?? "") as RadarAplicado;
+      } catch {
+        m = { e: "entrada" };
+      }
+      updateRow(db, ctx, "external_ref", x.id, { source_updated_at: JSON.stringify({ ...m, d: 1 }) });
+    }
+  });
 }
 
 /** Quantos cartões vieram do Radar (para a tela de configurações). */
