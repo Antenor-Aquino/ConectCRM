@@ -244,6 +244,15 @@ fechar, volta ao quadro. A escolha fica lembrada. As duas colunas do
 detalhe se ajustam à largura do painel (estreito: uma coluna só, sem
 rolagem lateral).
 
+**Anterior / Próximo** (0.2.165): abaixo do ✕, os botões **‹ Anterior** e
+**Próximo ›** com a posição ("3 de 27") abrem o cartão vizinho sem voltar ao
+quadro, na ordem em que os cartões aparecem com os filtros, a busca e a
+ordenação de agora. No quadro, a ordem é etapa por etapa, de cima para baixo
+(com "atrasadas primeiro", se ligado). Na lista, é a ordem das linhas, com a
+coluna escolhida para ordenar. Nas pontas, o botão fica desativado. Com rascunho
+não salvo, pergunta antes, como ao fechar. Cartão aberto fora do quadro (busca
+global, popup) não mostra os botões.
+
 ### 7.0 Editar contato, organização e responsável pelo cartão
 
 No detalhe do cartão, o **nome** do contato e da organização é um link: o

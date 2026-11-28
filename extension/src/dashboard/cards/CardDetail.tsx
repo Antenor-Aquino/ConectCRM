@@ -32,6 +32,7 @@ import {
   XCircle, Repeat, ListTodo, GitMerge, Hourglass, CalendarDays, Receipt, CreditCard, MessageSquare } from "lucide-react";
 import { openUnifiedAgenda } from "../../lib/unifiedAgenda";
 import { CalendlyLinkButton } from "./CalendlyLinkButton";
+import { CardNavButtons, type CardNav } from "./CardNavButtons";
 import { MergeDialog } from "../ui/MergeDialog";
 import { TODO_CHANGED_EVENT } from "../todo/useTodoBadge";
 import { TaBadge, TaButton, TaInput, TaModal, TaTextarea, cn } from "@tailadmin";
@@ -97,6 +98,8 @@ type CardDetailProps = {
   /** drawer = painel lateral sobre o quadro; full = ocupa a área do quadro. */
   mode?: CardDetailMode;
   onToggleMode?: () => void;
+  /** Botões Anterior/Próximo (ausente = cartão aberto fora do quadro). */
+  nav?: CardNav;
 };
 
 /**
@@ -120,6 +123,7 @@ function CardDetailInner({
   onToggleMode,
   pipelines = [],
   onGoToCard: onGoToCardRaw,
+  nav: navRaw,
 }: CardDetailProps) {
   const text = CARD_TEXT[pipeline.type];
   const showChatwoot = useChatwootButton(pipeline.id, pipeline.type);
@@ -142,6 +146,12 @@ function CardDetailInner({
   const { guard, dialog: leaveDialog } = useLeaveGuard(cardId);
   const drafts = useDrafts(cardId);
   const onClose = () => guard(onCloseRaw);
+  // Anterior/Próximo também perguntam antes de perder o que foi digitado.
+  const nav: CardNav | undefined = navRaw && {
+    ...navRaw,
+    onPrev: navRaw.onPrev && (() => guard(navRaw.onPrev!)),
+    onNext: navRaw.onNext && (() => guard(navRaw.onNext!)),
+  };
   const onGoToCard = onGoToCardRaw && ((pipelineId: string, id: string) => guard(() => onGoToCardRaw(pipelineId, id)));
   // Atividade minimizada: o modal some para consultar o cartão, mas o que foi digitado continua.
   const [tasksMin, setTasksMin] = useState(false);
@@ -256,7 +266,7 @@ function CardDetailInner({
 
   if (!card) {
     return (
-      <Shell onClose={onClose} mode={mode} onToggleMode={onToggleMode}>
+      <Shell onClose={onClose} mode={mode} onToggleMode={onToggleMode} nav={nav}>
         <ErrorText>{error}</ErrorText>
       </Shell>
     );
@@ -593,7 +603,7 @@ function CardDetailInner({
   }));
 
   return (
-    <Shell onClose={onClose} mode={mode} onToggleMode={onToggleMode} ticketNumber={card.kind === "ticket" ? card.ticket_number : null} cardId={card.id}>
+    <Shell onClose={onClose} mode={mode} onToggleMode={onToggleMode} nav={nav} ticketNumber={card.kind === "ticket" ? card.ticket_number : null} cardId={card.id}>
       {/* Cabeçalho */}
       <div className={cn("flex items-start gap-3", onToggleMode ? "pr-60" : "pr-48")}>
         <input
@@ -1142,11 +1152,13 @@ function Shell({
   onToggleMode,
   ticketNumber,
   cardId,
+  nav,
 }: {
   children: React.ReactNode;
   onClose: () => void;
   mode: CardDetailMode;
   onToggleMode?: () => void;
+  nav?: CardNav;
   /** Tickets (funil Operacional): "Ticket: 123" abaixo do X. */
   ticketNumber?: number | null;
   /** Para "Importado do Pipedrive ↗" abaixo do X. */
@@ -1183,6 +1195,7 @@ function Shell({
           <X size={18} />
         </button>
       </div>
+      {nav && <CardNavButtons nav={nav} />}
       {ticketNumber != null && (
         <span
           className="rounded-md bg-purple-50 px-2 py-0.5 text-theme-xs font-semibold text-purple-700 dark:bg-purple-500/10 dark:text-purple-300"

@@ -85,6 +85,19 @@ export function FunnelsView({
     }
   };
   const cardFull = !!openCardId && !!selected && cardMode === "full";
+  // Ordem dos cartões na tela (informada pelo quadro/lista): Anterior/Próximo no cartão aberto.
+  // Fica guardada enquanto o cartão está em tela cheia (o quadro sai da tela).
+  const [order, setOrder] = useState<string[]>([]);
+  const idx = openCardId ? order.indexOf(openCardId) : -1;
+  const nav =
+    idx < 0
+      ? undefined
+      : {
+          pos: idx + 1,
+          total: order.length,
+          onPrev: idx > 0 ? () => onOpenCard(order[idx - 1]!) : undefined,
+          onNext: idx < order.length - 1 ? () => onOpenCard(order[idx + 1]!) : undefined,
+        };
 
   return (
     <div className="flex gap-5">
@@ -182,6 +195,7 @@ export function FunnelsView({
           onOpenCard={onOpenCard}
           onEditPipeline={() => setEditing(true)}
           onShowStats={() => setStats(true)}
+          onOrder={setOrder}
         />
       )}
 
@@ -213,6 +227,7 @@ export function FunnelsView({
           pipeline={selected}
           mode={cardFull ? "full" : "drawer"}
           onToggleMode={toggleCardMode}
+          nav={nav}
           onClose={() => onOpenCard(null)}
           onChanged={() => void onChanged()}
           pipelines={pipelines}

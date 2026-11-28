@@ -150,6 +150,13 @@ function Menu<T extends string>({ value, labels, onChange, icon }: { value: T; l
   );
 }
 
+/** Cartões da etapa na ordem da tela: atrasadas primeiro (mais atividades atrasadas antes), se pedido; o resto mantém a ordem escolhida. */
+function cardsInOrder(col: BoardColumn, overdueFirst: boolean): BoardColumn["cards"] {
+  return overdueFirst && col.overdue_activities > 0
+    ? [...col.cards].sort((a, b) => Number(b.act_overdue > 0) - Number(a.act_overdue > 0) || b.act_overdue - a.act_overdue)
+    : col.cards;
+}
+
 export function Board({
   pipeline,
   refreshKey,
@@ -159,6 +166,7 @@ export function Board({
   onOpenCard,
   onEditPipeline,
   onShowStats,
+  onOrder,
 }: {
   pipeline: Pipeline;
   refreshKey: number;
@@ -168,6 +176,8 @@ export function Board({
   onOpenCard: (id: string) => void;
   onEditPipeline: () => void;
   onShowStats: () => void;
+  /** Ordem dos cartões na tela (etapa por etapa no quadro; linhas na lista), para Anterior/Próximo. */
+  onOrder?: (ids: string[]) => void;
 }) {
   const { users, user } = useSession();
   const [columns, setColumns] = useState<BoardColumn[]>([]);
@@ -233,6 +243,11 @@ export function Board({
     else next.add(id);
     setCollapsed(next);
   };
+  // Ordem dos cartões no quadro: etapa por etapa, de cima para baixo (com "atrasadas primeiro", se ligado).
+  useEffect(() => {
+    if (mode !== "kanban" || !onOrder) return;
+    onOrder(columns.flatMap((col) => cardsInOrder(col, overdueFirst.has(col.id)).map((c) => c.id)));
+  }, [mode, columns, overdueFirst, onOrder]);
   // Com alguma etapa recolhida, o botão geral expande todas; sem nenhuma, recolhe todas.
   const anyCollapsed = columns.some((c) => collapsed.has(c.id));
   // Filtro lembrado por usuário, o mesmo em todos os funis (tags por tipo de cartão).
@@ -662,6 +677,7 @@ export function Board({
           onToggleSelect={toggleSelect}
           onToggleMany={toggleMany}
           onChanged={() => void load()}
+          onOrder={onOrder}
         />
       ) : (
         /* Colunas */
@@ -754,11 +770,7 @@ export function Board({
                 <div className="mb-3" />
                 {/* Os cartões rolam dentro da etapa: o quadro cabe na janela e a barra de rolagem lateral fica sempre à vista. */}
                 <div data-stage-cards className="-mr-2 flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto pr-2 custom-scrollbar">
-                  {(overdueFirst.has(col.id) && col.overdue_activities > 0
-                    ? // Atrasadas primeiro (mais atividades atrasadas antes); o resto mantém a ordem escolhida.
-                      [...col.cards].sort((a, b) => Number(b.act_overdue > 0) - Number(a.act_overdue > 0) || b.act_overdue - a.act_overdue)
-                    : col.cards
-                  ).map((card) => (
+                  {cardsInOrder(col, overdueFirst.has(col.id)).map((card) => (
                     <div key={card.id}>
                       {drop?.stageId === col.id && drop.beforeId === card.id && <div className="mb-2 h-1 rounded bg-brand-400" />}
                       <KanbanCard
