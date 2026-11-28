@@ -48,7 +48,7 @@ export function globalSearch(db: DatabaseSync, text: string, viewer: Viewer | nu
      FROM deal d JOIN pipeline p ON p.id = d.pipeline_id JOIN stage s ON s.id = d.stage_id
      LEFT JOIN person pe ON pe.id = d.person_id LEFT JOIN organization o ON o.id = d.organization_id
      WHERE d.deleted_at IS NULL AND (d.title LIKE ? OR pe.name LIKE ? OR o.name LIKE ?${ticket !== null ? " OR d.ticket_number = ?" : ""})${scope.sql}
-     ORDER BY ${ticket !== null ? "d.ticket_number = ? DESC, " : ""}d.status = 'open' DESC, d.updated_at DESC LIMIT ?`,
+     ORDER BY ${ticket !== null ? "d.ticket_number = ? DESC, " : ""}d.status IN ('open', 'pending') DESC, d.updated_at DESC LIMIT ?`,
     q,
     q,
     q,

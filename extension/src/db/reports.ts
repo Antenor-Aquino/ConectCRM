@@ -158,7 +158,8 @@ function scopedDeals(db: DatabaseSync, f: ReportFilter): DealRow[] {
   const scope = cardScope(db, f.viewer);
   return many<DealRow>(
     db,
-    `SELECT d.id, d.pipeline_id, d.stage_id, d.owner_id, d.status, d.value_cents, d.created_at, d.closed_at, d.stage_entered_at,
+    // Pendente (aguardando avaliação) ainda não tem desfecho: conta como aberto nos relatórios.
+    `SELECT d.id, d.pipeline_id, d.stage_id, d.owner_id, CASE d.status WHEN 'pending' THEN 'open' ELSE d.status END AS status, d.value_cents, d.created_at, d.closed_at, d.stage_entered_at,
             lr.name AS loss_reason, s.probability, s.name AS stage_name, s.position AS stage_position, p.name AS pipeline_name
      FROM deal d
      JOIN pipeline p ON p.id = d.pipeline_id
@@ -321,7 +322,7 @@ function stageTime(db: DatabaseSync, deals: DealRow[], f: ReportFilter, now: Dat
         db,
         // Cartão fechado: a passagem pela última etapa termina no fechamento.
         `SELECT * FROM (
-           SELECT h.stage_id, h.entered_at, COALESCE(h.left_at, CASE WHEN d.status <> 'open' THEN d.closed_at END) AS left_at
+           SELECT h.stage_id, h.entered_at, COALESCE(h.left_at, CASE WHEN d.status IN ('won', 'lost') THEN d.closed_at END) AS left_at
            FROM deal_stage_history h JOIN deal d ON d.id = h.deal_id
            WHERE h.deleted_at IS NULL AND h.deal_id IN (${ids.map(() => "?").join(", ")})
          ) WHERE left_at IS NOT NULL AND left_at >= ? AND left_at < ?`,

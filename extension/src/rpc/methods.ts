@@ -52,6 +52,7 @@ import * as users from "../db/users";
 import * as nfse from "../db/nfse";
 import * as charges from "../db/charges";
 import { importCalendlyBookings, linkCalendlyEvent, type CalendlyBooking } from "../db/calendly";
+import { radarDuplicados, radarResolverDuplicado, radarResumo, syncRadar, type RadarOportunidade, type RadarSyncConfig } from "../db/radar";
 
 type Handler = (db: DatabaseSync, ctx: DbContext, params: never) => unknown;
 type Id = { id: string };
@@ -189,7 +190,7 @@ export const methods = {
     const scope = deals.cardScope(db, viewer(db, ctx));
     const card = one<{ id: string; title: string }>(
       db,
-      `SELECT d.id, d.title FROM deal d WHERE d.pipeline_id = ? AND d.deleted_at IS NULL${scope.sql} ORDER BY d.status = 'open' DESC, d.updated_at DESC LIMIT 1`,
+      `SELECT d.id, d.title FROM deal d WHERE d.pipeline_id = ? AND d.deleted_at IS NULL${scope.sql} ORDER BY d.status IN ('open', 'pending') DESC, d.updated_at DESC LIMIT 1`,
       p.pipelineId,
       ...scope.params,
     );
@@ -297,6 +298,14 @@ export const methods = {
   // Calendly (spec 18): agendamentos lidos pelo service worker viram reuniões.
   "calendly.import": (db: DatabaseSync, ctx: DbContext, p: { bookings: CalendlyBooking[] }) => importCalendlyBookings(db, ctx, p.bookings),
   "calendly.link": (db: DatabaseSync, ctx: DbContext, p: { activityId: string; eventUri: string }) => linkCalendlyEvent(db, ctx, p.activityId, p.eventUri),
+  // Radar Caixa Escolar MG (spec 25): orçamentos lidos pelo service worker viram cartões.
+  "radar.sync": (db: DatabaseSync, ctx: DbContext, p: { config: RadarSyncConfig; oportunidades: RadarOportunidade[] }) => syncRadar(db, ctx, p.config, p.oportunidades),
+  "radar.resumo": (db: DatabaseSync) => radarResumo(db),
+  "radar.duplicados": (db: DatabaseSync) => radarDuplicados(db),
+  "radar.resolverDuplicado": (db: DatabaseSync, ctx: DbContext, p: { dealId: string; acao: { juntarEm: string } | "diferentes" }) => {
+    if (p.acao !== "diferentes") assertMergeAccess(db, ctx, "deal", [p.dealId, p.acao.juntarEm]);
+    radarResolverDuplicado(db, ctx, p.dealId, p.acao);
+  },
   "integrations.importOrganizations": (db: DatabaseSync, ctx: DbContext, p: ext.ExternalImportInput<ext.ExternalOrganizationRow>) => {
     assertIntegrations(db, ctx);
     return ext.importExternalOrganizations(db, ctx, p);

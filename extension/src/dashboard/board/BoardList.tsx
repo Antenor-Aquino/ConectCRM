@@ -52,6 +52,7 @@ export function BoardList({
   onToggleSelect,
   onToggleMany,
   onChanged,
+  onOrder,
 }: {
   pipeline: Pipeline;
   columns: BoardColumn[];
@@ -65,6 +66,8 @@ export function BoardList({
   onToggleMany: (ids: string[]) => void;
   /** Depois de editar uma célula: recarrega o quadro. */
   onChanged?: () => void;
+  /** Ordem das linhas na tela (para Anterior/Próximo no cartão aberto). */
+  onOrder?: (ids: string[]) => void;
 }) {
   const [sort, setSort] = useState<SortState>(null);
   const [picker, setPicker] = useState(false);
@@ -111,6 +114,10 @@ export function BoardList({
       return (x < y ? -1 : x > y ? 1 : 0) * sort.dir;
     });
   }, [rows, sort]);
+
+  useEffect(() => {
+    onOrder?.(sorted.map((r) => r.id));
+  }, [sorted, onOrder]);
 
   const toggleSort = (key: string) => setSort((s) => (s?.key !== key ? { key, dir: 1 } : s.dir === 1 ? { key, dir: -1 } : null));
   const total = rows.reduce((a, r) => a + r.value_cents, 0);
@@ -212,6 +219,7 @@ export function BoardList({
                         "truncate font-medium",
                         r.status === "open" && "text-brand-600 dark:text-brand-400",
                         r.status === "won" && "text-success-700 dark:text-success-400",
+                        r.status === "pending" && "text-yellow-800 dark:text-yellow-300",
                         r.status === "lost" && "text-error-700 dark:text-error-400",
                       )}
                       title={r.title}
@@ -223,7 +231,7 @@ export function BoardList({
                       <span
                         className={cn(
                           "shrink-0 rounded-full px-1.5 py-px text-[10px] font-medium",
-                          r.status === "won" ? "bg-success-50 text-success-700" : "bg-error-50 text-error-700",
+                          r.status === "won" ? "bg-success-50 text-success-700" : r.status === "pending" ? "bg-yellow-100 text-yellow-800" : "bg-error-50 text-error-700",
                         )}
                       >
                         {outcome[r.status]}

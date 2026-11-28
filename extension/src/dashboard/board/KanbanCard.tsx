@@ -2,7 +2,7 @@
 // funil (Editar funil → Cartão), na ordem escolhida. O valor fica no topo e
 // o responsável no rodapé, como no mockup.
 import type { ReactNode } from "react";
-import { Archive, Building2, CalendarClock, Check, CheckSquare, Clock, FileText, Mail, MapPin, NotebookText, Package, Percent, Phone, Tag as TagIcon, X } from "lucide-react";
+import { Archive, Building2, CalendarClock, Check, CheckSquare, Clock, FileText, Hourglass, Mail, MapPin, NotebookText, Package, Percent, Phone, Tag as TagIcon, X } from "lucide-react";
 import { badgePalette, cn, type BadgeColor } from "@tailadmin";
 import type { BoardCard } from "../../db/deals";
 import type { CardFieldValue } from "../../db/cardFieldValues";
@@ -52,9 +52,11 @@ const ICON: Record<string, ReactNode> = {
   criado_em: <CalendarClock size={13} />,
 };
 
-/** Desfecho do cartão: verde (ganho/resolvido/concluído) ou vermelho (perdido/não…). */
+/** Desfecho do cartão: verde (ganho/resolvido/concluído), vermelho (perdido/não…) ou amarelo (pendente). */
 export interface CardOutcome {
   won: boolean;
+  /** Pendente: aguardando a avaliação do usuário (amarelo). */
+  pending?: boolean;
   label: string;
   closedAt: string | null;
 }
@@ -95,7 +97,8 @@ export function CardFields({
             archived && "text-warning-800 dark:text-warning-300",
             !archived && !outcome && "text-brand-600 dark:text-brand-400",
             !archived && outcome?.won && "text-success-700 dark:text-success-400",
-            !archived && outcome && !outcome.won && "text-error-700 dark:text-error-400",
+            !archived && outcome?.pending && "text-yellow-800 dark:text-yellow-300",
+            !archived && outcome && !outcome.won && !outcome.pending && "text-error-700 dark:text-error-400",
           )}
         >
           {title}
@@ -157,10 +160,14 @@ export function CardFields({
             <span
               className={cn(
                 "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
-                outcome.won ? "bg-success-100 text-success-700 dark:bg-success-500/20 dark:text-success-400" : "bg-error-100 text-error-700 dark:bg-error-500/20 dark:text-error-400",
+                outcome.won
+                  ? "bg-success-100 text-success-700 dark:bg-success-500/20 dark:text-success-400"
+                  : outcome.pending
+                    ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-500/20 dark:text-yellow-300"
+                    : "bg-error-100 text-error-700 dark:bg-error-500/20 dark:text-error-400",
               )}
             >
-              {outcome.won ? <Check size={12} strokeWidth={3} /> : <X size={12} strokeWidth={3} />}
+              {outcome.won ? <Check size={12} strokeWidth={3} /> : outcome.pending ? <Hourglass size={12} strokeWidth={2.5} /> : <X size={12} strokeWidth={3} />}
               {outcome.label}
               {outcome.closedAt && <span className="font-normal opacity-80">em {formatDate(outcome.closedAt)}</span>}
             </span>
@@ -206,7 +213,7 @@ export function KanbanCard({
   onToggleSelect?: () => void;
 }) {
   const label = outcomeLabel(pipeline.type, card.status);
-  const outcome: CardOutcome | null = label ? { won: card.status === "won", label, closedAt: card.closed_at } : null;
+  const outcome: CardOutcome | null = label ? { won: card.status === "won", pending: card.status === "pending", label, closedAt: card.closed_at } : null;
   const archived = !!card.archived_at;
   const tip = [archived ? `Arquivado em ${formatDate(card.archived_at)}` : "", outcome ? `${outcome.label}${outcome.closedAt ? ` em ${formatDate(outcome.closedAt)}` : ""}` : ""]
     .filter(Boolean)
@@ -227,6 +234,7 @@ export function KanbanCard({
         // Arquivado: amarelo, por cima da cor do desfecho.
         archived && "border-warning-300 bg-warning-50 dark:border-warning-500/40 dark:bg-warning-500/10",
         !archived && card.status === "open" && "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900",
+        !archived && card.status === "pending" && "border-yellow-300 bg-yellow-50 dark:border-yellow-500/40 dark:bg-yellow-500/10",
         !archived && card.status === "won" && "border-success-300 bg-success-50 dark:border-success-500/40 dark:bg-success-500/10",
         !archived && card.status === "lost" && "border-error-300 bg-error-50 dark:border-error-500/40 dark:bg-error-500/10",
         selected && "!border-brand-400 outline outline-2 outline-brand-300",
@@ -252,10 +260,16 @@ export function KanbanCard({
         // Canto dobrado com ✓ / ✕ (como nos CRMs de referência).
         <span
           aria-hidden
-          className={cn("absolute right-0 top-0 h-9 w-9 text-white", outcome.won ? "bg-success-500" : "bg-error-500")}
+          className={cn("absolute right-0 top-0 h-9 w-9 text-white", outcome.won ? "bg-success-500" : outcome.pending ? "bg-yellow-400" : "bg-error-500")}
           style={{ clipPath: "polygon(0 0, 100% 0, 100% 100%)" }}
         >
-          {outcome.won ? <Check size={14} strokeWidth={3} className="absolute right-1 top-1" /> : <X size={14} strokeWidth={3} className="absolute right-1 top-1" />}
+          {outcome.won ? (
+            <Check size={14} strokeWidth={3} className="absolute right-1 top-1" />
+          ) : outcome.pending ? (
+            <Hourglass size={13} strokeWidth={2.5} className="absolute right-1 top-1" />
+          ) : (
+            <X size={14} strokeWidth={3} className="absolute right-1 top-1" />
+          )}
         </span>
       )}
       <CardFields

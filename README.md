@@ -124,6 +124,17 @@ importado (e oferece atualizar), aponta possíveis duplicados e mostra no
 cadastro o link para o original (detalhes em
 [`especificacoes/09-integracoes.md`](especificacoes/09-integracoes.md)).
 
+### Radar Caixa Escolar MG
+
+Em **Configurações → Integrações → Radar Caixa Escolar MG**, o CRM lê o robô
+Radar que roda no mesmo computador (versão 1.16 ou mais nova): cada orçamento
+do portal Caixa Escolar (SEE-MG) com as palavras-chave vira um cartão no funil
+escolhido, com a escola como organização e a tarefa do prazo de envio, e o
+cartão avança sozinho quando a proposta é enviada, aprovada, recusada ou
+cancelada no portal, com o mapa de apuração numa nota. Só leitura, a cada
+10 minutos ou em **Sincronizar agora** (detalhes em
+[`especificacoes/25-radar-caixa-escolar.md`](especificacoes/25-radar-caixa-escolar.md)).
+
 ### Notificações
 
 Cada atividade tem vários lembretes (ex.: 1 dia antes e 1 h antes no WhatsApp,

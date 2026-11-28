@@ -21,7 +21,8 @@ import { copyCardOrganizations, dropLinkIfPrimary, listCardOrganizations, type C
 import { attachExtras, nameExtras, withExtra } from "./nameExtras";
 import type { CustomFieldEntity } from "./customFields";
 
-export type DealStatus = "open" | "won" | "lost";
+/** "pending" = Pendente: aguardando a avaliação do usuário para o desfecho final (não está fechado). */
+export type DealStatus = "open" | "pending" | "won" | "lost";
 
 const TITLE_REQUIRED: Record<DealKind, string> = {
   deal: "Informe o nome da negociação.",
@@ -477,7 +478,7 @@ export function cloneCard(db: DatabaseSync, ctx: DbContext, id: string, input: {
   });
 }
 
-/** Ganho, perdido (com motivo) ou reaberto. */
+/** Ganho, perdido (com motivo), pendente (aguardando avaliação) ou reaberto. */
 export function setCardStatus(
   db: DatabaseSync,
   ctx: DbContext,
@@ -486,12 +487,12 @@ export function setCardStatus(
 ): void {
   withTransaction(db, () => {
     requireCard(db, id);
-    if (!["open", "won", "lost"].includes(input.status)) throw new ValidationError("Status inválido.");
+    if (!["open", "pending", "won", "lost"].includes(input.status)) throw new ValidationError("Status inválido.");
     if (input.lossReasonId && !getRow(db, "loss_reason", input.lossReasonId)) throw new ValidationError("Motivo de perda não encontrado.");
     const lost = input.status === "lost";
     updateRow(db, ctx, "deal", id, {
       status: input.status,
-      closed_at: input.status === "open" ? null : nowIso(),
+      closed_at: input.status === "won" || input.status === "lost" ? nowIso() : null,
       loss_reason_id: lost ? (input.lossReasonId ?? null) : null,
       loss_note: lost ? optionalText(input.lossNote) : null,
     });
@@ -652,7 +653,7 @@ const SORT_SQL: Record<BoardSort, string> = {
   value: "d.value_cents DESC",
   title: "d.title COLLATE NOCASE",
   // Abertos, depois ganhos, depois perdidos; em cada grupo, por nome (A–Z).
-  status: "CASE d.status WHEN 'open' THEN 0 WHEN 'won' THEN 1 ELSE 2 END, d.title COLLATE NOCASE",
+  status: "CASE d.status WHEN 'open' THEN 0 WHEN 'pending' THEN 1 WHEN 'won' THEN 2 ELSE 3 END, d.title COLLATE NOCASE",
 };
 
 /** Quadro do funil: colunas com quantidade, soma e cartões (spec 01, tela inicial).
@@ -669,7 +670,10 @@ function boardWhere(db: DatabaseSync, pipelineId: string, opts: BoardFilterOpts)
   // "Todos" mostra também os arquivados (sinalizados em amarelo); "Arquivados", só eles.
   if (status === "archived") where.push("d.archived_at IS NOT NULL");
   else if (status !== "all") where.push("d.archived_at IS NULL");
-  if (status !== "all" && status !== "archived") {
+  if (status === "open") {
+    // "Abertos" inclui os pendentes: ainda não têm desfecho e seguem no quadro.
+    where.push("d.status IN ('open', 'pending')");
+  } else if (status !== "all" && status !== "archived") {
     where.push("d.status = ?");
     params.push(status);
   }
@@ -882,7 +886,7 @@ export function listCardsForEntity(
        ${f.organizationId ? "CASE WHEN d.organization_id = ?1 THEN NULL ELSE (SELECT x.role FROM deal_org_link x WHERE x.deal_id = d.id AND x.organization_id = ?1 AND x.deleted_at IS NULL LIMIT 1) END" : "NULL"} AS link_role
      FROM deal d JOIN pipeline p ON p.id = d.pipeline_id JOIN stage s ON s.id = d.stage_id
      WHERE ${col} AND d.deleted_at IS NULL${scope.sql}
-     ORDER BY d.status = 'open' DESC, d.updated_at DESC`,
+     ORDER BY d.status IN ('open', 'pending') DESC, d.updated_at DESC`,
     id,
     ...scope.params,
   );
@@ -917,7 +921,7 @@ export function searchCards(
      WHERE d.deleted_at IS NULL AND (d.title LIKE ? OR pe.name LIKE ? OR o.name LIKE ?
        OR EXISTS (SELECT 1 FROM deal_org_link xo JOIN organization oo ON oo.id = xo.organization_id AND oo.deleted_at IS NULL
                   WHERE xo.deal_id = d.id AND xo.deleted_at IS NULL AND oo.name LIKE ?))${extra.join("")}${scope.sql}
-     ORDER BY d.status = 'open' DESC, d.updated_at DESC LIMIT ?`,
+     ORDER BY d.status IN ('open', 'pending') DESC, d.updated_at DESC LIMIT ?`,
     q,
     q,
     q,

@@ -22,6 +22,7 @@ import {
   UserRound,
   X,
   XCircle,
+  Hourglass,
 } from "lucide-react";
 import { TaButton, TaInput, TaModal, TaSelect, cn } from "@tailadmin";
 import { call } from "../../rpc/client";
@@ -77,7 +78,9 @@ export function BulkBar({
   const n = chosen.length;
   const plural = n === 1 ? text.noun : `${text.noun}s`;
   const anyArchived = chosen.some((x) => x.card.archived_at);
-  const anyOpen = chosen.some((x) => x.card.status === "open");
+  // Pendente ainda não tem desfecho: pode virar ganho/perdido.
+  const anyOpen = chosen.some((x) => x.card.status === "open" || x.card.status === "pending");
+  const anyNotPending = chosen.some((x) => x.card.status !== "pending");
   const anyClosed = chosen.some((x) => x.card.status !== "open");
 
   /** Executa e avisa: "3 negócios movidos" (+ os que falharam). */
@@ -125,7 +128,7 @@ export function BulkBar({
       card.person_name,
       card.organization_name,
       card.owner_name,
-      card.status === "open" ? "Aberto" : card.status === "won" ? outcome.won : outcome.lost,
+      card.status === "open" ? "Aberto" : card.status === "won" ? outcome.won : card.status === "pending" ? outcome.pending : outcome.lost,
       formatDate(card.created_at),
       card.closed_at ? formatDate(card.closed_at) : null,
     ]);
@@ -202,6 +205,17 @@ export function BulkBar({
             <XCircle size={15} /> {outcome.lost}
           </button>
         </>
+      )}
+      {anyNotPending && (
+        <button
+          type="button"
+          className={cn(btn, "text-yellow-700 dark:text-yellow-300")}
+          disabled={busy}
+          data-bulk-pending
+          onClick={() => void apply({ type: "status", status: "pending" }, "marcados como pendentes")}
+        >
+          <Hourglass size={15} /> {outcome.pending}
+        </button>
       )}
       {anyClosed && (
         <button type="button" className={btn} disabled={busy} onClick={() => void apply({ type: "status", status: "open" }, "reabertos")}>
